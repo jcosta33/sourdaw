@@ -77,6 +77,7 @@ export async function createPopSongTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Vox Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -16,
                     'comp-ratio': 3,
                     'comp-attack': 5,
@@ -183,6 +184,7 @@ export async function createPopSongTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Bass Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -14,
                     'comp-ratio': 3,
                     'comp-attack': 5,

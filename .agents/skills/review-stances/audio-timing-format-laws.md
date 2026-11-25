@@ -46,6 +46,11 @@ input, state or mutation to run, and the check that must go red. Report the conc
    fail `crates/daw-dsp/benches/wasm/__tests__/deviceRecipes.spec.ts`; a native default-level band
    or historical timing figure does not establish this configured load. Review draw history was
    unavailable, so do not invent model, tier or stance claims.
+   For Bacteria, exercise the compiled DSP through the native ordered keys from #4127 and
+   the empty Bacteria precedence table introduced by #4152. Give a bare parameter and its active band
+   override distinct values, then require PCM to match the explicitly resolved band reference
+   and differ from the bare-only control. Vary a saved crossover outside the active band count
+   and require unchanged PCM until the corresponding split is active.
 4. **Format conformance by an independent decoder.** Compare real encoded output through the shipped decoder
    against the originating PCM at each bit depth, including container checksums and decoder warnings (FLAC Rice
    polarity per RFC 9639); reverting the grammar fix must fail the parity case.
@@ -154,3 +159,10 @@ arrival frame behind an unrelated note-on`). Running expression immediately inst
     clock, and keep another track's future compensated source: `startPlayheadSchedulerLoopAudioStall.spec.ts`
     must fail if retirement happens only after the MIDI await or cuts that other source. A mocked programme
     call proves eligibility only.
+16. **A format's documented "not implemented" answer is not a refusal (#6592).** The VST3 host accepted only
+    `kResultOk` from `setProcessing`, so every plugin on the SDK `AudioEffect` default, which answers
+    `kNotImplemented`, was bypassed: effects ran dry and instruments were silent. The check entered in #2869,
+    whose review drove only fixtures that answered `kResultOk`. For each lifecycle call a change interprets,
+    take the return the format SDK's own base class gives by default and drive a fixture returning exactly
+    it; the host must treat that answer the way the SDK documents it. Narrowing acceptance to `kResultOk`
+    must fail the processed-block case in `vst3_hosting.rs`.

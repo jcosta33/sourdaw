@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    installNativePreparationWorker,
+    settleNativePreparationWorkers,
+} from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
@@ -113,6 +117,7 @@ function encodeFloat32(values: Float32Array): string {
 
 describe('saveProject audio durability integration', () => {
     beforeEach(() => {
+        installNativePreparationWorker();
         clearHandlerRegistry();
         localStorage.clear();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
@@ -120,6 +125,7 @@ describe('saveProject audio durability integration', () => {
     });
 
     afterEach(async () => {
+        await settleNativePreparationWorkers();
         const [{ configureDurableAudioBufferOwnership }, { stopActiveAutoSave }] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('../../helpers/stopActiveAutoSave'),
@@ -192,6 +198,8 @@ describe('saveProject audio durability integration', () => {
         await restoreCachedAudioBuffersFromIdb({ audioContext: context });
         setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
         registerHandlerMap(getArrangementHandlers());
+        const { getWorkspaceHandlers } = await import('#/modules/WorkspaceShell/useCases');
+        registerHandlerMap({ saveProject: getWorkspaceHandlers().saveProject });
 
         registerCrdtStorageRuntime();
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });

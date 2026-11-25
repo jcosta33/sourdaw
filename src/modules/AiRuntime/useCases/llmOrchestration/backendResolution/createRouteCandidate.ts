@@ -9,7 +9,7 @@ import {
 } from '../../../models/ModelProviderProtocol';
 import { getCloudProviderInfo } from '../../../repositories/cloudLlm/getCloudProviderInfo';
 import { isCloudAvailable } from '../../../repositories/cloudLlm/isCloudAvailable';
-import { llmStatusStore } from '../../../stores/llmStatusStore';
+import { answeringStatus } from '../../../stores/answeringStatus';
 import { createModelProviderProtocol } from '../../modelProviderProtocol';
 import { type ModelRouteCandidate } from '../../resolveModelRoute';
 
@@ -56,7 +56,8 @@ function getProtocolFamily(provider: ModelProviderName): string {
 
 export function createRouteCandidate(backend: RunnableAiBackend): ModelRouteCandidate {
     const available = isBackendAvailable(backend);
-    const readyBackend = llmStatusStore.value?.state === 'ready' ? llmStatusStore.value.backend : null;
+    const engineStatus = answeringStatus.readEngineStatus();
+    const readyBackend = engineStatus?.state === 'ready' ? engineStatus.backend : null;
     const identity = getProviderIdentity(backend);
     const providerCapabilities = createModelProviderProtocol({
         provider: identity.provider,
@@ -83,8 +84,8 @@ export function createRouteCandidate(backend: RunnableAiBackend): ModelRouteCand
         executor: backend,
         providerId: identity.provider,
         modelId:
-            llmStatusStore.value?.state === 'ready' && llmStatusStore.value.backend === backend
-                ? llmStatusStore.value.modelId
+            engineStatus?.state === 'ready' && engineStatus.backend === backend
+                ? engineStatus.modelId
                 : identity.modelId,
         protocolFamily: getProtocolFamily(identity.provider),
         capabilities: {

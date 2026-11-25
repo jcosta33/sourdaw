@@ -1,5 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
 
+import {
+    createCrdtDoc,
+    mutateCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { handleRemoveAllTracks } from '../handleRemoveAllTracks';
 
 const mocks = vi.hoisted(() => ({
@@ -9,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     publishTrackRemoved: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    unloadDiscardedHostedPlugins: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -28,6 +38,13 @@ vi.mock('../../../useCases/publishTrackRemoved', () => ({
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
+vi.mock('../../../useCases/device/unloadDiscardedHostedPlugins', () => ({
+    unloadDiscardedHostedPlugins: mocks.unloadDiscardedHostedPlugins,
+}));
+
+function hostedDevice(trackId: string) {
+    return { id: `${trackId}-plugin`, type: 'external-plugin', externalInstanceId: `${trackId}-instance` };
+}
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
     wireSidechainRoutes: mocks.wireSidechainRoutes,
@@ -71,7 +88,10 @@ describe('handleRemoveAllTracks', () => {
 
         it('defers every removal and notification until the transaction commits', async () => {
             mocks.getTrackStoreState.mockReturnValue({
-                tracks: [{ id: 't1' }, { id: 't2' }],
+                tracks: [
+                    { id: 't1', devices: [] },
+                    { id: 't2', devices: [] },
+                ],
             });
             const finalizeFirst = vi.fn();
             const finalizeSecond = vi.fn();
@@ -102,10 +122,82 @@ describe('handleRemoveAllTracks', () => {
             expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't2' });
         });
 
+        // #6557: the unload rechecks committed truth, so a track a peer restored keeps its plugins,
+        // and a replaced project root releases nothing.
+        describe('against a committed project root', () => {
+            beforeEach(() => {
+                resetCrdtProjectAuthority('remove all tracks unload guard');
+                removeCrdtDoc('root');
+                createCrdtDoc('root');
+                registerCrdtStorageRuntime();
+                onTestFinished(() => removeCrdtDoc('root'));
+                mocks.getTrackStoreState.mockReturnValue({
+                    tracks: [
+                        { id: 't1', devices: [hostedDevice('t1')] },
+                        { id: 't2', devices: [hostedDevice('t2')] },
+                    ],
+                });
+                mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: vi.fn() });
+            });
+
+            it('releases only the plugins of tracks committed truth no longer holds', async () => {
+                const result = await handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+                mutateCrdtDoc<{ tracks: unknown }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks = { tracks: [TrackDummy.create({ id: 't1' })], selectedTrackId: null };
+                    },
+                });
+
+                await result?.afterCommit?.();
+
+                expect(mocks.unloadDiscardedHostedPlugins.mock.calls).toEqual([
+                    [[{ deviceId: 't2-plugin', instanceId: 't2-instance' }]],
+                ]);
+            });
+
+            it('keeps the plugins of a track an ambiguous commit leaves in committed truth only', async () => {
+                const result = await handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+                mutateCrdtDoc<{ tracks: unknown }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks = { tracks: [TrackDummy.create({ id: 't1' })], selectedTrackId: null };
+                    },
+                });
+
+                await result?.afterAmbiguousCommit?.();
+
+                expect(mocks.unloadDiscardedHostedPlugins.mock.calls).toEqual([
+                    [[{ deviceId: 't2-plugin', instanceId: 't2-instance' }]],
+                ]);
+            });
+
+            it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+                'releases nothing once the project root is replaced, phase=%s',
+                async (phase) => {
+                    const result = await handleRemoveAllTracks.execute({
+                        type: 'removeAllTracks',
+                        payload: undefined,
+                    });
+                    removeCrdtDoc('root');
+
+                    await result?.[phase]?.();
+
+                    expect(mocks.unloadDiscardedHostedPlugins).not.toHaveBeenCalled();
+                }
+            );
+        });
+
         it('reconciles only track IDs absent from committed truth after an ambiguous commit', async () => {
             mocks.getTrackStoreState
-                .mockReturnValueOnce({ tracks: [{ id: 't1' }, { id: 't2' }] })
-                .mockReturnValue({ tracks: [{ id: 't2' }] });
+                .mockReturnValueOnce({
+                    tracks: [
+                        { id: 't1', devices: [hostedDevice('t1')] },
+                        { id: 't2', devices: [hostedDevice('t2')] },
+                    ],
+                })
+                .mockReturnValue({ tracks: [{ id: 't2', devices: [hostedDevice('t2')] }] });
             const finalizeFirst = vi.fn();
             const finalizeSecond = vi.fn();
             mocks.removeTrack
@@ -117,6 +209,10 @@ describe('handleRemoveAllTracks', () => {
 
             expect(finalizeFirst).toHaveBeenCalledOnce();
             expect(finalizeSecond).not.toHaveBeenCalled();
+            // Only the track absent from committed truth releases its plugins (#6557).
+            expect(mocks.unloadDiscardedHostedPlugins.mock.calls).toEqual([
+                [[{ deviceId: 't1-plugin', instanceId: 't1-instance' }]],
+            ]);
             expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
             expect(mocks.publishTrackRemoved).not.toHaveBeenCalledWith({ trackId: 't2' });
             expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
@@ -127,7 +223,7 @@ describe('handleRemoveAllTracks', () => {
         });
 
         it('keeps runtime ownership when committed track state is unavailable', async () => {
-            mocks.getTrackStoreState.mockReturnValueOnce({ tracks: [{ id: 't1' }] }).mockReturnValue(null);
+            mocks.getTrackStoreState.mockReturnValueOnce({ tracks: [{ id: 't1', devices: [] }] }).mockReturnValue(null);
             const finalize = vi.fn();
             mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: finalize });
 
@@ -152,7 +248,11 @@ describe('handleRemoveAllTracks', () => {
 
         it('captures every live track in track order, carrying original indices', () => {
             mocks.getTrackStoreState.mockReturnValue({
-                tracks: [{ id: 't1' }, { id: 't2' }, { id: 't3' }],
+                tracks: [
+                    { id: 't1', devices: [] },
+                    { id: 't2', devices: [] },
+                    { id: 't3', devices: [] },
+                ],
             });
             const snapshotT1 = createSnapshot('t1', 0);
             const snapshotT2 = createSnapshot('t2', 1);

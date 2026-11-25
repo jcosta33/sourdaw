@@ -5,6 +5,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
@@ -14,11 +15,13 @@ import { captureMusicalContentBinding } from '#/modules/Project/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
+import { LocalModelDownloadRequiredError } from '../../errors/LocalModelDownloadRequiredError';
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
+import { llmStatusStore } from '../../stores/llmStatusStore';
 import {
     buildPresetContext,
     tryPresetMatch,
@@ -28,6 +31,7 @@ import {
 import { getExplicitClipProtection } from '../agentReference/getExplicitlyProtectedClips';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { describeNoAiBackendRemedy } from '../describeNoAiBackendRemedy';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
@@ -53,6 +57,7 @@ const {
     mockBuildLlmActionSystemPrompt,
     mockDoesProductionBriefAllowActionBatch,
     markerStoreValue,
+    mockGenerateWebLlmToolCalls,
 } = vi.hoisted(() => ({
     mockLogger: {
         warn: vi.fn(),
@@ -61,6 +66,7 @@ const {
         debug: vi.fn(),
     },
     mockBridgeGroundedLlmToolCalls: vi.fn(),
+    mockGenerateWebLlmToolCalls: vi.fn(),
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
     mockDoesProductionBriefAllowActionBatch: vi.fn(() => true),
     markerStoreValue: {
@@ -102,6 +108,14 @@ vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
         tryCompoundFastPath: vi.fn(original.tryCompoundFastPath),
     };
 });
+
+vi.mock('../../repositories/webLlm/toolCalling', () => ({
+    generateWebLlmToolCalls: mockGenerateWebLlmToolCalls,
+}));
+
+vi.mock('../../repositories/webLlm/initWebLlmEngine', () => ({ initWebLlmEngine: vi.fn() }));
+
+vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
 
 vi.mock('../getProjectContext', async (importOriginal) => {
     const original = await importOriginal<typeof import('../getProjectContext')>();
@@ -535,7 +549,7 @@ describe('parsePromptToActions', () => {
         expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
-    it('preserves free-text ambiguity and selects clipboard copy by its ID', async () => {
+    it('preserves free-text ambiguity and selects the loop toggle by its ID against the current state', async () => {
         const context = createMixerContext();
         context.selectedTrackId = 'track-vocals';
         context.selectedClipId = 'clip-vocal';
@@ -543,17 +557,24 @@ describe('parsePromptToActions', () => {
             { id: 'clip-vocal', name: 'Vocal', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 },
         ];
         vi.mocked(tryPresetMatch).mockImplementation(actualParsing.tryPresetMatch);
-        for (const prompt of ['Open Mixer Panel', 'copy clip']) {
+        for (const prompt of ['Open Mixer Panel', 'click track']) {
             const result = await parsePromptToActions({ prompt, context, providerPlanning: 'disabled' });
             expect(result.actions).toEqual([]);
             expect(result.metricGoalState).toBeUndefined();
         }
-        const copied = await parsePromptToActions({
-            prompt: 'Copy Clip',
+        const enabling = await parsePromptToActions({
+            prompt: 'Toggle Loop',
             context,
-            preset: { id: 'copy-clip', expectedContext: buildPresetContext(context) },
+            preset: { id: 'loop', expectedContext: buildPresetContext(context) },
         });
-        expect(copied.actions).toEqual([{ type: 'copyClip' }]);
+        expect(enabling.actions).toEqual([{ type: 'setLoopEnabled', payload: { enabled: true } }]);
+        const looping = { ...context, isLooping: true };
+        const disabling = await parsePromptToActions({
+            prompt: 'Toggle Loop',
+            context: looping,
+            preset: { id: 'loop', expectedContext: buildPresetContext(looping) },
+        });
+        expect(disabling.actions).toEqual([{ type: 'setLoopEnabled', payload: { enabled: false } }]);
         expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
@@ -564,7 +585,7 @@ describe('parsePromptToActions', () => {
         ['missing track', 'add-eq', 'Add EQ', 'none'],
         ['stale track', 'add-eq', 'Add EQ', 'stale-track'],
         ['changed track kind', 'add-eq', 'Add EQ', 'track-kind'],
-        ['changed clip type', 'copy-clip', 'Copy Clip', 'clip-type'],
+        ['changed clip type', 'normalize-clip', 'Normalize Clip', 'clip-type'],
         ['unavailable MIDI clip', 'quantize', 'Quantize Notes', 'audio-clip'],
         ['null builder', 'add-auto-lane', 'Add Automation Lane', 'track'],
         ['readonly', 'play', 'Play', 'readonly'],
@@ -614,8 +635,8 @@ describe('parsePromptToActions', () => {
             producer: 'parameterized' as const,
         },
         {
-            prompt: 'remove all tracks',
-            action: { type: 'removeAllTracks' as const },
+            prompt: 'remove the vocals track',
+            action: { type: 'removeTrack' as const, payload: { trackId: 'track-vocals' } },
             producer: 'preset' as const,
         },
     ])('applies app-owned confirmation policy to a single $producer action', async ({ prompt, action, producer }) => {
@@ -1396,6 +1417,25 @@ describe('parsePromptToActions', () => {
             expect(JSON.stringify(result.planningOutcome)).not.toMatch(/OpenAI|Anthropic|Claude|GPT|Gemini/iu);
         });
 
+        it('shows the same remedy when the local model is in the chain but its download needs consent', async () => {
+            vi.mocked(generateToolCalls).mockRejectedValue(
+                new LocalModelDownloadRequiredError(
+                    'Explicit model-download consent is required before WebLLM can fetch this artifact set.'
+                )
+            );
+
+            const result = await parsePromptToActions({
+                prompt: 'make the chorus feel warmer',
+                context: baseContext,
+                projectRevision: 'revision-1',
+            });
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.planningOutcome).toEqual({ kind: 'denied', reason: describeNoAiBackendRemedy() });
+            expect(JSON.stringify(result.planningOutcome)).not.toMatch(/WebLLM|OpenAI|Anthropic|Claude|GPT|Gemini/iu);
+        });
+
         it('says first that Automatic never uses a configured hosted provider', async () => {
             hostedLlmProviderStatusStore.set({
                 provider: 'anthropic',
@@ -1417,6 +1457,47 @@ describe('parsePromptToActions', () => {
                 /^Automatic uses only the local model and never sends requests to a hosted provider\. This request needs an AI model/u
             );
             expect(reason).not.toMatch(/OpenAI|Anthropic|Claude|GPT|Gemini/iu);
+        });
+    });
+
+    describe('with the local model chosen and its download awaiting consent', () => {
+        beforeEach(() => {
+            aiBackendPreferenceStore.set('auto');
+            capabilityStore.set({
+                phase: 'done',
+                report: {
+                    capability: 'supported',
+                    webGpu: { status: 'supported' },
+                    webGpuTier: 'not-measured',
+                    crossOriginIsolated: true,
+                    workerAvailable: true,
+                    opfsAvailable: true,
+                    inference: { status: 'not-measured', reason: 'not-requested' },
+                    detectedAt: 0,
+                },
+            });
+            mockGenerateWebLlmToolCalls.mockRejectedValue(
+                new LocalModelDownloadRequiredError('Explicit model-download consent is required.')
+            );
+        });
+
+        afterEach(() => {
+            capabilityStore.set({ phase: 'idle' });
+            mockGenerateWebLlmToolCalls.mockReset();
+        });
+
+        // The real chain loop and application tool loop run here, so the typed error must survive both.
+        it('denies with the remedy and settles the answering status to it, never a provider failure', async () => {
+            const result = await parsePromptToActions({
+                prompt: 'make the chorus feel warmer',
+                context: baseContext,
+                projectRevision: 'revision-1',
+            });
+
+            expect(mockGenerateWebLlmToolCalls).toHaveBeenCalled();
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.planningOutcome).toEqual({ kind: 'denied', reason: describeNoAiBackendRemedy() });
+            expect(llmStatusStore.value).toEqual({ state: 'error', message: describeNoAiBackendRemedy() });
         });
     });
 

@@ -1,10 +1,13 @@
+import { type BriefMixIntent } from '../models/BriefMixIntent';
+
 import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
 
 type MixDescriptor = ReturnType<typeof getBriefMixIntentCatalog>['descriptors'][number];
 
-export function readBriefMixIntent(
-    value: unknown
-): { catalogId: string; requestedDescriptors: readonly MixDescriptor[] } | null {
+/** A mix intent whose characters are the recipe catalogue's own descriptors, not any string. */
+export type CatalogBriefMixIntent = BriefMixIntent & { requestedDescriptors: readonly MixDescriptor[] };
+
+export function readBriefMixIntent(value: unknown): CatalogBriefMixIntent | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return null;
     }

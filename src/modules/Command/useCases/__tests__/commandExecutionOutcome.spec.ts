@@ -597,10 +597,7 @@ describe('command execution outcome vocabulary', () => {
         afterEach(() => {
             flushAutomergeStorageWrites();
             configureAutomergeStoragePort(null);
-            commandBatchPreviewPort.setProvider(null);
-            commandBatchPreflightPort.setProvider(null);
             commandProjectRevisionPort.setProvider(null);
-            commandProjectDivergencePort.setProvider(null);
             productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
             clearHandlerRegistry();
         });
@@ -656,6 +653,12 @@ describe('command execution outcome vocabulary', () => {
             registerGainHandler(execute);
             const batch = compileGainBatch('commit');
             projectRevision = 'revision-saga-1';
+            commandProjectDivergencePort.setProvider(({ targetIds }) => ({
+                kind: 'ambiguous-same-object',
+                mayReapply: false,
+                repairCandidates: [],
+                targetIds,
+            }));
 
             const result = await executeApprovedVersionedCommandBatchEnvelope({
                 authority: batch.authority,
@@ -667,7 +670,7 @@ describe('command execution outcome vocabulary', () => {
             // `conflicted` and carries the staleness in the reason sentence.
             expect(result, JSON.stringify(result)).toMatchObject({
                 status: 'conflicted',
-                reason: 'Command batch base revision does not match current project state',
+                reason: 'Command batch project divergence is ambiguous-same-object',
                 actions: [],
             });
             expect(execute).not.toHaveBeenCalled();

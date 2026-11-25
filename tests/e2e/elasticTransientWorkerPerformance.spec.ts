@@ -189,8 +189,12 @@ function assertAppTaskShare(vendor: NativePhase, callbackMs = 0): void {
         throw new Error(`Missing enclosing renderer task for ${vendor.name}`);
     }
     const sdkMs = vendor.duration - callbackMs;
-    const appMs = vendor.enclosingTask.durationMs - sdkMs;
-    expect(appMs, `${vendor.name} application overhead`).toBeLessThan(APP_TASK_SHARE_MS);
+    const { durationMs, threadDurationMs } = vendor.enclosingTask;
+    const appWallMs = durationMs - sdkMs;
+    // Scheduling gaps can inflate the wall residual. Total renderer CPU also bounds application CPU.
+    const appUpperBoundMs =
+        isFiniteNumber(threadDurationMs) && threadDurationMs >= 0 ? Math.min(appWallMs, threadDurationMs) : appWallMs;
+    expect(appUpperBoundMs, `${vendor.name} application overhead`).toBeLessThan(APP_TASK_SHARE_MS);
 }
 
 function assertSequenceTasks(
@@ -772,8 +776,9 @@ function percussiveStereoWav(): Buffer {
     return wav;
 }
 
-async function sourceState(page: Page, last = false) {
-    return page.evaluate(async (last) => {
+async function sourceState(page: Page, last = false, { includePcmDigest = true }: { includePcmDigest?: boolean } = {}) {
+    const readOptions = { last, includePcmDigest };
+    return page.evaluate(async ({ last, includePcmDigest }) => {
         const { trackStore, getWarpState } = await import('/src/modules/Arrangement/stores/index.ts');
         const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/index.ts');
         const { getCrdtDoc } = await import('/src/modules/CrdtDocument/useCases/index.ts');
@@ -784,7 +789,7 @@ async function sourceState(page: Page, last = false) {
         const clip = last ? clips.at(-1) : clips[0];
         const source = clip?.audioBufferId ? audioBufferCache.get(clip.audioBufferId) : undefined;
         const pcm = [];
-        if (source) {
+        if (source && includePcmDigest) {
             for (let channel = 0; channel < source.numberOfChannels; channel++) {
                 const samples = new Float32Array(source.getChannelData(channel));
                 pcm.push(Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', samples.buffer))).join(','));
@@ -794,6 +799,7 @@ async function sourceState(page: Page, last = false) {
         const raw = getCrdtDoc<{ warpStates?: { states: Record<string, { markers: unknown[] }> } }>('root');
         return {
             clipId: clip?.id,
+            audioBufferId: clip?.audioBufferId,
             ready: Boolean(source),
             sampleRate: source?.sampleRate,
             frames: source?.length,
@@ -802,15 +808,10 @@ async function sourceState(page: Page, last = false) {
             projected,
             raw: clip ? (raw?.warpStates?.states[clip.id]?.markers ?? []) : [],
         };
-    }, last);
+    }, readOptions);
 }
 
-test('120-second stereo Detect includes cold Worker, copy and atomic commit within responsive UI budget', async ({
-    page,
-}, info) => {
-    test.setTimeout(120_000);
-    await setupWorkspace(page);
-    await launch_new_project(page);
+async function importPercussiveStereoSource(page: Page, info: TestInfo) {
     // Global shortcuts stay silent while projectStore.loading !== false; wait
     // for the app's own gate before pressing, the same as importPreferenceClip.
     await expect
@@ -842,15 +843,16 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await row.click({ button: 'right' });
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('menuitem', { name: /Import Audio/i }).click();
-    await (
-        await chooser
-    ).setFiles({ name: '120s-48k-stereo-attacks.wav', mimeType: 'audio/wav', buffer: percussiveStereoWav() });
-    await expect.poll(async () => (await sourceState(page)).ready).toBe(true);
-    const before = await sourceState(page);
-    expect(before.sampleRate).toBe(RATE);
-    expect(before.frames).toBe(RATE * SECONDS);
-    expect(before.channels).toBe(2);
-    expect(before.projected).toEqual([]);
+    // A file path avoids Playwright's in-renderer buffer conversion before the timing checks.
+    const fixturePath = info.outputPath('120s-48k-stereo-attacks.wav');
+    await writeFile(fixturePath, percussiveStereoWav());
+    await (await chooser).setFiles(fixturePath);
+    const readSourceMetadata = () => sourceState(page, false, { includePcmDigest: false });
+    await expect.poll(async () => (await readSourceMetadata()).ready).toBe(true);
+    return { modifier, readSourceMetadata };
+}
+
+async function openElasticPanel(page: Page) {
     await page.getByLabel('Timeline editor surface').click({ position: { x: 30, y: 20 } });
     const dock = page.getByTestId('toggle-bottom-dock');
     if ((await dock.getAttribute('aria-pressed')) !== 'true') {
@@ -860,6 +862,22 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const panel = page.getByTestId('elastic-editor-panel');
     await expect(panel).toBeVisible();
     await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
+    return panel;
+}
+
+test('120-second stereo Detect includes cold Worker, copy and atomic commit within responsive UI budget', async ({
+    page,
+}, info) => {
+    test.setTimeout(120_000);
+    await setupWorkspace(page);
+    await launch_new_project(page);
+    const { modifier, readSourceMetadata } = await importPercussiveStereoSource(page, info);
+    const before = await sourceState(page);
+    expect(before.sampleRate).toBe(RATE);
+    expect(before.frames).toBe(RATE * SECONDS);
+    expect(before.channels).toBe(2);
+    expect(before.projected).toEqual([]);
+    const panel = await openElasticPanel(page);
     const workers: string[] = [];
     page.on('worker', (worker) => workers.push(worker.url()));
     await observeProspectiveRequests(page, info);
@@ -1088,9 +1106,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     assertMaterializationTaskSpans(result.nativePhases);
     assertProspectiveObservations(result.nativePhases, measured.measures, measured.prospectiveRequests);
     await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);
+    await expect.poll(async () => (await readSourceMetadata()).projected.length).toBe(0);
     await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected.length).toBe(ATTACKS.length);
+    await expect.poll(async () => (await readSourceMetadata()).projected.length).toBe(ATTACKS.length);
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
     const canvas = panel.getByTestId('elastic-waveform-canvas');
@@ -1106,7 +1124,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 user');
     await panel.getByTestId('elastic-tool-select').click();
     const populated = await sourceState(page);
-    await expect.poll(async () => (await sourceState(page)).raw).toEqual(populated.projected);
+    await expect.poll(async () => (await readSourceMetadata()).raw).toEqual(populated.projected);
     expect(populated.projected).toHaveLength(ATTACKS.length + 1);
     const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
     expect(retained).toHaveLength(2);
@@ -1125,9 +1143,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
     const redetected = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(populated.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(populated.projected);
     await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(redetected.projected);
 
     const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
     await armPopulatedMeasurement(page, 'sensitivity');
@@ -1143,14 +1161,152 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
     const sensitive = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(redetected.projected);
     await page.keyboard.press(`${modifier}+Shift+z`);
-    await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
+    await expect.poll(async () => (await readSourceMetadata()).projected).toEqual(sensitive.projected);
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
 
     assertElasticTiming(result, 'cold-detect');
     assertElasticTiming(repeatedMeasurement, 're-detect-populated');
     assertElasticTiming(sensitivityMeasurement, 'sensitivity-populated');
+});
+
+const DENSE_ELASTIC_FIXTURE_PATH = '/tests/e2e/helpers/elasticDenseProject.ts';
+type DenseElasticFixture = typeof import('./helpers/elasticDenseProject');
+
+test('dense project Detect overlaps the named autosave and reopens with exact markers and source PCM', async ({
+    page,
+}, info) => {
+    // Serial fixture commits have their own deadline so setup cannot consume the reopen checks' time.
+    test.setTimeout(330_000);
+    await setupWorkspace(page, { clearLocalStorage: false });
+    await launch_new_project(page);
+    const preference = await page.evaluate(async () => {
+        const { preferencesStore } = await import('/src/modules/Preferences/stores/index.ts');
+        const { updatePreferences } = await import('/src/modules/Preferences/useCases/index.ts');
+        const original = preferencesStore.value;
+        if (!original) {
+            throw new Error('The project did not load its preferences');
+        }
+        updatePreferences({ patch: { autoSave: false } });
+        return { autoSave: original.autoSave, autoSaveIntervalMs: original.autoSaveIntervalMs };
+    });
+    expect(preference).toEqual({ autoSave: true, autoSaveIntervalMs: 30_000 });
+
+    await importPercussiveStereoSource(page, info);
+    const before = await sourceState(page);
+    expect(before).toMatchObject({ sampleRate: RATE, frames: RATE * SECONDS, channels: 2, raw: [], projected: [] });
+    expect(before.pcm).toHaveLength(2);
+    const fixture = await test.step(
+        'Seed the dense project through app actions',
+        () =>
+            page.evaluate(
+                async ({ path, clipId, audioBufferId }) => {
+                    const dense: DenseElasticFixture = await import(path);
+                    if (!clipId || !audioBufferId) {
+                        throw new Error('The stereo source was not imported');
+                    }
+                    const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+                    const { getProjectSnapshotKey } = await import('/src/modules/Project/useCases/index.ts');
+                    const seeded = await dense.seedDenseElasticProject(clipId);
+                    const project = projectStore.value;
+                    if (!project?.dirty) {
+                        throw new Error('The dense fixture did not leave a project edit for autosave');
+                    }
+                    return { ...seeded, clipId, audioBufferId, key: getProjectSnapshotKey(project.createdAt) };
+                },
+                { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId, audioBufferId: before.audioBufferId }
+            ),
+        { timeout: 210_000 }
+    );
+    const readPreserved = (historyHeads?: typeof fixture.historyHeads) =>
+        page.evaluate(
+            async ({ path, historyHeads, companionIds }) => {
+                const dense: DenseElasticFixture = await import(path);
+                return dense.readDenseElasticProject(companionIds, historyHeads);
+            },
+            { path: DENSE_ELASTIC_FIXTURE_PATH, companionIds: fixture.companionIds, historyHeads }
+        );
+    const readNamedSnapshot = () =>
+        page.evaluate(
+            async ({ path, key, clipId, targetTrackId }) => {
+                const dense: DenseElasticFixture = await import(path);
+                return dense.readNamedElasticSave(key, clipId, targetTrackId);
+            },
+            { path: DENSE_ELASTIC_FIXTURE_PATH, ...fixture }
+        );
+
+    expect(fixture.historyChanges).toBeGreaterThanOrEqual(2048);
+    const seeded = await readPreserved(fixture.historyHeads);
+    expect(seeded.historyRetained).toBe(true);
+    expect(seeded.preserved).toMatchObject({
+        audioTracks: 16,
+        midiTracks: 16,
+        clips: 256,
+        notes: 8192,
+        lastMidiTrack: 'Dense midi 31',
+    });
+    expect(seeded.preserved.lastMidiClipNotes).toHaveLength(64);
+    expect(seeded.preserved.companionMarkers.map((markers) => markers.length)).toEqual(Array(8).fill(ATTACKS.length));
+    expect(await readNamedSnapshot()).toBeNull();
+
+    const panel = await openElasticPanel(page);
+    const overlap = await panel.getByTestId('elastic-detect-button').evaluate(
+        async (button, { path, preference }) => {
+            const status = button.closest('[data-testid="elastic-editor-panel"]')?.querySelector('[role="status"]');
+            if (!(button instanceof HTMLButtonElement) || !(status instanceof HTMLElement)) {
+                throw new TypeError('The mounted Detect button and its status are required');
+            }
+            const dense: DenseElasticFixture = await import(path);
+            return dense.detectAcrossNamedAutosave(button, status, preference);
+        },
+        { path: DENSE_ELASTIC_FIXTURE_PATH, preference }
+    );
+    await info.attach('dense-elastic-autosave-overlap', {
+        body: JSON.stringify(overlap),
+        contentType: 'application/json',
+    });
+    expect(overlap.autosave.pending, 'The real named autosave timer fired while Detect was pending').toBe(true);
+    expect(overlap.autosave.fired).toBeGreaterThan(overlap.started);
+    expect(overlap.worker.hits).toBe(ATTACKS.length);
+    expect(overlap.worker.received).toBeGreaterThan(overlap.started);
+    await expect(panel.getByRole('status')).toHaveText('Detection complete', { timeout: 10_000 });
+
+    const detected = await sourceState(page);
+    expect(detected.raw).toHaveLength(ATTACKS.length);
+    expect(detected.projected).toEqual(detected.raw);
+    expect(detected.pcm).toEqual(before.pcm);
+    await expect.poll(readNamedSnapshot, { timeout: 25_000 }).toEqual({
+        markers: detected.raw,
+        trackName: 'History edit 2047',
+    });
+    expect(await page.evaluate(() => performance.getEntriesByName('dense-elastic-named-autosave').length)).toBe(1);
+
+    await page.reload();
+    await wait_for_workspace_ready(page);
+    await expect
+        .poll(async () => (await sourceState(page, false, { includePcmDigest: false })).ready, { timeout: 25_000 })
+        .toBe(true);
+    expect(await sourceState(page)).toEqual(detected);
+    expect(await readPreserved(fixture.historyHeads)).toEqual(seeded);
+
+    // Reopen from a blank project's runtime so the named load must restore the source from disk.
+    await launch_new_project(page);
+    const sourceIsResident = await page.evaluate(async (audioBufferId) => {
+        const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/index.ts');
+        return audioBufferCache.get(audioBufferId) !== undefined;
+    }, fixture.audioBufferId);
+    expect(sourceIsResident, 'The named reopen must restore the original source into an empty runtime cache slot').toBe(
+        false
+    );
+
+    const namedReopen = await page.evaluate(async (key) => {
+        const { loadRecentProject } = await import('/src/modules/Project/useCases/index.ts');
+        return loadRecentProject(key, { outgoingProject: 'discard', requireDurable: true });
+    }, fixture.key);
+    expect(namedReopen).toBe('committed');
+    expect(await sourceState(page)).toEqual(detected);
+    expect((await readPreserved()).preserved).toEqual(seeded.preserved);
 });
 
 /** Same five-amplitude pulse fixture as the accepted Elastic sensitivity integration. */

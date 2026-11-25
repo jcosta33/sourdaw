@@ -417,17 +417,16 @@ recorded authorization, with every thread resolved, and squash-merges as the imm
 [Validation, admission and retry semantics](./.agents/skills/delivery-orchestration/references/delivery-checks.md#validation-order)
 
 Keep at most five live lanes. Keep batches small and merge each once CI and review permit.
-Sequence changes to the same handwritten file or a contract another lane relies on. Waits on CI
-or review leave room for independent work. If reviewers cannot attack the whole diff, reassess
-scope under [Delegation](#delegation).
+Waits on CI or review leave room for independent work. If reviewers cannot attack the whole diff,
+reassess scope under [Delegation](#delegation).
+
+Independent lanes may change the same files in their own worktrees, including handwritten files,
+generator inputs and outputs, hand-curated records, and measured baselines. Coordinate genuine
+dependencies on unpublished work. Use the [stack procedure](#worktrees) when stacking on an owned
+parent.
 
 Compare live diffs and trace each changed generator input to the fields and digests it feeds,
-including outputs still awaiting regeneration. Separate lanes may share a generated file when
-their changes affect distinct, deterministically regeneratable fields from independent inputs.
-Use the scoped generators in your own lane and check mergeability before delivery. Sequence
-changes that affect the same input or output field, or that edit a hand-curated record or measured
-baseline in the shared file.
-
-Resolve generated conflicts in your own lane. Regenerate the affected fields from the merged inputs
-and preserve hand-curated evidence and measured baselines. Publish the resolved head for fresh
-`Gate` and review.
+including outputs still awaiting regeneration. Use the scoped generators in your own lane and
+check mergeability before delivery. Resolve actual conflicts in the lane integrating the changes.
+Regenerate the affected fields from the merged inputs and preserve unrelated hand-curated evidence
+and measured baselines. Publish the resolved head for fresh `Gate` and review.

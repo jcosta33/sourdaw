@@ -38,10 +38,9 @@ import { enter16Levels } from '../../useCases/enter16Levels';
 import { exit16Levels } from '../../useCases/exit16Levels';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { getToasterPatternGrooveStatus } from '../../useCases/getToasterPatternGrooveStatus';
-import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
 import { getToasterPresetSummaries } from '../../useCases/getToasterPresetSummaries';
-import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
 import { type NoteRepeatRate } from '../../useCases/noteRepeat';
+import { selectToasterFactoryKit } from '../../useCases/selectToasterFactoryKit';
 import { selectMorphSourcePattern } from '../../useCases/setMorphPosition/selectMorphSourcePattern';
 import { setMorphPosition } from '../../useCases/setMorphPosition/setMorphPosition';
 import { setMorphTarget } from '../../useCases/setMorphPosition/setMorphTarget';
@@ -353,12 +352,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     function handleLoadPreset(presetId: string): void {
-        const presetKit = getToasterPresetKit(presetId);
-        if (!presetKit) {
-            return;
-        }
-
-        loadToasterKitPreset(deviceId, presetKit);
+        void selectToasterFactoryKit(deviceId, presetId);
     }
 
     function handleAssignGroove(templateId: string, amount: number): void {

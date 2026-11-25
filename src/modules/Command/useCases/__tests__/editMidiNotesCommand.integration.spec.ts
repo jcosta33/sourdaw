@@ -12,6 +12,7 @@ import {
     captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
+    inspectAgentProjectDivergence,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -30,6 +31,7 @@ import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { captureCommandTargetFingerprints } from '../captureCommandTargetFingerprints';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
+import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
@@ -38,7 +40,6 @@ import { executeAppActionBatch } from '../executeAppActionBatch';
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { redo } from '../redo';
-import { resetCommandBatchIdempotency } from '../resetCommandBatchIdempotency';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 import { undo } from '../undo';
 
@@ -174,6 +175,12 @@ describe('selective MIDI command on Automerge project truth', () => {
             captureMutationAuthorization: captureProjectMutationAuthorization,
         });
         commandProjectRevisionPort.setProvider(captureProjectRevision);
+        commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: { request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()) },
+        });
+        configureCommandBatchIdempotency({ canExecute: () => true });
         commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
         commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
             const targetFingerprints = captureCommandTargetFingerprints({
@@ -205,8 +212,6 @@ describe('selective MIDI command on Automerge project truth', () => {
     afterEach(() => {
         clearUndoHistory();
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
-        resetCommandBatchIdempotency();
         localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
         commandProjectRevisionPort.setProvider(null);
@@ -216,11 +221,6 @@ describe('selective MIDI command on Automerge project truth', () => {
     });
 
     it('commits the exact recorded operations, leaves the other notes and sound intact, and round-trips one undo', async () => {
-        vi.stubGlobal('navigator', {
-            ...navigator,
-            locks: { request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()) },
-        });
-        configureCommandBatchIdempotency({ canExecute: () => true });
         const before = structuredClone(trackStore.value);
         const batch = compile([
             editAction([
@@ -400,7 +400,8 @@ describe('selective MIDI command on Automerge project truth', () => {
 
         const changed = [OPENING, { ...PHRASE, velocity: 92 }, FILLER, TAIL];
         seedNotes(changed);
-        expect(await executeApprovedVersionedCommandBatchEnvelope({ ...batch, confirmed: true })).toMatchObject({
+        const result = await executeApprovedVersionedCommandBatchEnvelope({ ...batch, confirmed: true });
+        expect(result, 'reason' in result ? result.reason : undefined).toMatchObject({
             status: 'conflicted',
             actions: [],
         });

@@ -32,7 +32,9 @@ use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, CrumbsParam, SampleId};
 use daw_engine::midi::note_store::MidiNoteStore;
 use daw_engine::scheduler::{GraphCommand, CRUMBS_CAPTURE_RESERVE};
-use daw_engine::{CaptureCompletionService, CaptureServiceProgress, EngineHandle, GraphBatchError};
+use daw_engine::{
+    CaptureCompletionService, CaptureServiceProgress, CommandError, EngineHandle, GraphBatchError,
+};
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -124,7 +126,7 @@ fn new_crumbs_rings() -> (CrumbsInstanceEnds, CrumbsSlotEnds) {
     let lifetime = Arc::new(CrumbsSlotLifetime::default());
     (
         CrumbsInstanceEnds {
-            command_tx: CrumbsCommandSender(command_tx),
+            command_tx: CrumbsCommandSender::new(command_tx),
             commit_rx,
             recycle_tx,
             retired_take_rx,
@@ -185,12 +187,12 @@ impl CrumbsInstanceData {
             CrumbsEngineSlot::Dormant(writes) => &mut writes.recording,
         }
     }
-    /// The one route from a command handler to the engine.
+    /// Send an ordinary engine command or a parked parameter write.
     ///
     /// Attached, that is the command ring. Dormant, it is the parked-write
     /// table: the engine reads this state on the slot's first pass, so a
     /// write made before play lands exactly as one made after it.
-    fn send(&mut self, command: CrumbsCommand) -> Result<(), String> {
+    fn send(&mut self, command: CrumbsCommand) -> Result<(), CrumbsRefusal> {
         let mode = match &command {
             CrumbsCommand::SetMode(mode) => Some(*mode),
             _ => None,
@@ -199,7 +201,7 @@ impl CrumbsInstanceData {
             CrumbsEngineSlot::Attached { ends, .. } => ends
                 .command_tx
                 .push(command)
-                .map_err(|_| "Command queue full".to_string())?,
+                .map_err(|_| CrumbsRefusal::CommandQueueFull)?,
             CrumbsEngineSlot::Dormant(writes) => writes.record(command)?,
         }
         if let Some(mode) = mode {
@@ -217,7 +219,7 @@ impl DormantCrumbsWrites {
     /// both silently and both while the panel reports the gesture as taken,
     /// so those refuse where the panel can report them. Anything not parked
     /// here is refused for that reason.
-    fn record(&mut self, command: CrumbsCommand) -> Result<(), String> {
+    fn record(&mut self, command: CrumbsCommand) -> Result<(), CrumbsRefusal> {
         match command {
             CrumbsCommand::SetParam { param, value } => {
                 match self.params.iter_mut().find(|(held, _)| *held == param) {
@@ -238,7 +240,7 @@ impl DormantCrumbsWrites {
             // instance holds and already carries the data; the engine's pool
             // is filled from it at attach.
             CrumbsCommand::AddSample { .. } => Ok(()),
-            _ => Err("Native engine not running".to_string()),
+            _ => Err(CrumbsRefusal::EngineNotRunning),
         }
     }
 }
@@ -458,11 +460,9 @@ pub struct LoopPointDetectionResult {
 /// ceiling.
 fn ensure_crumbs_capture_headroom(
     instances: &HashMap<String, CrumbsInstanceData>,
-) -> Result<(), String> {
+) -> Result<(), CrumbsRefusal> {
     if instances.len() >= CRUMBS_CAPTURE_RESERVE {
-        return Err(format!(
-            "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
-        ));
+        return Err(CrumbsRefusal::CaptureHeadroomExhausted);
     }
     Ok(())
 }
@@ -477,7 +477,7 @@ fn register_crumbs_slot(
     engine_handle: &mut EngineHandle,
     metering: &Arc<CrumbsMetering>,
     slot_ends: CrumbsSlotEnds,
-) -> Result<usize, String> {
+) -> Result<usize, CrumbsRefusal> {
     // A reserved id is an opaque handle, never a dense index, so a refused
     // batch below simply leaves this one unused.
     let id = engine_handle.reserve_plugin_id();
@@ -512,7 +512,7 @@ fn register_crumbs_slot(
             GraphCommand::AddHostedPlugin(id, Box::new(slot), MidiNoteStore::new()),
         ])
         .map_err(|error| match error {
-            GraphBatchError::Refused(reason) => reason.to_string(),
+            GraphBatchError::Refused(reason) => CrumbsRefusal::SlotRefused(reason),
             // Unreachable by construction, and deliberately not unwound:
             // the only route to the audio thread is the ring that just
             // failed, so a removal command would have nowhere to go.
@@ -520,9 +520,11 @@ fn register_crumbs_slot(
                 pushed,
                 total,
                 error,
-            } => format!(
-                "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
-            ),
+            } => CrumbsRefusal::SlotPublishedInPart {
+                pushed,
+                total,
+                error,
+            },
         })?;
 
     registry.record_fenced_batch();
@@ -604,14 +606,14 @@ pub fn attach_dormant_crumbs(
     state: &CrumbsState,
     registry: &mut GraphRegistry,
     engine: &Mutex<Option<EngineHandle>>,
-) -> Result<CrumbsAttachReport, String> {
+) -> Result<CrumbsAttachReport, CrumbsRefusal> {
     let mut instances = state
         .instances
         .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+        .map_err(|err| CrumbsRefusal::lock_poisoned("crumbs state", &err))?;
     let mut engine_guard = engine
         .lock()
-        .map_err(|e| format!("Failed to lock engine: {e}"))?;
+        .map_err(|e| CrumbsRefusal::lock_poisoned("engine", &e))?;
     let Some(engine_handle) = engine_guard.as_mut() else {
         return Ok(CrumbsAttachReport::default());
     };
@@ -653,7 +655,7 @@ pub fn attach_dormant_crumbs(
 #[derive(Debug, Default)]
 pub struct CrumbsAttachReport {
     pub attached: Vec<String>,
-    pub refusals: Vec<(String, String)>,
+    pub refusals: Vec<(String, CrumbsRefusal)>,
 }
 
 /// Every instance holding a slot on the live engine, as the graph mapper reads
@@ -870,24 +872,78 @@ pub(crate) fn instance_is_attached(state: &CrumbsState, instance_id: &str) -> bo
         .is_some_and(|instance| matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }))
 }
 
-/// A refused Crumbs create. `syncCrumbsNativeInstances.ts` matches the
-/// `already exists` text to treat a duplicate create as success (ADR 0059).
+/// A refused Crumbs operation below the napi edge, which converts it with
+/// `to_string()`. `syncCrumbsNativeInstances.ts` matches the `already exists`
+/// text to treat a duplicate create as success (ADR 0059). None of these is
+/// built on the audio callback.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CrumbsCreateRefusal {
-    AlreadyExists { instance_id: String },
+pub enum CrumbsRefusal {
+    AlreadyExists {
+        instance_id: String,
+    },
+    /// The slot's command ring had no room for the write.
+    CommandQueueFull,
+    /// A dormant instance was asked for a gesture only a running audio thread
+    /// can answer.
+    EngineNotRunning,
+    /// The session already holds `CRUMBS_CAPTURE_RESERVE` live instances.
+    CaptureHeadroomExhausted,
+    /// The engine refused the slot's registration batch whole.
+    SlotRefused(CommandError),
+    /// The registration batch was pushed in part.
+    SlotPublishedInPart {
+        pushed: usize,
+        total: usize,
+        error: CommandError,
+    },
+    /// A mutex this operation needs was poisoned; `cause` is the poison
+    /// error's own text.
+    LockPoisoned {
+        lock: &'static str,
+        cause: String,
+    },
+    UnknownParameter {
+        name: String,
+    },
 }
 
-impl std::fmt::Display for CrumbsCreateRefusal {
+impl CrumbsRefusal {
+    fn lock_poisoned(lock: &'static str, cause: &impl std::fmt::Display) -> Self {
+        Self::LockPoisoned {
+            lock,
+            cause: cause.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for CrumbsRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AlreadyExists { instance_id } => {
                 write!(f, "Crumbs instance '{instance_id}' already exists")
             }
+            Self::CommandQueueFull => f.write_str("Command queue full"),
+            Self::EngineNotRunning => f.write_str("Native engine not running"),
+            Self::CaptureHeadroomExhausted => write!(
+                f,
+                "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+            ),
+            Self::SlotRefused(reason) => write!(f, "{reason}"),
+            Self::SlotPublishedInPart {
+                pushed,
+                total,
+                error,
+            } => write!(
+                f,
+                "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
+            ),
+            Self::LockPoisoned { lock, cause } => write!(f, "Failed to lock {lock}: {cause}"),
+            Self::UnknownParameter { name } => write!(f, "Unknown crumbs parameter: {name}"),
         }
     }
 }
 
-impl std::error::Error for CrumbsCreateRefusal {}
+impl std::error::Error for CrumbsRefusal {}
 
 /// Create a new crumbs engine instance.
 ///
@@ -943,10 +999,10 @@ pub async fn create_crumbs(
     // otherwise the insert below replaces the first ledger entry and strands
     // its slot.
     if instances.contains_key(&instance_id) {
-        return Err(CrumbsCreateRefusal::AlreadyExists { instance_id }.to_string());
+        return Err(CrumbsRefusal::AlreadyExists { instance_id }.to_string());
     }
 
-    ensure_crumbs_capture_headroom(&instances)?;
+    ensure_crumbs_capture_headroom(&instances).map_err(|refusal| refusal.to_string())?;
 
     let metering = Arc::new(CrumbsMetering::default());
 
@@ -968,7 +1024,8 @@ pub async fn create_crumbs(
             Some(engine_handle) => {
                 let (ends, slot_ends) = new_crumbs_rings();
                 let plugin_id =
-                    register_crumbs_slot(&mut registry_guard, engine_handle, &metering, slot_ends)?;
+                    register_crumbs_slot(&mut registry_guard, engine_handle, &metering, slot_ends)
+                        .map_err(|refusal| refusal.to_string())?;
                 CrumbsEngineSlot::Attached { plugin_id, ends }
             }
             None => CrumbsEngineSlot::Dormant(DormantCrumbsWrites::default()),
@@ -1104,7 +1161,8 @@ pub async fn load_sample(
     file_path: String,
     state: &CrumbsState,
 ) -> Result<SampleLoadResult, String> {
-    let file_path = filesystem::resolve_existing_file_path(&file_path)?;
+    let file_path =
+        filesystem::resolve_existing_file_path(&file_path).map_err(|e| e.to_string())?;
     let file_path = file_path.to_string_lossy().to_string();
 
     // Decode the audio file.
@@ -1158,11 +1216,15 @@ pub async fn load_sample(
 
     // Send to the engine. A dormant instance records the selection instead;
     // the pool itself is replayed from the map above when it attaches.
-    instance.send(CrumbsCommand::AddSample {
-        id: sample_id,
-        data: shared_data,
-    })?;
-    instance.send(CrumbsCommand::SetActiveSample(sample_id))?;
+    instance
+        .send(CrumbsCommand::AddSample {
+            id: sample_id,
+            data: shared_data,
+        })
+        .map_err(|refusal| refusal.to_string())?;
+    instance
+        .send(CrumbsCommand::SetActiveSample(sample_id))
+        .map_err(|refusal| refusal.to_string())?;
 
     Ok(SampleLoadResult {
         sample_id,
@@ -1178,13 +1240,13 @@ pub async fn load_sample(
     })
 }
 
-/// Trigger a note on the crumbs engine.
-pub async fn crumbs_note_on(
+/// Start a pad audition and return the receipt that owns its release.
+pub async fn crumbs_pad_audition_on(
     instance_id: String,
     note: u8,
     velocity: u8,
     state: &CrumbsState,
-) -> Result<(), String> {
+) -> Result<u32, String> {
     let mut instances = state
         .instances
         .lock()
@@ -1193,26 +1255,33 @@ pub async fn crumbs_note_on(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::NoteOn { note, velocity })?;
-    Ok(())
+    let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+        return Err("Native engine not running".to_string());
+    };
+    ends.command_tx
+        .start_pad_audition(note, velocity)
+        .map_err(|error| error.to_string())
 }
 
-/// Release a note on the crumbs engine.
-pub async fn crumbs_note_off(
+/// Release the audition if the attached slot still owns its receipt.
+pub async fn crumbs_pad_audition_off(
     instance_id: String,
-    note: u8,
+    audition_id: u32,
     state: &CrumbsState,
 ) -> Result<(), String> {
     let mut instances = state
         .instances
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
-    let instance = instances
-        .get_mut(&instance_id)
-        .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
-
-    instance.send(CrumbsCommand::NoteOff { note })?;
-    Ok(())
+    let Some(instance) = instances.get_mut(&instance_id) else {
+        return Ok(());
+    };
+    let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+        return Ok(());
+    };
+    ends.command_tx
+        .release_pad_audition(audition_id)
+        .map_err(|error| error.to_string())
 }
 
 /// Set a crumbs parameter.
@@ -1222,7 +1291,7 @@ pub async fn set_crumbs_param(
     value: f32,
     state: &CrumbsState,
 ) -> Result<(), String> {
-    let param_enum = parse_crumbs_param(&param)?;
+    let param_enum = parse_crumbs_param(&param).map_err(|refusal| refusal.to_string())?;
 
     let mut instances = state
         .instances
@@ -1232,10 +1301,12 @@ pub async fn set_crumbs_param(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::SetParam {
-        param: param_enum,
-        value,
-    })?;
+    instance
+        .send(CrumbsCommand::SetParam {
+            param: param_enum,
+            value,
+        })
+        .map_err(|refusal| refusal.to_string())?;
     Ok(())
 }
 
@@ -1257,7 +1328,9 @@ pub async fn set_crumbs_mode(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::SetMode(mode_enum))?;
+    instance
+        .send(CrumbsCommand::SetMode(mode_enum))
+        .map_err(|refusal| refusal.to_string())?;
     Ok(())
 }
 
@@ -1415,7 +1488,9 @@ pub async fn crumbs_all_sound_off(instance_id: String, state: &CrumbsState) -> R
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance.send(CrumbsCommand::AllSoundOff)?;
+    instance
+        .send(CrumbsCommand::AllSoundOff)
+        .map_err(|refusal| refusal.to_string())?;
     Ok(())
 }
 
@@ -2019,9 +2094,12 @@ impl NativeTakeCompletion {
 /// The name table lives in `daw_dsp::crumbs::types` so this command and the
 /// wasm `CrumbsInstance` binding cannot disagree about what `filterCutoff`
 /// means; only the error shape is local to the IPC boundary.
-fn parse_crumbs_param(name: &str) -> Result<CrumbsParam, String> {
-    daw_dsp::crumbs::types::parse_crumbs_param(name)
-        .ok_or_else(|| format!("Unknown crumbs parameter: {name}"))
+fn parse_crumbs_param(name: &str) -> Result<CrumbsParam, CrumbsRefusal> {
+    daw_dsp::crumbs::types::parse_crumbs_param(name).ok_or_else(|| {
+        CrumbsRefusal::UnknownParameter {
+            name: name.to_string(),
+        }
+    })
 }
 
 fn classify_sample(
@@ -2049,7 +2127,7 @@ pub(crate) mod tests {
     #[test]
     fn already_exists_refusal_carries_the_text_typescript_matches() {
         assert_eq!(
-            super::CrumbsCreateRefusal::AlreadyExists {
+            super::CrumbsRefusal::AlreadyExists {
                 instance_id: "d-crumbs".into()
             }
             .to_string(),
@@ -2854,7 +2932,7 @@ pub(crate) mod tests {
             engine_slot: CrumbsEngineSlot::Attached {
                 plugin_id: 0,
                 ends: CrumbsInstanceEnds {
-                    command_tx: CrumbsCommandSender(command_tx),
+                    command_tx: CrumbsCommandSender::new(command_tx),
                     commit_rx,
                     recycle_tx,
                     retired_take_rx,
@@ -2873,6 +2951,273 @@ pub(crate) mod tests {
     /// refused push does.
     fn fill_command_ring(instance: &mut CrumbsInstanceData) {
         while instance.send(CrumbsCommand::AllNotesOff).is_ok() {}
+    }
+
+    #[test]
+    fn pad_audition_release_reaches_a_full_command_ring() {
+        let state = CrumbsState::default();
+        let (instance, _, _, mut commands) = instance_with_rings();
+        state
+            .instances
+            .lock()
+            .unwrap()
+            .insert("sampler".into(), instance);
+
+        let audition_id =
+            crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 60, 100, &state))
+                .expect("the empty queue admits a pad attack");
+        {
+            let mut instances = state.instances.lock().unwrap();
+            let instance = instances.get_mut("sampler").unwrap();
+            fill_command_ring(instance);
+            let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+                panic!("the sampler is attached");
+            };
+            assert_eq!(
+                ends.command_tx
+                    .push_native(NativeCrumbsCommand::StopTake { take_id: 0 }),
+                Err(crate::host::native_bridge::CrumbsCommandQueueFull),
+                "native recording commands also respect the release reservation"
+            );
+        }
+        assert!(matches!(
+            commands.pop(),
+            Ok(CrumbsCommand::PadAuditionOn { note: 60, velocity: 100, audition_id: id })
+                if id == audition_id
+        ));
+        assert_eq!(
+            crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 61, 100, &state)),
+            Err("Command queue full".to_string()),
+            "one unreserved slot cannot admit both a new attack and its release"
+        );
+        {
+            let mut instances = state.instances.lock().unwrap();
+            let CrumbsEngineSlot::Attached { ends, .. } =
+                &mut instances.get_mut("sampler").unwrap().engine_slot
+            else {
+                panic!("the sampler is attached");
+            };
+            ends.command_tx
+                .push_native(NativeCrumbsCommand::StopTake { take_id: 0 })
+                .unwrap();
+        }
+        let release = || {
+            crate::block_on_test(crumbs_pad_audition_off(
+                "sampler".into(),
+                audition_id,
+                &state,
+            ))
+        };
+        release().expect("an accepted pad attack guarantees room for its release");
+        release().expect("duplicate release adds nothing to the full ring");
+        for _ in 0..6 {
+            assert!(matches!(commands.pop(), Ok(CrumbsCommand::AllNotesOff)));
+        }
+        assert!(matches!(
+            commands.0.pop(),
+            Ok(NativeCrumbsCommand::StopTake { take_id: 0 })
+        ));
+        assert!(matches!(
+            commands.pop(),
+            Ok(CrumbsCommand::PadAuditionOff { audition_id: id }) if id == audition_id
+        ));
+        assert!(commands.pop().is_err());
+    }
+
+    #[test]
+    fn pad_audition_receipts_do_not_cross_runtime_replacement() {
+        let state = CrumbsState::default();
+        let app = AppState::default();
+        let (engine, _graph_commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(16).unwrap();
+        *app.engine.lock().unwrap() = Some(engine);
+        let start =
+            || crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 60, 100, &state));
+        let release =
+            |id| crate::block_on_test(crumbs_pad_audition_off("sampler".into(), id, &state));
+        let queued = || {
+            let instances = state.instances.lock().unwrap();
+            let CrumbsEngineSlot::Attached { ends, .. } = &instances["sampler"].engine_slot else {
+                panic!("the sampler is attached");
+            };
+            ends.command_tx.capacity() - ends.command_tx.slots()
+        };
+
+        crate::block_on_test(create_crumbs("sampler".into(), &state, &app)).unwrap();
+        let original = start().unwrap();
+        crate::block_on_test(destroy_crumbs("sampler".into(), &state, &app)).unwrap();
+        release(original).unwrap();
+        crate::block_on_test(create_crumbs("sampler".into(), &state, &app)).unwrap();
+        let replacement = start().unwrap();
+        assert_ne!(original, replacement);
+        assert_eq!(queued(), 1);
+
+        release(original).unwrap();
+        assert_eq!(
+            queued(),
+            1,
+            "the replacement never receives the old release"
+        );
+        release(replacement).unwrap();
+        assert_eq!(
+            queued(),
+            2,
+            "only the replacement receipt releases its hold"
+        );
+        release(replacement).unwrap();
+        assert_eq!(queued(), 2, "a duplicate never reaches the FIFO");
+    }
+
+    #[test]
+    fn pad_audition_release_preserves_equal_pitch_voices_in_the_native_mix() {
+        use daw_engine::offline::{OfflineRenderer, OFFLINE_BLOCK_FRAMES};
+        use daw_engine::plugin_slot::MidiNoteEvent;
+        use daw_engine::timeline::{ChainEntry, DeviceKind, TimelineTrack};
+
+        let state = CrumbsState::default();
+        let app = AppState::default();
+        let (engine, mut graph_commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(16).unwrap();
+        *app.engine.lock().unwrap() = Some(engine);
+        crate::block_on_test(create_crumbs("sampler".into(), &state, &app)).unwrap();
+        let plugin_id = attached_plugin_id(&state, "sampler");
+        let mut renderer = OfflineRenderer::new(48_000.0, 16);
+        while let Ok(command) = graph_commands.pop() {
+            renderer.push(command).unwrap();
+        }
+        renderer
+            .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+            .unwrap();
+        let entry = ChainEntry {
+            effect_id: plugin_id,
+            kind: DeviceKind::Generator,
+        };
+        renderer
+            .push(GraphCommand::InsertTrackDevice {
+                track_id: 1,
+                entry,
+                index: 0,
+                hold: entry.input_hold(),
+            })
+            .unwrap();
+        let metering = {
+            let mut instances = state.instances.lock().unwrap();
+            let instance = instances.get_mut("sampler").unwrap();
+            instance
+                .send(CrumbsCommand::AddSample {
+                    id: 1,
+                    data: Arc::new(SampleData::from_mono(vec![0.1; 48_000], 48_000)),
+                })
+                .unwrap();
+            instance.send(CrumbsCommand::SetActiveSample(1)).unwrap();
+            for (param, value) in [
+                (CrumbsParam::Attack, 0.0),
+                (CrumbsParam::Decay, 0.0),
+                (CrumbsParam::Sustain, 1.0),
+                (CrumbsParam::Release, 0.0),
+            ] {
+                instance
+                    .send(CrumbsCommand::SetParam { param, value })
+                    .unwrap();
+            }
+            Arc::clone(&instance.metering)
+        };
+        let start = |velocity| {
+            crate::block_on_test(crumbs_pad_audition_on(
+                "sampler".into(),
+                60,
+                velocity,
+                &state,
+            ))
+            .unwrap()
+        };
+        let release = |id| {
+            crate::block_on_test(crumbs_pad_audition_off("sampler".into(), id, &state)).unwrap()
+        };
+        let peak = |renderer: &mut OfflineRenderer| {
+            let (left, right) = renderer.render(OFFLINE_BLOCK_FRAMES);
+            left.into_iter()
+                .chain(right)
+                .map(f32::abs)
+                .fold(0.0, f32::max)
+        };
+        let voices = || metering.active_voice_count.load(Ordering::Relaxed);
+        let loud = start(127);
+        let loud_peak = peak(&mut renderer);
+        assert!(loud_peak > 0.01);
+        assert_eq!(voices(), 1);
+
+        let quiet = start(24);
+        let ordinary_note = MidiNoteEvent {
+            note: 60,
+            velocity: 100,
+            channel: 0,
+            is_note_on: true,
+            frame_offset: 0,
+            probability_cutoff: u64::from(u32::MAX) + 1,
+            project_probability_seed: 0,
+            clip_id_hash: 0,
+            event_id_hash: 0,
+            absolute_occurrence_index: 0,
+            articulation_id: None,
+        };
+        renderer
+            .push(GraphCommand::SendMidiNote(plugin_id, ordinary_note))
+            .unwrap();
+        let different_pitch = MidiNoteEvent {
+            note: 67,
+            velocity: 16,
+            ..ordinary_note
+        };
+        renderer
+            .push(GraphCommand::SendMidiNote(plugin_id, different_pitch))
+            .unwrap();
+        assert!(peak(&mut renderer) > loud_peak);
+        assert_eq!(voices(), 4);
+
+        release(quiet);
+        assert!(peak(&mut renderer) > loud_peak * 0.9);
+        assert_eq!(
+            voices(),
+            3,
+            "pad up leaves both ordinary voices and the other pad voice"
+        );
+        renderer
+            .push(GraphCommand::SendMidiNote(
+                plugin_id,
+                MidiNoteEvent {
+                    is_note_on: false,
+                    velocity: 0,
+                    ..ordinary_note
+                },
+            ))
+            .unwrap();
+        assert!(
+            peak(&mut renderer) > loud_peak * 0.9,
+            "the loud pad survives both releases"
+        );
+        assert_eq!(voices(), 2, "ordinary note off does not release a pad hold");
+
+        release(loud);
+        let different_pitch_peak = peak(&mut renderer);
+        assert!(different_pitch_peak > loud_peak * 0.05 && different_pitch_peak < loud_peak * 0.5);
+        assert_eq!(
+            voices(),
+            1,
+            "the different-pitch MIDI voice is still audible"
+        );
+        renderer
+            .push(GraphCommand::SendMidiNote(
+                plugin_id,
+                MidiNoteEvent {
+                    is_note_on: false,
+                    velocity: 0,
+                    ..different_pitch
+                },
+            ))
+            .unwrap();
+        assert_eq!(peak(&mut renderer), 0.0);
+        assert_eq!(voices(), 0);
     }
 
     /// Whether the instance is still waiting for an engine to attach to.
@@ -2968,8 +3313,9 @@ pub(crate) mod tests {
             ensure_crumbs_capture_headroom(&instances)
                 .expect_err("a session at the capture ceiling must refuse another instance")
         };
+        assert_eq!(refusal, CrumbsRefusal::CaptureHeadroomExhausted);
         assert_eq!(
-            refusal,
+            refusal.to_string(),
             format!(
                 "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
             )
@@ -3718,7 +4064,7 @@ pub(crate) mod tests {
                 .unwrap();
             instance.send(CrumbsCommand::SetActiveSample(1)).unwrap();
         }
-        crate::block_on_test(crumbs_note_on("sampler".into(), 60, 100, &f.state)).unwrap();
+        crate::block_on_test(crumbs_pad_audition_on("sampler".into(), 60, 100, &f.state)).unwrap();
         f.driver.render(128).unwrap();
         let token = f.arm("sampler", 0.0, 1.0);
         f.driver.service_owner_commands();
@@ -3836,7 +4182,12 @@ pub(crate) mod tests {
             "an arm with no slot rendering it would capture silence and say nothing"
         );
         assert_eq!(
-            crate::block_on_test(crumbs_note_on(INSTANCE_ID.to_string(), 60, 100, &state)),
+            crate::block_on_test(crumbs_pad_audition_on(
+                INSTANCE_ID.to_string(),
+                60,
+                100,
+                &state
+            )),
             Err("Native engine not running".to_string()),
             "a note with no slot rendering it would sound nothing and say nothing"
         );
@@ -4139,7 +4490,17 @@ pub(crate) mod tests {
         let error = attach_dormant_crumbs(&state, &mut GraphRegistry::default(), &app_state.engine)
             .expect_err("a lock the attach cannot take is an error, not an empty result");
         assert!(
-            error.starts_with("Failed to lock crumbs state"),
+            matches!(
+                error,
+                CrumbsRefusal::LockPoisoned {
+                    lock: "crumbs state",
+                    ..
+                }
+            ),
+            "the refusal must name the lock it could not take: {error:?}"
+        );
+        assert!(
+            error.to_string().starts_with("Failed to lock crumbs state"),
             "the message must be the one every sibling uses: {error}"
         );
     }
@@ -4354,8 +4715,13 @@ pub(crate) mod tests {
                 max_duration_secs: 1.0,
             })
             .expect("the DSP arm should reach the ring");
-        crate::block_on_test(crumbs_note_on(instance_id.to_string(), 60, 100, &state))
-            .expect("the note should reach the ring");
+        crate::block_on_test(crumbs_pad_audition_on(
+            instance_id.to_string(),
+            60,
+            100,
+            &state,
+        ))
+        .expect("the note should reach the ring");
 
         let (left, right) = renderer.render(OFFLINE_BLOCK_FRAMES);
 

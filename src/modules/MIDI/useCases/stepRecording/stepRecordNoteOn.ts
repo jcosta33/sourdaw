@@ -7,6 +7,8 @@ import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
 import { removeMidiNote } from '../midiNoteCrud/removeMidiNote';
 import { setNotesForClip } from '../midiNoteCrud/setNotesForClip';
 
+import { refuseStepRecordingOnFrozenTrack } from './refuseStepRecordingOnFrozenTrack';
+
 /** Same history label the mouse step-entry path registers for one step note. */
 const STEP_ENTRY_NOTE_UNDO_LABEL = 'Add MIDI note';
 
@@ -26,6 +28,9 @@ export function stepRecordNoteOn(pitch: number, velocity?: number): void {
     }
 
     const clipId = state.clipId;
+    if (refuseStepRecordingOnFrozenTrack(clipId)) {
+        return;
+    }
     const finalVelocity = velocity ?? state.velocity;
 
     // Add note to current beat

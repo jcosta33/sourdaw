@@ -219,7 +219,6 @@ describe('completed command metadata and audio source admission', () => {
             clear: () => undefined,
         });
         clearHandlerRegistry();
-        setTimeOperationDependencies(null);
         clearUndoHistory();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');

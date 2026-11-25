@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createTrack, type Track } from '../../models/Track';
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../getVisibleTimelineTracks';
+import { getVisibleTimelineTracks } from '../getVisibleTimelineTracks';
 
 function makeTrack(overrides: Partial<Track> & Pick<Track, 'id' | 'kind'>): Track {
     return {
@@ -34,14 +34,40 @@ describe('getVisibleTimelineTracks', () => {
             'root-track',
         ]);
     });
-});
 
-describe('getTimelineTrackHeight', () => {
-    it('returns fixed height for folder tracks and configured height for regular tracks', () => {
-        const folder = makeTrack({ id: 'folder', kind: 'folder', height: 100 });
-        const midi = makeTrack({ id: 'midi', kind: 'midi', height: 72 });
+    describe('hidden tracks', () => {
+        const tracks = [
+            makeTrack({ id: 'shown', kind: 'audio' }),
+            makeTrack({ id: 'hidden-track', kind: 'midi', hidden: true }),
+            makeTrack({ id: 'hidden-folder', kind: 'folder', hidden: true }),
+            makeTrack({ id: 'in-hidden-folder', kind: 'audio', parentId: 'hidden-folder' }),
+            makeTrack({ id: 'nested-folder', kind: 'folder', parentId: 'hidden-folder' }),
+            makeTrack({ id: 'in-nested-folder', kind: 'audio', parentId: 'nested-folder' }),
+            makeTrack({ id: 'master', kind: 'master', hidden: true }),
+        ];
 
-        expect(getTimelineTrackHeight(folder)).toBe(26);
-        expect(getTimelineTrackHeight(midi)).toBe(72);
+        it('leaves a hidden track and every descendant of a hidden folder out', () => {
+            expect(getVisibleTimelineTracks(tracks).map((track) => track.id)).toEqual(['shown']);
+        });
+
+        it('shows hidden tracks again, in project order, when the session shows hidden tracks', () => {
+            expect(getVisibleTimelineTracks(tracks, true).map((track) => track.id)).toEqual([
+                'shown',
+                'hidden-track',
+                'hidden-folder',
+                'in-hidden-folder',
+                'nested-folder',
+                'in-nested-folder',
+            ]);
+        });
+
+        it('keeps collapsed-folder behaviour while hidden tracks are shown', () => {
+            const collapsed = [
+                makeTrack({ id: 'folder', kind: 'folder', collapsed: true, hidden: true }),
+                makeTrack({ id: 'child', kind: 'audio', parentId: 'folder' }),
+            ];
+
+            expect(getVisibleTimelineTracks(collapsed, true).map((track) => track.id)).toEqual(['folder']);
+        });
     });
 });

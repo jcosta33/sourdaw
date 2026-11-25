@@ -69,4 +69,15 @@ describe('createPodcastTemplate', () => {
         expect(call.sidechainRoutes).toHaveLength(1);
         expect(call.vcaGroups).toHaveLength(2);
     });
+
+    it('states Auto Makeup on in the Voice Bus limiter', async () => {
+        await createPodcastTemplate();
+        const calls = builderMocks.createBus.mock.calls as unknown as Array<
+            [{ name?: string; devices?: Array<{ type: string; params?: Record<string, number> }> }]
+        >;
+        const voiceBus = calls.map((call) => call[0]).find((options) => options.name === 'Voice Bus');
+        const limiter = voiceBus?.devices?.find((device) => device.type === 'builtin-limiter');
+
+        expect(limiter?.params?.['lim-auto-makeup']).toBe(1);
+    });
 });

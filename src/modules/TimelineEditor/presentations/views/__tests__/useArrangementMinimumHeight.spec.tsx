@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, markerStore, timelineEditingStore, trackStore } from '#/modules/Arrangement/stores';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
@@ -10,6 +10,7 @@ import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { useArrangementMinimumHeight } from '../useArrangementMinimumHeight';
 
 const storeValues = vi.hoisted(() => new Map<object, unknown>());
+const getTimelineSurfaceMinimumHeight = vi.hoisted(() => vi.fn(() => 64));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: object, fallback?: unknown) => storeValues.get(store) ?? fallback,
@@ -28,13 +29,15 @@ vi.mock('../Timeline/ChordTrackLane', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTimelineSurfaceMinimumHeight: () => 64,
+    getTimelineSurfaceMinimumHeight,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { name: 'trackStore' },
     markerStore: { name: 'markerStore' },
     adjustmentLayerStore: { name: 'adjustmentLayerStore' },
+    timelineEditingStore: { name: 'timelineEditingStore' },
+    defaultTimelineEditingState: { showHiddenTracks: false },
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -70,6 +73,23 @@ describe('useArrangementMinimumHeight', () => {
         const { result } = renderHook(() => useArrangementMinimumHeight());
 
         expect(result.current).toBe(22 + 18 + 64 + 10);
+    });
+
+    it('passes the current track-height mode to the row floor when only the preference changes', () => {
+        const { rerender } = renderHook(() => useArrangementMinimumHeight());
+
+        storeValues.set(preferencesStore, { trackHeight: 'compact', showMinimap: false, timelineMinimapHeight: 28 });
+        rerender();
+
+        expect(getTimelineSurfaceMinimumHeight).toHaveBeenLastCalledWith([audioTrack], null, 'compact', false);
+    });
+
+    it('tells the row floor when hidden tracks are shown', () => {
+        storeValues.set(timelineEditingStore, { showHiddenTracks: true });
+
+        renderHook(() => useArrangementMinimumHeight());
+
+        expect(getTimelineSurfaceMinimumHeight).toHaveBeenLastCalledWith([audioTrack], null, undefined, true);
     });
 
     it('adds the minimap at its persisted height while it is shown', () => {

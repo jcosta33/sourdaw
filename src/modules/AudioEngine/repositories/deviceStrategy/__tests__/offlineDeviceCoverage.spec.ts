@@ -18,7 +18,7 @@ import { createFaustDevice } from '../../faustDeviceFactory';
 import { NATIVE_DSP_DEVICE_FACTORIES, isNativeDspDevice } from '../nativeDspDeviceFactories';
 import { DECLARED_NODELESS_OFFLINE_RENDERERS, isNodelessOfflineDeviceType } from '../nodelessOfflineDeviceTypes';
 import { createDeviceRegistry } from '../setupDeviceStrategies';
-import { UNRENDERABLE_CATALOG_DEVICE_TYPES } from '../unrenderableCatalogDeviceTypes';
+import { isUnrenderableCatalogDeviceType, UNRENDERABLE_CATALOG_DEVICE_TYPES } from '../unrenderableCatalogDeviceTypes';
 import { isUnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
 
 // `createReverb` builds its impulse with the `new AudioBuffer(...)` constructor
@@ -270,6 +270,13 @@ describe('offline device coverage', () => {
         expect(doubleClaimed).toEqual([]);
     });
 
+    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+        'does not treat inherited object keys as unrenderable catalog types: %s',
+        (deviceType) => {
+            expect(isUnrenderableCatalogDeviceType(deviceType)).toBe(false);
+        }
+    );
+
     /**
      * The node-less exemption is the one gate that could otherwise assert a
      * table against itself: the rendered-set filter above uses
@@ -287,6 +294,17 @@ describe('offline device coverage', () => {
         it('exempts a non-empty set, so these checks cannot pass vacuously', () => {
             expect(EXEMPTED_CATALOG_IDS.length).toBeGreaterThan(4);
         });
+
+        it('keeps the declared yeast exemption', () => {
+            expect(isNodelessOfflineDeviceType('yeast')).toBe(true);
+        });
+
+        it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+            'does not treat inherited object keys as declared node-less types: %s',
+            (deviceType) => {
+                expect(isNodelessOfflineDeviceType(deviceType)).toBe(false);
+            }
+        );
 
         // The direction that catches the wavetable case: if the offline
         // registry *can* build a node for an exempted id, the exemption is

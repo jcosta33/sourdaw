@@ -96,7 +96,7 @@ test.describe('MIDI note velocity and piano-roll chrome', () => {
     });
 
     test('zoom slider exposes a numeric value that keyboard input can raise', async ({ page }) => {
-        const zoom = page.getByRole('slider', { name: 'Piano roll zoom' });
+        const zoom = page.getByRole('slider', { name: 'Horizontal zoom' });
         await expect(zoom).toBeVisible();
 
         const before = Number(await zoom.getAttribute('aria-valuenow'));

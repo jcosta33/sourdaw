@@ -24,8 +24,7 @@ type GrandBouleVisualizationsProps = {
     pianoPreviewHeld: boolean;
     onToggleVisualization: (visualization: GrandBouleVisualization) => void;
     onPreviewHoldChange: (held: boolean) => void;
-    onNoteOn: (midiNote: number, velocity: number) => void;
-    onNoteOff: (midiNote: number) => void;
+    onPreviewNote: (midiNote: number, velocity: number) => (() => void) | undefined;
 };
 
 type Visualization = {
@@ -39,13 +38,11 @@ function createVisualizations({
     activeNotes,
     sustainPedal,
     lidPosition,
-    engineReady,
     analyser,
     sampleRate,
     openVisualizations,
     onPreviewHoldChange,
-    onNoteOn,
-    onNoteOff,
+    onPreviewNote,
 }: GrandBouleVisualizationsProps): readonly Visualization[] {
     const pianoVisible = openVisualizations.includes('piano');
     return [
@@ -55,9 +52,7 @@ function createVisualizations({
             content: (
                 <>
                     {pianoVisible ? (
-                        <p className="text-caption text-muted-foreground">
-                            {engineReady ? 'Click the piano keys to audition notes.' : 'Piano audio is unavailable.'}
-                        </p>
+                        <p className="text-caption text-muted-foreground">Click the piano keys to audition notes.</p>
                     ) : null}
                     <PianoModel3D
                         key={deviceId}
@@ -65,8 +60,7 @@ function createVisualizations({
                         sustainPedal={sustainPedal}
                         lidPosition={lidPosition}
                         visible={pianoVisible}
-                        onNoteOn={onNoteOn}
-                        onNoteOff={onNoteOff}
+                        onPreviewNote={onPreviewNote}
                         onPreviewHoldChange={onPreviewHoldChange}
                         className="h-48 w-full"
                     />
@@ -140,16 +134,14 @@ export const GrandBouleVisualizations = (props: GrandBouleVisualizationsProps): 
                 </Row>
                 <DawPluginMetricTile
                     className="grand-boule-window"
-                    label="Engine"
+                    label="WASM engine"
                     value={engineReady ? 'ready' : 'idle'}
-                    detail="WASM"
                 />
             </Row>
             {visualizations.map(({ id, content }) => {
                 const expanded = openVisualizations.includes(id);
                 return (
                     <div id={`${visualizationId}-${id}`} key={id} hidden={!expanded} className="shrink-0">
-                        {/* A late preview release can still arrive after the canvas is hidden. */}
                         {expanded || id === 'piano' ? (
                             <Stack gap={2} className="grand-boule-window p-2">
                                 {content}

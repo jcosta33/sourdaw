@@ -12,10 +12,15 @@ const EXPECTED = new Set<string>([
     'renameMacro',
     'editMidiNotes',
     'insertAutomationLanePoints',
+    'setLevainIdentity',
+    'setToasterFactoryKit',
+    'setBacteriaFactoryPatch',
+    'setGlutenFactoryPreset',
+    'setProofPatchSelection',
 ]);
 
 describe('macroRecordingExcludesActionType', () => {
-    it('excludes macro meta-actions, authority-bound MIDI note edits, and local automation insertions', () => {
+    it('excludes macro meta-actions, authority-bound MIDI note edits, and local project edits', () => {
         const actual = new Set(
             Object.entries(macroRecordingExcludesActionType)
                 .filter(([, value]) => value)

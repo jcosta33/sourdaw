@@ -24,6 +24,8 @@ describe('getTimelineSurfaceMinimumHeight', () => {
         ];
 
         expect(getTimelineSurfaceMinimumHeight(tracks, 'selected')).toBe(96);
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'selected', 'large')).toBe(144);
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'selected', 'compact')).toBe(60);
     });
 
     it('falls back to a visible non-folder when the selected child is collapsed in folder', () => {
@@ -34,6 +36,16 @@ describe('getTimelineSurfaceMinimumHeight', () => {
         ];
 
         expect(getTimelineSurfaceMinimumHeight(tracks, 'child')).toBe(64);
+    });
+
+    it('skips a hidden track unless hidden tracks are shown', () => {
+        const tracks = [
+            makeTrack({ id: 'hidden', kind: 'midi', height: 96, hidden: true }),
+            makeTrack({ id: 'fallback', kind: 'midi', height: 64 }),
+        ];
+
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'hidden')).toBe(64);
+        expect(getTimelineSurfaceMinimumHeight(tracks, 'hidden', undefined, true)).toBe(96);
     });
 
     it('excludes master tracks and falls back to the rendered folder row', () => {

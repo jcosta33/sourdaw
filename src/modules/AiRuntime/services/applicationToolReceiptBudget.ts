@@ -1,5 +1,9 @@
 import { PROJECT_QUERY_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import {
+    APPLICATION_TOOL_RECEIPT_MAX_BYTES,
+    measureApplicationToolReceiptBytes,
+    type ApplicationToolReceipt,
+} from '../models/ApplicationOwnedTool';
 
 export function byteLength(value: string): number {
     return new TextEncoder().encode(value).byteLength;
@@ -38,7 +42,7 @@ export function failureReceipt(input: {
 }
 
 export function boundReceipt(receipt: ApplicationToolReceipt, maxBytes: number): ApplicationToolReceipt {
-    if (byteLength(JSON.stringify(receipt)) <= maxBytes) {
+    if (measureApplicationToolReceiptBytes(receipt) <= maxBytes) {
         return receipt;
     }
     return failureReceipt({
@@ -128,13 +132,9 @@ function runReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): Applicat
     });
 }
 
-function receiptByteLength(receipt: ApplicationToolReceipt): number {
-    return byteLength(JSON.stringify(receipt));
-}
-
 /** Whichever of two receipts serializes smaller, by the same measure `boundReceipt` uses. */
 function smallerReceipt(first: ApplicationToolReceipt, second: ApplicationToolReceipt): ApplicationToolReceipt {
-    return receiptByteLength(first) <= receiptByteLength(second) ? first : second;
+    return measureApplicationToolReceiptBytes(first) <= measureApplicationToolReceiptBytes(second) ? first : second;
 }
 
 /**
@@ -148,7 +148,10 @@ function smallerReceipt(first: ApplicationToolReceipt, second: ApplicationToolRe
 function reservedLaterReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
     const turnStandin = turnReceiptBudgetSpentReceipt(receipt);
     const runStandin = runReceiptBudgetSpentReceipt(receipt);
-    const largerStandin = receiptByteLength(turnStandin) >= receiptByteLength(runStandin) ? turnStandin : runStandin;
+    const largerStandin =
+        measureApplicationToolReceiptBytes(turnStandin) >= measureApplicationToolReceiptBytes(runStandin)
+            ? turnStandin
+            : runStandin;
     return smallerReceipt(receipt, largerStandin);
 }
 

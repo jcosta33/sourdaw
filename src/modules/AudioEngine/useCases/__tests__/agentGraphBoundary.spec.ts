@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { BACTERIA_BAND_PARAMETER_IDS } from '#/utils/bacteriaParameterReplay';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { createBacteriaRuntimeParameterIds } from '../../models/BacteriaRuntimeControl';
 import {
     createAudioEngineTopologyTestHarness,
     type AudioEngineTopologyTestHarness,
@@ -124,6 +126,96 @@ function createTrackStripInitialization(overrides: Record<string, unknown> = {})
     };
 }
 
+// The reopened Bitcrush Cascade track has the same 59 base keys on both
+// devices. The selected device adds the edited band-zero controls and every
+// stored key in its two newly active bands.
+const SAVED_BACTERIA_BASE_PARAMETER_IDS = [
+    'asymmetry',
+    'bandCount',
+    'bitDepth',
+    'chorusDepth',
+    'chorusFeedback',
+    'chorusMix',
+    'chorusRate',
+    'codecArtifact',
+    'convolutionMix',
+    'convolutionSeparation',
+    'crossoverFreq1',
+    'crossoverFreq2',
+    'crossoverFreq3',
+    'crossoverFreq4',
+    'crossoverFreq5',
+    'crossoverMode',
+    'crossoverSlope',
+    'distortionMode',
+    'drive',
+    'envFollowerAttack',
+    'envFollowerRelease',
+    'filterCutoff',
+    'filterEnvAmount',
+    'filterMode',
+    'filterResonance',
+    'foldbackThreshold',
+    'freqShiftHz',
+    'freqShiftMix',
+    'gain',
+    'grainDensity',
+    'grainMix',
+    'grainPitch',
+    'grainPosOffset',
+    'grainSize',
+    'inputGain',
+    'lfo1Amount',
+    'lfo1Rate',
+    'lfo1Shape',
+    'lfo2Amount',
+    'lfo2Rate',
+    'lfo2Shape',
+    'lofiAmount',
+    'macro1',
+    'macro2',
+    'macro3',
+    'macro4',
+    'macro5',
+    'macro6',
+    'macro7',
+    'macro8',
+    'mix',
+    'outputGain',
+    'phaserDepth',
+    'phaserFeedback',
+    'phaserMix',
+    'phaserRate',
+    'sampleRateReduce',
+    'spectralBlur',
+    'spectralMix',
+].sort((left, right) => left.localeCompare(right));
+
+const SAVED_BACTERIA_PRESET_PARAMETER_IDS = [
+    ...SAVED_BACTERIA_BASE_PARAMETER_IDS,
+    'band0_bitDepth',
+    'band0_distortionEnabled',
+    'band0_distortionMode',
+    'band0_lofiAmount',
+    'band0_lofiEnabled',
+    ...[1, 2].flatMap((band) => BACTERIA_BAND_PARAMETER_IDS.map((id) => `band${band}_${id}`)),
+].sort((left, right) => left.localeCompare(right));
+
+function createSavedBacteriaInitialization(parameterIds: readonly string[], type = 'bacteria') {
+    return createTrackStripInitialization({
+        nodes: [
+            {
+                id: 'source',
+                kind: 'audio',
+                devices: [
+                    { id: 'bacteria-preset', type, parameterIds },
+                    { id: 'bacteria-sentinel', type: 'bacteria', parameterIds: SAVED_BACTERIA_BASE_PARAMETER_IDS },
+                ],
+            },
+        ],
+    });
+}
+
 describe('agent runtime graph boundary', () => {
     it('compiles a bounded immutable output delta with exact device order and parameter ids', () => {
         const result = compileRuntimeGraphDelta(createDelta());
@@ -190,6 +282,83 @@ describe('agent runtime graph boundary', () => {
         expect(result.delta.output).toEqual({ kind: 'output', sourceId: 'source', targetId: 'hw_out' });
         expect(Object.isFrozen(result.delta)).toBe(true);
         expect(Object.isFrozen(result.delta.output)).toBe(true);
+    });
+
+    it('initializes the exact saved Bitcrush Cascade topology above the generic identifier cap', () => {
+        expect(SAVED_BACTERIA_PRESET_PARAMETER_IDS).toHaveLength(174);
+
+        const result = compileRuntimeGraphDelta(createSavedBacteriaInitialization(SAVED_BACTERIA_PRESET_PARAMETER_IDS));
+
+        expect(result).toMatchObject({
+            status: 'compiled',
+            delta: {
+                command: 'initialize-track-strip',
+                nodes: [
+                    {
+                        id: 'source',
+                        devices: [
+                            {
+                                id: 'bacteria-preset',
+                                type: 'bacteria',
+                                parameterIds: SAVED_BACTERIA_PRESET_PARAMETER_IDS,
+                            },
+                            {
+                                id: 'bacteria-sentinel',
+                                type: 'bacteria',
+                                parameterIds: SAVED_BACTERIA_BASE_PARAMETER_IDS,
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
+    });
+
+    it('rejects unknown identifiers and other devices above the generic cap', () => {
+        const withUnknownId = [...SAVED_BACTERIA_PRESET_PARAMETER_IDS, 'band2_unknown'].sort((left, right) =>
+            left.localeCompare(right)
+        );
+        const reason = 'Runtime graph device parameter ids exceed the bounded contract';
+
+        expect(compileRuntimeGraphDelta(createSavedBacteriaInitialization(withUnknownId))).toEqual({
+            status: 'invalid',
+            reason,
+        });
+        expect(
+            compileRuntimeGraphDelta(createSavedBacteriaInitialization(SAVED_BACTERIA_PRESET_PARAMETER_IDS, 'grinder'))
+        ).toEqual({ status: 'invalid', reason });
+        expect(compileRuntimeGraphDelta(createSavedBacteriaInitialization(['band2_unknown'])).status).toBe('compiled');
+    });
+
+    it('bounds expanded Bacteria lists by the namespace size and refuses missing entries', () => {
+        const overCapacity = [...createBacteriaRuntimeParameterIds(), 'mix'];
+        const sparseIds: string[] = [];
+        sparseIds.length = SAVED_BACTERIA_PRESET_PARAMETER_IDS.length;
+        const reason = 'Runtime graph device parameter ids exceed the bounded contract';
+
+        expect(compileRuntimeGraphDelta(createSavedBacteriaInitialization(overCapacity))).toEqual({
+            status: 'invalid',
+            reason,
+        });
+        expect(compileRuntimeGraphDelta(createSavedBacteriaInitialization(sparseIds))).toEqual({
+            status: 'invalid',
+            reason,
+        });
+    });
+
+    it('still rejects unsorted and duplicate identifiers in expanded Bacteria topologies', () => {
+        const unsortedIds = [...SAVED_BACTERIA_PRESET_PARAMETER_IDS].reverse();
+        const duplicateIds = ['asymmetry', ...SAVED_BACTERIA_PRESET_PARAMETER_IDS];
+        const reason = 'Runtime graph device parameter ids must be sorted, unique identifiers';
+
+        expect(compileRuntimeGraphDelta(createSavedBacteriaInitialization(unsortedIds))).toEqual({
+            status: 'invalid',
+            reason,
+        });
+        expect(compileRuntimeGraphDelta(createSavedBacteriaInitialization(duplicateIds))).toEqual({
+            status: 'invalid',
+            reason,
+        });
     });
 
     it.each([

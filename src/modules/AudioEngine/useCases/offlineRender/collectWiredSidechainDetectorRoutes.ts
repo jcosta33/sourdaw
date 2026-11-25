@@ -1,5 +1,7 @@
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 
+import { acceptsSidechainInput } from '../deviceCapabilities/acceptsSidechainInput';
+
 /** A sidechain detector route, as the Routing store spells it. */
 export type PrintReachabilitySidechainRoute = Readonly<{
     sourceTrackId: string;
@@ -45,7 +47,7 @@ export function collectWiredSidechainDetectorRoutes({
         const targetDevice = targetTrack?.devices.find(
             (device) => device.id === route.targetDeviceId && !device.bypassed
         );
-        if (targetDevice?.type !== 'builtin-sidechain-compressor') {
+        if (!targetDevice || !acceptsSidechainInput(targetDevice.type)) {
             continue;
         }
         wired.push({ sourceTrackId: route.sourceTrackId, targetTrackId: route.targetTrackId, targetDevice });

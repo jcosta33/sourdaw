@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { midiStore } from '#/modules/MIDI/stores';
-import { preferencesStore } from '#/modules/Preferences/stores';
+import { type Preferences } from '#/modules/Preferences/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import {
     DEFAULT_TEMPO_BPM,
@@ -10,70 +10,36 @@ import {
     timeSignatureMapStore,
     transportStore,
 } from '#/modules/Transport/stores';
-import {
-    createSamplePositionProjector,
-    getTimeSignatureAtBeat,
-    resolveTempoAtBeat,
-    secondsBetweenBeats,
-} from '#/modules/Transport/useCases';
+import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
 
-import { type TempoTimeline } from '../models/TempoTimeline';
 import {
     type TimelineRenderModel,
     type TrackRenderModel,
     type ClipRenderModel,
     type AudioWaveformProgrammePart,
 } from '../models/TimelineRenderModel';
-import { getVariationLaneCount } from '../models/TimelineTrackExtent';
+import { getTimelineTrackHeight, getVariationLaneCount } from '../models/TimelineTrackExtent';
 import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { getTimelineTrackHeightMode, getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
+import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
+import { audioProgrammePart } from './audioProgrammePart';
+import { captureWaveformTimeline } from './captureWaveformTimeline';
 import { prepareAudioClipSlip } from './clipEditing/prepareAudioClipSlip';
 import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
+import { projectInlineAutomationLanes } from './projectInlineAutomationLanes';
+import { readInlineAutomationSnapshot } from './readInlineAutomationSnapshot';
+import { readShowHiddenTracks } from './timelineEditing/readShowHiddenTracks';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
-}
-
-function captureWaveformTimeline(tempo: number, changes: Parameters<typeof secondsBetweenBeats>[0]): TempoTimeline {
-    const capturedChanges = structuredClone(changes);
-    const projectSamples = createSamplePositionProjector({
-        transport: { tempo },
-        tempoMap: { changes: [...capturedChanges] },
-    });
-    return {
-        secondsAtBeat: (beat) => secondsBetweenBeats(capturedChanges, 0, beat, tempo),
-        beatAtSeconds: (seconds) => projectSamples({ samples: seconds, sampleRate: 1 }),
-        tempoAtBeat: (beat) => resolveTempoAtBeat({ changes: capturedChanges, beat, defaultTempo: tempo }),
-    };
-}
-
-function audioProgrammePart(
-    clip: ReturnType<typeof resolveCompingProgramme>[number],
-    timeline: TempoTimeline
-): AudioWaveformProgrammePart {
-    return {
-        startBeat: clip.startBeat,
-        endBeat: clip.endBeat,
-        audioOffsetBeats: clip.audioOffsetBeats,
-        audioOffsetSeconds: clip.audioOffsetSeconds,
-        audioLoopStartSeconds: clip.audioLoopStartSeconds,
-        audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
-        audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
-        loopOriginBeat: clip.loopOriginBeat,
-        clipStartTempo: timeline.tempoAtBeat(clip.startBeat),
-        stretchRatio: clip.stretchRatio,
-        stretchMode: clip.stretchMode,
-        loopEnabled: clip.loopEnabled,
-        loopLength: clip.loopLength,
-    };
 }
 
 // §143.1 — During recording, buildTimelineRenderModel is called on every
@@ -160,22 +126,28 @@ const renderCache: {
     view: unknown;
     midi: unknown;
     ws: unknown;
-    prefs: unknown;
+    trackHeightMode: Preferences['trackHeight'] | null;
     transport: number | null;
     timeSig: unknown;
     tempoMap: unknown;
     takeLane: unknown;
+    automation: unknown;
+    automationSubLanes: unknown;
+    showHiddenTracks: boolean | null;
 } = {
     model: null,
     track: null,
     view: null,
     midi: null,
     ws: null,
-    prefs: null,
+    trackHeightMode: null,
     transport: null,
     timeSig: null,
     tempoMap: null,
     takeLane: null,
+    automation: null,
+    automationSubLanes: null,
+    showHiddenTracks: null,
 };
 
 // The cached render model consumes one render-affecting transport field
@@ -236,16 +208,44 @@ function applyInlineMidiNotePreview(cachedModel: TimelineRenderModel): TimelineR
     return { ...cachedModel, tracks, dataDirty: true };
 }
 
-export function buildTimelineRenderModel(): TimelineRenderModel {
+type InlineAutomationSnapshot = ReturnType<typeof readInlineAutomationSnapshot>;
+
+function updateRenderGeometryCache(
+    takeLaneState: typeof takeLaneStore.value,
+    { editing, lanes }: InlineAutomationSnapshot,
+    trackHeightMode: Preferences['trackHeight'],
+    showHiddenTracks: boolean
+): boolean {
+    const automationSubLanes = editing?.automationSubLanes ?? null;
+    const changed =
+        takeLaneState !== renderCache.takeLane ||
+        lanes !== renderCache.automation ||
+        automationSubLanes !== renderCache.automationSubLanes ||
+        trackHeightMode !== renderCache.trackHeightMode ||
+        showHiddenTracks !== renderCache.showHiddenTracks;
+    renderCache.takeLane = takeLaneState;
+    renderCache.automation = lanes;
+    renderCache.automationSubLanes = automationSubLanes;
+    renderCache.trackHeightMode = trackHeightMode;
+    renderCache.showHiddenTracks = showHiddenTracks;
+    return changed;
+}
+
+export function buildTimelineRenderModel(
+    inlineAutomation?: InlineAutomationSnapshot,
+    trackHeightMode = getTimelineTrackHeightMode()
+): TimelineRenderModel {
     const trackState = trackStore.value;
     const viewState = timelineViewStore.value;
     const transportState = transportStore.value;
     const midiState = midiStore.value;
     const ws = clipSelectionStore.value;
-    const prefs = preferencesStore.value;
     const timeSigState = timeSignatureMapStore.value;
     const tempoMapState = tempoMapStore.value;
     const takeLaneState = takeLaneStore.value;
+    const automation = readInlineAutomationSnapshot(inlineAutomation);
+    const showHiddenTracks = readShowHiddenTracks();
+    const geometryChanged = updateRenderGeometryCache(takeLaneState, automation, trackHeightMode, showHiddenTracks);
     const transportTempo = renderAffectingTransport(transportState);
 
     const dataChanged =
@@ -254,22 +254,19 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         viewState !== renderCache.view ||
         midiState !== renderCache.midi ||
         ws !== renderCache.ws ||
-        prefs !== renderCache.prefs ||
         transportTempo !== renderCache.transport ||
         timeSigState !== renderCache.timeSig ||
         tempoMapState !== renderCache.tempoMap ||
-        takeLaneState !== renderCache.takeLane;
+        geometryChanged;
 
     if (dataChanged) {
         renderCache.track = trackState;
         renderCache.view = viewState;
         renderCache.midi = midiState;
         renderCache.ws = ws;
-        renderCache.prefs = prefs;
         renderCache.transport = transportTempo;
         renderCache.timeSig = timeSigState;
         renderCache.tempoMap = tempoMapState;
-        renderCache.takeLane = takeLaneState;
 
         const timeline = captureWaveformTimeline(
             transportState?.tempo ?? DEFAULT_TEMPO_BPM,
@@ -280,10 +277,13 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const scrollX = viewState?.scrollX ?? 0;
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
-        const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? []);
+        const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? [], showHiddenTracks);
+        const trackHeightScale = getTimelineTrackHeightScale(trackHeightMode);
+        const automationRows = projectInlineAutomationLanes(visibleTracks, automation);
+        const trackHeightPreview = viewState?.trackHeightPreview;
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
-            const baseHeight = getTimelineTrackHeight(track);
+            const baseHeight = getTimelineTrackHeight(track, trackHeightScale, trackHeightPreview);
             const compLane = takeLaneState?.lanes.find((lane) => lane.trackId === track.id);
             const hasAudibleProgramme =
                 compLane !== undefined &&
@@ -387,6 +387,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                 height: baseHeight,
                 automationMode: track.automationMode,
                 clips: mappedClips,
+                automationLanes: automationRows.get(track.id),
                 variationLanes:
                     getVariationLaneCount(track) > 0
                         ? track.alternatives.map((alt) => ({
@@ -434,7 +435,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             };
         });
 
-        const trackHeight = TRACK_HEIGHT_VALUES[prefs?.trackHeight ?? 'normal'];
+        const trackHeight = TRACK_HEIGHT_VALUES[trackHeightMode];
         const playhead = playheadPositionRef.current;
         const { numerator, denominator } = getTimeSignatureAtBeat(playhead);
 

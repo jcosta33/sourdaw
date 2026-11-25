@@ -77,9 +77,24 @@ impl CrumbsInstance {
             .handle_command(CrumbsCommand::NoteOn { note, velocity });
     }
 
-    /// Release every voice sounding at `note`.
+    /// Release ordinary held voices sounding at `note`.
     pub fn note_off(&mut self, note: u8) {
         self.engine.handle_command(CrumbsCommand::NoteOff { note });
+    }
+
+    /// Trigger a pad audition whose voices can be released together by id.
+    pub fn pad_audition_on(&mut self, note: u8, velocity: u8, audition_id: u32) {
+        self.engine.handle_command(CrumbsCommand::PadAuditionOn {
+            note,
+            velocity,
+            audition_id,
+        });
+    }
+
+    /// Release voices created by this pad audition.
+    pub fn pad_audition_off(&mut self, audition_id: u32) {
+        self.engine
+            .handle_command(CrumbsCommand::PadAuditionOff { audition_id });
     }
 
     /// Release all held voices into their amp-envelope release stage.

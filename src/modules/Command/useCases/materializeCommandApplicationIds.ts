@@ -139,7 +139,9 @@ function materializeBusCreationIds(
 }
 
 function materializeByIdRule(action: AppAction): MaterializedCommandApplicationIds {
-    const rule = COMMAND_APPLICATION_ID_RULES[action.type];
+    const rule = Object.hasOwn(COMMAND_APPLICATION_ID_RULES, action.type)
+        ? COMMAND_APPLICATION_ID_RULES[action.type]
+        : undefined;
     const payload: unknown = 'payload' in action ? action.payload : undefined;
     if (!rule || !isRecord(payload)) {
         return { action, applicationAssignedIds: [] };
@@ -249,7 +251,12 @@ const applicationIdMaterializerByActionType: {
     setExternalPluginState: materializeByIdRule,
     setDeviceState: materializeByIdRule,
     setFermenterPatch: materializeByIdRule,
+    setLevainIdentity: materializeByIdRule,
     setGrandBouleDeviceState: materializeByIdRule,
+    setToasterFactoryKit: materializeByIdRule,
+    setBacteriaFactoryPatch: materializeByIdRule,
+    setGlutenFactoryPreset: materializeByIdRule,
+    setProofPatchSelection: materializeByIdRule,
     createBus: materializeBusCreationIds,
     createFolder: materializeByIdRule,
     setSend: materializeByIdRule,

@@ -1,5 +1,8 @@
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
-import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '#/utils/deviceTypeMatching';
+
+import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '../models/NoteReceivingInstrument';
+
+import { findPadOutputHost } from './deviceCapabilities/findPadOutputHost';
 
 /**
  * The instrument an auditioned note plays on: the first note-accepting
@@ -12,7 +15,7 @@ export function resolveAuditionNoteReceiver<TDevice extends { type: string }>(
     routesToToasterPad: boolean
 ): NoteReceivingInstrument<TDevice> | null {
     if (routesToToasterPad) {
-        const toaster = devices.find((device) => device.type === 'toaster');
+        const toaster = findPadOutputHost(devices);
         return toaster ? { device: toaster, kind: 'toaster' } : null;
     }
     return resolveNoteReceivingInstrument(devices, isFaustInstrumentModule);

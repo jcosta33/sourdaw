@@ -1,11 +1,22 @@
-import { getVariationLaneExtent, VARIATION_LANE_HEIGHT } from '../models/TimelineTrackExtent';
+import { getInlineAutomationRows } from '../models/InlineAutomationRows';
+import {
+    getAutomationSubLaneTop,
+    getTimelineTrackHeight,
+    getVariationLaneCount,
+    type TimelineTrackHeightPreview,
+    VARIATION_LANE_HEIGHT,
+} from '../models/TimelineTrackExtent';
 import { type Clip, type Track } from '../models/Track';
+import { timelineEditingStore } from '../stores/timelineEditingStore';
+import { getTimelineTrackHeightScale } from '../stores/timelineTrackHeightPreference';
 import { setScrollX, setScrollY, timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
-import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
+import { getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
 import { selectClipWithFocus } from './clipSelection/selectClipWithFocus';
 import { toggleFolderCollapse } from './folder/toggleFolderCollapse';
+import { readInlineAutomationSnapshot } from './readInlineAutomationSnapshot';
+import { revealTrackInViews } from './revealTrackInViews';
 import { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
 const REVEAL_HORIZONTAL_MARGIN_PX = 32;
@@ -51,15 +62,23 @@ function expandOwningFolders(tracks: readonly Track[], track: Track): void {
 
 function getClipVerticalBounds(
     visibleTracks: readonly Track[],
-    located: LocatedClip
+    located: LocatedClip,
+    trackHeightPreview?: TimelineTrackHeightPreview | null
 ): { top: number; bottom: number } | null {
+    const trackHeightScale = getTimelineTrackHeightScale();
+    const { editing, lanes } = readInlineAutomationSnapshot(undefined);
+    const automationRows = getInlineAutomationRows(visibleTracks, lanes ?? [], editing);
     let trackTop = 0;
     for (const track of visibleTracks) {
+        const trackHeight = getTimelineTrackHeight(track, trackHeightScale, trackHeightPreview);
         if (track.id !== located.track.id) {
-            trackTop += getTimelineTrackHeight(track) + getVariationLaneExtent(track);
+            trackTop += getAutomationSubLaneTop(
+                trackHeight,
+                getVariationLaneCount(track),
+                automationRows.get(track.id)?.length
+            );
             continue;
         }
-        const trackHeight = getTimelineTrackHeight(track);
         if (located.variationLaneIndex !== null) {
             const top = trackTop + trackHeight + located.variationLaneIndex * VARIATION_LANE_HEIGHT;
             return { top, bottom: top + VARIATION_LANE_HEIGHT };
@@ -67,6 +86,13 @@ function getClipVerticalBounds(
         return { top: trackTop, bottom: trackTop + trackHeight };
     }
     return null;
+}
+
+function readVisibleTracks(): Track[] {
+    return getVisibleTimelineTracks(
+        trackStore.value?.tracks ?? [],
+        timelineEditingStore.value?.showHiddenTracks ?? false
+    );
 }
 
 /** Select a held clip and bring its row and start into view without changing zoom. */
@@ -83,8 +109,8 @@ export function revealClip(clipId: string): boolean {
         toggleVariationLanes(located.track.id, true);
     }
 
-    const visibleTracks = getVisibleTimelineTracks(trackStore.value?.tracks ?? []);
-    const bounds = getClipVerticalBounds(visibleTracks, located);
+    revealTrackInViews(tracks, located.track.id);
+    const bounds = getClipVerticalBounds(readVisibleTracks(), located, view.trackHeightPreview);
     if (!bounds) {
         return false;
     }

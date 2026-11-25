@@ -12,6 +12,18 @@ function payloadTrackId(action: { readonly payload: { readonly trackId?: string 
     return action.payload.trackId;
 }
 
+function levainParameterShapeTrackId(action: ActionOf<'setLevainIdentity'>): string | undefined {
+    const { before, after, trackId } = action.payload;
+    const changesKeyPresence = Object.entries(before.parameterValues).some(([key, previous]) => {
+        if (!Object.hasOwn(after.parameterValues, key)) {
+            return false;
+        }
+        const next = after.parameterValues[key];
+        return (previous === null && Number.isFinite(next)) || (next === null && Number.isFinite(previous));
+    });
+    return changesKeyPresence ? trackId : undefined;
+}
+
 function removedDeviceTrackId(action: ActionOf<'removeDevice'>, currentStep: Track): string | undefined {
     return (
         action.payload.expectedTrackId ??
@@ -101,7 +113,12 @@ export const deviceChainMutationTrackIdByActionType: {
     setExternalPluginState: noMutatedTrack,
     setDeviceState: noMutatedTrack,
     setFermenterPatch: noMutatedTrack,
+    setLevainIdentity: levainParameterShapeTrackId,
     setGrandBouleDeviceState: noMutatedTrack,
+    setToasterFactoryKit: noMutatedTrack,
+    setBacteriaFactoryPatch: noMutatedTrack,
+    setGlutenFactoryPreset: noMutatedTrack,
+    setProofPatchSelection: noMutatedTrack,
     createBus: noMutatedTrack,
     createFolder: noMutatedTrack,
     setSend: noMutatedTrack,

@@ -335,7 +335,7 @@ const DOMAIN_PROBES: DomainProbe[] = [
     },
     {
         domain: 'capability',
-        publishedIds: () => agentCapabilityDiscoveryPort.read()?.entries.map((entry) => entry.id) ?? [],
+        publishedIds: () => agentCapabilityDiscoveryPort.read().entries.map((entry) => entry.id),
         changeProducer: () => {
             registerCapabilityCatalog(['query:diff']);
         },
@@ -376,7 +376,6 @@ describe('agent domain query conformance', () => {
     });
 
     afterEach(async () => {
-        agentCapabilityDiscoveryPort.setProvider(null);
         pluginScanStore.set(structuredClone(defaultPluginScanState));
         seedLibrary([], 'none');
         if (savedPresetId !== null) {
@@ -497,15 +496,7 @@ describe('agent domain query conformance', () => {
         expect(receipt.page.total).toBe(0);
     });
 
-    it('reports an unregistered capability provider as unavailable, and an empty one as an empty receipt', () => {
-        agentCapabilityDiscoveryPort.setProvider(null);
-
-        expect(queryAgentDiscovery({ domain: 'capability' })).toEqual({
-            status: 'unavailable',
-            domain: 'capability',
-            reason: 'capability-provider-unregistered',
-        });
-
+    it('answers an empty capability catalog as an empty receipt', () => {
         agentCapabilityDiscoveryPort.setProvider(() => ({ version: 'discovery-empty-v1', entries: [] }));
         const receipt = expectReceipt(queryAgentDiscovery({ domain: 'capability' }));
 
@@ -602,7 +593,7 @@ describe('agent domain query conformance', () => {
     });
 
     it('moves the capability revision token when a producer changes only an availability', () => {
-        const published = agentCapabilityDiscoveryPort.read()?.entries ?? [];
+        const published = agentCapabilityDiscoveryPort.read().entries;
         const before = expectReceipt(queryAgentDiscovery({ domain: 'capability' }));
 
         agentCapabilityDiscoveryPort.setProvider(() => ({

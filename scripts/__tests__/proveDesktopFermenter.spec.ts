@@ -18,9 +18,24 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
+import { driveDesktopEditorWorkspace } from '../desktopEditorWorkspaceDrive.ts';
+import {
+    pausePreservesProgress,
+    renderedPlayheadBeat,
+    type EditorWorkspaceDrive,
+    WORKSPACE_STAGES,
+} from '../desktopEditorWorkspaceEvidence.ts';
+import * as editorSession from '../desktopFermenterDrive.ts';
 import { FermenterDriveError, FERMENTER_OBSERVATIONS, type FermenterDrive } from '../desktopFermenterEvidence.ts';
 import { readPayloadIdentity } from '../desktopLatencyRecord.ts';
-import { captureBuildReceipt, runProof } from '../proveDesktopFermenter.ts';
+import {
+    captureBuildReceipt,
+    runEditorWorkspaceProof,
+    runEditorFamilyProof,
+    runProof,
+    runGrandBouleAuditionProof,
+} from '../proveDesktopFermenter.ts';
 
 const tempDirs: string[] = [];
 
@@ -34,6 +49,37 @@ const completeDrive: FermenterDrive = async (_binary, report) => {
     for (const observation of FERMENTER_OBSERVATIONS) {
         report(observation);
     }
+};
+
+const FAMILY = [
+    'Fermenter',
+    'Toaster',
+    'Levain',
+    'Crumbs',
+    'Grand Boule',
+    'Dutch Oven',
+    'Gluten',
+    'Bacteria',
+    'Grinder',
+    'Proof',
+    'Scoring',
+    'Yeast',
+    'Crust',
+];
+
+const completeFamilyDrive: EditorFamilyDrive = async (_binary, observations) => {
+    for (const [index, row] of observations.devices.entries()) {
+        row.instanceId = `device-${index}`;
+        row.phase = 'focus-returned';
+    }
+    observations.lifecycle = {
+        firstInstanceId: 'device-9',
+        secondInstanceId: 'proof-replacement',
+        selectionClosed: true,
+        originalReopened: true,
+        phase: 'closed',
+    };
+    observations.appQuit = true;
 };
 
 function fixture() {
@@ -278,5 +324,402 @@ describe('packaged Fermenter proof', () => {
             },
         });
         expect(record).toMatchObject({ verdict: 'failed', failureCode, observations: [...FERMENTER_OBSERVATIONS] });
+    });
+});
+
+describe('packaged editor family proof', () => {
+    it('binds the complete family and lifecycle to the existing build receipt', async () => {
+        const { options, env, receipt, binary } = fixture();
+        const drive = vi.fn(completeFamilyDrive);
+        const record = await runEditorFamilyProof(options, env, { hostSupported: true, drive });
+        expect(drive).toHaveBeenCalledExactlyOnceWith(binary, record.observations);
+        expect(record).toMatchObject({
+            scope: 'packaged-premium-editor-mount-and-lifecycle',
+            build: receipt,
+            verdict: 'proven',
+            failureCode: null,
+        });
+        expect(record.observations.devices.map((row) => row.device)).toEqual(FAMILY);
+        expect(record.observations.devices.find((row) => row.device === 'Crumbs')).toEqual({
+            device: 'Crumbs',
+            navigation: 'instrument',
+            dialog: 'Sampler',
+            editorControl: 'Ready',
+            instanceId: 'device-3',
+            phase: 'focus-returned',
+            failure: null,
+        });
+    });
+
+    it('keeps the missing sampler admission and later results without awarding family credit', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorFamilyProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeFamilyDrive(binary, observations);
+                Object.assign(observations.devices[3]!, {
+                    instanceId: null,
+                    phase: 'not-attempted',
+                    failure: 'card-unavailable',
+                });
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'device-observations-incomplete' });
+        expect(record.observations.devices.map((row) => row.device)).toEqual(FAMILY);
+        expect(record.observations.devices[3]).toMatchObject({ device: 'Crumbs', failure: 'card-unavailable' });
+        expect(record.observations.devices.at(-1)).toMatchObject({ device: 'Crust', phase: 'focus-returned' });
+    });
+
+    it('rejects a driver that closes the original Proof instance without replacing it', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorFamilyProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeFamilyDrive(binary, observations);
+                observations.lifecycle!.secondInstanceId = observations.lifecycle!.firstInstanceId;
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'lifecycle-observation-incomplete' });
+    });
+
+    it('refuses a previous attempt before launching the family driver', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn(completeFamilyDrive);
+        const record = await runEditorFamilyProof(
+            options,
+            { ...env, GITHUB_RUN_ATTEMPT: '3' },
+            {
+                hostSupported: true,
+                drive,
+            }
+        );
+        expect(drive).not.toHaveBeenCalled();
+        expect(record).toMatchObject({
+            verdict: 'not-run',
+            failureCode: 'build-receipt-run-mismatch',
+            build: null,
+        });
+        expect(record.observations.devices.map((row) => row.phase)).toEqual(FAMILY.map(() => 'not-attempted'));
+    });
+
+    it('invalidates a completed family observation if the runner changes the packaged payload', async () => {
+        const { options, env, asar } = fixture();
+        const record = await runEditorFamilyProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeFamilyDrive(binary, observations);
+                writeFileSync(asar, 'changed during the proof');
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'bundle-changed' });
+        expect(record.observations.devices).toHaveLength(13);
+    });
+
+    it('writes the family record and returns exit 2 through its scheduled CLI mode', () => {
+        const { options, env } = fixture();
+        const output = join(options.checkout, 'family.json');
+        const script = fileURLToPath(new URL('../proveDesktopFermenter.ts', import.meta.url));
+        const run = spawnSync(process.execPath, [script, '--family', '--receipt', options.receipt, '--json', output], {
+            cwd: options.checkout,
+            env: { ...process.env, ...env, GITHUB_SHA: '' },
+            encoding: 'utf8',
+        });
+        expect(run.status).toBe(2);
+        expect(run.stdout).toContain('Premium editor family packaged proof: not-run (invalid-run-identity).');
+        const record = JSON.parse(readFileSync(output, 'utf8'));
+        expect(record).toMatchObject({
+            scope: 'packaged-premium-editor-mount-and-lifecycle',
+            verdict: 'not-run',
+            failureCode: 'invalid-run-identity',
+        });
+        expect(record.observations.devices.map(({ device }: { device: string }) => device)).toEqual(FAMILY);
+    });
+});
+
+const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observations) => {
+    for (const row of observations.stages) {
+        row.outcome = 'passed';
+    }
+    observations.appQuit = true;
+};
+
+describe('packaged editor workspace proof', () => {
+    it.each([
+        ['BARS\n1\n.\n1\n.\n000', 0],
+        ['Bars2.4.000', 7],
+        ['Bars 3 . 2 . 240', 9.5],
+        ['00:00:01.000', null],
+        ['Bars1.5.000', null],
+        ['Bars1.1.480', null],
+        ['Bars0.1.000', null],
+        ['Bars1.1.000garbage', null],
+    ] as const)('reads the rendered musical display %s', (text, expected) => {
+        expect(renderedPlayheadBeat(text)).toBe(expected);
+    });
+
+    it.each([
+        { label: 'missing witness', clickReadout: null, paused: 8, verdict: 'failed' },
+        { label: 'undefined witness', clickReadout: undefined, paused: 8, verdict: 'failed' },
+        { label: 'malformed witness', clickReadout: 'unknown', paused: 8, verdict: 'failed' },
+        { label: 'invalid tick witness', clickReadout: 'Bars3.1.480', paused: 8, verdict: 'failed' },
+        { label: 'rewound click witness', clickReadout: 'Bars2.4.000', paused: 8, verdict: 'failed' },
+        { label: 'reset to zero', clickReadout: 'Bars3.1.000', paused: 0, verdict: 'failed' },
+        { label: 'rewind to seek', clickReadout: 'Bars3.1.000', paused: 7, verdict: 'failed' },
+        { label: 'two-tick rewind', clickReadout: 'Bars3.1.000', paused: 8 - 2 / 480, verdict: 'failed' },
+        { label: 'one-tick quantization', clickReadout: 'Bars3.1.000', paused: 8 - 1 / 480, verdict: 'proven' },
+        { label: 'same displayed position', clickReadout: 'Bars3.1.000', paused: 8, verdict: 'proven' },
+        { label: 'small forward jitter', clickReadout: 'BARS\n3\n.\n1\n.\n000', paused: 8.1, verdict: 'proven' },
+        { label: 'quarter-beat cadence bound', clickReadout: 'Bars3.1.000', paused: 8.25, verdict: 'proven' },
+        {
+            label: 'one tick beyond cadence bound',
+            clickReadout: 'Bars3.1.000',
+            paused: 8 + 121 / 480,
+            verdict: 'failed',
+        },
+        { label: 'forward jump eight to sixteen', clickReadout: 'Bars3.1.000', paused: 16, verdict: 'failed' },
+        { label: 'advance before actual click', clickReadout: 'Bars3.2.000', paused: 9.1, verdict: 'proven' },
+        {
+            label: 'one-tick rewind from progressed click',
+            clickReadout: 'Bars3.2.000',
+            paused: 9 - 1 / 480,
+            verdict: 'proven',
+        },
+        {
+            label: 'two-tick rewind from progressed click',
+            clickReadout: 'Bars3.2.000',
+            paused: 9 - 2 / 480,
+            verdict: 'failed',
+        },
+        {
+            label: 'click two ticks behind latest advance with valid parking',
+            clickReadout: 'Bars2.4.478',
+            paused: 8,
+            verdict: 'failed',
+        },
+        {
+            label: 'cumulative one-tick rewinds exceed latest advance allowance',
+            clickReadout: 'Bars2.4.479',
+            paused: 8 - 2 / 480,
+            verdict: 'failed',
+        },
+        { label: 'rewind from actual click', clickReadout: 'Bars3.2.000', paused: 8.25, verdict: 'failed' },
+    ] as const)(
+        'requires valid click-bound parking for $label before proof can be $verdict',
+        async ({ clickReadout, paused, verdict }) => {
+            const { options, env } = fixture();
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                async drive(binary, observations) {
+                    await completeWorkspaceDrive(binary, observations);
+                    const row = observations.stages.find(({ stage }) => stage === 'timeline-transport');
+                    if (!row) {
+                        throw new Error('missing fixture stage');
+                    }
+                    row.outcome = 'failed';
+                    row.values.push({ before: 0, sought: 7, advancing: 7.5, advanced: 8, paused });
+                    if (!pausePreservesProgress(8, clickReadout, paused)) {
+                        throw new Error('Pause did not park at its click position');
+                    }
+                    row.outcome = 'passed';
+                },
+            });
+            expect(record.verdict).toBe(verdict);
+            expect(record.failureCode).toBe(verdict === 'failed' ? 'driver-failed' : null);
+            expect(record.observations.stages.find(({ stage }) => stage === 'timeline-transport')).toMatchObject({
+                outcome: verdict === 'failed' ? 'failed' : 'passed',
+                values: [{ before: 0, sought: 7, advancing: 7.5, advanced: 8, paused }],
+            });
+        }
+    );
+
+    it('reports launch-unavailable without teardown credit when all three isolated sessions refuse launch', async () => {
+        const { options, env } = fixture();
+        const launch = vi
+            .spyOn(editorSession, 'launchEditorSession')
+            .mockRejectedValue(new FermenterDriveError('launch-unavailable'));
+        const quit = vi.spyOn(editorSession, 'quitEditorSession');
+        try {
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                drive: driveDesktopEditorWorkspace,
+            });
+            expect(launch).toHaveBeenCalledTimes(3);
+            expect(quit).not.toHaveBeenCalled();
+            expect(record).toMatchObject({
+                verdict: 'not-run',
+                failureCode: 'launch-unavailable',
+                observations: { appQuit: false },
+            });
+            expect(record.observations.stages.filter(({ outcome }) => outcome === 'passed')).toEqual([]);
+            expect(
+                record.observations.stages.filter(({ outcome }) => outcome === 'failed').map(({ stage }) => stage)
+            ).toEqual(['workspace-ready', 'nested-escape', 'remove-instance']);
+        } finally {
+            launch.mockRestore();
+            quit.mockRestore();
+        }
+    });
+
+    it('refuses missing teardown even when every workspace observation passed', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorWorkspaceProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeWorkspaceDrive(binary, observations);
+                observations.appQuit = false;
+            },
+        });
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'quit-failed' });
+    });
+
+    it('binds the separate complete workspace record to the frozen packaged build', async () => {
+        const { options, env, receipt } = fixture();
+        const record = await runEditorWorkspaceProof(options, env, {
+            hostSupported: true,
+            drive: completeWorkspaceDrive,
+        });
+        expect(record).toMatchObject({
+            verdict: 'proven',
+            failureCode: null,
+            build: receipt,
+            scope: 'packaged-premium-editor-workspace',
+        });
+        expect(record.observations.stages.map(({ stage, outcome }) => ({ stage, outcome }))).toEqual(
+            WORKSPACE_STAGES.map((stage) => ({ stage, outcome: 'passed' }))
+        );
+    });
+
+    it.each(['failed', 'not-reached'] as const)(
+        'refuses a %s stage even after the driver returns normally',
+        async (outcome) => {
+            const { options, env } = fixture();
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                async drive(binary, observations) {
+                    await completeWorkspaceDrive(binary, observations);
+                    const stage = observations.stages.find(({ stage }) => stage === 'title-drag');
+                    if (!stage) {
+                        throw new Error('missing fixture stage');
+                    }
+                    stage.outcome = outcome;
+                },
+            });
+            expect(record.verdict).toBe('failed');
+            expect(record.failureCode).toBe('workspace-observations-incomplete');
+            expect(record.observations.stages[4]).toMatchObject({ stage: 'title-drag', outcome });
+        }
+    );
+
+    it('retains passed, failed and unreached stages separately after an interrupted driver', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorWorkspaceProof(options, env, {
+            hostSupported: true,
+            async drive(_binary, observations) {
+                for (const row of observations.stages) {
+                    if (row.stage === 'workspace-ready') {
+                        row.outcome = 'passed';
+                    }
+                    if (row.stage === 'initial-placement') {
+                        row.outcome = 'failed';
+                    }
+                }
+                observations.appQuit = true;
+                throw new Error('fixture observation failed');
+            },
+        });
+        expect(record.verdict).toBe('failed');
+        expect(record.failureCode).toBe('driver-failed');
+        expect(record.observations.stages.map(({ outcome }) => outcome)).toEqual([
+            'passed',
+            'failed',
+            ...WORKSPACE_STAGES.slice(2).map(() => 'not-reached'),
+        ]);
+    });
+
+    it.each(['source', 'binary', 'payload'] as const)(
+        'refuses post-observation %s drift after all stages pass',
+        async (target) => {
+            const { options, env, tracked, binary, asar } = fixture();
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                async drive(executable, observations) {
+                    await completeWorkspaceDrive(executable, observations);
+                    const targets = { source: tracked, binary, payload: asar };
+                    writeFileSync(targets[target], 'drifted fixture');
+                },
+            });
+            expect(record.verdict).toBe('failed');
+            expect(record.failureCode).toBe(target === 'source' ? 'checkout-changed' : 'bundle-changed');
+        }
+    );
+
+    it('leaves every stage unreached when capture admission fails', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn(completeWorkspaceDrive);
+        const record = await runEditorWorkspaceProof(
+            options,
+            { ...env, FERMENTER_CAPTURE_OUTCOME: 'failure' },
+            { hostSupported: true, drive }
+        );
+        expect(record.verdict).toBe('not-run');
+        expect(record.failureCode).toBe('build-receipt-unavailable-or-invalid');
+        expect(drive).not.toHaveBeenCalled();
+        expect(record.observations.stages.every(({ outcome }) => outcome === 'not-reached')).toBe(true);
+    });
+
+    it('writes only the workspace record for the workspace CLI mode on invalid admission', () => {
+        const { options, env } = fixture();
+        const output = join(options.checkout, 'workspace.json');
+        const run = spawnSync(
+            process.execPath,
+            [
+                fileURLToPath(new URL('../proveDesktopFermenter.ts', import.meta.url)),
+                '--workspace',
+                '--receipt',
+                options.receipt,
+                '--json',
+                output,
+            ],
+            {
+                cwd: options.checkout,
+                env: { ...process.env, ...env, GITHUB_SHA: 'invalid' },
+                encoding: 'utf8',
+            }
+        );
+        expect(run.status).toBe(2);
+        expect(run.stdout).toContain('Premium editor workspace packaged proof: not-run (invalid-run-identity).');
+        const record = JSON.parse(readFileSync(output, 'utf8'));
+        expect(record).toMatchObject({ verdict: 'not-run', scope: 'packaged-premium-editor-workspace' });
+        expect(record.observations.stages).toHaveLength(WORKSPACE_STAGES.length);
+    });
+});
+
+describe('bound Grand Boule audition record', () => {
+    it('retains an unavailable capture with the admitted build and source identity', async () => {
+        const { options, env } = fixture();
+        const record = await runGrandBouleAuditionProof(options, env, {
+            hostSupported: true,
+            async drive(_binary, o) {
+                o.unavailable = 'permission-or-capture-unavailable';
+                o.appQuit = true;
+            },
+        });
+        expect(record).toMatchObject({
+            verdict: 'not-run',
+            failureCode: 'capture-unavailable',
+            scope: 'packaged-grand-boule-output-audition',
+            build: { sourceSha: env.GITHUB_SHA, runId: env.GITHUB_RUN_ID, runAttempt: env.GITHUB_RUN_ATTEMPT },
+        });
+    });
+    it('refuses a foreign receipt without invoking the audition', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn();
+        const record = await runGrandBouleAuditionProof(
+            options,
+            { ...env, GITHUB_RUN_ATTEMPT: '3' },
+            { hostSupported: true, drive }
+        );
+        expect(record.failureCode).toBe('build-receipt-run-mismatch');
+        expect(drive).not.toHaveBeenCalled();
     });
 });

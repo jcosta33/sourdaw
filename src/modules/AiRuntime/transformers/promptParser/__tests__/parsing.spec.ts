@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
+import { PRESET_ACTIONS } from '../../../models/PresetActions/Registry';
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { type RuntimeAction } from '../../../models/RuntimeAction';
 import {
     isComplexPrompt,
     buildPresetContext,
@@ -82,7 +84,32 @@ describe('promptParser parsing', () => {
     });
 
     describe('tryPresetMatch', () => {
-        it('does not execute a colliding exact alias by registry order', () => {
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
+        it.each(['constructor', 'toString', '__proto__'])(
+            'refuses a preset that emits the inherited name %s as an action type',
+            (type) => {
+                const preset = PRESET_ACTIONS.find((candidate) => candidate.id === 'play');
+                if (preset === undefined) {
+                    throw new Error('the play preset is missing from the registry');
+                }
+                const inheritedAction: RuntimeAction = JSON.parse(`{"type":"${type}","payload":{}}`);
+                vi.spyOn(preset, 'buildAction').mockReturnValue(inheritedAction);
+
+                expect(
+                    tryPresetMatch('start playback', {
+                        selectedTrackId: 'track-1',
+                        selectedClipId: undefined,
+                        selectedClipType: undefined,
+                        trackCount: 1,
+                    })
+                ).toEqual([]);
+            }
+        );
+
+        it('does not run a clipboard phrase as a duplicate', () => {
             const context = {
                 selectedTrackId: 'track-1',
                 selectedClipId: 'clip-1',

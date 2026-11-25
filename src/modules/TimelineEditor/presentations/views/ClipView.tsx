@@ -24,6 +24,23 @@ import { KneadEditor } from './ClipView/KneadEditor';
 import { PianoRoll } from './ClipView/PianoRoll';
 import { WaveformEditor } from './ClipView/WaveformEditor';
 
+function editorSelectionScope(
+    tracks: ReturnType<typeof useTracks>['tracks'],
+    selectedTrackId: ReturnType<typeof useTracks>['selectedTrackId'],
+    selection: NonNullable<typeof clipSelectionStore.value>
+) {
+    const track = tracks.find((item) => item.id === selectedTrackId);
+    const clip = track?.clips.find((item) => item.id === selection.selectedClipId) ?? track?.clips[0] ?? null;
+    const midiIds = selection.selectedClipIds.filter((id) =>
+        tracks.some((item) => item.clips.some((candidate) => candidate.id === id && candidate.type === 'midi'))
+    );
+    const openedClipIds = midiIds.length > 1 ? midiIds : undefined;
+    return {
+        openedClipIds,
+        key: JSON.stringify([track?.id, clip?.id, clip?.type, [...new Set(openedClipIds ?? [])].sort()]),
+    };
+}
+
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const selectedTrack = tracks.find((time) => time.id === selectedTrackId);
@@ -46,13 +63,29 @@ export const ClipView = (): ReactElement => {
         selectedTrack?.clips[0] ??
         null;
 
+    const { key: selectionScope, openedClipIds } = editorSelectionScope(tracks, selectedTrackId, clipSelection);
+    const selectionScopeRef = useRef(selectionScope);
+
     useEffect(() => {
-        clearPianoRollSelection();
-        const unsubscribe = clipSelectionStore.subscribe(() => clearPianoRollSelection());
-        return () => {
-            unsubscribe();
+        const resetForScope = (nextScope: string) => {
+            if (selectionScopeRef.current === nextScope) {
+                return;
+            }
+            selectionScopeRef.current = nextScope;
+            selectedNoteIdsRef.current = new Set();
+            setSelectedNoteIds(selectedNoteIdsRef.current);
             clearPianoRollSelection();
         };
+        resetForScope(selectionScope);
+        return clipSelectionStore.subscribe(() => {
+            const next = clipSelectionStore.value ?? defaultClipSelectionState;
+            resetForScope(editorSelectionScope(tracks, selectedTrackId, next).key);
+        });
+    }, [selectionScope, tracks, selectedTrackId]);
+
+    useEffect(() => {
+        clearPianoRollSelection();
+        return () => clearPianoRollSelection();
     }, []);
 
     const changeSelectedNoteIds = (
@@ -96,19 +129,6 @@ export const ClipView = (): ReactElement => {
             </Row>
         );
     }
-
-    // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
-    const getOpenedClipIds = (): string[] | undefined => {
-        const ids = clipSelection.selectedClipIds;
-        if (ids.length <= 1) {
-            return undefined;
-        }
-        const midiClipIds = ids.filter((id) =>
-            tracks.some((time) => time.clips.some((context) => context.id === id && context.type === 'midi'))
-        );
-        return midiClipIds.length > 1 ? midiClipIds : undefined;
-    };
-    const openedClipIds = getOpenedClipIds();
 
     const handleSelectClip = (clipId: string): void => {
         selectClip(clipId);

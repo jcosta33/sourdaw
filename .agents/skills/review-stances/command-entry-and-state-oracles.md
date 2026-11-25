@@ -37,6 +37,11 @@ boundaries.
    choices (filter type/model) restore an absent leaf on first-selection Undo, a hidden non-SVF Type stays stored,
    Model and Type each own pending authority by device and parameter, and an old queued direct parameter frame
    cannot overwrite the newer choice.
+   Bacteria factory selection wrote through `persistDeviceParam` outside Command
+   (`0249a95cc5292e687a27f084bac510d31eb7f3d8`, commit lookup returned no associated PR).
+   Make an Input edit, then select Bitcrush Cascade in the mounted panel. Require one separate
+   preset history entry and observe both replay legs in raw CRDT, projection and the engine patch.
+   Restoring the direct write must fail the history assertion.
    Crust's initial numeric panel bridge (`cd59903255`, no associated PR returned by commit lookup) persisted
    preview samples outside semantic history; its historical review brief and stance coverage are unestablished.
    Drive keyboard and multi-sample pointer gestures through the real panel, Command and CRDT: previews leave
@@ -161,6 +166,16 @@ src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integ
     in `getHandlerByType`. Probe: through `executeAppActionBatch`, feed such a type (a `JSON.parse` literal) ahead
     of an admission-mode action (`splitClip`, `setTempo`) and assert `rejected` with `No registered handler for
 action: <type>`; reverting a reachable lookup's guard must fail it.
+11. **A zero-delta relative level request writes anyway (#5926, resolver from #4392, fixed by #6354).** Failure:
+    `current === dbToGain(gainToDb(current) + deltaDb)` is false for a linear value that does not round-trip (0.3,
+    0.0123), so a 0 dB request writes a value one ulp away and records an Undo step; #5853's approval treated it
+    as optional. Probe: dispatch `deltaDb: 0` (and `-0`) through the real registered Command (`setVcaGain`,
+    `setMetronomeVolume`, `setTrackGain`) at 0.3 and assert raw CRDT heads, projections and both history stacks
+    unchanged, with a nonzero dB request and real Undo/Redo as the control. Removing the `deltaDb === 0` identity
+    return in `resolveLevelArgument` must fail `relative level identity` in
+    `src/utils/__tests__/audioLevelLaw.spec.ts` and the zero-delta heads case in
+    `src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts`; silence, range and malformed-delta
+    refusals stay refused.
 
 ## Relocated
 

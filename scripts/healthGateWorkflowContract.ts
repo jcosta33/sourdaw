@@ -61,8 +61,11 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
 const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+// Ahead of dependency installation so the browser runtime proof still opens the run.
+const KOKORO_FIXTURE_STEPS = ['Restore Kokoro fixtures', 'Prefetch Kokoro fixtures'] as const;
+const BROWSER_SETUP = [...NODE_SETUP_ACTIONS, ...KOKORO_FIXTURE_STEPS, 'Install dependencies'] as const;
 const SHARDED_BROWSER_STEPS = [
-    ...SETUP_NODE,
+    ...BROWSER_SETUP,
     'Verify preinstalled browser runtime',
     'Run shard',
     'Report shard failure',
@@ -243,7 +246,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'validation-gate': ['Require selected validation jobs to succeed'],
     },
     'heavy-gates.yml': {
-        e2e: [...SETUP_NODE, 'Download shared E2E build', ...SHARDED_BROWSER_STEPS.slice(SETUP_NODE.length)],
+        e2e: [...BROWSER_SETUP, 'Download shared E2E build', ...SHARDED_BROWSER_STEPS.slice(BROWSER_SETUP.length)],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
@@ -303,10 +306,16 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Upload the agent workspace proof record',
             'Prove Fermenter in the packaged app',
             'Upload the Fermenter proof record',
+            'Prove premium editor mounts in the packaged app',
+            'Upload the premium editor proof record',
+            'Prove premium editor workspace in the packaged app',
+            'Upload the premium editor workspace proof record',
+            'Observe Grand Boule output audition in the packaged app',
+            'Upload the Grand Boule output audition record',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'e2e-coverage': [
-            ...SETUP_NODE,
+            ...BROWSER_SETUP,
             'Verify preinstalled browser runtime',
             'Run shard with coverage',
             'Upload coverage records',
@@ -412,9 +421,35 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
     pin('heavy-gates.yml', 'browser-ai-webgpu', 'Upload Browser AI WebGPU diagnostics', ALWAYS_EXPRESSION),
     pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin('nightly.yml', 'desktop-measure', 'Prove premium editor workspace in the packaged app', FERMENTER_ADMISSION),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the premium editor workspace proof record',
+        "${{ !cancelled() && (steps.prove-editor-workspace.outcome == 'success' || steps.prove-editor-workspace.outcome == 'failure') }}"
+    ),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Observe Grand Boule output audition in the packaged app',
+        FERMENTER_ADMISSION
+    ),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the Grand Boule output audition record',
+        "${{ !cancelled() && (steps.prove-grand-boule-audition.outcome == 'success' || steps.prove-grand-boule-audition.outcome == 'failure') }}"
+    ),
     pin('nightly.yml', 'desktop-measure', 'Capture the Fermenter build receipt', FERMENTER_ADMISSION),
     pin('nightly.yml', 'desktop-measure', 'Prove Fermenter in the packaged app', FERMENTER_ADMISSION),
     pin('nightly.yml', 'desktop-measure', 'Upload the Fermenter proof record', FERMENTER_UPLOAD_ADMISSION),
+    pin('nightly.yml', 'desktop-measure', 'Prove premium editor mounts in the packaged app', FERMENTER_ADMISSION),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the premium editor proof record',
+        "${{ !cancelled() && (steps.prove-premium-editors.outcome == 'success' || steps.prove-premium-editors.outcome == 'failure') }}"
+    ),
     pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),
     pin(
         'nightly.yml',

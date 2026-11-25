@@ -22,6 +22,14 @@ import { withBatchBriefRoles } from './withBatchBriefRoles';
 
 export type ApplicationProtectedObject = { id: string; name: string };
 
+/** A ratio reads `4:1`, a unitless switch its bare value, anything else `value unit`. */
+function formatParameterValue(value: number, unit: string): string {
+    if (unit === ':1' || unit === '') {
+        return `${String(value)}${unit}`;
+    }
+    return `${String(value)} ${unit}`;
+}
+
 /** Derives every protected object from application state, actions, and workflow semantics. */
 export function getApplicationProtectedObjects(input: {
     actions: readonly AppAction[];
@@ -50,7 +58,7 @@ export function getApplicationProtectedObjects(input: {
               const deviceName = deviceParameterScope.device.name ?? deviceParameterScope.device.type;
               return {
                   id: `${deviceParameterScope.device.id}:${parameter.id}`,
-                  name: `${deviceParameterScope.track.name} ${deviceName} ${parameter.name} = ${String(parameter.value)}${parameter.unit === ':1' ? ':1' : ` ${parameter.unit}`}`,
+                  name: `${deviceParameterScope.track.name} ${deviceName} ${parameter.name} = ${formatParameterValue(parameter.value, parameter.unit)}`,
               };
           })
         : [];

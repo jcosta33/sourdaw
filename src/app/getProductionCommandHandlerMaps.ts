@@ -5,6 +5,7 @@ import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { getBacteriaHandlers } from '#/modules/Bacteria/useCases';
 import { getRaveHandlers } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { getMacroHandlers, getUndoRedoHandlers, getUndoTreeHandlers } from '#/modules/Command/useCases';
@@ -14,8 +15,10 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getCvGateHandlers } from '#/modules/CvGate/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { getFermenterHandlers } from '#/modules/Fermenter/useCases';
+import { getGlutenHandlers } from '#/modules/Gluten/useCases';
 import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';
+import { getLevainHandlers } from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
     getMidiGrooveHandlers,
@@ -25,11 +28,13 @@ import {
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
+import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
 import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSampleLibraryHandlers } from '#/modules/SampleLibrary/useCases';
 import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers } from '#/modules/Setlist/useCases';
+import { getToasterHandlers } from '#/modules/Toaster/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/WorkspaceShell/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
@@ -67,8 +72,13 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getDawProjectHandlers(),
         getFinalFeatureHandlers(),
         getCvGateHandlers(),
+        getBacteriaHandlers(),
         getFermenterHandlers(),
         getGrandBouleHandlers(),
+        getLevainHandlers(),
+        getToasterHandlers(),
+        getGlutenHandlers(),
+        getProofHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
         getRaveHandlers(),

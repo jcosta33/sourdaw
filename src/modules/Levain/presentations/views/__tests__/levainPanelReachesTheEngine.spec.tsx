@@ -1,7 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import {
     defaultTrackState,
     persistDeviceParam,
@@ -10,8 +15,19 @@ import {
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { levainStore } from '../../../stores/levainStore';
+import { getLevainHandlers } from '../../../useCases/getLevainHandlers';
 import { type LevainDevice } from '../../../useCases/levainParamBridge/helpers';
 import { levainBridge } from '../../../useCases/levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../../../useCases/levainParamBridge/registerLevainDevice';
@@ -152,6 +168,19 @@ describe('LevainPanel edits reach the live engine', () => {
     }
 
     beforeEach(async () => {
+        configureAutomergeStoragePort(null);
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
+        resetCrdtProjectAuthority('Levain panel engine integration');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
+        clearHandlerRegistry();
+        registerHandlerMap(getLevainHandlers());
+        clearUndoHistory();
         mocks.autoLoadLevainSamples.mockClear();
         mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve(null));
         mocks.setLoadedMicPositions.mockClear();
@@ -171,8 +200,10 @@ describe('LevainPanel edits reach the live engine', () => {
             writeNativeBuiltinParameters,
             sendNativeLiveMidiControl,
         });
+        setNotificationEventBus({ emit: vi.fn(() => Promise.resolve()), on: vi.fn() });
 
         trackStore.set({ ...defaultTrackState, tracks: makeLevainTracks() });
+        flushAutomergeStorageWrites();
         levainStore.set({});
 
         await registerLevainDevice(DEVICE_ID, { setParam, handleCc: vi.fn() }, fakePort().port);
@@ -183,6 +214,10 @@ describe('LevainPanel edits reach the live engine', () => {
     });
 
     afterEach(() => {
+        clearHandlerRegistry();
+        clearUndoHistory();
+        removeCrdtDoc('root');
+        configureAutomergeStoragePort(null);
         vi.unstubAllGlobals();
     });
 
@@ -193,7 +228,7 @@ describe('LevainPanel edits reach the live engine', () => {
         // engine id ever regresses to the positional index it used to be, and it is
         // not the default (sustain, id 0) — which the engine already holds from
         // registration and would therefore agree on for the wrong reason.
-        clickArticulation('Tremolo');
+        await act(async () => clickArticulation('Tremolo'));
 
         const { port, posted } = fakePort();
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
@@ -205,10 +240,10 @@ describe('LevainPanel edits reach the live engine', () => {
         expect(lastNativeValue('current_articulation')).toBe(offlineValue(posted, 'current_articulation'));
     });
 
-    it('keeps the panel readout on the articulation it sent', () => {
+    it('keeps the panel readout on the articulation it sent', async () => {
         render(<LevainPanel deviceId={DEVICE_ID} />);
 
-        clickArticulation('Tremolo');
+        await act(async () => clickArticulation('Tremolo'));
 
         // The readout is the display name resolved from the patch entry, not the
         // raw type. A fix that reached the engine by routing around the store
@@ -218,7 +253,7 @@ describe('LevainPanel edits reach the live engine', () => {
         expect(levainStore.value?.[DEVICE_ID]?.patch.currentArticulation).toBe('tremolo');
     });
 
-    it('does not send to a device the write boundary rejects', () => {
+    it('does not send to a device the write boundary rejects', async () => {
         // Companion negative. Without it, "always call setParam" would satisfy the
         // spec above; Levain writes are gated on the device still being in the
         // project, so a panel left open across a device delete must not resurrect it.
@@ -230,9 +265,10 @@ describe('LevainPanel edits reach the live engine', () => {
             writeNativeBuiltinParameters,
             sendNativeLiveMidiControl,
         });
+        setNotificationEventBus({ emit: vi.fn(() => Promise.resolve()), on: vi.fn() });
         render(<LevainPanel deviceId={DEVICE_ID} />);
 
-        clickArticulation('Tremolo');
+        await act(async () => clickArticulation('Tremolo'));
 
         expect(lastLiveValue(setParam, 'current_articulation')).toBeUndefined();
         expect(lastNativeValue('current_articulation')).toBeUndefined();
@@ -247,10 +283,11 @@ describe('LevainPanel edits reach the live engine', () => {
 
         levainBridge().sendMicParamToEngine(DEVICE_ID, 0, 'volume', 0.31);
         flushFrames();
+        flushAutomergeStorageWrites();
         expect(lastLiveValue(setParam, 'mic_0_volume')).toBe(0.31);
 
         const detail = screen.getByRole('region', { name: 'Selection detail' });
-        fireEvent.click(screen.getByText('Cellos'));
+        await act(async () => fireEvent.click(screen.getByText('Cellos')));
         expect(screen.getByRole('region', { name: 'Selection detail' })).toBe(detail);
         expect(detail).toHaveTextContent('Cellos');
         expect(levainStore.value?.[DEVICE_ID]?.uiLevel).toBe(6);

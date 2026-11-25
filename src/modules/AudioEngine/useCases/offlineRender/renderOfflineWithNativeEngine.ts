@@ -14,17 +14,17 @@
  * ── Device parameter automation ───────────────────────────────────────────
  *
  * The engine selection admits only chains of native built-in bodies and loaded
- * hosted effects (`nativeOfflineHostedDevice`, #4592), and their parameter
- * lanes ride `write-device-parameter` under exactly the law and the names the
- * live writer stamps them with: `nativeBuiltinAutomation` for a built-in
- * (#3776), the instance's own published law for a hosted effect, both through
- * `nativeDeviceParameterLaw`. A hosted effect sits on its strip with its
- * `externalInstanceId`, and the engine prints it through an offline instance
- * of its own, built from the live instance's state and compensated by the
- * engine against the instance's own latency. A lane naming a device on its
- * strip that this law will not carry — including any hosted lane when the
- * capture carries no hosted law — declines the render
- * (`nativeRefusedDeviceLane`) rather than printing a file without it.
+ * hosted plugins (`nativeOfflineHostedDevice`, #4592, #6777), and their
+ * parameter lanes ride `write-device-parameter` under exactly the law and the
+ * names the live writer stamps them with: `nativeBuiltinAutomation` for a
+ * built-in (#3776), the instance's own published law for a hosted plugin, both
+ * through `nativeDeviceParameterLaw`. A hosted plugin sits on its strip with
+ * its `externalInstanceId`, and the engine prints it through an offline
+ * instance of its own, built from the live instance's state and compensated
+ * by the engine against the instance's own latency.
+ *
+ * A loaded hosted instrument's notes ride `schedule-midi`; `readNativeOfflineMidiSource`
+ * documents their law.
  *
  * ── Decline versus fail ───────────────────────────────────────────────────
  *
@@ -109,11 +109,14 @@ import { checkCancel } from './checkCancel';
 import { deviceParameterOverlapReason } from './deviceParameterOverlapReason';
 import { nativeOfflineDeviceEntries } from './nativeOfflineDeviceEntries';
 import { type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
+import { nativeOfflineInstrumentSink } from './nativeOfflineInstrumentSink';
 import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
+import { projectNativeOfflineMidiCommands } from './projectNativeOfflineMidiCommands';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectStripAutomationWrites } from './projectStripAutomationWrites';
 import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
+import { readNativeOfflineMidiSource } from './readNativeOfflineMidiSource';
 import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
@@ -208,6 +211,29 @@ function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> })
             tap: send.preFader ? 'pre-fader' : 'post-fader',
             level: send.level,
         }));
+}
+
+type ResolvedClip = ReturnType<typeof resolveTrackClipsWithComping>[number];
+type PlayableClipSource = { sourceId: string; buffer: AudioBuffer };
+
+function scheduleClipCommand(
+    trackId: string,
+    source: PlayableClipSource,
+    playback: ReturnType<typeof projectOfflineAudioClipPlaybacks>[number]
+): AudioGraphCommand {
+    return {
+        kind: 'schedule-clip',
+        playback: {
+            trackId,
+            source,
+            startTime: playback.startSec,
+            sourceOffsetSeconds: playback.bufferOffsetSec,
+            durationSeconds: playback.playDuration,
+            playbackRate: playback.playbackRate,
+            gain: playback.clipGainValue,
+            fade: projectNativeClipFade(playback),
+        },
+    };
 }
 
 export async function renderOfflineWithNativeEngine(
@@ -326,6 +352,56 @@ export async function renderOfflineWithNativeEngine(
     ]);
 
     // ── Programme: automation writes and clip playbacks per scheduled track ─
+    // The decoded audio an audio clip plays, or `null` (warned) when it has none worth scheduling.
+    function readPlayableClipBuffer(track: Track, clip: ResolvedClip): PlayableClipSource | null {
+        if (!clip.audioBufferId) {
+            return null;
+        }
+        const buffer = (input.captured?.scheduling.buffers ?? audioBufferCache).get(clip.audioBufferId);
+        if (!buffer) {
+            warn(
+                `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
+                    `Try re-importing the file or reloading the project.`
+            );
+            return null;
+        }
+        if (clip.endBeat - clip.startBeat <= 0) {
+            warn(
+                `Clip "${clip.name || clip.id}" on track "${track.name}" has zero or negative duration and was skipped.`
+            );
+            return null;
+        }
+        return { sourceId: clip.audioBufferId, buffer };
+    }
+
+    // A loaded hosted instrument is voiced by the engine: its notes ride
+    // `schedule-midi` against the device, after the strip that holds it
+    // (the strips are their own, earlier batch). A strip no audible output
+    // reaches holds no device to address, and nothing would hear it.
+    function buildInstrumentProgramme(track: Track, compensationDelay: number): ProgrammeConversion {
+        if (!contributingTrackIds.has(track.id) || nativeOfflineInstrumentSink(track, hostedRuntime) === null) {
+            return { outcome: 'converted', commands: [] };
+        }
+        const source = readNativeOfflineMidiSource(
+            input.captured,
+            { sampleRate, defaultTempo, changes, projectPpqEndpoints },
+            renderTempoTimeline(projectBeatToSeconds, resolveClipTempo)
+        );
+        if (source === null) {
+            return { outcome: 'declined', reason: 'the MIDI projection is not configured for the native render' };
+        }
+        return {
+            outcome: 'converted',
+            commands: projectNativeOfflineMidiCommands({
+                track,
+                hostedRuntime,
+                source,
+                durationSeconds: frameCount / sampleRate,
+                compensationDelaySeconds: compensationDelay,
+            }),
+        };
+    }
+
     function buildTrackProgramme(track: Track): ProgrammeConversion {
         const commands: AudioGraphCommand[] = [];
         const compensationDelay = input.captured
@@ -391,10 +467,17 @@ export async function renderOfflineWithNativeEngine(
             commands.push(...writeCommands(target, writes));
         }
 
+        const instrumentProgramme = buildInstrumentProgramme(track, compensationDelay);
+        if (instrumentProgramme.outcome === 'declined') {
+            return instrumentProgramme;
+        }
+        commands.push(...instrumentProgramme.commands);
+
         // What the native strip has left to hold, counted down across the
         // track's clips — the same countdown the live producer runs, because
         // the two schedule the same expansion into the same ceiling.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
+        const voicedByInstrument = nativeOfflineInstrumentSink(track, hostedRuntime) !== null;
 
         const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
         for (const clip of resolveTrackClipsWithComping(
@@ -406,34 +489,25 @@ export async function renderOfflineWithNativeEngine(
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
+            if (clip.type === 'midi' && voicedByInstrument) {
+                // Voiced through `schedule-midi` above.
+                continue;
+            }
             if (clip.type !== 'audio') {
-                // The engine selection gates instrument programme to the Web
-                // Audio path; a MIDI clip reaching here means the gate and
-                // this builder disagree, and the honest answer is the
-                // fallback, not a silent drop.
+                // The engine selection gates every other instrument's
+                // programme to the Web Audio path; a MIDI clip reaching here
+                // means the gate and this builder disagree, and the honest
+                // answer is the fallback, not a silent drop.
                 return { outcome: 'declined', reason: `MIDI clip on track "${track.name}" reached the native path` };
             }
-            if (!clip.audioBufferId) {
-                continue;
-            }
-            const buffer = (input.captured?.scheduling.buffers ?? audioBufferCache).get(clip.audioBufferId);
-            if (!buffer) {
-                warn(
-                    `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
-                        `Try re-importing the file or reloading the project.`
-                );
-                continue;
-            }
-            if (clip.endBeat - clip.startBeat <= 0) {
-                warn(
-                    `Clip "${clip.name || clip.id}" on track "${track.name}" has zero or negative duration and was skipped.`
-                );
+            const source = readPlayableClipBuffer(track, clip);
+            if (source === null) {
                 continue;
             }
 
             const playbacks = projectOfflineAudioClipPlaybacks({
                 clip,
-                bufferDurationSeconds: buffer.duration,
+                bufferDurationSeconds: source.buffer.duration,
                 regionStartBeat,
                 regionStartSec,
                 durationSeconds,
@@ -451,21 +525,7 @@ export async function renderOfflineWithNativeEngine(
             }
             remainingClipSlots -= playbacks.length;
 
-            for (const playback of playbacks) {
-                commands.push({
-                    kind: 'schedule-clip',
-                    playback: {
-                        trackId: track.id,
-                        source: { sourceId: clip.audioBufferId, buffer },
-                        startTime: playback.startSec,
-                        sourceOffsetSeconds: playback.bufferOffsetSec,
-                        durationSeconds: playback.playDuration,
-                        playbackRate: playback.playbackRate,
-                        gain: playback.clipGainValue,
-                        fade: projectNativeClipFade(playback),
-                    },
-                });
-            }
+            commands.push(...playbacks.map((playback) => scheduleClipCommand(track.id, source, playback)));
         }
         return { outcome: 'converted', commands };
     }

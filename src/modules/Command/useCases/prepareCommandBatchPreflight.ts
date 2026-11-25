@@ -170,9 +170,6 @@ export function prepareCommandBatchPreflight(
         const reason = error instanceof Error ? error.message : String(error);
         return { status: 'rejected', reason: `Command batch preflight failed: ${reason}` };
     }
-    if (!before) {
-        return { status: 'rejected', reason: 'Command batch preflight state is unavailable' };
-    }
     if (before.projectId !== envelope.projectId) {
         return { status: 'rejected', reason: 'Command batch project does not match the active project' };
     }
@@ -287,9 +284,6 @@ export function prepareCommandBatchPreflight(
                                     } catch (error) {
                                         const reason = error instanceof Error ? error.message : String(error);
                                         return `Command batch postcondition validation failed: ${reason}`;
-                                    }
-                                    if (!after) {
-                                        return 'Command batch preflight state became unavailable';
                                     }
                                     if (!after.projectInvariantsValid) {
                                         return 'Command batch violated project invariants';

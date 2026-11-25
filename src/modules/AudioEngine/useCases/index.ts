@@ -24,6 +24,28 @@ export { rearmCommittedTrackInputMonitoring } from './audioRecorder/rearmCommitt
 export { configureInputMonitoringProjectAccess } from './configureInputMonitoringProjectAccess';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
+export { acceptsSidechainInput } from './deviceCapabilities/acceptsSidechainInput';
+export { capturesNativeCalibration } from './deviceCapabilities/capturesNativeCalibration';
+export { classifyNoteReceivingDevice } from './deviceCapabilities/classifyNoteReceivingDevice';
+export { DRUM_KIT_DEFAULT_LEVEL_DB } from './deviceCapabilities/drumKitDefaultLevelDb';
+export { isBuiltinSynthDevice } from './deviceCapabilities/isBuiltinSynthDevice';
+export { isBypassedNoteReceiver } from './deviceCapabilities/isBypassedNoteReceiver';
+export { findMidiTransformDevice } from './deviceCapabilities/findMidiTransformDevice';
+export { findPadOutputHost } from './deviceCapabilities/findPadOutputHost';
+export { getSidechainTargetCapability } from './deviceCapabilities/getSidechainTargetCapability';
+export { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
+export { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
+export { hostsStoredControllers } from './deviceCapabilities/hostsStoredControllers';
+export { isDrumDevice } from './deviceCapabilities/isDrumDevice';
+export { isMidiTransformDevice } from './deviceCapabilities/isMidiTransformDevice';
+export { readDrumKitOutputGain } from './deviceCapabilities/readDrumKitOutputGain';
+export { readStoredControllerDefault } from './deviceCapabilities/readStoredControllerDefault';
+export { resolveDrumKitBy } from './deviceCapabilities/resolveDrumKitBy';
+export { resolveDrumKitOutputGain } from './deviceCapabilities/resolveDrumKitOutputGain';
+export { resolveLiveNoteControls } from './deviceCapabilities/resolveLiveNoteControls';
+export { resolveStoredControllerHosting } from './deviceCapabilities/resolveStoredControllerHosting';
+export { resolveNoteReceivingInstrument } from './deviceCapabilities/resolveNoteReceivingInstrument';
+
 export { playAuditionNote } from './audition';
 export { acquireCheckpointAudioRetention } from './acquireCheckpointAudioRetention';
 export { configureDurableAudioBufferOwnership } from './configureDurableAudioBufferOwnership';
@@ -153,6 +175,7 @@ export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSess
 // Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
 export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
+export { startNativeGrandBoulePreviewNote } from './livePlayback/startNativeGrandBoulePreviewNote';
 // Published because the composition root decides which of the Tuner's two carriers publishes a reading.
 export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNativelyOwned';
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.

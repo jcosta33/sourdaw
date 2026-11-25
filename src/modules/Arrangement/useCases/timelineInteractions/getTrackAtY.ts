@@ -1,7 +1,7 @@
-import { getRenderedTrackExtent } from '../../models/TimelineTrackExtent';
+import { getRenderedTrackExtent, type RenderedTrackRows } from '../../models/TimelineTrackExtent';
 
 export function getTrackAtY(
-    tracks: { height: number; id: string; variationLanes?: readonly unknown[] }[],
+    tracks: readonly (RenderedTrackRows & { id: string })[],
     contentY: number
 ): { index: number; id: string } | null {
     let offset = 0;

@@ -10,13 +10,13 @@ type RoutingSidechainState = { routes: { id: string; sourceTrackId: string; targ
 type Mocks = {
     trackState: RoutingTrackState;
     sidechainState: RoutingSidechainState;
-    selectTrack: ReturnType<typeof vi.fn>;
+    selectTrackRevealingHidden: ReturnType<typeof vi.fn>;
 };
 
 const mocks = vi.hoisted((): Mocks => ({
     trackState: { tracks: [], selectedTrackId: null },
     sidechainState: { routes: [] },
-    selectTrack: vi.fn(),
+    selectTrackRevealingHidden: vi.fn(),
 }));
 
 // Both stores are read via `useStore(store, default)` directly (no shared
@@ -27,7 +27,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    selectTrack: mocks.selectTrack,
+    selectTrackRevealingHidden: mocks.selectTrackRevealingHidden,
+    getHiddenTrackIds: (tracks: { id: string; hidden: boolean }[]) =>
+        new Set(tracks.filter((item) => item.hidden).map((item) => item.id)),
 }));
 
 vi.mock('../../../stores/sidechainStore', () => ({
@@ -48,7 +50,16 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 function track(overrides: Partial<Track> & { id: string }): Track {
-    return { name: overrides.id, kind: 'audio', color: '#123456', sends: [], outputId: 'master', ...overrides };
+    return {
+        name: overrides.id,
+        kind: 'audio',
+        color: '#123456',
+        sends: [],
+        outputId: 'master',
+        parentId: null,
+        hidden: false,
+        ...overrides,
+    };
 }
 
 function send(overrides: Partial<Send> & { busId: string }): Send {
@@ -185,14 +196,31 @@ describe('RoutingGraph', () => {
         const node = screen.getByRole('button', { name: 'Select Kick' });
 
         fireEvent.click(node);
-        expect(mocks.selectTrack).toHaveBeenCalledWith('t1');
+        expect(mocks.selectTrackRevealingHidden).toHaveBeenCalledWith('t1');
 
-        mocks.selectTrack.mockClear();
+        mocks.selectTrackRevealingHidden.mockClear();
         fireEvent.keyDown(node, { key: 'Enter' });
-        expect(mocks.selectTrack).toHaveBeenCalledWith('t1');
+        expect(mocks.selectTrackRevealingHidden).toHaveBeenCalledWith('t1');
 
-        mocks.selectTrack.mockClear();
+        mocks.selectTrackRevealingHidden.mockClear();
         fireEvent.keyDown(node, { key: ' ' });
-        expect(mocks.selectTrack).toHaveBeenCalledWith('t1');
+        expect(mocks.selectTrackRevealingHidden).toHaveBeenCalledWith('t1');
+    });
+
+    it('marks a hidden track node as hidden and still selects that track on click', () => {
+        mocks.trackState = {
+            tracks: [track({ id: 't1', name: 'Kick' }), track({ id: 't2', name: 'Snare', hidden: true })],
+            selectedTrackId: null,
+        };
+
+        render(<RoutingGraph />);
+
+        expect(screen.getByRole('button', { name: 'Select Kick' })).toBeInTheDocument();
+        const hiddenNode = screen.getByRole('button', { name: 'Select Snare (hidden)' });
+        expect(hiddenNode).toHaveClass('opacity-50');
+
+        fireEvent.click(hiddenNode);
+
+        expect(mocks.selectTrackRevealingHidden).toHaveBeenCalledWith('t2');
     });
 });

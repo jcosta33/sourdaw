@@ -57,30 +57,24 @@ export const OscillatorSection = ({
     const showPW = engine === 1 && waveform === 2;
 
     return (
-        <Stack gap={2} className="w-full max-w-[300px]">
-            {/* Header: title + engine selector */}
-            <DawPluginSectionHeader
-                title="Oscillator"
-                titleClassName="text-muted-foreground"
-                actions={
-                    <Row align="stretch" gap={0.5}>
-                        {ENGINE_NAMES.map((name, i) => (
-                            <DawPluginChip
-                                key={name}
-                                active={engine === i}
-                                tone="cyan"
-                                size="xs"
-                                onClick={() => onEngineChange(i)}
-                            >
-                                {name}
-                            </DawPluginChip>
-                        ))}
-                    </Row>
-                }
-            />
+        <Stack gap={2} className="w-full min-w-0 max-w-[300px]">
+            <DawPluginSectionHeader title="Oscillator" titleClassName="text-muted-foreground" />
+            <Row align="stretch" wrap gap={0.5}>
+                {ENGINE_NAMES.map((name, i) => (
+                    <DawPluginChip
+                        key={name}
+                        active={engine === i}
+                        tone="cyan"
+                        size="xs"
+                        onClick={() => onEngineChange(i)}
+                    >
+                        {name}
+                    </DawPluginChip>
+                ))}
+            </Row>
 
             {/* HERO: Large waveform visualization */}
-            <div className="rounded-md overflow-hidden border border-border/20 bg-black/20">
+            <div className="overflow-hidden rounded-md border border-border/20 bg-black/20 [&>canvas]:max-w-full">
                 <OscillatorWaveform
                     waveform={wfKey}
                     osc2Waveform={wfKey}
@@ -92,7 +86,7 @@ export const OscillatorSection = ({
             </div>
 
             {/* Waveform selector */}
-            <Row align="stretch" gap={0.5}>
+            <Row align="stretch" wrap gap={0.5}>
                 {WAVEFORM_NAMES.map((name, i) => (
                     <DawPluginChip
                         key={name}
@@ -100,7 +94,6 @@ export const OscillatorSection = ({
                         tone="lavender"
                         size="xs"
                         shape="soft"
-                        className="flex-1"
                         onClick={() => onWaveformChange(i)}
                     >
                         {name}
@@ -109,7 +102,7 @@ export const OscillatorSection = ({
             </Row>
 
             {/* Knob row: Level + Coarse + Fine + (PW) */}
-            <Row align="end" gap={2}>
+            <Row align="end" wrap gap={2}>
                 <Knob
                     paramId="oscLevel"
                     value={level}
@@ -163,7 +156,7 @@ export const OscillatorSection = ({
             </Row>
 
             {/* Noise sub-row */}
-            <Row align="end" gap={2} className="pt-1 border-t border-border/15">
+            <Row align="end" wrap gap={2} className="pt-1 border-t border-border/15">
                 <Knob
                     paramId="noiseLevel"
                     value={noiseLevel}
@@ -176,7 +169,7 @@ export const OscillatorSection = ({
                     label="Noise"
                     tone="sage"
                 />
-                <Row align="stretch" gap={0.5} className="pb-2">
+                <Row align="stretch" wrap gap={0.5} className="pb-2">
                     {NOISE_COLOR_NAMES.map((name, i) => (
                         <DawPluginChip
                             key={name}

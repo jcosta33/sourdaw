@@ -1,10 +1,10 @@
+import { getSidechainTargetCapability } from '#/modules/AudioEngine/useCases';
 import { getMidiTransform } from '#/modules/Command/stores';
 import {
     expandMidiTransform,
     getExecutableAppActionGroundingRules,
     getMidiTransformContract,
 } from '#/modules/Command/useCases';
-import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type ProjectContext } from '../models/ProjectContext';

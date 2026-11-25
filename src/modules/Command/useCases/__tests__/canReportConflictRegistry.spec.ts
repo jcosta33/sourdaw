@@ -22,6 +22,7 @@ import {
     createTrack,
     getAllTracks,
     getPlannedDevicePatchState,
+    getPluginById,
     persistDevicePatch,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
@@ -41,6 +42,7 @@ import { hydrateFermenterFromProject, setFermenterDependencies } from '#/modules
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
@@ -673,8 +675,409 @@ async function createDivergedRelinkSourceAction(edit: 'source' | 'owner'): Promi
     return inverse;
 }
 
+function createToasterConflictFixture(): DivergedFixture {
+    type ToasterRoot = { tracks: { tracks: Track[] } };
+    let verifyNonEffects: (() => void) | undefined;
+    return {
+        title: 'setToasterFactoryKit refuses after a validated kit source diverges',
+        actionType: 'setToasterFactoryKit',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Toaster registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            const deviceId = 'toaster-conflict';
+            const trackId = 'toaster-owner';
+            const rawDevice = () => getCrdtDoc<ToasterRoot>('root')?.tracks.tracks[0]?.devices[0];
+            const before = getToasterPresetDeviceState('909-punchy');
+            const peer = getToasterPresetDeviceState('trap-heavy');
+            if (!before || !peer) {
+                throw new Error('Expected both factory kits');
+            }
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Toaster', kind: 'midi', withoutDefaultDevice: true }),
+                        devices: [
+                            {
+                                id: deviceId,
+                                name: 'Toaster',
+                                type: 'toaster',
+                                bypassed: false,
+                                parameterValues: {},
+                                deviceState: before,
+                            },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.deviceState).toEqual(before);
+
+            const inverse = {
+                type: 'setToasterFactoryKit',
+                payload: { trackId, deviceId, deviceIds: [deviceId], label: 'Load Rye 909', before, after: null },
+            } satisfies AppAction;
+            expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            mutateCrdtDoc<ToasterRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected the Toaster before the peer write');
+                    }
+                    device.deviceState = peer;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.deviceState).toEqual(peer);
+            verifyNonEffects = () => {
+                expect(rawDevice()?.deviceState).toEqual(peer);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            if (!verifyNonEffects) {
+                throw new Error('Expected the diverged Toaster fixture');
+            }
+            verifyNonEffects();
+        },
+    };
+}
+
+function createBacteriaConflictFixture(): DivergedFixture {
+    type BacteriaRoot = { tracks: { tracks: Track[] } };
+    const deviceId = 'bacteria-conflict';
+    const trackId = 'bacteria-owner';
+    const rawDevice = () => getCrdtDoc<BacteriaRoot>('root')?.tracks.tracks[0]?.devices[0];
+    return {
+        title: 'setBacteriaFactoryPatch refuses after a validated leaf source diverges',
+        actionType: 'setBacteriaFactoryPatch',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Bacteria registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            const owner = createTrack({ id: trackId, name: 'Bacteria', kind: 'audio' });
+            const device = {
+                id: deviceId,
+                name: 'Bacteria',
+                type: 'bacteria',
+                bypassed: false,
+                parameterValues: { band2_bitDepth: 4 },
+            };
+            setTrackStoreState({ ...defaultTrackState, tracks: [{ ...owner, devices: [device] }] });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()).toEqual(device);
+
+            const inverse = {
+                type: 'setBacteriaFactoryPatch',
+                payload: {
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    label: 'Load Bitcrush Cascade',
+                    before: { name: 'Bitcrush Cascade', deviceState: null, parameterValues: { band2_bitDepth: 4 } },
+                    after: { name: 'Init', deviceState: null, parameterValues: { band2_bitDepth: null } },
+                },
+            } satisfies AppAction;
+            expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            mutateCrdtDoc<BacteriaRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const target = document.tracks.tracks[0]?.devices[0];
+                    if (!target) {
+                        throw new Error('Expected the Bacteria device before the peer write');
+                    }
+                    target.parameterValues.band2_bitDepth = 9;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.parameterValues).toEqual({ band2_bitDepth: 9 });
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            expect(rawDevice()?.parameterValues).toEqual({ band2_bitDepth: 9 });
+            expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+        },
+    };
+}
+
+function createGlutenConflictFixture(): DivergedFixture {
+    type GlutenRoot = { tracks: { tracks: Track[] } };
+    let verifyNonEffects: (() => void) | undefined;
+    return {
+        title: 'setGlutenFactoryPreset refuses when a peer changes a captured parameter after validation',
+        actionType: 'setGlutenFactoryPreset',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Gluten registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+
+            const descriptor = getPluginById('gluten');
+            if (!descriptor) {
+                throw new Error('Expected the Gluten device descriptor');
+            }
+            const before = Object.fromEntries(descriptor.parameters.map(({ id }) => [id, null]));
+            const defaults = Object.fromEntries(
+                descriptor.parameters.map(({ id, defaultValue }) => [id, defaultValue])
+            );
+            const after = {
+                ...defaults,
+                threshold: -12,
+                ratio: 2,
+                attack: 30,
+                autoRelease: 1,
+                knee: 10,
+                range: 10,
+            };
+            const deviceId = 'gluten-conflict';
+            const trackId = 'gluten-owner';
+            const rawDevice = () => getCrdtDoc<GlutenRoot>('root')?.tracks.tracks[0]?.devices[0];
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Gluten', kind: 'audio', withoutDefaultDevice: true }),
+                        devices: [
+                            { id: deviceId, name: 'Gluten', type: 'gluten', bypassed: false, parameterValues: after },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.parameterValues).toEqual(after);
+
+            const inverse = {
+                type: 'setGlutenFactoryPreset',
+                payload: {
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    presetId: 'glue-gentle',
+                    before: after,
+                    after: before,
+                },
+            } satisfies AppAction;
+            const handler = getCommandHandler(inverse);
+            const context = { actions: [inverse], actionIndex: 0 };
+            expect(handler?.validate?.(inverse, context)).toBe(true);
+            expect(handler?.describe?.(inverse, context)?.label).toBe('Load Gentle Glue');
+
+            mutateCrdtDoc<GlutenRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected Gluten before the peer write');
+                    }
+                    device.parameterValues = { ...device.parameterValues, threshold: -15 };
+                },
+            });
+            trackStore.hydrate();
+            const peer = { ...after, threshold: -15 };
+            expect(rawDevice()?.parameterValues).toEqual(peer);
+            verifyNonEffects = () => {
+                expect(rawDevice()?.parameterValues).toEqual(peer);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            if (!verifyNonEffects) {
+                throw new Error('Expected the diverged Gluten fixture');
+            }
+            verifyNonEffects();
+        },
+    };
+}
+
+function createLevainConflictFixture(): DivergedFixture {
+    type LevainRoot = { tracks: { tracks: Track[] } };
+    let verifyNonEffects: (() => void) | undefined;
+    return {
+        title: 'setLevainIdentity refuses after a validated articulation source diverges',
+        actionType: 'setLevainIdentity',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Levain registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            const deviceId = 'levain-conflict';
+            const trackId = 'levain-owner';
+            const rawDevice = () => getCrdtDoc<LevainRoot>('root')?.tracks.tracks[0]?.devices[0];
+            const before = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'sustain' } };
+            const after = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } };
+            const peer = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'legato' } };
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Levain', kind: 'midi', withoutDefaultDevice: true }),
+                        devices: [
+                            {
+                                id: deviceId,
+                                name: 'Levain',
+                                type: 'levain',
+                                bypassed: false,
+                                parameterValues: {},
+                                deviceState: before,
+                            },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.deviceState).toEqual(before);
+
+            const inverse = {
+                type: 'setLevainIdentity',
+                payload: {
+                    kind: 'articulation',
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    label: 'Select staccato',
+                    missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
+                    before: { deviceState: before, parameterValues: {} },
+                    after: { deviceState: after, parameterValues: {} },
+                },
+            } satisfies AppAction;
+            expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            mutateCrdtDoc<LevainRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected the Levain before the peer write');
+                    }
+                    device.deviceState = peer;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.deviceState).toEqual(peer);
+            verifyNonEffects = () => {
+                expect(rawDevice()?.deviceState).toEqual(peer);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            if (!verifyNonEffects) {
+                throw new Error('Expected the diverged Levain fixture');
+            }
+            verifyNonEffects();
+        },
+    };
+}
+
+function createProofConflictFixture(): DivergedFixture {
+    type Root = { tracks: { tracks: Track[] } };
+    const deviceId = 'proof-conflict';
+    const trackId = 'proof-owner';
+    const peer = { target_mode: 4, target_lufs: -16, lim_ceiling: -3 };
+    const rawDevice = () => getCrdtDoc<Root>('root')?.tracks.tracks[0]?.devices[0];
+
+    return {
+        title: 'setProofPatchSelection refuses replay after a peer changes the captured target pair',
+        actionType: 'setProofPatchSelection',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Proof registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+
+            const before = { target_mode: 3, target_lufs: -23 };
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Proof', kind: 'audio', withoutDefaultDevice: true }),
+                        devices: [
+                            { id: deviceId, name: 'Proof', type: 'proof', bypassed: false, parameterValues: before },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(rawDevice()?.parameterValues).toEqual(before);
+
+            const inverse = {
+                type: 'setProofPatchSelection',
+                payload: {
+                    trackId,
+                    deviceId,
+                    deviceIds: [deviceId],
+                    selection: { kind: 'target', target: 'broadcast' },
+                    before: { parameters: before, name: 'Init', presetId: null },
+                    after: { parameters: { target_mode: null, target_lufs: -18 }, name: 'Init', presetId: null },
+                },
+            } satisfies AppAction;
+            const handler = getCommandHandler(inverse);
+            const context = { actions: [inverse], actionIndex: 0 };
+            expect(handler?.validate?.(inverse, context)).toBe(true);
+            expect(handler?.describe?.(inverse, context)?.label).toBe('Set Proof target to Broadcast');
+            mutateCrdtDoc<Root>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected Proof before the peer write');
+                    }
+                    device.parameterValues = peer;
+                },
+            });
+            trackStore.hydrate();
+            expect(rawDevice()?.parameterValues).toEqual(peer);
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            expect(rawDevice()?.parameterValues).toEqual(peer);
+            expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+        },
+    };
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createFermenterConflictFixture(),
+    createToasterConflictFixture(),
+    createBacteriaConflictFixture(),
+    createGlutenConflictFixture(),
+    createLevainConflictFixture(),
+    createProofConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({
         title: `relinkClipAudioSources refuses an otherwise valid replay after its ${edit} changes`,
         actionType: 'relinkClipAudioSources',

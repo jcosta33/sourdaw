@@ -267,7 +267,6 @@ export const sizeBaselineFiles = [
     'src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx',
     'src/modules/Bacteria/presentations/components/WaveshaperEditor.tsx',
     'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx',
-    'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts',
     'src/modules/BrowserAi/presentations/views/CapabilityReportPanel.tsx',
     'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
     'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',

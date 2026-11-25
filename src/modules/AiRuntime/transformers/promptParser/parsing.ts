@@ -85,7 +85,12 @@ export function tryPresetMatch(normalized: string, context: PresetContext): Runt
         return [];
     }
     const actions = Array.isArray(result) ? result : [result];
-    if (actions.some((action) => !presetMayEmitByActionType[action.type])) {
+    if (
+        actions.some(
+            (action) =>
+                !Object.hasOwn(presetMayEmitByActionType, action.type) || !presetMayEmitByActionType[action.type]
+        )
+    ) {
         return [];
     }
     return actions;
@@ -103,6 +108,9 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
         selectedClipId: context.selectedClipId ?? undefined,
         selectedClipType: selectedClip?.type,
         trackCount: context.tracks.length,
+        selectedTrackSoloSafe: selectedTrack?.soloSafe,
+        loopEnabled: context.isLooping,
+        metronomeEnabled: context.metronomeEnabled,
     };
 }
 

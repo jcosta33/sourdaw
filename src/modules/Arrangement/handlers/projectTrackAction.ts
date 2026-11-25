@@ -3,7 +3,9 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { type Track } from '../stores/trackStore';
 import { clampClipGain } from '../transformers/clampClipGain';
+import { clampTrackHeight } from '../useCases/clampTrackHeight';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
+import { clampTrackPan } from '../useCases/setTrackGainPan/clampTrackPan';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -46,7 +48,32 @@ function projectTrackColor(action: ActionOf<'setTrackColor'>, projected: Track):
 }
 
 function projectTrackPan(action: ActionOf<'setTrackPan'>, projected: Track): void {
-    projected.pan = action.payload.pan;
+    // The writer clamps, so a later action plans against the pan the store will hold.
+    projected.pan = clampTrackPan(action.payload.pan);
+}
+
+function projectHidden(action: ActionOf<'hideTrack'>, projected: Track): void {
+    projected.hidden = action.payload.hidden;
+}
+
+function projectFolded(action: ActionOf<'foldTrack'>, projected: Track): void {
+    projected.collapsed = action.payload.folded;
+}
+
+function projectTrackHeight(action: ActionOf<'setTrackHeight'>, projected: Track): void {
+    // The writer clamps, so a later action plans against the height the store will hold.
+    projected.height = clampTrackHeight(action.payload.height, 0);
+}
+
+function projectVerticalZoom(action: ActionOf<'zoomTracksVertical'>, projected: Track): void {
+    projected.height = clampTrackHeight(projected.height, action.payload.delta);
+}
+
+function projectRestoredHeights(action: ActionOf<'restoreTrackHeights'>, projected: Track): void {
+    const restored = action.payload.replacement.find((entry) => entry.trackId === projected.id);
+    if (restored) {
+        projected.height = restored.height;
+    }
 }
 
 function projectAutomationMode(action: ActionOf<'setAutomationMode'>, projected: Track): void {
@@ -59,6 +86,14 @@ function projectMute(action: ActionOf<'muteTrack'>, projected: Track): void {
 
 function projectSolo(action: ActionOf<'soloTrack'>, projected: Track): void {
     projected.soloed = action.payload.soloed;
+}
+
+function projectFreeze(_action: ActionOf<'freezeTrack'>, projected: Track): void {
+    projected.frozen = true;
+}
+
+function projectUnfreeze(_action: ActionOf<'unfreezeTrack'>, projected: Track): void {
+    projected.frozen = false;
 }
 
 function projectTrackOutput(action: ActionOf<'setTrackOutput'>, projected: Track): void {
@@ -164,8 +199,8 @@ export const trackProjectionByActionType: {
     setSoloSafe: keepTrack,
     restoreSoloSafe: keepTrack,
     armTrack: keepTrack,
-    freezeTrack: keepTrack,
-    unfreezeTrack: keepTrack,
+    freezeTrack: projectFreeze,
+    unfreezeTrack: projectUnfreeze,
     restoreFreezeState: keepTrack,
     flattenTrack: keepTrack,
     bounceInPlace: keepTrack,
@@ -218,7 +253,12 @@ export const trackProjectionByActionType: {
     setExternalPluginState: keepTrack,
     setDeviceState: keepTrack,
     setFermenterPatch: keepTrack,
+    setLevainIdentity: keepTrack,
     setGrandBouleDeviceState: keepTrack,
+    setToasterFactoryKit: keepTrack,
+    setBacteriaFactoryPatch: keepTrack,
+    setGlutenFactoryPreset: keepTrack,
+    setProofPatchSelection: keepTrack,
     createBus: keepTrack,
     createFolder: keepTrack,
     setSend: projectSendLevel,
@@ -322,7 +362,7 @@ export const trackProjectionByActionType: {
     setCountInBars: keepTrack,
     togglePreRoll: keepTrack,
     setPreRollBars: keepTrack,
-    zoomTracksVertical: keepTrack,
+    zoomTracksVertical: projectVerticalZoom,
     addTimeSignatureChange: keepTrack,
     removeTimeSignatureChange: keepTrack,
     setTrackOutput: projectTrackOutput,
@@ -330,10 +370,10 @@ export const trackProjectionByActionType: {
     removeSend: projectRemovedSend,
     removeAutomationPoint: keepTrack,
     setAutomationMode: projectAutomationMode,
-    hideTrack: keepTrack,
+    hideTrack: projectHidden,
     disableTrack: keepTrack,
     restoreTrackDisabled: keepTrack,
-    setTrackHeight: keepTrack,
+    setTrackHeight: projectTrackHeight,
     setSnapValue: keepTrack,
     zoomToFit: keepTrack,
     zoomToSelection: keepTrack,
@@ -342,7 +382,7 @@ export const trackProjectionByActionType: {
     newProject: keepTrack,
     importAudioFile: keepTrack,
     exportMidi: keepTrack,
-    foldTrack: keepTrack,
+    foldTrack: projectFolded,
     groupTracks: keepTrack,
     ungroupTracks: keepTrack,
     scaleAutomation: keepTrack,
@@ -397,7 +437,7 @@ export const trackProjectionByActionType: {
     insertTime: keepTrack,
     duplicateTimeRange: keepTrack,
     restoreTimeOperationState: keepTrack,
-    restoreTrackHeights: keepTrack,
+    restoreTrackHeights: projectRestoredHeights,
     restoreTrackGroupMemberships: keepTrack,
     restoreTracks: keepTrack,
     restoreTrackClipStates: keepTrack,

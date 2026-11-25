@@ -124,8 +124,10 @@ export type NativeOfflineRenderOptions = Readonly<{
     /**
      * Stops the render while it is in flight: the backend names the render it
      * starts, and an abort cancels exactly that one on the native side, which
-     * then rejects it as cancelled. Nothing is sent for an abort before the
-     * render starts or after it settles.
+     * then rejects it as cancelled. A signal already aborted when `render()` is
+     * called sends the cancel at once, and the native side keeps it for the
+     * render under that id that follows, so that render is cancelled before it
+     * builds anything. Nothing is sent for an abort after the render settles.
      */
     abortSignal?: AbortSignal;
 }>;
@@ -156,6 +158,8 @@ export type NativeOfflineGraphBackend = AudioGraphBackend &
  * owe the caller the same answer.
  */
 const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
+    'start-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
+    'release-grand-boule-preview': 'a Grand Boule preview requires a live native graph',
     'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
     'set-master-gain': 'an offline render applies the master level itself, from the project',
 };
@@ -196,12 +200,6 @@ function readMappedResult(value: unknown): MappedOutcome {
     throw new Error(`map_graph_batch answered an unknown outcome: ${JSON.stringify(value)}`);
 }
 
-/**
- * Cancel `renderId` on the native side when `abortSignal` fires, until
- * released. A cancel that fails is logged and nothing more: the render it did
- * not reach finishes or fails on its own, and the caller's checkpoint after it
- * still ends a cancelled export.
- */
 /** Asks the native side to stop `renderId`; a cancel that cannot reach it is logged, never thrown. */
 function cancelListener(cancel: (renderId: string) => Promise<void>, renderId: string): () => void {
     return () => {
@@ -211,6 +209,12 @@ function cancelListener(cancel: (renderId: string) => Promise<void>, renderId: s
     };
 }
 
+/**
+ * Cancel `renderId` on the native side when `abortSignal` fires, until
+ * released. A cancel that fails is logged and nothing more: the render it did
+ * not reach finishes or fails on its own, and the caller's checkpoint after it
+ * still ends a cancelled export.
+ */
 function cancelOnAbort(input: {
     transport: NativeGraphTransport;
     renderId: string;

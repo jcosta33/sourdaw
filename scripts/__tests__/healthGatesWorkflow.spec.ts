@@ -406,12 +406,26 @@ const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
 const FERMENTER_CAPTURE = 'Capture the Fermenter build receipt';
 const FERMENTER_PROOF = 'Prove Fermenter in the packaged app';
 const FERMENTER_UPLOAD = 'Upload the Fermenter proof record';
+const PREMIUM_EDITOR_PROOF = 'Prove premium editor mounts in the packaged app';
+const PREMIUM_EDITOR_UPLOAD = 'Upload the premium editor proof record';
+const EDITOR_WORKSPACE_PROOF = 'Prove premium editor workspace in the packaged app';
+const EDITOR_WORKSPACE_UPLOAD = 'Upload the premium editor workspace proof record';
 // The first filter attempt defers to the retry; Resolve scope fails when neither
 // attempt produced verdicts, so the softened step does not hide a failure.
 type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
-    ...[FERMENTER_CAPTURE, FERMENTER_PROOF, FERMENTER_UPLOAD].map((step) => ({
+    ...[
+        FERMENTER_CAPTURE,
+        FERMENTER_PROOF,
+        FERMENTER_UPLOAD,
+        PREMIUM_EDITOR_PROOF,
+        PREMIUM_EDITOR_UPLOAD,
+        EDITOR_WORKSPACE_PROOF,
+        EDITOR_WORKSPACE_UPLOAD,
+        'Observe Grand Boule output audition in the packaged app',
+        'Upload the Grand Boule output audition record',
+    ].map((step) => ({
         workflow: 'nightly.yml',
         job: 'desktop-measure',
         step,
@@ -1792,7 +1806,7 @@ function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
 // position-enumerated pins above each cover one named job or step; the sweep
 // covers every job in every file, because a softened leg reports a failing
 // proof as a passing summary wherever it lands. The paths-filter attempt
-// hands the question to its retry and verdict guard. The Fermenter steps
+// hands the question to its retry and verdict guard. The packaged editor steps
 // report their own verdict and do not decide the Nightly job result.
 function assertNoContinueOnError(set: WorkflowSet): void {
     const pins = new Map(
@@ -2799,7 +2813,207 @@ function assertFermenterProof(candidate: UnknownRecord): void {
     });
 }
 
+function assertPackagedEditorFamilyProof(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'desktop-measure');
+    const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+    const proof = stepNamed(job, PREMIUM_EDITOR_PROOF);
+    const upload = stepNamed(job, PREMIUM_EDITOR_UPLOAD);
+    expect(steps[steps.indexOf(stepNamed(job, FERMENTER_UPLOAD)) + 1]).toBe(proof);
+    expect(steps[steps.indexOf(proof) + 1]).toBe(upload);
+    expect(proof).toMatchObject({
+        id: 'prove-premium-editors',
+        if: FERMENTER_ADMISSION,
+        'continue-on-error': true,
+        'timeout-minutes': 15,
+        env: { FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' },
+    });
+    expect(stringAt(proof, 'run').trimEnd().split('\n')).toEqual([
+        'node scripts/proveDesktopFermenter.ts --family --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
+        '  --json "$RUNNER_TEMP/sourdaw-premium-editors-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"',
+    ]);
+    expect(upload).toMatchObject({
+        if: "${{ !cancelled() && (steps.prove-premium-editors.outcome == 'success' || steps.prove-premium-editors.outcome == 'failure') }}",
+        'continue-on-error': true,
+        uses: 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+    });
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'desktop-premium-editors-${{ github.sha }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/sourdaw-premium-editors-${{ github.run_id }}-${{ github.run_attempt }}.json',
+        'retention-days': 7,
+        'if-no-files-found': 'error',
+    });
+}
+
+function assertPackagedEditorWorkspaceProof(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'desktop-measure');
+    const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+    const proof = stepNamed(job, EDITOR_WORKSPACE_PROOF);
+    const upload = stepNamed(job, EDITOR_WORKSPACE_UPLOAD);
+    expect(steps[steps.indexOf(stepNamed(job, PREMIUM_EDITOR_UPLOAD)) + 1]).toBe(proof);
+    expect(steps[steps.indexOf(proof) + 1]).toBe(upload);
+    expect(proof).toMatchObject({
+        id: 'prove-editor-workspace',
+        if: FERMENTER_ADMISSION,
+        'continue-on-error': true,
+        'timeout-minutes': 15,
+        env: { FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' },
+    });
+    expect(stringAt(proof, 'run').trimEnd().split('\n')).toEqual([
+        'node scripts/proveDesktopFermenter.ts --workspace --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
+        '  --json "$RUNNER_TEMP/sourdaw-editor-workspace-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"',
+    ]);
+    expect(upload).toMatchObject({
+        if: "${{ !cancelled() && (steps.prove-editor-workspace.outcome == 'success' || steps.prove-editor-workspace.outcome == 'failure') }}",
+        'continue-on-error': true,
+        uses: 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+    });
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'desktop-editor-workspace-${{ github.sha }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/sourdaw-editor-workspace-${{ github.run_id }}-${{ github.run_attempt }}.json',
+        'retention-days': 7,
+        'if-no-files-found': 'error',
+    });
+}
+function assertPackagedGrandBouleAudition(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'desktop-measure');
+    const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+    const proof = stepNamed(job, 'Observe Grand Boule output audition in the packaged app');
+    const upload = stepNamed(job, 'Upload the Grand Boule output audition record');
+    expect(steps[steps.indexOf(stepNamed(job, EDITOR_WORKSPACE_UPLOAD)) + 1]).toBe(proof);
+    expect(steps[steps.indexOf(proof) + 1]).toBe(upload);
+    expect(proof).toMatchObject({
+        id: 'prove-grand-boule-audition',
+        if: FERMENTER_ADMISSION,
+        'continue-on-error': true,
+        'timeout-minutes': 15,
+        env: { FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' },
+    });
+    expect(stringAt(proof, 'run').trimEnd().split('\n')).toEqual([
+        'if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then',
+        '  if ! SwitchAudioSource -t input -s "BlackHole 2ch"; then',
+        '    echo "::warning::Could not preselect BlackHole input; the packaged audition will verify the current input"',
+        '  fi',
+        'else',
+        '  echo "::warning::BlackHole input preselection is limited to GitHub-hosted runners"',
+        'fi',
+        'node scripts/proveDesktopFermenter.ts --audition --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
+        '  --json "$RUNNER_TEMP/sourdaw-grand-boule-audition-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"',
+    ]);
+    expect(upload).toMatchObject({
+        if: "${{ !cancelled() && (steps.prove-grand-boule-audition.outcome == 'success' || steps.prove-grand-boule-audition.outcome == 'failure') }}",
+        'continue-on-error': true,
+        uses: 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+    });
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'desktop-grand-boule-audition-${{ github.sha }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/sourdaw-grand-boule-audition-${{ github.run_id }}-${{ github.run_attempt }}.json',
+        'retention-days': 7,
+        'if-no-files-found': 'error',
+    });
+}
+
 describe('health gates workflow contract', () => {
+    it('pins the separate exact-receipt Grand Boule audition after workspace evidence', () => {
+        assertPackagedGrandBouleAudition(nightly);
+        const proofName = 'Observe Grand Boule output audition in the packaged app';
+        const proof = stepNamed(jobAt(nightly, 'desktop-measure'), proofName);
+        for (const change of [
+            { if: FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", '') },
+            { if: FERMENTER_ADMISSION.replace('!cancelled()', 'always()') },
+            {
+                run: stringAt(proof, 'run').replace(
+                    'if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then',
+                    'if true; then'
+                ),
+            },
+            { run: stringAt(proof, 'run').replace('SwitchAudioSource -t input -s "BlackHole 2ch"', 'true') },
+            { run: stringAt(proof, 'run').replace('--audition ', '') },
+            { run: stringAt(proof, 'run').replace('sourdaw-fermenter-build-', 'different-receipt-') },
+            { env: { FERMENTER_CAPTURE_OUTCOME: 'success' } },
+            { 'continue-on-error': false },
+        ]) {
+            const candidate = cloneWorkflows('altered audition proof').nightly;
+            Object.assign(stepNamed(jobAt(candidate, 'desktop-measure'), proofName), change);
+            expect(() => assertPackagedGrandBouleAudition(candidate)).toThrow();
+        }
+    });
+
+    it('runs the separate workspace observation after the family record with the exact scheduled receipt and narrow upload', () => {
+        assertPackagedEditorWorkspaceProof(nightly);
+    });
+
+    it('rejects workspace admission, invocation, receipt, ordering and artifact drift', () => {
+        const proof = stepNamed(jobAt(nightly, 'desktop-measure'), EDITOR_WORKSPACE_PROOF);
+        for (const change of [
+            { if: FERMENTER_ADMISSION.replace('!cancelled()', 'always()') },
+            { if: FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", '') },
+            { if: FERMENTER_ADMISSION.replace("github.ref == 'refs/heads/main' && ", '') },
+            { if: FERMENTER_ADMISSION.replace(" && steps.build-packaged-app.outcome == 'success'", '') },
+            { env: { FERMENTER_CAPTURE_OUTCOME: 'success' } },
+            { run: stringAt(proof, 'run').replace('--workspace ', '') },
+            { run: stringAt(proof, 'run').replace('sourdaw-fermenter-build-', 'different-receipt-') },
+            { 'continue-on-error': false },
+            { 'timeout-minutes': 90 },
+        ]) {
+            const candidate = cloneWorkflows('altered workspace proof').nightly;
+            Object.assign(stepNamed(jobAt(candidate, 'desktop-measure'), EDITOR_WORKSPACE_PROOF), change);
+            expect(() => assertPackagedEditorWorkspaceProof(candidate)).toThrow();
+        }
+        for (const change of [
+            { path: 'release/desktop/' },
+            { name: 'same-artifact-as-family' },
+            { 'retention-days': 90 },
+        ]) {
+            const candidate = cloneWorkflows('broad workspace artifact').nightly;
+            Object.assign(
+                recordAt(stepNamed(jobAt(candidate, 'desktop-measure'), EDITOR_WORKSPACE_UPLOAD), 'with'),
+                change
+            );
+            expect(() => assertPackagedEditorWorkspaceProof(candidate)).toThrow();
+        }
+        const candidate = cloneWorkflows('misordered workspace proof').nightly;
+        const job = jobAt(candidate, 'desktop-measure');
+        const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+        const index = steps.indexOf(stepNamed(job, EDITOR_WORKSPACE_PROOF));
+        const reordered = [...steps];
+        const previous = reordered[index - 1];
+        const current = reordered[index];
+        if (!previous || !current) {
+            throw new Error('missing fixture steps');
+        }
+        reordered[index - 1] = current;
+        reordered[index] = previous;
+        job.steps = reordered;
+        expect(() => assertPackagedEditorWorkspaceProof(candidate)).toThrow();
+    });
+
+    it('runs the packaged family proof after Fermenter, using only its scheduled build receipt and a single JSON artifact', () => {
+        assertPackagedEditorFamilyProof(nightly);
+    });
+
+    it('rejects altering the editor family proof eligibility, driver, receipt, or upload scope', () => {
+        for (const change of [
+            { if: FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", '') },
+            { if: FERMENTER_ADMISSION.replace("github.ref == 'refs/heads/main' && ", '') },
+            { if: FERMENTER_ADMISSION.replace(" && steps.build-packaged-app.outcome == 'success'", '') },
+            { env: { FERMENTER_CAPTURE_OUTCOME: 'success' } },
+            {
+                run: stringAt(stepNamed(jobAt(nightly, 'desktop-measure'), PREMIUM_EDITOR_PROOF), 'run').replace(
+                    '--family ',
+                    ''
+                ),
+            },
+        ]) {
+            const candidate = cloneWorkflows('altered packaged family proof').nightly;
+            Object.assign(stepNamed(jobAt(candidate, 'desktop-measure'), PREMIUM_EDITOR_PROOF), change);
+            expect(() => assertPackagedEditorFamilyProof(candidate)).toThrow();
+        }
+        const candidate = cloneWorkflows('broad packaged family artifact').nightly;
+        recordAt(stepNamed(jobAt(candidate, 'desktop-measure'), PREMIUM_EDITOR_UPLOAD), 'with').path =
+            'release/desktop/';
+        expect(() => assertPackagedEditorFamilyProof(candidate)).toThrow();
+    });
+
     it('runs the Fermenter proof only for an uncancelled scheduled main build and uploads only its finalized record', () => {
         assertFermenterProof(nightly);
         for (const broadened of [

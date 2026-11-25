@@ -4,12 +4,26 @@ import { registerKernelPorts } from '#/app/registerKernelPorts';
 import * as storageWrites from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane } from '#/modules/Automation/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { type Macro } from '../../../models/Macro';
+import { clearHandlerRegistry, registerHandlerMap } from '../../../stores/handlerRegistry';
 import { macroStore } from '../../../stores/macroStore';
 import { playMacro } from '../playback';
 
 registerKernelPorts();
+
+function hasStringType(value: unknown): value is Macro['actions'][number] {
+    return typeof value === 'object' && value !== null && 'type' in value && typeof value.type === 'string';
+}
+
+function inheritedNameAction(): Macro['actions'][number] {
+    const parsed: unknown = JSON.parse('{"type":"constructor"}');
+    if (!hasStringType(parsed)) {
+        throw new Error('Fixture is not an action');
+    }
+    return parsed;
+}
 
 const STORAGE_KEY = 'sourdaw:macros';
 
@@ -50,6 +64,34 @@ describe('playMacro', () => {
         automationStore.set({ lanes: [] });
     });
 
+    const automationInsertion: Macro['actions'][number] = {
+        type: 'insertAutomationLanePoints',
+        payload: {
+            laneId: 'lane-1',
+            owner: { trackId: 'track-1', parameterId: 'volume' },
+            insertion: { kind: 'split', beat: 1 },
+        },
+    };
+    const levainIdentity: Macro['actions'][number] = {
+        type: 'setLevainIdentity',
+        payload: {
+            kind: 'articulation',
+            trackId: 'owner',
+            deviceId: 'levain',
+            deviceIds: ['levain'],
+            label: 'Select staccato',
+            missingDeviceState: { version: 1, data: { instrumentId: 'violin-1' } },
+            before: { deviceState: null, parameterValues: {} },
+            after: {
+                deviceState: {
+                    version: 1,
+                    data: { instrumentId: 'violin-1', currentArticulation: 'staccato' },
+                },
+                parameterValues: {},
+            },
+        },
+    };
+
     it('should execute each action with a shared undo group', async () => {
         await playMacro('play-1');
 
@@ -66,6 +108,89 @@ describe('playMacro', () => {
         expect(secondAction).toEqual({ type: 'toggleLoop' });
         expect(firstOptions?.groupId).toBe(secondOptions?.groupId);
         expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
+    });
+
+    it('refuses a saved macro containing a Levain identity edit before dispatching any step', async () => {
+        const saved: Macro = {
+            ...macro,
+            actions: [...macro.actions, levainIdentity],
+        };
+        macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+
+        await expect(playMacro(saved.id)).rejects.toThrow('Levain identity changes are local edits.');
+        expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses a saved macro containing an automation lane insertion before dispatching any step', async () => {
+        const saved: Macro = { ...macro, actions: [...macro.actions, automationInsertion] };
+        macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+
+        await expect(playMacro(saved.id)).rejects.toThrow('Automation lane insertions are local edits.');
+        expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
+    it('names the automation refusal first when a Levain edit precedes it', async () => {
+        const saved: Macro = { ...macro, actions: [levainIdentity, automationInsertion] };
+        macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+
+        await expect(playMacro(saved.id)).rejects.toThrow('Automation lane insertions are local edits.');
+        expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
+    it('replays an action whose type is an inherited object name as recorded', async () => {
+        const inherited = inheritedNameAction();
+        macroStore.set({
+            macros: [{ ...macro, actions: [inherited] }],
+            recording: false,
+            currentRecording: [],
+        });
+
+        await playMacro(macro.id);
+
+        expect(executeAppActionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('replays a recorded tempo map edit through the tempo map route, dropping its captured row plan', async () => {
+        const promotion = {
+            version: 1 as const,
+            clips: [],
+            takes: [],
+            regions: [],
+            gaps: [],
+            gapFieldPresence: [],
+        };
+        const recorded: Macro['actions'][number] = {
+            type: 'editTempoMap',
+            payload: {
+                edit: { type: 'add', beat: 4, tempo: 90 },
+                rowPlan: {
+                    operation: 'add',
+                    before: [],
+                    after: [{ id: 'recorded', beat: 4, tempo: 90, curve: 'instant' }],
+                    order: [{ beat: 4, before: [], after: ['recorded'] }],
+                    collision: { beat: 4, targetId: null },
+                },
+                audioSourcePromotion: promotion,
+            },
+        };
+        macroStore.set({
+            macros: [{ ...macro, actions: [recorded] }],
+            recording: false,
+            currentRecording: [],
+        });
+        registerHandlerMap(getTransportHandlers());
+
+        try {
+            await playMacro(macro.id);
+        } finally {
+            clearHandlerRegistry();
+        }
+
+        expect(executeAppActionMock).toHaveBeenCalledTimes(1);
+        expect(executeAppActionMock.mock.calls[0]?.[0]).toEqual({
+            type: 'editTempoMap',
+            payload: { edit: { type: 'add', beat: 4, tempo: 90 } },
+        });
     });
 
     it('propagates settlement failure before dispatching any macro step', async () => {

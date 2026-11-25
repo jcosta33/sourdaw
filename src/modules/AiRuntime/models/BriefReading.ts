@@ -1,18 +1,41 @@
 import { type AgentTrustCeiling } from './AgentExecutionMode';
 import { type AgentRunProviderProposal } from './AgentRun';
+import { type PerceptualConstraintReading } from './PerceptualConstraint';
 import { type ProjectContextProductionBrief } from './ProjectContext';
+import { type ScheduledVibeRunBatch } from './VibeRunPlan';
 
 /** One reading the provider offered of an ambiguous brief request: a name and the characters it stands for. */
-export type BriefMixAlternative = {
+export type RequestedBriefMixAlternative = {
     name: string;
     requestedDescriptors: readonly string[];
 };
+
+/**
+ * The plan one reading stands for: the batches a vibe run would schedule for its characters, read
+ * before anything is measured, and the digest that identifies them. It is inert data; choosing the
+ * reading prepares the plan again and runs it only while that digest still holds.
+ */
+export type BriefReadingPlan = {
+    batches: readonly ScheduledVibeRunBatch[];
+    planDigest: string;
+    /** The planned tracks' names as the card was made, so a track removed since is still named. */
+    trackNames: Readonly<Record<string, string>>;
+    /**
+     * The request's constraints as read when the reading was offered; choosing it prepares the plan
+     * against them, as a scheduled batch is held to its recorded constraints.
+     */
+    constraintReading: PerceptualConstraintReading;
+};
+
+/** A reading offered with the plan it stands for. */
+export type BriefMixAlternative = RequestedBriefMixAlternative & { plan: BriefReadingPlan };
 
 /** A reading as the brief card carries it, with an id unique within that card. */
 export type BriefReading = {
     id: string;
     name: string;
     descriptors: readonly string[];
+    plan: BriefReadingPlan;
 };
 
 /** What the planner reports when a brief request admitted more than one reading. */

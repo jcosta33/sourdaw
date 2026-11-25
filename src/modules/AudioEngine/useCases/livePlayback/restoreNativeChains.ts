@@ -9,8 +9,11 @@
  * edit skips as strip-not-built.
  */
 
-import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { nativeLiveGraphSession, type NativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
-export function restoreNativeChains(chains: ReadonlyMap<string, readonly string[]>): void {
-    nativeLiveGraphSession.nativeChainByStripId = chains;
+export function restoreNativeChains(
+    record: Pick<NativeLiveGraphSession, 'nativeChainByStripId' | 'grandBoulePreviewTargetsByStripId'>
+): void {
+    nativeLiveGraphSession.nativeChainByStripId = record.nativeChainByStripId;
+    nativeLiveGraphSession.grandBoulePreviewTargetsByStripId = record.grandBoulePreviewTargetsByStripId;
 }

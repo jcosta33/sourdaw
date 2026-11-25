@@ -4,9 +4,12 @@ import { act, render, screen, fireEvent, waitFor, createEvent, within } from '@t
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { VARIATION_LANE_HEIGHT } from '../../../models/TimelineTrackExtent';
 import { normalizeTrack } from '../../../models/Track';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { setScrollY, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
@@ -131,7 +134,8 @@ vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('#/modules/Preferences/useCases', () => ({
+vi.mock('#/modules/Preferences/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Preferences/useCases')>()),
     defaultPreferences: { trackHeight: 'normal' },
     onSoloModePreferenceApplied: vi.fn(),
     setTrackHeight: vi.fn(),
@@ -187,6 +191,104 @@ describe('TrackListView', () => {
         renderWithTooltip(<TrackListView />);
         expect(screen.getByTestId('track-t1')).toBeInTheDocument();
         expect(screen.getByTestId('track-t2')).toBeInTheDocument();
+    });
+
+    it('toggles only existing track automation labels after variations without issuing an edit', () => {
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    height: 44,
+                    showVariationLanes: true,
+                    alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+                }),
+                normalizeTrack({ id: 't2', name: 'Track 2', kind: 'midi', height: 56 }),
+            ],
+            selectedTrackId: 't2',
+        });
+        const lane: AutomationLane = {
+            id: 'pan',
+            trackId: 't1',
+            parameterId: 'pan',
+            parameterName: 'Pan',
+            points: [],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: -1,
+            maxValue: 1,
+        };
+        const source = {
+            lanes: [
+                lane,
+                { ...lane, id: 'clip-pan', clipId: 'clip' },
+                { ...lane, id: 'stale-pan', trackId: 'removed' },
+                { ...lane, id: 'hidden-pan', visible: false },
+            ],
+        };
+        automationStore.set(source);
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            renderWithTooltip(<TrackListView />);
+            const button = screen.getByRole('button', { name: 'Inline automation' });
+            expect(button).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.queryByTestId('inline-automation-lane-row')).toBeNull();
+
+            fireEvent.click(button);
+            expect(button).toHaveAttribute('aria-pressed', 'true');
+            const row = screen.getByTestId('inline-automation-lane-row');
+            expect(row).toHaveTextContent('Pan');
+            expect(row).toHaveAttribute('data-automation-lane-id', 'pan');
+            expect(row).toHaveStyle({ height: '40px' });
+            expect(
+                screen.getByText('Alternative 1').compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING
+            ).toBeTruthy();
+            expect(
+                row.compareDocumentPosition(screen.getByTestId('track-t2')) & Node.DOCUMENT_POSITION_FOLLOWING
+            ).toBeTruthy();
+
+            fireEvent.click(button);
+            expect(button).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.queryByTestId('inline-automation-lane-row')).toBeNull();
+            expect(automationStore.value).toEqual(source);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        } finally {
+            automationStore.set({ lanes: [] });
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
+    });
+
+    it('leaves a hidden track out of the list until Show hidden tracks is turned on', () => {
+        const track = (id: string, hidden: boolean) =>
+            normalizeTrack({ id, name: id, kind: 'audio', parentId: null, collapsed: false, height: 64, hidden });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [track('t1', false), track('t2', true)],
+            selectedTrackId: 't1',
+        });
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            renderWithTooltip(<TrackListView />);
+            expect(screen.queryByTestId('track-t2')).toBeNull();
+            expect(screen.getByTestId('track-t1')).toBeInTheDocument();
+
+            const toggle = screen.getByRole('button', { name: 'Show hidden tracks (1)' });
+            expect(toggle).toHaveAttribute('aria-pressed', 'false');
+            fireEvent.click(toggle);
+
+            expect(toggle).toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByTestId('track-t2')).toBeInTheDocument();
+
+            fireEvent.click(toggle);
+
+            expect(toggle).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.queryByTestId('track-t2')).toBeNull();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        } finally {
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
     });
 
     it('should render master spectrum in header', () => {
@@ -552,6 +654,88 @@ describe('TrackListView', () => {
         renderWithTooltip(<TrackListView />);
         fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowUp' });
         expect(selectTrack).toHaveBeenCalledWith('t2');
+    });
+
+    describe('roving tab stop', () => {
+        const row = (
+            id: string,
+            parentId: string | null = null,
+            extra: Partial<Parameters<typeof normalizeTrack>[0]> = {}
+        ) => normalizeTrack({ id, name: id, kind: 'audio', parentId, collapsed: false, height: 64, ...extra });
+        const tabStopIds = (): string[] =>
+            screen
+                .getAllByRole('row')
+                .filter((element) => element.getAttribute('tabindex') === '0')
+                .map((element) => element.getAttribute('data-track-id') ?? '');
+
+        it('makes the first drawn row the tab stop when nothing is selected', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b'), row('c')], selectedTrackId: null });
+            renderWithTooltip(<TrackListView />);
+            expect(tabStopIds()).toEqual(['a']);
+        });
+
+        it('makes the first drawn row the tab stop when the selection is inside a collapsed folder', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    row('a'),
+                    row('folder', null, { kind: 'folder', collapsed: true }),
+                    row('child', 'folder'),
+                    row('b'),
+                ],
+                selectedTrackId: 'child',
+            });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.queryByTestId('track-child')).not.toBeInTheDocument();
+            expect(tabStopIds()).toEqual(['a']);
+        });
+
+        it('makes the first drawn row the tab stop when the selection is hidden and hidden tracks are off', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [row('a'), row('b', null, { hidden: true }), row('c')],
+                selectedTrackId: 'b',
+            });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.queryByTestId('track-b')).not.toBeInTheDocument();
+            expect(tabStopIds()).toEqual(['a']);
+        });
+
+        it('makes the grid itself focusable only when no row is drawn', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [], selectedTrackId: null });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.getByRole('grid', { name: 'Track list' })).toHaveAttribute('tabindex', '-1');
+        });
+
+        it('keeps the grid out of the tab order while rows exist', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b')], selectedTrackId: null });
+            renderWithTooltip(<TrackListView />);
+            expect(screen.getByRole('grid', { name: 'Track list' })).not.toHaveAttribute('tabindex');
+        });
+
+        it('keeps the selected row as the only tab stop while it is drawn', () => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [row('a'), row('b'), row('c')], selectedTrackId: 'b' });
+            renderWithTooltip(<TrackListView />);
+            expect(tabStopIds()).toEqual(['b']);
+        });
+
+        it.each([
+            [
+                'a collapsed folder',
+                [row('a'), row('folder', null, { kind: 'folder', collapsed: true }), row('child', 'folder'), row('c')],
+                'child',
+            ],
+            ['a hidden track', [row('a'), row('b', null, { hidden: true }), row('c')], 'b'],
+        ] as const)(
+            'treats a selection inside %s like nothing selected for the arrow keys',
+            (_name, tracks, selected) => {
+                vi.mocked(useTracks).mockReturnValue({ tracks: [...tracks], selectedTrackId: selected });
+                renderWithTooltip(<TrackListView />);
+                fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+                expect(selectTrack).toHaveBeenLastCalledWith('a');
+                fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowUp' });
+                expect(selectTrack).toHaveBeenLastCalledWith('c');
+                expect(selectTrack).toHaveBeenCalledTimes(2);
+            }
+        );
     });
 
     it('does nothing on ArrowDown at the last track', () => {

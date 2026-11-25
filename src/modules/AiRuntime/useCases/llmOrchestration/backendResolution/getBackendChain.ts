@@ -1,7 +1,7 @@
 import { type AiBackendPreference, type RunnableAiBackend } from '../../../models/LlmOrchestrationTypes';
 import { type ModelProviderModality, type ModelProviderOperation } from '../../../models/ModelProviderProtocol';
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
-import { llmStatusStore } from '../../../stores/llmStatusStore';
+import { answeringStatus } from '../../../stores/answeringStatus';
 import { resolveModelRoute } from '../../resolveModelRoute';
 
 import { createRouteCandidate } from './createRouteCandidate';
@@ -29,7 +29,8 @@ type BackendChainRequirements = {
 export function getBackendChain(requirements: BackendChainRequirements = {}): RunnableAiBackend[] {
     const preference = aiBackendPreferenceStore.value ?? 'auto';
     const permitsRemoteExecution = preference === 'cloud';
-    const readyBackend = llmStatusStore.value?.state === 'ready' ? llmStatusStore.value.backend : null;
+    const engineStatus = answeringStatus.readEngineStatus();
+    const readyBackend = engineStatus?.state === 'ready' ? engineStatus.backend : null;
     const orderedBackends =
         preference !== 'auto' || readyBackend === null
             ? BACKEND_ORDERS.auto

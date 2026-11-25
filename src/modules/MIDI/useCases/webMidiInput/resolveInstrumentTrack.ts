@@ -1,3 +1,5 @@
+import { hasPadOutputHost } from '#/modules/AudioEngine/useCases';
+
 import type { Track, TrackStoreState } from '#/modules/Arrangement/stores';
 
 /**
@@ -20,7 +22,7 @@ export function resolveInstrumentTrack(
     }
     if (targetTrack.parentId) {
         const parent = trackState.tracks.find((track) => track.id === targetTrack.parentId);
-        if (parent?.devices.some((device) => device.type === 'toaster')) {
+        if (parent && hasPadOutputHost(parent.devices)) {
             const toasterChildren = trackState.tracks.filter((track) => track.parentId === targetTrack.parentId);
             return {
                 instrumentTrack: parent,

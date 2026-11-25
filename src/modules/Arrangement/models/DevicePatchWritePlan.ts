@@ -1,7 +1,4 @@
-import { type AppAction } from '#/utils/handlerContract';
-
-import { projectCapturedDevicePatch } from './CapturedDevicePatchProjection';
-import { projectDeviceChainAction } from './DeviceChainActionProjection';
+import { projectCapturedDevicePatch, projectCapturedDevicePatchWithMetadata } from './CapturedDevicePatchProjection';
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { type DevicePatchState } from './DevicePatchState';
 import { projectDeviceSnapshots } from './DeviceSnapshotProjection';
@@ -11,11 +8,10 @@ import {
     type PlannedDeviceWrite,
     type PlannedDeviceWriteStep,
 } from './PlannedDeviceWrite';
-import { type Device, createTrack } from './Track';
+import { type Owner, type PlanFailure, uniqueDevice } from './PlannedOwnerProjection';
+import { projectCommandOwners } from './PlannedOwnerProjectorByActionType';
+import { type Device } from './Track';
 
-type Owner = { id: string; frozen?: boolean; devices: Device[] };
-type PlanFailure = Exclude<PlannedDeviceWrite, { status: 'ready' }>;
-type OwnerProjection = { status: 'projected'; owners: Owner[] } | PlanFailure;
 type PlanInput = {
     source: readonly PlannedDeviceOwnerSource[];
     trackId: string;
@@ -25,13 +21,6 @@ type PlanInput = {
     actionIndex: number;
     plugins: readonly PluginDescriptor[];
 };
-
-function uniqueDevice(owners: readonly Owner[], deviceId: string) {
-    const matches = owners.flatMap((owner) =>
-        owner.devices.filter((device) => device.id === deviceId).map((device) => ({ owner, device }))
-    );
-    return matches.length === 1 ? matches[0] : undefined;
-}
 
 function presence(owners: readonly Owner[], input: PlanInput): PlannedDevicePresence | null {
     const ownersWithId = owners.filter((owner) => owner.id === input.trackId);
@@ -79,27 +68,11 @@ function presence(owners: readonly Owner[], input: PlanInput): PlannedDevicePres
     };
 }
 
-function parameterSourceMatches(
-    owners: readonly Owner[],
-    action: Extract<AppAction, { type: 'setDeviceParameter' }>
-): boolean {
-    const target = uniqueDevice(owners, action.payload.deviceId);
-    if (!target) {
-        return false;
+function projectPlannedPatch(device: Device, step: Extract<PlannedDeviceWriteStep, { kind: 'patch' }>): Device | null {
+    if (step.preservedMetadata) {
+        return projectCapturedDevicePatchWithMetadata(device, step.expected, step.after, step.preservedMetadata);
     }
-    const { owner, device } = target;
-    const p = action.payload;
-    const present = Object.hasOwn(device.parameterValues, p.paramId);
-    return (
-        (p.expectedTrackId === undefined || owner.id === p.expectedTrackId) &&
-        (p.expectedDeviceType === undefined || device.type === p.expectedDeviceType) &&
-        (p.expectedDeviceIds === undefined ||
-            (p.expectedDeviceIds.length === owner.devices.length &&
-                p.expectedDeviceIds.every((id, index) => owner.devices[index]?.id === id))) &&
-        (p.expectedTrackFrozen === undefined || owner.frozen === p.expectedTrackFrozen) &&
-        (p.expectedValuePresent === undefined || present === p.expectedValuePresent) &&
-        (p.expectedValue === undefined || (present && device.parameterValues[p.paramId] === p.expectedValue))
-    );
+    return projectCapturedDevicePatch(device, step.expected, step.after);
 }
 
 function projectCapturedStep(
@@ -110,6 +83,7 @@ function projectCapturedStep(
     if (
         !target ||
         target.owner.id !== step.trackId ||
+        (step.expectedDeviceType !== undefined && target.device.type !== step.expectedDeviceType) ||
         (target.owner.frozen ?? false) !== step.expectedTrackFrozen ||
         target.owner.frozen === true ||
         target.owner.devices.length !== step.expectedDeviceIds.length ||
@@ -117,7 +91,7 @@ function projectCapturedStep(
     ) {
         return { status: 'conflict', reason: 'Captured patch owner changed within the plan' };
     }
-    const device = projectCapturedDevicePatch(target.device, step.expected, step.after);
+    const device = projectPlannedPatch(target.device, step);
     if (!device) {
         return { status: 'conflict', reason: 'Captured patch source changed within the plan' };
     }
@@ -128,79 +102,6 @@ function projectCapturedStep(
         return candidate;
     });
     return null;
-}
-
-function projectMaterializedTrack(
-    owners: Owner[],
-    action: Extract<AppAction, { type: 'addTrack' | 'createBus' }>
-): OwnerProjection {
-    const id = action.type === 'addTrack' ? action.payload.id : action.payload.busId;
-    if (!id || owners.some((owner) => owner.id === id)) {
-        return { status: 'conflict', reason: 'Planned track identity is unavailable' };
-    }
-    if (
-        action.type === 'addTrack' &&
-        action.payload.kind === 'midi' &&
-        !action.payload.withoutDefaultDevice &&
-        !action.payload.initialDeviceId
-    ) {
-        return { status: 'unsupported', reason: 'Track creation lacks its materialized device identity' };
-    }
-    let track: ReturnType<typeof createTrack>;
-    if (action.type === 'addTrack') {
-        track = createTrack({
-            id,
-            kind: action.payload.kind,
-            name: action.payload.name ?? id,
-            color: '#000000',
-            initialAlternativeId: `planned-${id}`,
-            initialDeviceId: action.payload.initialDeviceId,
-            withoutDefaultDevice: action.payload.withoutDefaultDevice,
-        });
-    } else {
-        track = createTrack({
-            id,
-            kind: 'bus',
-            name: action.payload.name,
-            color: '#000000',
-            initialAlternativeId: `planned-${id}`,
-        });
-    }
-    owners.push({ id, frozen: track.frozen, devices: track.devices });
-    return { status: 'projected', owners };
-}
-
-function projectCommandOwners(
-    owners: Owner[],
-    action: AppAction,
-    plugins: readonly PluginDescriptor[]
-): OwnerProjection {
-    if (action.type === 'setFermenterPatch') {
-        return { status: 'unsupported', reason: 'A current-format captured patch adapter is required' };
-    }
-    if (action.type === 'removeTrack') {
-        owners = owners.filter((owner) => owner.id !== action.payload.trackId);
-        return { status: 'projected', owners };
-    }
-    if (action.type === 'restoreTrack') {
-        return {
-            status: 'unsupported',
-            reason: 'The opaque track snapshot needs an owning planned-source adapter',
-        };
-    }
-    if (action.type === 'addTrack' || action.type === 'createBus') {
-        return projectMaterializedTrack(owners, action);
-    }
-    if (action.type === 'setDeviceParameter' && !parameterSourceMatches(owners, action)) {
-        return { status: 'conflict', reason: 'Planned parameter source changed' };
-    }
-    for (const owner of owners) {
-        const devices = projectDeviceChainAction(owner.id, owner.devices, action, plugins);
-        if (devices) {
-            owner.devices = devices;
-        }
-    }
-    return { status: 'projected', owners };
 }
 
 /** Plan from an explicit initial snapshot, never from an already-staged midpoint. */

@@ -2,15 +2,16 @@ import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { DEFAULT_TEMPO_BPM, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { type AgentRunBudgets } from '../../models/AgentRun';
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../../models/AgentRunPlanBounds';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
     SEMANTIC_COMMAND_LIST_ROLE_FAMILIES,
     type SemanticCommandListRoleFamily,
 } from '../../models/SemanticCommandList';
+import { BRIEF_COMMAND_COUNT, BRIEF_POSITION } from '../../models/VibeRunBriefPosition';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
-import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../../stores/agentRunStore';
 import { countMeasurementWork } from '../countMeasurementWork';
 import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { type MetricGoal } from '../metricGoalContractTypes';
@@ -22,9 +23,6 @@ import { readMeasurementRenderedSeconds } from '../readMeasurementRenderedSecond
 
 import { type VibeBatchPair } from './readVibeBatchPairs';
 import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
-
-const BRIEF_POSITION = 1;
-const BRIEF_COMMAND_COUNT = 1;
 
 /**
  * The timeline of a batch's prefix document. A vibe batch is recipe expansions alone, which add

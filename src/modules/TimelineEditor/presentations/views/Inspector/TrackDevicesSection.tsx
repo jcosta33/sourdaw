@@ -17,6 +17,7 @@ import {
     compileReorderDevicesAction,
     executeAddDeviceAction,
     executeRemoveDeviceAction,
+    isExternalPluginDeviceType,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
@@ -95,7 +96,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
         track.devices
             .filter(
                 (device) =>
-                    device.type === 'external-plugin' &&
+                    isExternalPluginDeviceType(device.type) &&
                     (!device.externalPluginId ||
                         !supportedExternalPluginIds.has(device.externalPluginId) ||
                         (device.externalInstanceId
@@ -123,7 +124,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     // Every external-plugin device that has an instance id. Having an id does not mean
     // the host holds the instance; each derivation below narrows by the status it needs.
     const externalDeviceEditors = track.devices.flatMap((device) =>
-        device.type === 'external-plugin' && device.externalInstanceId
+        isExternalPluginDeviceType(device.type) && device.externalInstanceId
             ? [{ device, instanceId: device.externalInstanceId }]
             : []
     );
@@ -133,7 +134,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
         track.devices
             .filter(
                 (device) =>
-                    device.type === 'external-plugin' &&
+                    isExternalPluginDeviceType(device.type) &&
                     resolveExternalPluginEditorAccess(
                         device,
                         supportedExternalPlugins,
@@ -483,7 +484,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         </TooltipContent>
                                     </Tooltip>
                                 ) : null}
-                                {device.type === 'external-plugin' &&
+                                {isExternalPluginDeviceType(device.type) &&
                                 device.externalInstanceId &&
                                 restoreFailedExternalDeviceIds.has(device.id) ? (
                                     <Tooltip>

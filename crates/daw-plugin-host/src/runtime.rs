@@ -14,12 +14,34 @@ use crate::clap_wrapper::ClapWrapper;
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport,
-    HostedPluginRuntime, LatencyChangeNotifier, PluginHostRequestNotifier, ProcessingGate,
+    AudioPlugin, EditorWindowAsks, EditorWindowResizer, HostMidiEvent, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
+    PluginHostRequestNotifier, ProcessingGate, SharedEditorWindow,
 };
 use crate::vst3_wrapper::Vst3Wrapper;
 use std::ffi::c_void;
 use std::sync::Arc;
+
+/// Why a command fixture could not be staged on a runtime.
+#[cfg(feature = "engine-owned-command-fixture")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommandFixtureError {
+    /// Only the CLAP backend has a command fixture.
+    Vst3HasNoFixture,
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+impl std::fmt::Display for CommandFixtureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Vst3HasNoFixture => f.write_str("the VST3 backend has no command fixture"),
+        }
+    }
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+impl std::error::Error for CommandFixtureError {}
 
 /// A loaded plugin of any format Sourdaw hosts.
 pub enum HostedRuntime {
@@ -65,11 +87,11 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.get_parameters())
     }
 
-    fn get_state(&self) -> Result<Vec<u8>, String> {
+    fn get_state(&self) -> Result<Vec<u8>, PluginError> {
         delegate!(self, backend => backend.get_state())
     }
 
-    fn set_state(&mut self, state: &[u8]) -> Result<(), String> {
+    fn set_state(&mut self, state: &[u8]) -> Result<(), PluginError> {
         delegate!(self, backend => backend.set_state(state))
     }
 
@@ -81,8 +103,8 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.has_gui())
     }
 
-    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
-        delegate!(self, backend => backend.open_gui(handle_ptr))
+    fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), PluginError> {
+        delegate!(self, backend => AudioPlugin::open_gui(backend, handle_ptr))
     }
 
     fn close_gui(&mut self) {
@@ -101,16 +123,32 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.editor_can_resize())
     }
 
-    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
-        delegate!(self, backend => backend.request_editor_size(width, height))
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), PluginError> {
+        delegate!(self, backend => AudioPlugin::request_editor_size(backend, width, height))
     }
 
-    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
-        delegate!(self, backend => backend.apply_editor_content_scale(scale))
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), PluginError> {
+        delegate!(self, backend => AudioPlugin::apply_editor_content_scale(backend, scale))
     }
 
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         delegate!(self, backend => backend.apply_pending_editor_resize())
+    }
+
+    fn set_editor_window(&mut self, window: SharedEditorWindow) {
+        delegate!(self, backend => backend.set_editor_window(window))
+    }
+
+    fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
+        delegate!(self, backend => backend.editor_window_with_pending_asks())
+    }
+
+    fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
+        delegate!(self, backend => backend.take_editor_window_asks())
+    }
+
+    fn answer_editor_window_asks(&mut self, asks: EditorWindowAsks) {
+        delegate!(self, backend => backend.answer_editor_window_asks(asks))
     }
 
     fn take_state_dirty(&mut self) -> bool {
@@ -190,8 +228,8 @@ impl HostedPluginRuntime for HostedRuntime {
         delegate!(self, backend => backend.apply_host_parameter_write_to_editor(param_id, value))
     }
 
-    fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
-        delegate!(self, backend => backend.poll_latency_change())
+    fn poll_latency_change(&mut self) -> Result<Option<u32>, PluginError> {
+        delegate!(self, backend => HostedPluginRuntime::poll_latency_change(backend))
     }
 
     /// CLAP-only today: VST3 has no `request_callback`, so its backend keeps
@@ -220,6 +258,10 @@ impl HostedPluginRuntime for HostedRuntime {
         delegate!(self, backend => backend.is_tail_active())
     }
 
+    fn apply_component_restart(&mut self) -> Result<bool, PluginError> {
+        delegate!(self, backend => HostedPluginRuntime::apply_component_restart(backend))
+    }
+
     fn report_plugin_observations(&mut self) {
         delegate!(self, backend => backend.report_plugin_observations())
     }
@@ -234,6 +276,13 @@ impl HostedPluginRuntime for HostedRuntime {
 }
 
 impl HostedRuntime {
+    /// Whether the plugin has flagged a latency change not yet polled. Reads
+    /// the host's flag only, so a caller can decide whether the poll — which
+    /// runs on the UI thread — is worth the trip.
+    pub fn has_pending_latency_change(&self) -> bool {
+        delegate!(self, backend => backend.has_pending_latency_change())
+    }
+
     /// Leave the processing state from a thread that is not the audio thread.
     ///
     /// Not on the seam trait: it is the exception the gate documents, and only
@@ -280,13 +329,13 @@ impl HostedRuntime {
     pub fn set_engine_owned_command_fixture_parameters(
         &mut self,
         parameters: Vec<PluginParameter>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandFixtureError> {
         match self {
             Self::Clap(backend) => {
                 backend.set_engine_owned_command_fixture_parameters(parameters);
                 Ok(())
             }
-            Self::Vst3(_) => Err("the VST3 backend has no command fixture".to_string()),
+            Self::Vst3(_) => Err(CommandFixtureError::Vst3HasNoFixture),
         }
     }
 
@@ -305,5 +354,18 @@ impl HostedRuntime {
     /// so the two must match before the runtime is ever handed to an engine.
     pub fn activation_sample_rate(&self) -> f64 {
         delegate!(self, backend => backend.sample_rate())
+    }
+}
+
+#[cfg(all(test, feature = "engine-owned-command-fixture"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_command_fixture_refusal_names_the_backend_without_one() {
+        assert_eq!(
+            CommandFixtureError::Vst3HasNoFixture.to_string(),
+            "the VST3 backend has no command fixture"
+        );
     }
 }

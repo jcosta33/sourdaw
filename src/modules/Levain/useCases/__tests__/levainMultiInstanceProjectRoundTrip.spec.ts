@@ -54,14 +54,15 @@ import {
 
 import { defaultLevainState, levainStore, setLoadedMicPositions, updateMicPosition } from '../../stores/levainStore';
 import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
+import { getLevainHandlers } from '../getLevainHandlers';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
-import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
 import { levainBridge } from '../levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../levainParamBridge/registerLevainDevice';
 import { sendMicParamToEngine } from '../levainParamBridge/sendMicParamToEngine';
 import { setLevainParamWithAudio } from '../levainParamBridge/setLevainParamWithAudio';
 import { unregisterLevainDevice } from '../levainParamBridge/unregisterLevainDevice';
 import { loadInstrument } from '../loadPreset';
+import { selectLevainArticulation } from '../selectLevainArticulation';
 
 const devices = [
     { trackId: 'track-cello', deviceId: 'levain-cello', instrumentId: 'cello', gain: 0.43, mic: 0.31 },
@@ -74,7 +75,6 @@ function savedDevice(deviceId: string) {
 
 describe('two Levain patches across a named-project reopen', () => {
     let indexedDb: ReturnType<typeof installTransactionalIndexedDb>;
-    let stopPersistence: () => void;
     let frameCallbacks: FrameRequestCallback[];
 
     beforeEach(async () => {
@@ -97,6 +97,7 @@ describe('two Levain patches across a named-project reopen', () => {
         registerSupportingServicePorts();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getLevainHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
@@ -111,13 +112,11 @@ describe('two Levain patches across a named-project reopen', () => {
         setArrangementEventBus({ emit: () => Promise.resolve() });
         expect(await newProject('Two Levain instruments')).toBe(true);
         initLevainDeviceStateProjectAccess();
-        stopPersistence = initLevainDeviceStatePersistence();
     });
 
     afterEach(async () => {
         audioEngine.resetGraph();
         audioEngine.setUseCaseDeviceCollaborators(null);
-        stopPersistence?.();
         configureLevainDeviceStateProjectAccess(null);
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -148,12 +147,8 @@ describe('two Levain patches across a named-project reopen', () => {
         }
 
         for (const { deviceId, instrumentId, gain, mic } of devices) {
-            loadInstrument(deviceId, instrumentId);
-            setLevainParamWithAudio(
-                deviceId,
-                'currentArticulation',
-                deviceId === 'levain-cello' ? 'tremolo' : 'staccato'
-            );
+            await loadInstrument(deviceId, instrumentId);
+            await selectLevainArticulation(deviceId, deviceId === 'levain-cello' ? 'tremolo' : 'staccato');
             setLevainParamWithAudio(deviceId, 'masterGain', gain);
             updateMicPosition(deviceId, 0, { volume: mic });
             sendMicParamToEngine(deviceId, 0, 'volume', mic);

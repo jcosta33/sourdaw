@@ -304,6 +304,8 @@ export type BuiltinDeviceNode = {
     /** Controls for the Grand Boule piano (MIDI + pedals + param updates via MessagePort) */
     grandBouleControls?: {
         ready: boolean;
+        /** Aborted when this particular live body is retired. */
+        retirement?: AbortSignal;
         noteOn: (midiNote: number, velocity: number, sampleFrame?: number, channel?: number) => void;
         /**
          * Release the note. `releaseVelocity` is the normalized (0..1) MIDI
@@ -338,6 +340,7 @@ export type BuiltinDeviceNode = {
         noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
         setTemperament: (index: number) => void;
         allNotesOff: () => void;
+        startPreviewNote: (midiNote: number, velocity: number) => (() => void) | undefined;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
@@ -346,13 +349,14 @@ export type BuiltinDeviceNode = {
      * MessagePort).
      *
      * No `noteExpression`: `CrumbsEngine` has no per-note bend, pressure or
-     * timbre path, so Crumbs is absent from `NOTE_EXPRESSION_DEVICES` and the
+     * timbre path, so Crumbs sounds no expression in `LiveNoteControlsByDeviceType` and the
      * editor never offers those lanes for it. `channel` is accepted on
      * `noteOn`/`noteOff` only because the shared worklet-synth scheduling path
      * passes it positionally; the engine releases by pitch.
      */
     crumbsControls?: {
         ready: boolean;
+        startPadAudition: (note: number, velocity: number) => (() => void) | undefined;
         noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
         noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
         allNotesOff: () => void;

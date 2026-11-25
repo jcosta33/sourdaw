@@ -1,5 +1,4 @@
 import { type LevelArgument, type LevelLaw, resolveLevelArgument } from '#/utils/audioLevelLaw';
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
@@ -191,8 +190,11 @@ export function findSidechainRoutes(context: ProjectContext, sourceTrackId: stri
     );
 }
 
-export function findSupportedSidechainDevices(target: ProjectContext['tracks'][number]) {
-    return target.devices.filter((device) => getSidechainTargetCapability(device.type) !== null);
+export function findSupportedSidechainDevices(
+    target: ProjectContext['tracks'][number],
+    acceptsSidechainInput: (deviceType: string) => boolean
+) {
+    return target.devices.filter((device) => acceptsSidechainInput(device.type));
 }
 
 export function findDeviceTarget(context: ProjectContext, deviceId: unknown) {

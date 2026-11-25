@@ -12,6 +12,7 @@ import {
 import { type MacroReplayIdMappings } from '../../models/MacroReplayIdMappings';
 import { keepRecordedPayload, macroReplayPayloadResetByActionType } from '../../models/MacroReplayPayloadReset';
 import { leaveReferencesUnmapped, macroReplayRemapByActionType } from '../../models/MacroReplayRemap';
+import { type MacroReplayRoute, macroReplayRouteByActionType } from '../../models/MacroReplayRoute';
 import { getHandlerByType } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
@@ -115,12 +116,32 @@ function lookupPayloadReset<Type extends AppActionType>(action: ActionOf<Type>):
 
 const macroReplayReads: MacroReplayReads = { resolveMaterializedLaneId };
 
+const recordedReplayRoute: MacroReplayRoute = { kind: 'replay' };
+
+function lookupReplayRoute(action: AppAction): MacroReplayRoute {
+    if (!Object.hasOwn(macroReplayRouteByActionType, action.type)) {
+        return recordedReplayRoute;
+    }
+    return macroReplayRouteByActionType[action.type];
+}
+
+function findRefusalReason(actions: readonly AppAction[]): string | null {
+    let refusal: { reason: string; precedence: number } | null = null;
+    for (const action of actions) {
+        const route = lookupReplayRoute(action);
+        if (route.kind === 'refuse' && (refusal === null || route.precedence < refusal.precedence)) {
+            refusal = route;
+        }
+    }
+    return refusal?.reason ?? null;
+}
+
 async function executeMacroAction(
     action: AppAction,
     mappings: MacroReplayIdMappings,
     options: { groupId: string; groupLabel: string }
 ): Promise<void> {
-    if (action.type === 'editTempoMap' || action.type === 'restoreTempoMapEdit') {
+    if (lookupReplayRoute(action).kind === 'tempo-map') {
         await replayTempoMapMacroAction(action, mappings.tempoRowIds, options);
         return;
     }
@@ -156,8 +177,9 @@ export async function playMacro(macroId: string): Promise<void> {
     if (!macro) {
         return;
     }
-    if (macro.actions.some((action) => action.type === 'insertAutomationLanePoints')) {
-        throw new AppActionConflictError('playMacro', 'Automation lane insertions are local edits.');
+    const refusalReason = findRefusalReason(macro.actions);
+    if (refusalReason !== null) {
+        throw new AppActionConflictError('playMacro', refusalReason);
     }
 
     // Singleton-marked actions (domain-singleton handlers such as drawClip and

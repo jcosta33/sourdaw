@@ -29,19 +29,30 @@ const mocks = vi.hoisted(() => ({
     updateTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
-    deactivateTrackStrip: mocks.deactivateTrackStrip,
-    getRuntimeGraphRevision: vi.fn(() => 4),
-    getTrackStrip: mocks.getTrackStrip,
-    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
-    resolveToasterPadBinding: vi.fn(() => undefined),
-    updateDeviceParam: mocks.updateDeviceParam,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
+        deactivateTrackStrip: mocks.deactivateTrackStrip,
+        getRuntimeGraphRevision: vi.fn(() => 4),
+        getTrackStrip: mocks.getTrackStrip,
+        initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
+        resolveToasterPadBinding: vi.fn(() => undefined),
+        updateDeviceParam: mocks.updateDeviceParam,
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isDrumDevice: actual.isDrumDevice,
+    };
+});
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRevision: mocks.captureProjectRevision,
-}));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
+    return {
+        captureProjectRevision: mocks.captureProjectRevision,
+        captureProjectRootIdentity: actual.captureProjectRootIdentity,
+        getCrdtDoc: actual.getCrdtDoc,
+    };
+});
 
 vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,

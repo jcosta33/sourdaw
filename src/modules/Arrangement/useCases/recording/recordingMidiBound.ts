@@ -1,6 +1,7 @@
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { isFrozenTrackRefusingRecording } from '../../stores/frozenTrackRecording';
 import { trackStore, type Clip } from '../../stores/trackStore';
 
 import { readRecordingClipOwner } from './readRecordingClipOwner';
@@ -42,7 +43,7 @@ export const recordingMidiBound = {
         }
         const targets: MidiTarget[] = [];
         for (const track of trackStore.value?.tracks ?? []) {
-            if (!track.armed || track.kind !== 'midi') {
+            if (!track.armed || track.kind !== 'midi' || isFrozenTrackRefusingRecording(track)) {
                 continue;
             }
             const opened = clips.filter((clip) => clip.trackId === track.id && clip.type === 'midi');

@@ -85,7 +85,6 @@ describe('deleteTimeRange', () => {
 
     afterEach(() => {
         clearUndoHistory();
-        setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
 

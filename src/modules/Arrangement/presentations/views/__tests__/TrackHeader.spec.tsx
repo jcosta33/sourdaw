@@ -1,8 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { setTrackHeight } from '#/modules/Preferences/useCases';
 
 // Import mocked functions
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -168,6 +170,22 @@ describe('TrackHeader', () => {
         });
     });
 
+    it('marks a hidden track as hidden and dims it, and marks nothing on a shown track', () => {
+        const { unmount } = renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
+        expect(screen.queryByTestId('track-hidden-badge')).not.toBeInTheDocument();
+        expect(screen.getByRole('row')).not.toHaveClass('opacity-50');
+        unmount();
+
+        renderWithTooltip(<TrackHeader track={{ ...mockTrack, hidden: true }} isSelected={false} />);
+        expect(screen.getByTestId('track-hidden-badge')).toHaveTextContent('Hidden');
+        expect(screen.getByRole('row')).toHaveClass('opacity-50');
+    });
+
+    it('marks a hidden folder row as hidden', () => {
+        renderWithTooltip(<TrackHeader track={{ ...mockFolderTrack, hidden: true }} isSelected={false} />);
+        expect(screen.getByTestId('track-hidden-badge')).toHaveTextContent('Hidden');
+    });
+
     it('should render folder track differently', () => {
         renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
         expect(screen.getByLabelText(/folder/i)).toBeInTheDocument();
@@ -180,6 +198,32 @@ describe('TrackHeader', () => {
 
         renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
         expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
+    });
+
+    it('scales the actual header bounds on a local preference change and keeps folders fixed', () => {
+        const previousMode = preferencesStore.value?.trackHeight ?? 'normal';
+        const tallerTrack = { ...mockTrack, id: 'taller', name: 'Taller Track', height: 80 };
+        try {
+            setTrackHeight('normal');
+            renderWithTooltip(
+                <>
+                    <TrackHeader track={mockTrack} isSelected={false} />
+                    <TrackHeader track={tallerTrack} isSelected={false} />
+                    <TrackHeader track={mockFolderTrack} isSelected={false} />
+                </>
+            );
+            const readHeights = () => screen.getAllByRole('row').map((row) => row.style.height);
+
+            expect(readHeights()).toEqual(['64px', '80px', '26px']);
+            act(() => setTrackHeight('large'));
+            expect(readHeights()).toEqual(['96px', '120px', '26px']);
+            act(() => setTrackHeight('compact'));
+            expect(readHeights()).toEqual(['40px', '50px', '26px']);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+            expect(tallerTrack.height).toBe(80);
+        } finally {
+            act(() => setTrackHeight(previousMode));
+        }
     });
 
     it('should toggle folder collapse', () => {

@@ -14,6 +14,7 @@ import {
     type ProofMeterData,
     type ProofState,
 } from '../../../stores/proofStore';
+import { prepareProofPatchSelection } from '../../../useCases/prepareProofPatchSelection';
 import { bridges, type ProofAudioBridge } from '../../../useCases/proofParamBridge/helpers';
 import { loadProofPatchWithAudio } from '../../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { proofLimiterCeilingProjection } from '../../../useCases/proofParamBridge/reconcileProofLimiterCeiling';
@@ -38,91 +39,109 @@ const { persistDevicePatchMock, persistedProjectPatches } = vi.hoisted(() => {
         }),
     };
 });
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    openCachedAudioBufferHold: vi.fn(() => {
-        throw new Error('Unexpected audio buffer residency hold in this fixture');
-    }),
-    captureOfflineRenderProjectSource: vi.fn(() => {
-        throw new Error('Unexpected selection render capture in this fixture');
-    }),
-    captureOfflineRenderRuntimeInput: vi.fn(() => {
-        throw new Error('Unexpected selection render capture in this fixture');
-    }),
-    builtinSynthVoice: { read: vi.fn() },
-    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
-    reconcileAutoInputMonitoring: vi.fn(),
-    stopTrackInputMonitoring: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        commitPitchEdit: vi.fn(),
+        openCachedAudioBufferHold: vi.fn(() => {
+            throw new Error('Unexpected audio buffer residency hold in this fixture');
+        }),
+        captureOfflineRenderProjectSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        captureOfflineRenderRuntimeInput: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        builtinSynthVoice: { read: vi.fn() },
+        rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
+        reconcileAutoInputMonitoring: vi.fn(),
+        stopTrackInputMonitoring: vi.fn(),
 
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    projectsToDifferentNativeBank: vi.fn(() => false),
-    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    discardDecodedAudioFile: vi.fn(),
-    getAudioSampleRate: () => sampleRateMock(),
-    getDeviceOutputNode: () => null,
-    isEngineAudioAvailable: () => true,
-    addMidiFxToStrip: vi.fn(),
-    analyzePitchForClip: vi.fn(),
-    applyNoteExpression: vi.fn(),
-    applyRuntimeGraphDelta: vi.fn(),
-    audioEngine: {},
-    cacheAudioBuffer: vi.fn(),
-    clearReportedLatency: vi.fn(),
-    createRuntimeGraphTopologyFingerprint: vi.fn(),
-    decodeAudioFile: vi.fn(),
-    ensureBusStrip: vi.fn(),
-    garbageCollectCachedAudioBuffersByAge: vi.fn(),
-    garbageCollectCachedAudioBuffersBySize: vi.fn(),
-    garbageCollectFreezeAudioBuffers: vi.fn(),
-    getAudioContext: vi.fn(),
-    captureDeviceParameterRuntimeWriteAuthority: () => ({
-        owner: Symbol(),
-        canCommit: () => true,
-        isCurrent: () => true,
-        release: () => undefined,
-    }),
-    getCachedAudioBuffer: vi.fn(),
-    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
-    holdAudioBufferForSession: vi.fn(),
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getDeviceChainTailSeconds: vi.fn(),
-    getEngineState: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    getRuntimeGraphRevision: vi.fn(),
-    getTrackStrip: vi.fn(),
-    initializeTrackStripFromSnapshot: vi.fn(),
-    matchesRuntimeDeviceChainTopology: vi.fn(),
-    removeBusStrip: vi.fn(),
-    removeMidiFxFromStrip: vi.fn(),
-    removeSend: vi.fn(),
-    removeTrackStrip: vi.fn(),
-    deactivateTrackStrip: vi.fn(),
-    renderTrackSubgraphOffline: vi.fn(),
-    reportLatency: vi.fn(),
-    resolveToasterPadBinding: vi.fn(),
-    setBusGain: vi.fn(),
-    setSend: vi.fn(),
-    setTrackGain: vi.fn(),
-    setTrackMute: vi.fn(),
-    setTrackOutput: vi.fn(),
-    setTrackPan: vi.fn(),
-    setTrackSoloGate: vi.fn(),
-    startInputMonitoring: vi.fn(),
-    stopInputMonitoring: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    updateDeviceBypass: vi.fn(),
-    updateDeviceParam: vi.fn(),
-    updateDevicePatch: vi.fn(),
-    updateMidiFxBypass: vi.fn(),
-    updateMidiFxParam: vi.fn(),
-    wireSidechainRoute: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
-}));
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+        mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+        projectsToDifferentNativeBank: vi.fn(() => false),
+        nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+        discardDecodedAudioFile: vi.fn(),
+        getAudioSampleRate: () => sampleRateMock(),
+        getDeviceOutputNode: () => null,
+        isEngineAudioAvailable: () => true,
+        addMidiFxToStrip: vi.fn(),
+        analyzePitchForClip: vi.fn(),
+        applyNoteExpression: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(),
+        audioEngine: {},
+        cacheAudioBuffer: vi.fn(),
+        clearReportedLatency: vi.fn(),
+        createRuntimeGraphTopologyFingerprint: vi.fn(),
+        decodeAudioFile: vi.fn(),
+        ensureBusStrip: vi.fn(),
+        garbageCollectCachedAudioBuffersByAge: vi.fn(),
+        garbageCollectCachedAudioBuffersBySize: vi.fn(),
+        garbageCollectFreezeAudioBuffers: vi.fn(),
+        getAudioContext: vi.fn(),
+        captureDeviceParameterRuntimeWriteAuthority: () => ({
+            owner: Symbol(),
+            canCommit: () => true,
+            isCurrent: () => true,
+            release: () => undefined,
+        }),
+        getCachedAudioBuffer: vi.fn(),
+        restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+        holdAudioBufferForSession: vi.fn(),
+        getCompensationDelay: vi.fn(),
+        getDefaultBendRangeSemitones: vi.fn(),
+        getDeviceChainTailSeconds: vi.fn(),
+        getEngineState: vi.fn(),
+        getFactoryDrumKitByIndex: vi.fn(),
+        getRuntimeGraphRevision: vi.fn(),
+        getTrackStrip: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(),
+        matchesRuntimeDeviceChainTopology: vi.fn(),
+        removeBusStrip: vi.fn(),
+        removeMidiFxFromStrip: vi.fn(),
+        removeSend: vi.fn(),
+        removeTrackStrip: vi.fn(),
+        deactivateTrackStrip: vi.fn(),
+        renderTrackSubgraphOffline: vi.fn(),
+        reportLatency: vi.fn(),
+        resolveToasterPadBinding: vi.fn(),
+        setBusGain: vi.fn(),
+        setSend: vi.fn(),
+        setTrackGain: vi.fn(),
+        setTrackMute: vi.fn(),
+        setTrackOutput: vi.fn(),
+        setTrackPan: vi.fn(),
+        setTrackSoloGate: vi.fn(),
+        startInputMonitoring: vi.fn(),
+        stopInputMonitoring: vi.fn(),
+        unwireSidechainRoute: vi.fn(),
+        updateDeviceBypass: vi.fn(),
+        updateDeviceParam: vi.fn(),
+        updateDevicePatch: vi.fn(),
+        updateMidiFxBypass: vi.fn(),
+        updateMidiFxParam: vi.fn(),
+        wireSidechainRoute: vi.fn(),
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: () => Promise.resolve(true),
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+        isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        isDrumDevice: actual.isDrumDevice,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+    };
+});
 
 // Spied, not replaced: the panel calls it once per render of its own body, so
 // it is the measurement of "did the whole desk re-render" for the meter-frame
@@ -140,6 +159,10 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
+}));
+
+vi.mock('../../../useCases/prepareProofPatchSelection', () => ({
+    prepareProofPatchSelection: vi.fn(() => () => undefined),
 }));
 
 // persistDeviceParam writes into the Arrangement track store; isolate this view
@@ -381,6 +404,14 @@ describe('ProofPanel', () => {
         expect(compareToggle).toHaveAttribute('aria-pressed', String(getProofState(DEVICE_ID).abBypass));
     });
 
+    it('exposes the compare control inside the mastering region', () => {
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        const panel = screen.getByRole('region', { name: 'Proof mastering panel' });
+        const compare = within(panel).getByRole('button', { name: 'A/B compare' });
+        compare.focus();
+        expect(compare).toHaveFocus();
+    });
+
     it('keeps rail cards at their intrinsic height so the rail owns overflow', () => {
         render(<ProofPanel deviceId={DEVICE_ID} />);
 
@@ -497,41 +528,7 @@ describe('ProofPanel', () => {
         }
     });
 
-    it('persists a target selection atomically and updates the store', () => {
-        const bridge = makeBridge();
-        bridges.set(DEVICE_ID, bridge);
-        seedState();
-
-        render(<ProofPanel deviceId={DEVICE_ID} />);
-
-        // Level-1 target buttons read e.g. "Broadcast (-23 LUFS)".
-        fireEvent.click(screen.getByText('Broadcast (-23 LUFS)'));
-
-        expect(getProofState(DEVICE_ID).patch.target).toBe('broadcast');
-        expect(getProofState(DEVICE_ID).patch.targetLufs).toBe(-23);
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
-        expect(persistDevicePatchMock).toHaveBeenCalledWith(DEVICE_ID, {
-            target_mode: 3,
-            target_lufs: -23,
-        });
-        expect(deviceWrites(DEVICE_ID)).toEqual([]);
-    });
-
-    it('keeps preset identity and persistence quiet when selecting the active target', () => {
-        const bridge = makeBridge();
-        bridges.set(DEVICE_ID, bridge);
-        const preset = PROOF_PRESETS.find((candidate) => candidate.id === 'streaming')!;
-        seedState({ patch: preset.patch });
-
-        render(<ProofPanel deviceId={DEVICE_ID} />);
-        fireEvent.click(screen.getByText('Streaming (-14 LUFS)'));
-
-        expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
-        expect(persistDevicePatchMock).not.toHaveBeenCalled();
-        expect(deviceWrites(DEVICE_ID)).toEqual([]);
-    });
-
-    it('finalizes a rotary preview before persisting an interrupted target selection', () => {
+    it('finalizes a rotary preview before dispatching an interrupted target selection', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
         seedState({ uiLevel: 3 });
@@ -550,30 +547,30 @@ describe('ProofPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Broadcast' }));
 
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
         expect(persistDevicePatchMock).toHaveBeenNthCalledWith(
             1,
             DEVICE_ID,
             expect.objectContaining({ eq_band0_freq: previewFrequency })
         );
-        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(2, DEVICE_ID, {
-            target_mode: 3,
-            target_lufs: -23,
+        expect(prepareProofPatchSelection).toHaveBeenCalledExactlyOnceWith(DEVICE_ID, {
+            kind: 'target',
+            target: 'broadcast',
         });
-        const [paramPersistOrder, targetPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        const [paramPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        const [targetPersistOrder] = vi.mocked(prepareProofPatchSelection).mock.invocationCallOrder;
         if (paramPersistOrder === undefined || targetPersistOrder === undefined) {
-            throw new Error('expected two persistDevicePatch calls');
+            throw new Error('expected a parameter write and a target selection');
         }
         expect(paramPersistOrder).toBeLessThan(targetPersistOrder);
 
         fireEvent.pointerUp(knob, { pointerId: 61 });
 
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
         expect(getProofState(DEVICE_ID).patch.eqBands[0]?.freq).toBe(previewFrequency);
-        expect(getProofState(DEVICE_ID).patch.target).toBe('broadcast');
     });
 
-    it('finalizes an EQ curve preview before persisting an interrupted target selection', () => {
+    it('finalizes an EQ curve preview before dispatching an interrupted target selection', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
         seedState({ uiLevel: 3 });
@@ -613,7 +610,7 @@ describe('ProofPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Broadcast' }));
 
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
         expect(persistDevicePatchMock).toHaveBeenNthCalledWith(
             1,
             DEVICE_ID,
@@ -622,22 +619,22 @@ describe('ProofPanel', () => {
                 eq_band2_gain: previewBand?.gain,
             })
         );
-        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(2, DEVICE_ID, {
-            target_mode: 3,
-            target_lufs: -23,
+        expect(prepareProofPatchSelection).toHaveBeenCalledExactlyOnceWith(DEVICE_ID, {
+            kind: 'target',
+            target: 'broadcast',
         });
-        const [paramPersistOrder, targetPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        const [paramPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        const [targetPersistOrder] = vi.mocked(prepareProofPatchSelection).mock.invocationCallOrder;
         if (paramPersistOrder === undefined || targetPersistOrder === undefined) {
-            throw new Error('expected two persistDevicePatch calls');
+            throw new Error('expected a parameter write and a target selection');
         }
         expect(paramPersistOrder).toBeLessThan(targetPersistOrder);
 
         fireEvent.pointerUp(canvas, { pointerId: 62 });
 
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
         expect(getProofState(DEVICE_ID).patch.eqBands[2]?.freq).toBe(previewBand?.freq);
         expect(getProofState(DEVICE_ID).patch.eqBands[2]?.gain).toBe(previewBand?.gain);
-        expect(getProofState(DEVICE_ID).patch.target).toBe('broadcast');
     });
 
     it('cancels stale rotary authority when the panel switches devices with an identical patch snapshot', () => {
@@ -1011,13 +1008,15 @@ describe('ProofPanel', () => {
         fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 30, pointerId: 15 });
         fireEvent.click(screen.getByRole('button', { name: /Streaming Master/ }));
 
-        expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(prepareProofPatchSelection).toHaveBeenCalledExactlyOnceWith(DEVICE_ID, {
+            kind: 'preset',
+            presetId: 'streaming',
+        });
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
         fireEvent.pointerUp(canvas, { pointerId: 15 });
 
-        expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
-        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
     });
 
     it('lets a newer section gesture supersede an EQ curve without a stale finalization', () => {
@@ -1343,18 +1342,22 @@ describe('ProofPanel', () => {
             expect(getProofState(DEVICE_ID).patch.presetId).toBeUndefined();
 
             fireEvent.click(screen.getByRole('button', { name: /Streaming Master/ }));
-
-            expect(getProofState(DEVICE_ID).patch).toEqual(
-                PROOF_PRESETS.find((preset) => preset.id === 'streaming')?.patch
-            );
-            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(prepareProofPatchSelection).toHaveBeenCalledExactlyOnceWith(DEVICE_ID, {
+                kind: 'preset',
+                presetId: 'streaming',
+            });
+            const replacement = PROOF_PRESETS.find((preset) => preset.id === 'streaming');
+            if (!replacement) {
+                throw new Error('Expected the Streaming Master factory preset');
+            }
+            act(() => loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: replacement.patch }));
+            expect(getProofState(DEVICE_ID).patch).toEqual(replacement.patch);
+            expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
             endGesture(knob, unmount);
 
-            expect(getProofState(DEVICE_ID).patch).toEqual(
-                PROOF_PRESETS.find((preset) => preset.id === 'streaming')?.patch
-            );
-            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(getProofState(DEVICE_ID).patch).toEqual(replacement.patch);
+            expect(persistDevicePatchMock).not.toHaveBeenCalled();
         }
     );
 
@@ -1381,12 +1384,12 @@ describe('ProofPanel', () => {
             });
 
             expect(getProofState(DEVICE_ID).patch).toEqual(replacementPatch);
-            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
             endGesture(knob, unmount);
 
             expect(getProofState(DEVICE_ID).patch).toEqual(replacementPatch);
-            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(persistDevicePatchMock).not.toHaveBeenCalled();
         }
     );
 

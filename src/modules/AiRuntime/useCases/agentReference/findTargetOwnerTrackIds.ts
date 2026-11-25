@@ -38,9 +38,11 @@ const findVcaMembers: OwnerReader = (context, groupId) => {
 /** One reader per target capability, so a capability the registry adds must say whose object it names. */
 const OWNER_READERS: Readonly<Record<TargetCapability, OwnerReader>> = {
     track: ownsItself,
+    'folder-track': ownsItself,
     'armable-track': ownsItself,
     'duplicable-track': ownsItself,
     'removable-track': ownsItself,
+    'hideable-track': ownsItself,
     'routable-source': ownsItself,
     bus: ownsItself,
     output: ownsItself,

@@ -412,7 +412,7 @@ describe('required unit account isolation', () => {
         expect(write).toHaveBeenCalledTimes(1);
     });
 
-    it('applies Istanbul coverage to the whole PR shard at the standard test budgets', () => {
+    it('activates PR coverage placement only in the final Istanbul shard child', () => {
         const { ports, run } = runtimePorts();
         expect(runUnitPhase(context, 'coverage-shard', '2/4', ports)).toBe(0);
         const standardOptions = { cwd: context.workspace, env: ports.env, inheritOutput: true };
@@ -431,9 +431,18 @@ describe('required unit account isolation', () => {
                     '--coverage.reporter=json',
                     `--coverage.reportsDirectory=${context.temp}/unit-coverage-shard`,
                 ],
-                standardOptions,
+                { ...standardOptions, env: { ...ports.env, SOURDAW_PR_UNIT_COVERAGE_SHARD: '1' } },
             ],
         ]);
+    });
+
+    it('rejects a coverage placement marker supplied before runtime identity admission', () => {
+        const { ports, run } = runtimePorts();
+        ports.env.SOURDAW_PR_UNIT_COVERAGE_SHARD = '1';
+        expect(() => runUnitPhase(context, 'coverage-shard', '2/4', ports)).toThrow(
+            'unit runtime isolation environment is invalid'
+        );
+        expect(run).not.toHaveBeenCalled();
     });
 
     it('requires the native denied-consumer proof during verification and propagates its failure before any install', () => {
@@ -561,8 +570,8 @@ describe('required unit account isolation', () => {
                     '-e',
                     `
                 const {createVitest,parseCLI}=await import('vitest/node');
-                const {filter,options}=parseCLI(['vitest','run',...JSON.parse(process.argv[1])]);
-                const context=await createVitest({...options,watch:false,run:true});
+                const {filter,options:{exclude,...options}}=parseCLI(['vitest','run',...JSON.parse(process.argv[1])]);
+                const context=await createVitest({...options,cliExclude:exclude,watch:false,run:true});
                 try {
                     let files=await context.getRelevantTestSpecifications(filter);
                     if(context.config.shard) {

@@ -1,5 +1,5 @@
+import { readStoredControllerDefault } from '#/modules/AudioEngine/useCases';
 import { projectClipControllerRestore } from '#/modules/MIDI/useCases';
-import { LEVAIN_CONTROLLER_DEFAULTS } from '#/utils/levainControllerDefaults';
 
 import { type StoredControllerNode } from '../../models/StoredControllerNode';
 import {
@@ -79,7 +79,7 @@ export function restoreStoredControllers({
     }
     const staleDefaults = new Map<number, number>();
     for (const controller of movedControllers) {
-        const fallback = device.type === 'levain' ? LEVAIN_CONTROLLER_DEFAULTS.get(controller) : undefined;
+        const fallback = readStoredControllerDefault(device.type, controller);
         if (!restore.held.has(controller) && fallback !== undefined) {
             staleDefaults.set(controller, fallback);
         }

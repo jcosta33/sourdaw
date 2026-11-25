@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
@@ -9,7 +10,9 @@ import { createTrack } from '../../models/Track';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../stores/timelineEditingStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
+import { toggleInlineAutomation } from '../timelineEditing/toggleInlineAutomation';
 import { hitTestClip } from '../timelineInteractions/hitTestClip/hitTestClip';
 
 import type { MidiStoreState } from '#/modules/MIDI/stores';
@@ -973,6 +976,74 @@ describe('buildTimelineRenderModel — variation lane rows', () => {
         expect(getRenderedTrackTops(tracks)).toEqual([0, 64 + 2 * VARIATION_LANE_HEIGHT]);
     });
 
+    it('keeps clip and variation geometry while a live automation curve moves the following track', () => {
+        seedStores({
+            tracks: [
+                laneTrack('upper', 'audio', true),
+                laneTrack('folder', 'folder', false),
+                laneTrack('lower', 'audio', false),
+            ],
+        });
+        const pan: AutomationLane = {
+            id: 'pan',
+            trackId: 'upper',
+            parameterId: 'pan',
+            parameterName: 'Pan',
+            points: [{ beat: 3, value: -0.75, curve: 'linear', tension: 0 }],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: -1,
+            maxValue: 1,
+        };
+        automationStore.set({ lanes: [pan, { ...pan, id: 'folder-pan', trackId: 'folder' }] });
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            const hidden = buildTimelineRenderModel();
+            expect(hidden.tracks[0]?.automationLanes).toBeUndefined();
+            expect(getRenderedTrackTops(hidden.tracks)).toEqual([0, 112, 138]);
+
+            toggleInlineAutomation();
+            const shown = buildTimelineRenderModel();
+            expect(shown.tracks[0]?.height).toBe(64);
+            expect(shown.tracks[0]?.variationLanes).toEqual(hidden.tracks[0]?.variationLanes);
+            expect(shown.tracks[0]?.automationLanes?.map((lane) => lane.id)).toEqual(['pan']);
+            expect(shown.tracks[1]?.automationLanes).toBeUndefined();
+            expect(getRenderedTrackTops(shown.tracks)).toEqual([0, 152, 178]);
+            const readPan = shown.tracks[0]?.automationLanes?.[0]?.valueAtBeat;
+            expect(readPan?.(3)).toBe(-0.75);
+
+            automationStore.set({
+                lanes: [{ ...pan, points: [{ beat: 3, value: 0.75, curve: 'linear', tension: 0 }] }],
+            });
+            const edited = buildTimelineRenderModel();
+            expect(edited.tracks[0]?.automationLanes?.[0]?.valueAtBeat(3)).toBe(0.75);
+            expect(readPan?.(3)).toBe(-0.75);
+        } finally {
+            automationStore.set({ lanes: [] });
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
+    });
+
+    it('leaves a hidden track out of the rows and brings it back when hidden tracks are shown', () => {
+        seedStores({
+            tracks: [laneTrack('shown', 'audio', false), { ...laneTrack('hidden', 'audio', false), hidden: true }],
+        });
+        timelineEditingStore.set(defaultTimelineEditingState);
+        try {
+            expect(buildTimelineRenderModel().tracks.map((track) => track.id)).toEqual(['shown']);
+
+            timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
+            expect(buildTimelineRenderModel().tracks.map((track) => track.id)).toEqual(['shown', 'hidden']);
+
+            timelineEditingStore.set(defaultTimelineEditingState);
+            expect(buildTimelineRenderModel().tracks.map((track) => track.id)).toEqual(['shown']);
+        } finally {
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
+    });
+
     it('gives a folder row no lanes even when its toggle is on', () => {
         seedStores({ tracks: [laneTrack('f', 'folder', true), laneTrack('after', 'audio', false)] });
 
@@ -980,6 +1051,48 @@ describe('buildTimelineRenderModel — variation lane rows', () => {
 
         expect(tracks[0]!.variationLanes).toBeUndefined();
         expect(getRenderedTrackTops(tracks)).toEqual([0, 26]);
+    });
+
+    it('reprojects stored row heights and clip hit targets when only the display mode changes', () => {
+        const fixture = [
+            laneTrack('folder', 'folder', false),
+            {
+                ...laneTrack('upper', 'audio', true),
+                height: 80,
+                alternatives: [
+                    { id: 'alt', name: 'Alternative', clips: [clip({ id: 'alt-clip', startBeat: 2, endBeat: 6 })] },
+                ],
+            },
+            {
+                ...laneTrack('lower', 'audio', false),
+                height: 48,
+                clips: [clip({ id: 'main-clip', startBeat: 8, endBeat: 12 })],
+            },
+        ];
+        seedStores({ tracks: fixture });
+
+        const { tracks: normal } = buildTimelineRenderModel();
+        expect(normal.map(({ height }) => height)).toEqual([26, 80, 48]);
+
+        preferencesStoreMock.value = { trackHeight: 'compact' };
+        const { tracks: compact } = buildTimelineRenderModel();
+        expect(compact.map(({ height }) => height)).toEqual([26, 50, 30]);
+        expect(getRenderedTrackTops(compact)).toEqual([0, 26, 100]);
+        expect(hitTestClip(4 * 12, 86)).toEqual({ trackId: 'upper', clipId: 'alt-clip' });
+        expect(hitTestClip(10 * 12, 110)).toEqual({ trackId: 'lower', clipId: 'main-clip' });
+
+        preferencesStoreMock.value = { trackHeight: 'large' };
+        const { tracks: large } = buildTimelineRenderModel();
+        expect(large.map(({ height }) => height)).toEqual([26, 120, 72]);
+        expect(getRenderedTrackTops(large)).toEqual([0, 26, 170]);
+        expect(hitTestClip(4 * 12, 156)).toEqual({ trackId: 'upper', clipId: 'alt-clip' });
+        expect(hitTestClip(10 * 12, 180)).toEqual({ trackId: 'lower', clipId: 'main-clip' });
+        expect(trackStoreMock.value?.tracks).toBe(fixture);
+        expect(fixture.map(({ height }) => height)).toEqual([64, 80, 48]);
+
+        const { tracks: forcedNormal } = buildTimelineRenderModel(undefined, 'normal');
+        expect(forcedNormal.map(({ height }) => height)).toEqual([26, 80, 48]);
+        expect(buildTimelineRenderModel().tracks.map(({ height }) => height)).toEqual([26, 120, 72]);
     });
 });
 

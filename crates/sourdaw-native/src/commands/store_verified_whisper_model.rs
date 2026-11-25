@@ -15,7 +15,9 @@ use super::verified_cached_model;
 /// and store them as the cached model, atomically replacing any previous
 /// entry.
 pub async fn store_verified_whisper_model(bytes: Vec<u8>) -> Result<(), String> {
-    verified_cached_model::write_verified_cached_model(&WHISPER_MODEL, bytes).await
+    verified_cached_model::write_verified_cached_model(&WHISPER_MODEL, bytes)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

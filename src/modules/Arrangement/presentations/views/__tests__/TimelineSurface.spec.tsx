@@ -1,14 +1,20 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { type Store } from '#/infra/store/types';
+import { automationStore } from '#/modules/Automation/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { setTrackHeight } from '#/modules/Preferences/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { setAutoScroll, setScrollX, setTimelineViewportSize } from '../../../stores/timelineViewStore';
+import { toggleInlineAutomation } from '../../../useCases/timelineEditing/toggleInlineAutomation';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
+import { createTimelineRenderer } from '../../renderers/createTimelineRenderer';
 import { TimelineSurface } from '../TimelineSurface';
 
 // Capture the zoom/scroll handlers the component registers, so the effect
@@ -101,7 +107,7 @@ vi.mock('../../renderers/createTimelineRenderer', () => ({
 }));
 
 const renderModelRef = vi.hoisted(() => ({
-    tracks: [] as Array<{ id: string; height: number; variationLanes?: unknown[] }>,
+    tracks: [] as Array<{ id: string; height: number; variationLanes?: unknown[]; automationLanes?: unknown[] }>,
 }));
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: vi.fn(() => ({ tracks: renderModelRef.tracks })),
@@ -211,7 +217,7 @@ vi.mock('#/modules/Collaboration/presentations/views', () => ({
     PresenceOverlay: (props: Record<string, unknown>) => {
         // Expose the coordinate-mapping callbacks so they can be invoked
         // directly: the real overlay is mocked away, so the beatToX /
-        // trackIdToY closures would otherwise never run.
+        // trackIdToCenterY closures would otherwise never run.
         (globalThis as { __presenceProps?: Record<string, unknown> }).__presenceProps = props;
         return <div data-testid="presence-overlay">Presence</div>;
     },
@@ -452,6 +458,60 @@ describe('TimelineSurface', () => {
         const { container } = renderWithTooltip(<TimelineSurface />);
         expect(container.firstChild).toHaveStyle({ minHeight: '96px' });
     });
+
+    it('skips a hidden selected track for the canvas floor unless hidden tracks are shown', () => {
+        zoomHandlers.trackStoreRef.current?.set({
+            tracks: [
+                makeTrack({ id: 'selected', kind: 'midi', height: 96, hidden: true }),
+                makeTrack({ id: 'other', kind: 'midi', height: 64 }),
+            ],
+            selectedTrackId: 'selected',
+        });
+        try {
+            const { container, unmount } = renderWithTooltip(<TimelineSurface />);
+            expect(container.firstChild).toHaveStyle({ minHeight: '64px' });
+            unmount();
+
+            timelineEditingStore.set({ ...defaultTimelineEditingState, showHiddenTracks: true });
+            const shown = renderWithTooltip(<TimelineSurface />);
+            expect(shown.container.firstChild).toHaveStyle({ minHeight: '96px' });
+        } finally {
+            timelineEditingStore.set(defaultTimelineEditingState);
+        }
+    });
+
+    it('updates the canvas floor and paints scaled rows while transport is paused', async () => {
+        const previousMode = preferencesStore.value?.trackHeight ?? 'normal';
+        const selectedTrack = makeTrack({ id: 'selected', kind: 'midi', height: 96 });
+        try {
+            setTrackHeight('normal');
+            scheduler.loop = null;
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+            zoomHandlers.trackStoreRef.current?.set({ tracks: [selectedTrack], selectedTrackId: selectedTrack.id });
+            renderModelRef.tracks = [{ id: selectedTrack.id, height: 96 }];
+            const { container } = renderWithTooltip(<TimelineSurface />);
+            expect(container.firstChild).toHaveStyle({ minHeight: '96px' });
+            await waitFor(() => expect(scheduler.loop).not.toBeNull());
+            const renderer = await vi.mocked(createTimelineRenderer).mock.results.at(-1)!.value;
+            act(() => scheduler.loop!());
+            expect(renderer.render).toHaveBeenLastCalledWith({ tracks: [{ id: selectedTrack.id, height: 96 }] });
+            vi.mocked(renderer.render).mockClear();
+            act(() => scheduler.loop!());
+            expect(renderer.render).not.toHaveBeenCalled();
+
+            renderModelRef.tracks = [{ id: selectedTrack.id, height: 60 }];
+            act(() => setTrackHeight('compact'));
+            expect(container.firstChild).toHaveStyle({ minHeight: '60px' });
+            act(() => scheduler.loop!());
+
+            expect(renderer.render).toHaveBeenCalledExactlyOnceWith({
+                tracks: [{ id: selectedTrack.id, height: 60 }],
+            });
+        } finally {
+            renderModelRef.tracks = [];
+            act(() => setTrackHeight(previousMode));
+        }
+    });
 });
 
 const makeClip = (overrides: Partial<Clip> = {}): Clip => ({
@@ -472,7 +532,7 @@ const makeClip = (overrides: Partial<Clip> = {}): Clip => ({
 
 // Use the production Track factory so reactive subscribers receive the complete
 // project shape, including the device chain read by Yeast.
-const makeTrack = (overrides: Partial<Pick<Track, 'id' | 'kind' | 'height' | 'clips'>> = {}): Track => {
+const makeTrack = (overrides: Partial<Pick<Track, 'id' | 'kind' | 'height' | 'clips' | 'hidden'>> = {}): Track => {
     const id = overrides.id ?? 't1';
     const kind = overrides.kind ?? 'midi';
     return {
@@ -593,6 +653,52 @@ describe('TimelineSurface — marquee selection box', () => {
         expect(marquee).not.toBeNull();
         expect(marquee!.style.top).toBe('64px');
         expect(marquee!.style.height).toBe('50px');
+    });
+
+    it('moves the following marquee and presence with automation layout changes alone', async () => {
+        const track = { id: 'a', height: 40, variationLanes: [{}] };
+        const following = { id: 'b', height: 50 };
+        renderModelRef.tracks = [track, following];
+        const view = { scrollX: 0, scrollY: 10, pixelsPerBeat: 10, autoScrollEnabled: true };
+        zoomHandlers.timelineViewStoreRef.current?.set(view);
+        const trackSnapshot = zoomHandlers.trackStoreRef.current?.value;
+        clipSelectionStore.set({
+            selectedClipId: null,
+            selectedClipIds: [],
+            marqueeSelection: { startBeat: 2, endBeat: 4, trackIds: ['b'] },
+        });
+
+        const { container } = renderWithTooltip(<TimelineSurface />);
+        await screen.findByTestId('presence-overlay');
+        const marquee = container.querySelector<HTMLElement>('[style*="left: 20px"]');
+        const presenceY = () => {
+            const props = (globalThis as { __presenceProps?: { trackIdToCenterY: (id: string) => number | null } })
+                .__presenceProps;
+            return props?.trackIdToCenterY('b');
+        };
+        expect(marquee).toBeInTheDocument();
+        expect(marquee?.style.top).toBe('54px');
+        expect(presenceY()).toBe(79);
+
+        try {
+            act(() => {
+                renderModelRef.tracks = [{ ...track, automationLanes: [{}] }, following];
+                toggleInlineAutomation();
+            });
+            expect(marquee?.style.top).toBe('94px');
+            expect(presenceY()).toBe(119);
+
+            act(() => {
+                renderModelRef.tracks = [track, following];
+                automationStore.set({ lanes: [] });
+            });
+            expect(marquee?.style.top).toBe('54px');
+            expect(presenceY()).toBe(79);
+            expect(zoomHandlers.timelineViewStoreRef.current?.value).toBe(view);
+            expect(zoomHandlers.trackStoreRef.current?.value).toBe(trackSnapshot);
+        } finally {
+            act(toggleInlineAutomation);
+        }
     });
 
     it('renders no marquee box when the selection trackIds match no rendered track', () => {
@@ -884,34 +990,31 @@ describe('TimelineSurface — presence overlay coordinate callbacks', () => {
         expect(beatToX(5)).toBe(0);
     });
 
-    it('maps a track id to its y pixel via trackIdToY, or null when absent', () => {
+    it('maps a track id to its center across alternative lanes and vertical scroll, or null when absent', () => {
         zoomHandlers.timelineViewStoreRef.current?.set({
             scrollX: 0,
-            scrollY: 0,
+            scrollY: 10,
             pixelsPerBeat: 10,
             autoScrollEnabled: true,
         });
-        // trackIdToY consumes buildTimelineRenderModel(); populate its tracks.
         renderModelRef.tracks = [
-            { id: 'a', height: 40 },
+            { id: 'a', height: 40, variationLanes: [{}] },
             { id: 'b', height: 60 },
         ];
         renderWithTooltip(<TimelineSurface />);
         const props = (globalThis as { __presenceProps?: Record<string, unknown> }).__presenceProps!;
-        const trackIdToY = props.trackIdToY as (trackId: string) => number | null;
-        // Track b sits at y offset 40 (track a height).
-        expect(trackIdToY('b')).toBe(40);
-        // Unknown track id → null.
-        expect(trackIdToY('missing')).toBeNull();
+        const trackIdToCenterY = props.trackIdToCenterY as (trackId: string) => number | null;
+        expect(trackIdToCenterY('b')).toBe(40 + 24 + 30 - 10);
+        expect(trackIdToCenterY('missing')).toBeNull();
         renderModelRef.tracks = [];
     });
 
-    it('returns null from trackIdToY when the view store is null', () => {
+    it('returns null from trackIdToCenterY when the view store is null', () => {
         zoomHandlers.timelineViewStoreRef.current?.set(null);
         renderWithTooltip(<TimelineSurface />);
         const props = (globalThis as { __presenceProps?: Record<string, unknown> }).__presenceProps!;
-        const trackIdToY = props.trackIdToY as (trackId: string) => number | null;
-        expect(trackIdToY('a')).toBeNull();
+        const trackIdToCenterY = props.trackIdToCenterY as (trackId: string) => number | null;
+        expect(trackIdToCenterY('a')).toBeNull();
     });
 });
 
