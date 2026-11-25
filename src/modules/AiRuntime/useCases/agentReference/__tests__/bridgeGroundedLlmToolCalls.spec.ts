@@ -1200,6 +1200,78 @@ describe('section references beside a section whose name the other contains', ()
         });
     });
 
+    // #6261: without a "Chorus Two" the request still names that section in whole, so the "Chorus" it
+    // contains is no section the request names, for every section-reference action.
+    it.each([
+        { call: sendDuck('Chorus'), prompt: SEND_PROMPT, argument: 'range' },
+        {
+            call: sendDuck('Chorus'),
+            prompt: 'Automate send from Lead Vocal to Hall down 3 dB in Chorus Two',
+            argument: 'range',
+        },
+        {
+            call: { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+            prompt: 'remove the section Chorus Two from beat 16 to beat 32',
+            argument: 'name',
+        },
+        {
+            call: {
+                name: 'renameSection',
+                arguments: { startBeat: 16, endBeat: 32, name: 'Chorus', newName: 'Outro' },
+            },
+            prompt: 'rename the section Chorus Two from beat 16 to beat 32 to Outro',
+            argument: 'name',
+        },
+    ])('refuses "$prompt" as the shorter section it only contains', ({ call, prompt, argument }) => {
+        expect(groundSectionCall(call, prompt, [CHORUS, VERSE])).toEqual({
+            actions: [],
+            rejections: [
+                { index: 0, name: call.name, reason: `Provider value ${argument} does not match the user request` },
+            ],
+        });
+    });
+
+    it.each([
+        {
+            call: { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+            prompt: 'remove the section Chorus from beat 16 to beat 32',
+            action: { type: 'removeSection', payload: { sectionId: 'section-chorus' } },
+        },
+        {
+            call: { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+            prompt: 'remove the section Chorus from beat 16 to beat 32.',
+            action: { type: 'removeSection', payload: { sectionId: 'section-chorus' } },
+        },
+        {
+            call: {
+                name: 'renameSection',
+                arguments: { startBeat: 16, endBeat: 32, name: 'Chorus', newName: 'Chorus Two' },
+            },
+            prompt: 'rename the section Chorus from beat 16 to beat 32 to Chorus Two',
+            action: { type: 'renameSection', payload: { sectionId: 'section-chorus', name: 'Chorus Two' } },
+        },
+        {
+            call: sendDuck('Chorus'),
+            prompt: 'Lower send from Lead Vocal to Hall by 3 dB in Chorus.',
+            action: sendDuckAction('Chorus'),
+        },
+    ])('still grounds "$prompt" naming the section it holds', ({ call, prompt, action }) => {
+        expect(groundSectionCall(call, prompt, [CHORUS, VERSE])).toEqual({ actions: [action], rejections: [] });
+    });
+
+    // #6264: the digit in "Chorus 2" is part of the section name, never a second decibel figure.
+    it.each([
+        'Lower send from Lead Vocal to Hall by 3 dB in Chorus 2',
+        'Duck the Lead Vocal send to Hall by 3 dB in Chorus 2',
+    ])('grounds "%s" for a section whose name holds a digit', (prompt) => {
+        const chorus2 = { ...CHORUS, id: 'section-chorus-2', name: 'Chorus 2' };
+
+        expect(groundSectionCall(sendDuck('Chorus 2'), prompt, [chorus2, VERSE])).toEqual({
+            actions: [sendDuckAction('Chorus 2')],
+            rejections: [],
+        });
+    });
+
     // Two sections sharing one name leave the request naming neither alone. The range write's own state
     // guard asks which one is meant, so the bridge leaves the shared name to it.
     it('leaves a name two sections share to the range write, which asks which one', () => {

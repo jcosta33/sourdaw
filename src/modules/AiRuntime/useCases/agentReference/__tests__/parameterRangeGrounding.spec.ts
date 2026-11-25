@@ -282,3 +282,41 @@ describe('a range automation writes across the range its request states', () => 
         });
     });
 });
+
+// #6264: a digit inside the section name the range names is part of that name, never a second
+// decibel figure, so the request states 1.5 dB alone.
+describe('a section whose name holds a digit', () => {
+    const CHORUS_2 = [section('s-chorus-2', 'Chorus 2', 32, 48)];
+
+    it.each([
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus 2', change: { deltaDb: 1.5 } },
+        { prompt: 'Lift Drum Bus in Chorus 2 by 1.5 dB', change: { deltaDb: 1.5 } },
+        { prompt: 'Dip Drum Bus by 1.5 dB in Chorus 2', change: { deltaDb: -1.5 } },
+    ])('grounds "$prompt"', ({ prompt, change }) => {
+        expect(bridge({ section: 'Chorus 2' }, prompt, CHORUS_2, change)).toEqual({
+            actions: [
+                {
+                    type: 'automateParameterRange',
+                    payload: { trackId: 'bus-drums', parameterId: 'gain', range: { section: 'Chorus 2' }, ...change },
+                },
+            ],
+            rejections: [],
+        });
+    });
+
+    it.each([
+        { case: 'the digit read as the figure', change: { deltaDb: 2 } },
+        { case: 'a figure the request does not state', change: { deltaDb: 3 } },
+    ])('refuses $case', ({ change }) => {
+        expect(bridge({ section: 'Chorus 2' }, 'Lift Drum Bus by 1.5 dB in Chorus 2', CHORUS_2, change)).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'automateParameterRange',
+                    reason: 'Provider value deltaDb does not match the user request',
+                },
+            ],
+        });
+    });
+});
