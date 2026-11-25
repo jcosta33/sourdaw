@@ -210,6 +210,7 @@ const relinkPrefixStepByActionType: {
     setToasterFactoryKit: keepTracks,
     setBacteriaFactoryPatch: keepTracks,
     setGlutenFactoryPreset: keepTracks,
+    setProofPatchSelection: keepTracks,
     createBus: keepTracks,
     createFolder: keepTracks,
     setSend: keepTracks,

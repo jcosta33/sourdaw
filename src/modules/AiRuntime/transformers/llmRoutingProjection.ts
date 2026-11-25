@@ -7,19 +7,27 @@ import { findDeviceTarget, findSupportedSidechainDevices, findTrack } from './ll
 
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type RoutingProjectionLookup = {
-    readonly [Type in RuntimeActionType]: (context: ProjectContext, action: ActionOf<Type>) => ProjectContext;
+    readonly [Type in RuntimeActionType]: (
+        context: ProjectContext,
+        action: ActionOf<Type>,
+        acceptsSidechainInput: (deviceType: string) => boolean
+    ) => ProjectContext;
 };
 
 function unchangedContext(context: ProjectContext): ProjectContext {
     return context;
 }
 
-function projectAddSidechainRoute(context: ProjectContext, action: ActionOf<'addSidechainRoute'>): ProjectContext {
+function projectAddSidechainRoute(
+    context: ProjectContext,
+    action: ActionOf<'addSidechainRoute'>,
+    acceptsSidechainInput: (deviceType: string) => boolean
+): ProjectContext {
     const target = findTrack(context, action.payload.targetTrackId);
     if (!target) {
         return context;
     }
-    const targetDevice = findSupportedSidechainDevices(target).find(
+    const targetDevice = findSupportedSidechainDevices(target, acceptsSidechainInput).find(
         (device) => action.payload.targetDeviceId === undefined || device.id === action.payload.targetDeviceId
     );
     if (!targetDevice) {
@@ -156,7 +164,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     soloTrack: unchangedContext,
     selectTake: unchangedContext,
     setSoloSafe: unchangedContext,
-    toggleSoloSafe: unchangedContext,
     armTrack: unchangedContext,
     freezeTrack: unchangedContext,
     unfreezeTrack: unchangedContext,
@@ -175,8 +182,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     stopPlayback: unchangedContext,
     toggleRecording: unchangedContext,
     setMasterGain: unchangedContext,
-    toggleLoop: unchangedContext,
-    toggleMetronome: unchangedContext,
     setMetronomeVolume: unchangedContext,
     setLoopRegion: unchangedContext,
     setLoopEnabled: unchangedContext,
@@ -193,9 +198,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     trimClipStart: unchangedContext,
     trimClipEnd: unchangedContext,
     setClipFade: unchangedContext,
-    copyClip: unchangedContext,
-    cutClip: unchangedContext,
-    pasteClip: unchangedContext,
     addDevice: unchangedContext,
     bypassDevice: unchangedContext,
     removeDevice: projectRemoveDevice,
@@ -295,7 +297,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     setClipStretchRatio: unchangedContext,
     fitClipToBeats: unchangedContext,
     analyzeMix: unchangedContext,
-    autoFixMix: unchangedContext,
     enableMpe: unchangedContext,
     disableMpe: unchangedContext,
     getLatencyReport: unchangedContext,
@@ -303,7 +304,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     joinCollabSession: unchangedContext,
     leaveCollabSession: unchangedContext,
     scanPlugins: unchangedContext,
-    audioToMidi: unchangedContext,
     muteClip: unchangedContext,
     clearSolos: unchangedContext,
     setTrackNotes: unchangedContext,
@@ -339,7 +339,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     deleteTrackTemplate: unchangedContext,
     detachPatternInstance: unchangedContext,
     disconnectPush: unchangedContext,
-    enableWarping: unchangedContext,
     exportDawProject: unchangedContext,
     labelUndoBranch: unchangedContext,
     loadTrackTemplate: unchangedContext,
@@ -376,14 +375,19 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
 
 function lookupRoutingProjection<Type extends RuntimeActionType>(
     context: ProjectContext,
-    action: ActionOf<Type>
+    action: ActionOf<Type>,
+    acceptsSidechainInput: (deviceType: string) => boolean
 ): ProjectContext {
     if (!Object.hasOwn(routingProjectionByActionType, action.type)) {
         return unchangedContext(context);
     }
-    return routingProjectionByActionType[action.type](context, action);
+    return routingProjectionByActionType[action.type](context, action, acceptsSidechainInput);
 }
 
-export function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeAction): ProjectContext {
-    return lookupRoutingProjection(context, action);
+export function applyAcceptedRoutingAction(
+    context: ProjectContext,
+    action: RuntimeAction,
+    acceptsSidechainInput: (deviceType: string) => boolean
+): ProjectContext {
+    return lookupRoutingProjection(context, action, acceptsSidechainInput);
 }

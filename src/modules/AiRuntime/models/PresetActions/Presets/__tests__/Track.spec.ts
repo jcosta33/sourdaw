@@ -119,6 +119,25 @@ describe('trackPresets — trackAction-based presets forward selectedTrackId', (
         }
     });
 
+    it('solo-safe emits setSoloSafe with the negation of the selected track state', () => {
+        const preset = trackPresets.find((p) => p.id === 'solo-safe')!;
+
+        expect(preset.buildAction({ ...ctxWithTrack, selectedTrackSoloSafe: false })).toEqual({
+            type: 'setSoloSafe',
+            payload: { trackId: 'track-1', soloSafe: true },
+        });
+        expect(preset.buildAction({ ...ctxWithTrack, selectedTrackSoloSafe: true })).toEqual({
+            type: 'setSoloSafe',
+            payload: { trackId: 'track-1', soloSafe: false },
+        });
+    });
+
+    it('solo-safe emits nothing when the selected track state is unknown', () => {
+        const preset = trackPresets.find((p) => p.id === 'solo-safe')!;
+
+        expect(preset.buildAction(ctxWithTrack)).toBeNull();
+    });
+
     it('returns null for selection-required presets when no track is selected', () => {
         const selectionRequired = trackPresets.filter((p) => p.requiresSelection === 'track');
         for (const preset of selectionRequired) {

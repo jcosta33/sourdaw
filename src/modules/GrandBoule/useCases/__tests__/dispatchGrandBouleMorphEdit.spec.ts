@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
         value: {
             tracks: [
                 {
+                    id: 'piano',
                     devices: [
                         {
                             id: 'grand-1',
@@ -55,6 +56,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     isAppActionConflictError: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    captureDevicePatchCommitValidation: () => ({ isCurrent: () => true, start: () => null }),
+}));
 vi.mock('../reconcileGrandBouleDeviceStateFromProject', () => ({
     reconcileGrandBouleDeviceStateFromProject: mocks.reconcile,
 }));

@@ -39,7 +39,16 @@ import {
     type AgentRunVibeRunBatchSchedule,
     type AgentRunWorkLease,
 } from '../models/AgentRun';
-import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import {
+    MAX_COLLECTION_LENGTH,
+    MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
+    MAX_PLAN_CAPABILITIES,
+} from '../models/AgentRunPlanBounds';
+import {
+    APPLICATION_TOOL_RECEIPT_MAX_BYTES,
+    measureApplicationToolReceiptBytes,
+    type ApplicationToolReceipt,
+} from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { MAX_METRIC_GOAL_STATE_BYTES } from '../models/MetricGoalAdmission';
 import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
@@ -55,22 +64,6 @@ import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
-const MAX_COLLECTION_LENGTH = 256;
-/**
- * Every batch preview of a run appends its verification receipts to the plan, so the list grows
- * with the run rather than with one turn. A vibe run knows that count before it is scheduled — one
- * receipt per measurement request — and its whole-run fit refuses a run that would pass this bound,
- * so a scheduled run never meets it. The verification receipts' byte allowances are derived from
- * it (`readApplicationVerificationReceiptLimits`). An ordinary song's complete vibe run (24 tracks,
- * eight sections, eleven batches) persists 487, about half of it.
- */
-export const MAX_PLAN_APPLICATION_TOOL_RECEIPTS = 1024;
-/**
- * `planAgentRun` derives one capability per application-tool receipt beside the action-catalog,
- * budget, asset and data-policy entries, so a plan's capabilities are bounded by its receipts plus
- * the allowance every other collection keeps.
- */
-export const MAX_PLAN_CAPABILITIES = MAX_PLAN_APPLICATION_TOOL_RECEIPTS + MAX_COLLECTION_LENGTH;
 const MAX_TEXT_LENGTH = AGENT_RUN_MAX_TEXT_LENGTH;
 const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
 
@@ -935,7 +928,15 @@ function readCollection<TItem>(
     return result;
 }
 
+/** A stored receipt reads back only within the per-call bound it was created under. */
 function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | null {
+    const receipt = readApplicationToolReceiptFields(value);
+    return receipt !== null && measureApplicationToolReceiptBytes(receipt) <= APPLICATION_TOOL_RECEIPT_MAX_BYTES
+        ? receipt
+        : null;
+}
+
+function readApplicationToolReceiptFields(value: unknown): ApplicationToolReceipt | null {
     if (
         !isRecord(value) ||
         value.schema !== 'sourdaw.application-tool-receipt' ||

@@ -83,6 +83,7 @@ vi.mock('../../playheadScheduler/advanceSchedulerDiscontinuityEpoch', () => ({
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({ startPlayheadScheduler: mockStartScheduler }));
 vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({ stopPlayheadScheduler: mockStopScheduler }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    isFrozenTrackRefusingRecording: vi.fn(() => false),
     readMusicalRange: vi.fn(),
     readMusicalRangeInputs: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),

@@ -1,3 +1,4 @@
+import { acceptsSidechainInput } from '#/modules/AudioEngine/useCases';
 import {
     getAppActionExecutionPolicy,
     getExecutableAppActionEffect,
@@ -6852,6 +6853,7 @@ function groundInheritedCall(input: {
         }
     }
     const converted = bridgeLlmToolCalls({
+        acceptsSidechainInput,
         calls: [call],
         context,
         markerSignatures: bridgeInput.markerSignatures,
@@ -7692,6 +7694,7 @@ function bridgeUnrefinedLlmToolCalls(
     }
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({
+            acceptsSidechainInput,
             calls,
             context,
             markerSignatures,
@@ -8477,6 +8480,7 @@ function bridgeUnrefinedLlmToolCalls(
         }
     }
     let bridged = bridgeLlmToolCalls({
+        acceptsSidechainInput,
         calls: groundedCalls,
         context: prospectiveContext,
         markerSignatures,

@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { isExternalPluginDeviceType } from '#/modules/Arrangement/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import {
@@ -127,7 +128,7 @@ export async function captureExternalPluginStates(): Promise<ExternalPluginCaptu
     for (const track of openingState.tracks) {
         for (const openingDevice of track.devices) {
             const instanceId = openingDevice.externalInstanceId;
-            if (openingDevice.type !== 'external-plugin' || !instanceId) {
+            if (!isExternalPluginDeviceType(openingDevice.type) || !instanceId) {
                 continue;
             }
 

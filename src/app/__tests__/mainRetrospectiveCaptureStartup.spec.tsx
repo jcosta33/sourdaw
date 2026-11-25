@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     render: vi.fn(),
 }));
 
-vi.mock('../bootstrap', () => ({}));
+vi.mock('../bootstrap', () => ({ bootstrapApplication: vi.fn() }));
 
 vi.mock('../resolveAppComposition', () => ({
     resolveAppComposition: () => 'application',
@@ -18,6 +18,10 @@ vi.mock('../ApplicationFirstPaint', () => ({ ApplicationFirstPaint: () => null }
 vi.mock('../registerNotificationEventBus', () => ({ registerNotificationEventBus: vi.fn() }));
 
 vi.mock('../App', () => ({ App: () => null }));
+
+vi.mock('../registerDeviceEnginePorts', () => ({ registerDeviceEnginePorts: vi.fn() }));
+vi.mock('../registerSupportingServicePorts', () => ({ registerSupportingServicePorts: vi.fn() }));
+vi.mock('../registerKernelPorts', () => ({ registerKernelPorts: vi.fn() }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     resetDisplayScaleForStartup: () => Promise.resolve(),

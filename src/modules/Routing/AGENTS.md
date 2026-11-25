@@ -20,7 +20,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/ind
 ## Invariants & Traps
 
 - **DAG cycle prevention**: Routing topologies (buses, sends, sidechains) strictly forbid feedback loops/cycles; validation rejects routes that would create recursive signal dependencies.
-- **Sidechain capability verification**: Routes targeting plugins/devices require capability inspection (`getSidechainTargetCapability`) before wiring sidechain input nodes.
+- **Sidechain capability verification**: Routes targeting plugins/devices require capability inspection (`getSidechainTargetCapability`, answered by AudioEngine's device-type table) before wiring sidechain input nodes.
 - **Two-phase routing synchronization**: Routing state in `sidechainStore` coordinates with AudioEngine runtime graph via `wireSidechainRoutes` and snapshot restoration for project hydration.
 
 ## Verification

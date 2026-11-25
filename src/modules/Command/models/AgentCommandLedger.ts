@@ -328,21 +328,21 @@ export const AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES: readonly {
 /**
  * Why an AI runtime action type has no executable command. `interim-unsupported` names an edit the
  * agent should own, which its tracker packet registers or retires from the runtime vocabulary;
- * `outside-agent-scope` names a view, panel, transport-control or session action that is never a
- * project edit an agent command commits. A type whose handler is undoable is a project edit, so it
+ * `outside-agent-scope` names a view, panel, transport-control, session or analysis action that is
+ * never a project edit an agent command commits. A type whose handler is undoable is a project edit, so it
  * is never outside agent scope.
  */
 export type AgentRuntimeActionAccountingRecord =
     | {
           kind: 'interim-unsupported';
-          category: AgentCommandLedgerCategory | 'analysis';
+          category: AgentCommandLedgerCategory;
           packet: string;
           reason: string;
           actionTypes: readonly string[];
       }
     | {
           kind: 'outside-agent-scope';
-          category: 'view' | 'panel' | 'transport-control' | 'session';
+          category: 'view' | 'panel' | 'transport-control' | 'session' | 'analysis';
           reason: string;
           actionTypes: readonly string[];
       };
@@ -359,9 +359,8 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'track',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'Track-level edits whose handlers carry no executable descriptor, target capability, effect declaration or session replay contract yet; toggleSoloSafe is the non-idempotent form of the registered setSoloSafe.',
+        reason: 'Track-level edits whose handlers carry no executable descriptor, target capability, effect declaration or session replay contract yet.',
         actionTypes: [
-            'toggleSoloSafe',
             'createFolder',
             'groupTracks',
             'ungroupTracks',
@@ -383,15 +382,8 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'project-timeline',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'Undoable transport settings with no executable descriptor yet. toggleLoop and toggleMetronome are the non-idempotent forms of the registered setLoopEnabled and setMetronomeEnabled; setCountInBars and setPreRollBars describe their inverse, but toggleCountIn and togglePreRoll do not, and none of the four has an executable descriptor yet, so the packet registers the bar setters and gives the toggles an inverse or retires them.',
-        actionTypes: [
-            'toggleLoop',
-            'toggleMetronome',
-            'toggleCountIn',
-            'setCountInBars',
-            'togglePreRoll',
-            'setPreRollBars',
-        ],
+        reason: 'Undoable transport settings with no executable descriptor yet. setCountInBars and setPreRollBars describe their inverse, but toggleCountIn and togglePreRoll do not, and none of the four has an executable descriptor yet, so the packet registers the bar setters and gives the toggles an inverse or retires them.',
+        actionTypes: ['toggleCountIn', 'setCountInBars', 'togglePreRoll', 'setPreRollBars'],
     },
     {
         kind: 'interim-unsupported',
@@ -413,22 +405,15 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'clip',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'Clip edits that read the clipboard or the live selection, or create comp and pattern structures, which no target capability grounds yet.',
-        actionTypes: [
-            'copyClip',
-            'cutClip',
-            'pasteClip',
-            'createCompGroup',
-            'createPatternInstance',
-            'detachPatternInstance',
-        ],
+        reason: 'Clip edits that create comp and pattern structures, which no target capability grounds yet.',
+        actionTypes: ['createCompGroup', 'createPatternInstance', 'detachPatternInstance'],
     },
     {
         kind: 'interim-unsupported',
         category: 'audio-editing',
         packet: RUNTIME_ACTION_PACKET,
         reason: 'Audio clip edits with no executable descriptor or typed provider payload yet; their handlers accept unchecked runtime payloads.',
-        actionTypes: ['reverseClip', 'enableWarping'],
+        actionTypes: ['reverseClip'],
     },
     {
         kind: 'interim-unsupported',
@@ -438,9 +423,6 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         actionTypes: [
             'humanizeNotes',
             'scaleVelocities',
-            'enableMpe',
-            'disableMpe',
-            'audioToMidi',
             'addChordEvent',
             'removeChordEvent',
             'clearChordTrack',
@@ -476,24 +458,10 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
     },
     {
         kind: 'interim-unsupported',
-        category: 'device',
-        packet: RUNTIME_ACTION_PACKET,
-        reason: 'A device edit that rewrites a whole chain; it publishes no preview capability or typed provider payload yet.',
-        actionTypes: ['autoFixMix'],
-    },
-    {
-        kind: 'interim-unsupported',
         category: 'routing',
         packet: RUNTIME_ACTION_PACKET,
         reason: 'MIDI output edits target hardware ports, which no target capability grounds yet.',
         actionTypes: ['setMidiOutput', 'clearMidiOutput'],
-    },
-    {
-        kind: 'interim-unsupported',
-        category: 'analysis',
-        packet: RUNTIME_ACTION_PACKET,
-        reason: 'Analysis actions write no project edit; the packet moves each to a read tool (as analysis.detectTransients already is) or retires it from the runtime vocabulary.',
-        actionTypes: ['analyzeMix', 'detectTempo', 'detectKey', 'getLatencyReport'],
     },
     {
         kind: 'outside-agent-scope',
@@ -542,8 +510,10 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
     {
         kind: 'outside-agent-scope',
         category: 'session',
-        reason: 'Session actions act on files, collaboration, hardware, monitoring, user libraries, macros and the undo stacks rather than on project content; agent reverts run through revert groups.',
+        reason: 'Session actions act on files, collaboration, hardware, MPE controller input mode (switching it while a take records writes the switch into that take as recorded input), monitoring, user libraries, macros and the undo stacks rather than on project content; agent reverts run through revert groups.',
         actionTypes: [
+            'enableMpe',
+            'disableMpe',
             'saveProject',
             'newProject',
             'exportProject',
@@ -570,6 +540,12 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
             'playMacro',
             'deleteMacro',
         ],
+    },
+    {
+        kind: 'outside-agent-scope',
+        category: 'analysis',
+        reason: 'Analysis actions read the project and report a result or display state, writing no project content; the planner reaches analysis through its read tools.',
+        actionTypes: ['analyzeMix', 'detectTempo', 'detectKey', 'getLatencyReport'],
     },
 ];
 

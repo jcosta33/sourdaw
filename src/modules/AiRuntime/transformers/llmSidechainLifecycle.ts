@@ -1,5 +1,3 @@
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
-
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 
@@ -8,6 +6,7 @@ import { findDeviceTarget } from './llmActionStrategies/bridgeArgumentGuards';
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type AddSidechainRuntimeAction = ActionOf<'addSidechainRoute'>;
 type SidechainPlan = {
+    acceptsSidechainInput: (deviceType: string) => boolean;
     allSidechainAdds: readonly AddSidechainRuntimeAction[];
     context: ProjectContext;
     plannedSidechainAdds: readonly AddSidechainRuntimeAction[];
@@ -26,7 +25,7 @@ function neverInvalidates(): boolean {
 
 function addDeviceInvalidatesSidechain(action: ActionOf<'addDevice'>, plan: SidechainPlan): boolean {
     return (
-        getSidechainTargetCapability(action.payload.deviceType) !== null &&
+        plan.acceptsSidechainInput(action.payload.deviceType) &&
         plan.allSidechainAdds.some(
             (sidechainAction) => sidechainAction.payload.targetTrackId === action.payload.trackId
         )
@@ -45,7 +44,7 @@ function removeDeviceInvalidatesSidechain(action: ActionOf<'removeDevice'>, plan
     const target = findDeviceTarget(plan.context, action.payload.deviceId);
     return (
         target !== undefined &&
-        getSidechainTargetCapability(target.device.type) !== null &&
+        plan.acceptsSidechainInput(target.device.type) &&
         plan.plannedSidechainAdds.some((sidechainAction) => sidechainAction.payload.targetTrackId === target.track.id)
     );
 }
@@ -60,7 +59,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     soloTrack: neverInvalidates,
     selectTake: neverInvalidates,
     setSoloSafe: neverInvalidates,
-    toggleSoloSafe: neverInvalidates,
     armTrack: neverInvalidates,
     freezeTrack: neverInvalidates,
     unfreezeTrack: neverInvalidates,
@@ -79,8 +77,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     stopPlayback: neverInvalidates,
     toggleRecording: neverInvalidates,
     setMasterGain: neverInvalidates,
-    toggleLoop: neverInvalidates,
-    toggleMetronome: neverInvalidates,
     setMetronomeVolume: neverInvalidates,
     setLoopRegion: neverInvalidates,
     setLoopEnabled: neverInvalidates,
@@ -97,9 +93,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     trimClipStart: neverInvalidates,
     trimClipEnd: neverInvalidates,
     setClipFade: neverInvalidates,
-    copyClip: neverInvalidates,
-    cutClip: neverInvalidates,
-    pasteClip: neverInvalidates,
     addDevice: addDeviceInvalidatesSidechain,
     bypassDevice: neverInvalidates,
     removeDevice: removeDeviceInvalidatesSidechain,
@@ -199,7 +192,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     setClipStretchRatio: neverInvalidates,
     fitClipToBeats: neverInvalidates,
     analyzeMix: neverInvalidates,
-    autoFixMix: neverInvalidates,
     enableMpe: neverInvalidates,
     disableMpe: neverInvalidates,
     getLatencyReport: neverInvalidates,
@@ -207,7 +199,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     joinCollabSession: neverInvalidates,
     leaveCollabSession: neverInvalidates,
     scanPlugins: neverInvalidates,
-    audioToMidi: neverInvalidates,
     muteClip: neverInvalidates,
     clearSolos: neverInvalidates,
     setTrackNotes: neverInvalidates,
@@ -243,7 +234,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     deleteTrackTemplate: neverInvalidates,
     detachPatternInstance: neverInvalidates,
     disconnectPush: neverInvalidates,
-    enableWarping: neverInvalidates,
     exportDawProject: neverInvalidates,
     labelUndoBranch: neverInvalidates,
     loadTrackTemplate: neverInvalidates,
@@ -290,7 +280,8 @@ function lookupSidechainInvalidation<Type extends RuntimeActionType>(
 
 export function hasInvalidatingSidechainLifecycleMutation(
     actions: readonly RuntimeAction[],
-    context: ProjectContext
+    context: ProjectContext,
+    acceptsSidechainInput: (deviceType: string) => boolean
 ): boolean {
     const allSidechainAdds = actions.filter(isAddSidechainRuntimeAction);
     const plannedSidechainAdds: AddSidechainRuntimeAction[] = [];
@@ -300,7 +291,14 @@ export function hasInvalidatingSidechainLifecycleMutation(
             plannedSidechainAdds.push(action);
             continue;
         }
-        if (lookupSidechainInvalidation(action, { allSidechainAdds, context, plannedSidechainAdds })) {
+        if (
+            lookupSidechainInvalidation(action, {
+                acceptsSidechainInput,
+                allSidechainAdds,
+                context,
+                plannedSidechainAdds,
+            })
+        ) {
             return true;
         }
     }

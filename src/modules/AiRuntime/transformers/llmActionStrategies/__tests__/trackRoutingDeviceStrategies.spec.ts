@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { acceptsSidechainInput } from '#/modules/AudioEngine/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
@@ -210,6 +211,7 @@ describe('routingStrategy', () => {
     it('returns null for a name owned by another family', () => {
         expect(
             bridgeRoutingToolCall({
+                acceptsSidechainInput,
                 call: foreignCall,
                 context: projectContext,
                 index: 0,
@@ -221,6 +223,7 @@ describe('routingStrategy', () => {
     it('reproduces the createBus rejection reason for an empty name', () => {
         expect(
             bridgeRoutingToolCall({
+                acceptsSidechainInput,
                 call: { name: 'createBus', arguments: { name: '' } },
                 context: projectContext,
                 index: 4,
@@ -326,6 +329,7 @@ const bridgeCall = (name: string, args: Record<string, unknown>, index = 0): unk
         return track;
     }
     const routing = bridgeRoutingToolCall({
+        acceptsSidechainInput,
         call: { name, arguments: args },
         context: guardContext,
         index,
