@@ -721,6 +721,22 @@ type AgentRunBudgetReservationInput = AgentRunBudgetReservation & {
 
 type AgentRunBudgetReservationResult = { status: 'reserved' | 'hard-limit-reached'; reason?: string };
 
+/** The category a reservation overspends, or `budgetAttempts` when the run could not read its attempts back. */
+function readBudgetReservationRefusal(
+    run: AgentRun,
+    newAttemptCount: number,
+    additionalByCategory: ReadonlyMap<string, number>
+): string | null {
+    for (const [category, additional] of additionalByCategory) {
+        const limit = run.budgets.limits[category];
+        const consumed = run.budgets.consumed[category] ?? 0;
+        if (limit !== undefined && consumed + additional > limit) {
+            return category;
+        }
+    }
+    return run.budgetAttempts.length + newAttemptCount > MAX_COLLECTION_LENGTH ? 'budgetAttempts' : null;
+}
+
 function reserveAgentRunBudgetBatch(input: {
     runId: string;
     attempts: readonly AgentRunBudgetReservation[];
@@ -757,18 +773,12 @@ function reserveAgentRunBudgetBatch(input: {
             (additionalByCategory.get(attempt.category) ?? 0) + attempt.estimate
         );
     }
-    for (const [category, additional] of additionalByCategory) {
-        const limit = run.budgets.limits[category];
-        const consumed = run.budgets.consumed[category] ?? 0;
-        if (limit !== undefined && consumed + additional > limit) {
-            return { status: 'hard-limit-reached', reason: category };
-        }
+    const refusedReason = readBudgetReservationRefusal(run, newAttempts.length, additionalByCategory);
+    if (refusedReason !== null) {
+        return { status: 'hard-limit-reached', reason: refusedReason };
     }
     if (newAttempts.length === 0) {
         return { status: 'reserved' };
-    }
-    if (run.budgetAttempts.length + newAttempts.length > MAX_COLLECTION_LENGTH) {
-        return { status: 'hard-limit-reached', reason: 'budgetAttempts' };
     }
     updateAgentRun(input.runId, reservedAt, (current) => {
         const consumed = { ...current.budgets.consumed };
