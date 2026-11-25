@@ -12,13 +12,12 @@ import {
     observeProofInstance,
 } from './desktopEditorFamilyDrive.ts';
 import {
-    pausePreservesProgress,
-    renderedPlayheadBeat,
     type EditorWorkspaceDrive,
     type Rectangle,
     type WorkspaceObservation,
     type WorkspaceStage,
 } from './desktopEditorWorkspaceEvidence.ts';
+import { heldPlayhead, pauseAtClick, playhead } from './desktopEditorWorkspacePlayhead.ts';
 import { changeScale, observedClick, scaleStep, viewport } from './desktopEditorWorkspaceScale.ts';
 import { launchEditorSession, quitEditorSession, readyWorkspace } from './desktopFermenterDrive.ts';
 import { FermenterDriveError } from './desktopFermenterEvidence.ts';
@@ -299,66 +298,13 @@ async function scaleRefit(page: Page, dialog: Locator, original: Locator, row: W
     });
 }
 
-async function playhead(page: Page): Promise<number> {
-    const text = await page.getByTestId('transport-playhead').textContent();
-    const beat = renderedPlayheadBeat(text ?? '');
-    assert(beat !== null, 'missing rendered bars beats ticks');
-    return beat;
-}
-
-async function heldPlayhead(page: Page, expected: number): Promise<void> {
-    // Observe every animation frame for a bounded stability window, rather than one immediate reading.
-    const values = await page.getByTestId('transport-playhead').evaluate(async (element) => {
-        const readings: string[] = [];
-        const started = performance.now();
-        do {
-            readings.push(element.textContent);
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        } while (performance.now() - started < 400);
-        return readings;
-    });
-    assert(values.length > 1 && values.every((value) => value === values[0]));
-    assert.equal(await playhead(page), expected);
-}
-
-async function pauseAtClick(
+async function transport(
     page: Page,
-    playback: Locator,
-    advanced: number,
-    samples: Record<string, number>
-): Promise<number> {
-    const pause = exactButton(playback, 'Pause');
-    const capture = await pause.evaluateHandle((button) => {
-        const witness: { readout: string | null } = { readout: null };
-        function sample(): void {
-            witness.readout = document.querySelector('[data-testid="transport-playhead"]')?.textContent ?? null;
-        }
-        // Native target capture runs before React's delegated bubble action changes transport state.
-        button.addEventListener('click', sample, { capture: true, once: true });
-        return { witness, cleanup: () => button.removeEventListener('click', sample, true) };
-    });
-    try {
-        await pause.click();
-        const clickReadout = await capture.evaluate(({ witness }) => witness.readout);
-        const clicked = renderedPlayheadBeat(clickReadout ?? '');
-        if (clicked !== null) {
-            samples.pauseClick = clicked;
-        }
-        await exactButton(playback, 'Play').waitFor({ state: 'visible' });
-        const paused = await playhead(page);
-        samples.paused = paused;
-        assert(pausePreservesProgress(advanced, clickReadout, paused), 'Pause did not park at its click position');
-        return paused;
-    } finally {
-        try {
-            await capture.evaluate(({ cleanup }) => cleanup());
-        } finally {
-            await capture.dispose();
-        }
-    }
-}
-
-async function transport(page: Page, dialog: Locator, original: Locator, row: WorkspaceObservation): Promise<void> {
+    dialog: Locator,
+    original: Locator,
+    deviceId: string,
+    row: WorkspaceObservation
+): Promise<void> {
     await minimumSize(dialog, row);
     await pointerDrag(exactButton(dialog, 'Move Fermenter panel'), 3000, 3000);
     assert.equal(
@@ -374,7 +320,12 @@ async function transport(page: Page, dialog: Locator, original: Locator, row: Wo
     const rulerBox = await box(ruler);
     const before = await playhead(page);
     const samples: Record<string, number> = { before };
-    row.values.push(samples);
+    const timeline: NonNullable<WorkspaceObservation['timeline']> = {
+        samples,
+        trackBefore: trackId,
+        deviceBefore: deviceId,
+    };
+    row.timeline = timeline;
     const read = async (): Promise<number> => {
         const value = await playhead(page);
         samples.current = value;
@@ -392,18 +343,22 @@ async function transport(page: Page, dialog: Locator, original: Locator, row: Wo
     samples.advancing = advancing;
     samples.advanced = advanced;
     const paused = await pauseAtClick(page, playback, advanced, samples);
-    await heldPlayhead(page, paused);
+    samples.pauseHold = await heldPlayhead(page, paused);
     await exactButton(playback, 'Stop').click();
-    await until(read, (value) => value === 0);
-    await heldPlayhead(page, 0);
-    samples.stopped = 0;
-    assert.equal(await selected.getAttribute('data-track-id'), trackId);
+    samples.stopped = await until(read, (value) => value === 0);
+    samples.stopHold = await heldPlayhead(page, 0);
+    timeline.trackAfter = (await selected.getAttribute('data-track-id')) ?? undefined;
+    assert.equal(timeline.trackAfter, trackId);
     await original.waitFor({ state: 'visible' });
     await dialog.waitFor({ state: 'visible' });
     // Reopening the exact surviving row identifies the same rendered instance after transport.
     await exactButton(dialog, 'Close Fermenter').click();
+    await dialog.waitFor({ state: 'detached' });
     await original.getByText('Fermenter', { exact: true }).click();
     await dialog.getByRole('button', { name: 'Show patch A', exact: true }).waitFor({ state: 'visible' });
+    const reopenedId = (await original.getAttribute('data-testid'))?.match(/^device-card-([a-zA-Z0-9_-]{1,80})$/u)?.[1];
+    timeline.deviceAfter = reopenedId;
+    assert.equal(reopenedId, deviceId);
     await exactButton(dialog, 'Close Fermenter').click();
     await dialog.waitFor({ state: 'detached' });
 }
@@ -608,8 +563,8 @@ export const driveDesktopEditorWorkspace: EditorWorkspaceDrive = async (binary, 
                 await session(async (page, browser, inspector) => {
                     await stage(stageName, async (observation) => {
                         if (name === 'timeline') {
-                            const { card } = await openFermenter(page, browser, inspector);
-                            await transport(page, deviceEditor(page, 'Fermenter'), card, observation);
+                            const { card, id } = await openFermenter(page, browser, inspector);
+                            await transport(page, deviceEditor(page, 'Fermenter'), card, id, observation);
                         } else if (name === 'nested-escape') {
                             await nestedEscape(page, browser, inspector, observation);
                         } else {
