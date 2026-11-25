@@ -51,6 +51,46 @@ describe('syncGrinderPatchToAudio', () => {
         const call = update_device_patch.mock.calls.find(([, , patch]) => typeof patch.modelJson === 'string');
         expect(call).toBeDefined();
         expect(JSON.parse(call?.[2].modelJson ?? 'null')).toEqual(document);
+
+        const audioProfile = update_device_param.mock.calls
+            .map(([, , key, value], index) => ({
+                key,
+                value,
+                order: update_device_param.mock.invocationCallOrder[index],
+            }))
+            .filter(({ key }) => key.startsWith('neuralCustom'));
+        const persistedProfile = persist_device_param.mock.calls
+            .map(([, key, value], index) => ({
+                key,
+                value,
+                order: persist_device_param.mock.invocationCallOrder[index],
+            }))
+            .filter(({ key }) => key.startsWith('neuralCustom'));
+        expect(audioProfile.length).toBeGreaterThan(0);
+        expect(persistedProfile.map(({ key, value }) => [key, value])).toEqual(
+            audioProfile.map(({ key, value }) => [key, value])
+        );
+        const audioModeIndex = update_device_param.mock.calls.findIndex(
+            ([, , key, value]) => key === 'neuralModelMode' && value === 1
+        );
+        const persistModeIndex = persist_device_param.mock.calls.findIndex(
+            ([, key, value]) => key === 'neuralModelMode' && value === 1
+        );
+        const patchIndex = update_device_patch.mock.calls.findIndex(
+            ([, , patch]) => typeof patch.modelJson === 'string'
+        );
+        const audioModeOrder = update_device_param.mock.invocationCallOrder[audioModeIndex];
+        const persistModeOrder = persist_device_param.mock.invocationCallOrder[persistModeIndex];
+        const patchOrder = update_device_patch.mock.invocationCallOrder[patchIndex];
+        if (audioModeOrder === undefined || persistModeOrder === undefined || patchOrder === undefined) {
+            throw new Error('Missing imported neural mode or structured patch call');
+        }
+        for (const { order } of [...audioProfile, ...persistedProfile]) {
+            if (order === undefined) throw new Error('Missing imported neural profile call order');
+            expect(order).toBeLessThan(audioModeOrder);
+        }
+        expect(audioModeOrder).toBeLessThan(persistModeOrder);
+        expect(persistModeOrder).toBeLessThan(patchOrder);
     });
 
     beforeEach(() => {
