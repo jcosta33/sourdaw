@@ -69,3 +69,13 @@ describe('isAgentReferenceCapabilityCandidate hideable-track', () => {
         expect(admitted).toEqual(['folder', 'audio', 'midi', 'bus']);
     });
 });
+
+describe('isAgentReferenceCapabilityCandidate disableable-track', () => {
+    it('admits every track kind but the master, and no missing id', () => {
+        const admitted = ['folder', 'audio', 'midi', 'bus', 'master', 'missing'].filter((id) =>
+            isAgentReferenceCapabilityCandidate({ capability: 'disableable-track', context, id })
+        );
+
+        expect(admitted).toEqual(['folder', 'audio', 'midi', 'bus']);
+    });
+});

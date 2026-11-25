@@ -122,6 +122,13 @@ import { isRestoreClipSessionPayload, isRestoreClipSplitSessionPayload } from '.
 
 import legacyAudioSplitUndo5812 from './fixtures/legacyAudioSplitUndo5812.json';
 
+// The suite has no Web Audio context; disabling a track mutes its engine strip, so the strip write is
+// stubbed while every other AudioEngine export stays real.
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    setTrackMute: vi.fn(),
+}));
+
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
 const TRACK_ID = 'track-keys';
@@ -2282,6 +2289,18 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 true,
             ],
             [
+                'disableTrack',
+                { type: 'disableTrack', payload: { trackId: TRACK_ID, disabled: true } },
+                () => trackNamed(TRACK_ID).disabled,
+                true,
+            ],
+            [
+                'setTrackNotes',
+                { type: 'setTrackNotes', payload: { trackId: TRACK_ID, notes: 'Re-record the bridge' } },
+                () => trackNamed(TRACK_ID).notes,
+                'Re-record the bridge',
+            ],
+            [
                 'foldTrack',
                 { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } },
                 () => trackNamed(FOLDER_ID).collapsed,
@@ -2441,6 +2460,24 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 false,
             ],
             [
+                'a disable then an enable of one track',
+                [
+                    { type: 'disableTrack', payload: { trackId: TRACK_ID, disabled: true } },
+                    { type: 'disableTrack', payload: { trackId: TRACK_ID, disabled: false } },
+                ] as const,
+                () => trackNamed(TRACK_ID).disabled,
+                false,
+            ],
+            [
+                'two notes for one track',
+                [
+                    { type: 'setTrackNotes', payload: { trackId: TRACK_ID, notes: 'first' } },
+                    { type: 'setTrackNotes', payload: { trackId: TRACK_ID, notes: 'second' } },
+                ] as const,
+                () => trackNamed(TRACK_ID).notes,
+                'second',
+            ],
+            [
                 'a fold then an unfold of one folder',
                 [
                     { type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } },
@@ -2504,6 +2541,21 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 'Track "ghost-track" does not exist',
             ],
             [
+                'a disable of a track that does not exist',
+                { type: 'disableTrack', payload: { trackId: 'ghost-track', disabled: true } },
+                'Track "ghost-track" does not exist',
+            ],
+            [
+                'notes for a track that does not exist',
+                { type: 'setTrackNotes', payload: { trackId: 'ghost-track', notes: 'x' } },
+                'Track "ghost-track" does not exist',
+            ],
+            [
+                'notes past the length limit',
+                { type: 'setTrackNotes', payload: { trackId: TRACK_ID, notes: 'x'.repeat(2001) } },
+                'Track notes are limited to 2000 characters',
+            ],
+            [
                 'a fold of a track that is not a folder',
                 { type: 'foldTrack', payload: { trackId: TRACK_ID, folded: true } },
                 `Track "${TRACK_ID}" is not a folder, so it has nothing to fold`,
@@ -2562,6 +2614,21 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(trackNamed(SHORT_ID)).toMatchObject({ hidden: false, frozen: true });
         });
 
+        it('disables a frozen track and sets its notes, since neither touches the freeze, and undoes both', async () => {
+            expect(trackNamed(SHORT_ID).frozen).toBe(true);
+
+            const result = await runAsAgent([
+                { type: 'disableTrack', payload: { trackId: SHORT_ID, disabled: true } },
+                { type: 'setTrackNotes', payload: { trackId: SHORT_ID, notes: 'frozen take' } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(trackNamed(SHORT_ID)).toMatchObject({ disabled: true, notes: 'frozen take', frozen: true });
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackNamed(SHORT_ID)).toMatchObject({ disabled: false, notes: '', frozen: true });
+        });
+
         it('undoes a zoom and the removal of a zoomed track as one group, restoring the track and every height', async () => {
             const result = await runAsAgent([
                 { type: 'zoomTracksVertical', payload: { delta: 40 } },
@@ -2585,6 +2652,20 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 { type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } },
                 () => trackNamed(TRACK_ID).hidden,
                 false,
+            ],
+            [
+                'disableTrack',
+                TRACK_ID,
+                { type: 'disableTrack', payload: { trackId: TRACK_ID, disabled: true } },
+                () => trackNamed(TRACK_ID).disabled,
+                false,
+            ],
+            [
+                'setTrackNotes',
+                TRACK_ID,
+                { type: 'setTrackNotes', payload: { trackId: TRACK_ID, notes: 'gone with the track' } },
+                () => trackNamed(TRACK_ID).notes,
+                '',
             ],
             [
                 'foldTrack',
@@ -2819,6 +2900,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             [{ type: 'setTrackHeight', payload: { trackId: TRACK_ID, height: 120 } }, TRACK_ID, 'setTrackHeight'],
             [{ type: 'foldTrack', payload: { trackId: FOLDER_ID, folded: true } }, FOLDER_ID, 'foldTrack'],
             [{ type: 'hideTrack', payload: { trackId: TRACK_ID, hidden: true } }, TRACK_ID, 'hideTrack'],
+            [{ type: 'disableTrack', payload: { trackId: TRACK_ID, disabled: true } }, TRACK_ID, 'disableTrack'],
+            [{ type: 'setTrackNotes', payload: { trackId: TRACK_ID, notes: 'x' } }, TRACK_ID, 'setTrackNotes'],
         ] as const)(
             'refuses a %s on a track an earlier action of the batch removes, writing nothing',
             async (edit, trackId, name) => {

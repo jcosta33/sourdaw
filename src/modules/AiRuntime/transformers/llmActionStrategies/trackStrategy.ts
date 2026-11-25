@@ -1,6 +1,7 @@
 import { FADER_MAX_GAIN, type LevelArgument, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { MAX_TRACK_HEIGHT, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
+import { MAX_TRACK_NOTES_LENGTH } from '#/utils/trackNotesLimits';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
@@ -49,6 +50,8 @@ export const trackActionNames = [
     'setTrackColor',
     'setTrackOutput',
     'hideTrack',
+    'disableTrack',
+    'setTrackNotes',
     'foldTrack',
     'setTrackHeight',
 ] as const satisfies readonly Extract<RuntimeActionType, string>[];
@@ -327,6 +330,45 @@ const trackStrategyDefinitions = [
                 return rejection(index, call.name, 'Expected an available trackId and boolean hidden value');
             }
             return { type: 'hideTrack', payload: { trackId: args.trackId, hidden: args.hidden } };
+        },
+    },
+    {
+        name: 'disableTrack',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            const track = findTrack(context, args.trackId);
+            if (
+                !hasExactKeys(args, ['trackId', 'disabled']) ||
+                !track ||
+                track.kind === 'master' ||
+                typeof args.disabled !== 'boolean'
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected an available non-master trackId and boolean disabled value'
+                );
+            }
+            return { type: 'disableTrack', payload: { trackId: track.id, disabled: args.disabled } };
+        },
+    },
+    {
+        name: 'setTrackNotes',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            if (
+                !hasExactKeys(args, ['trackId', 'notes']) ||
+                !hasTrack(context, args.trackId) ||
+                typeof args.notes !== 'string' ||
+                args.notes.length > MAX_TRACK_NOTES_LENGTH
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Expected an available trackId and notes text of at most ${MAX_TRACK_NOTES_LENGTH} characters`
+                );
+            }
+            return { type: 'setTrackNotes', payload: { trackId: args.trackId, notes: args.notes } };
         },
     },
     {

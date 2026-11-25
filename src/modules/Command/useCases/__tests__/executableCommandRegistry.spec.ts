@@ -1677,6 +1677,28 @@ const EXPECTED_COMMANDS = [
         'bounded-reversible',
         false
     ),
+    expectedCommand(
+        'disableTrack',
+        'Disable a track so it is silent, or enable it again; a disabled track keeps its clips and devices.',
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            disabled: { type: 'boolean', description: 'true=disable, false=enable' },
+        },
+        ['trackId', 'disabled'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setTrackNotes',
+        "Replace a track's notes text, up to 2000 characters.",
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            notes: { type: 'string', maxLength: 2000, description: 'The new notes text, at most 2000 characters' },
+        },
+        ['trackId', 'notes'],
+        'bounded-reversible',
+        false
+    ),
 ];
 
 const EXPECTED_GROUNDING = [
@@ -3089,6 +3111,34 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['track height', 'row height', 'resize track'],
         targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
         valueRules: [{ argument: 'height', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'disableTrack',
+        intentPhrases: [
+            'disable track',
+            'disable the track',
+            'enable track',
+            'enable the track',
+            'deactivate track',
+            'deactivate the track',
+            'activate track',
+            'activate the track',
+        ],
+        targetRules: [{ argument: 'trackId', capability: 'disableable-track', allowBatchLocal: false }],
+        valueRules: [
+            {
+                argument: 'disabled',
+                kind: 'boolean-intent',
+                truePhrases: ['disable track', 'disable the track', 'deactivate track', 'deactivate the track'],
+                falsePhrases: ['enable track', 'enable the track', 'activate track', 'activate the track'],
+            },
+        ],
+    },
+    {
+        actionType: 'setTrackNotes',
+        intentPhrases: ['set track notes', 'set the track notes', 'set notes', 'set the notes'],
+        targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
+        valueRules: [{ argument: 'notes', kind: 'text-after-connector', connector: 'to' }],
     },
 ] as const;
 
