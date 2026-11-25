@@ -27,6 +27,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     isAppActionConflictError: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    captureDevicePatchCommitValidation: () => ({ isCurrent: () => true, start: () => null }),
+}));
 vi.mock('../reconcileGrandBouleDeviceStateFromProject', () => ({
     reconcileGrandBouleDeviceStateFromProject: mocks.reconcile,
 }));
@@ -65,6 +68,7 @@ function projectChunk(data: Record<string, unknown>): void {
     mocks.trackStore.value = {
         tracks: [
             {
+                id: 'piano',
                 devices: [
                     { id: 'grand-1', type: 'grand-boule', parameterValues: {}, deviceState: { version: 1, data } },
                 ],

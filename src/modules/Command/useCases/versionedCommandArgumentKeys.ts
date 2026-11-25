@@ -6537,11 +6537,12 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            after: 426,
-            before: 426,
+            after: 763,
+            before: 763,
             deviceId: 1,
+            trackId: 1,
         },
-        required: ['after', 'before', 'deviceId'],
+        required: ['after', 'before', 'deviceId', 'trackId'],
         additionalProperties: false,
     },
     {

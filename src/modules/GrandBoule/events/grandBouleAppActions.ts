@@ -4,8 +4,9 @@ export type GrandBouleAppAction = {
     type: 'setGrandBouleDeviceState';
     payload: {
         deviceId: string;
-        before: DeviceStateChunkSnapshot;
-        after: DeviceStateChunkSnapshot;
+        trackId: string;
+        before: DeviceStateChunkSnapshot | null;
+        after: DeviceStateChunkSnapshot | null;
     };
 };
 

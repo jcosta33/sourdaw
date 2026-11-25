@@ -49,6 +49,7 @@ function createCapturedDeviceReplayContract(
         | 'setBacteriaFactoryPatch'
         | 'setCrustFactoryPreset'
         | 'setGlutenFactoryPreset'
+        | 'setGrandBouleDeviceState'
         | 'setLevainIdentity'
         | 'setProofPatchSelection'
         | 'setToasterFactoryKit'
@@ -121,6 +122,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
         createCapturedDeviceReplayContract('setCrustFactoryPreset'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
+        createCapturedDeviceReplayContract('setGrandBouleDeviceState'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
         createCapturedDeviceReplayContract('setProofPatchSelection'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),

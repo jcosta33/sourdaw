@@ -7,9 +7,9 @@ use crate::host::native_bridge::{
     PluginStateError, SharedHostedPlugin,
 };
 use crate::host::plugin_registry_store::{
-    plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
-    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt,
-    RescanClaim, ScanRow,
+    plugin_file_fingerprint, plugin_file_path, CompletedScanScope, FileFingerprint,
+    InconclusiveOutcome, PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore,
+    RescanAttempt, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::{PluginScanPolicy, ScanPathRefusal};
 use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
@@ -470,7 +470,7 @@ pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
     PLUGIN_RUNTIME_GATE.try_write().ok()
 }
 
-struct PluginLifecycleLease {
+pub(super) struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
     _guard: tokio::sync::OwnedMutexGuard<()>,
@@ -488,7 +488,7 @@ impl Drop for PluginLifecycleLease {
         }
     }
 }
-fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+pub(super) fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     let mut gates = PLUGIN_LIFECYCLE_GATES
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -498,7 +498,7 @@ fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
     )
 }
-async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
+pub(super) async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).lock_owned().await;
     PluginLifecycleLease {
@@ -511,10 +511,10 @@ async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
 ///
 /// For [`attach_dormant_plugins`], which runs inside a graph batch holding the
 /// registry guard and so cannot await anything. A lease it cannot take means a
-/// load or unload owns this instance right now: the attach leaves it dormant
-/// and the next batch tries again, which is the same answer an engine refusal
-/// gets.
-fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
+/// load, an unload or another attach owns this instance right now: the attach
+/// leaves it dormant and the next batch tries again, which is the same answer
+/// an engine refusal gets.
+pub(super) fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).try_lock_owned().ok()?;
     Some(PluginLifecycleLease {
@@ -748,20 +748,19 @@ fn publish_scan_results_in_registry(
     plugins: &[ScannedPlugin],
     fingerprints: &ScanFingerprints,
 ) {
-    let survives_this_scan = |path: &Path| {
-        if scan_complete {
-            return !authorized_paths.iter().any(|root| path.starts_with(root));
-        }
-        !scanned_paths.iter().any(|scanned| scanned == path)
-    };
+    let scope = CompletedScanScope::new(
+        scan_complete,
+        authorized_paths.to_vec(),
+        scanned_paths.to_vec(),
+    );
 
-    registry_store.apply_completed_scan_removals(survives_this_scan);
+    registry_store.apply_completed_scan_removals(scope.clone());
 
     let indexed = index_scanned_plugins(plugins, fingerprints);
     let mut registry = plugin_registry
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.retain(|_, entry| survives_this_scan(Path::new(&entry.path)));
+    registry.retain(|_, entry| scope.keeps(Path::new(&entry.path)));
     registry.extend(indexed);
 }
 
@@ -1653,6 +1652,12 @@ fn resolve_registry_entry_once<Rescan>(
 where
     Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, RescanFailure>,
 {
+    // The scan runs in another process, so a plugin it just found reaches
+    // this one only through the file.
+    if read_registry_entry(plugin_registry, plugin_id).is_none() {
+        registry_store.adopt_entry_written_elsewhere(plugin_registry, scan_policy, plugin_id);
+    }
+
     if let Some(entry) = read_registry_entry(plugin_registry, plugin_id) {
         return vet_registry_hit(
             plugin_registry,
@@ -12251,6 +12256,35 @@ mod tests {
             },
         )
         .expect("the persisted plugin must resolve in a new session")
+        .entry;
+
+        assert_eq!(entry.path, plugin_path.display().to_string());
+        assert_eq!(entry.descriptor_id, "com.vendor.reverb");
+    }
+
+    /// The scan runs in its own process with its own store. A plugin it found
+    /// after this process hydrated loads in the same session, not only after a
+    /// relaunch.
+    #[test]
+    fn an_activation_resolves_a_plugin_the_scan_process_found_after_this_one_hydrated() {
+        let fixture = PersistedRegistryFixture::create("activation-sibling-scan");
+        let session_registry = Mutex::new(HashMap::new());
+        let session_store = fixture.store();
+        session_store.hydrate_into(&session_registry, &fixture.scan_policy());
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        // `persist` writes through a store of its own: the scan process's.
+        fixture.persist("aaaa1111", &plugin_path);
+
+        let entry = resolve_registry_entry(
+            &session_registry,
+            &session_store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                panic!("a row the scan process wrote must resolve without rescanning {path:?}")
+            },
+        )
+        .expect("a plugin the scan just found must resolve in the same session")
         .entry;
 
         assert_eq!(entry.path, plugin_path.display().to_string());
