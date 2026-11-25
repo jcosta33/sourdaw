@@ -2,10 +2,12 @@ import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { freezeStateSnapshotMatches } from '../../useCases/freezeBounce/freezeStateSnapshotMatches';
+import {
+    FREEZE_REFUSED_WHILE_RECORDING_MESSAGE,
+    isFreezeRefusedWhileRecording,
+} from '../../useCases/freezeBounce/isFreezeRefusedWhileRecording';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
-
-import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, isFreezeRefusedWhileRecording } from './isFreezeRefusedWhileRecording';
 
 /**
  * Inverse and redo of `freezeTrack` and `unfreezeTrack`, guarded on the take the forward

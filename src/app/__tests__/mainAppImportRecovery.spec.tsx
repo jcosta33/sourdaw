@@ -10,9 +10,13 @@ const mocks = vi.hoisted(() => ({
     importRejections: [] as unknown[],
     appPromise: null as Promise<{ App: () => null }> | null,
     bootstrap: vi.fn(),
+    bootstrapApplication: vi.fn<() => void>(),
     bootstrapFailure: null as Error | null,
     bootstrapPending: true,
     registerBuses: vi.fn(),
+    registerDeviceEnginePorts: vi.fn<() => void>(),
+    registerKernelPorts: vi.fn<() => void>(),
+    registerSupportingServicePorts: vi.fn<() => void>(),
     rejectBootstrap: vi.fn(),
     reload: vi.fn(),
     render: vi.fn(),
@@ -31,6 +35,11 @@ vi.mock('../browserDisplayScaleHost', () => ({
 vi.mock('../resolveAppComposition', () => ({ resolveAppComposition: () => 'application' }));
 vi.mock('../reloadApplication', () => ({ reloadApplication: mocks.reload }));
 vi.mock('../registerNotificationEventBus', () => ({ registerNotificationEventBus: mocks.registerBuses }));
+vi.mock('../registerDeviceEnginePorts', () => ({ registerDeviceEnginePorts: mocks.registerDeviceEnginePorts }));
+vi.mock('../registerSupportingServicePorts', () => ({
+    registerSupportingServicePorts: mocks.registerSupportingServicePorts,
+}));
+vi.mock('../registerKernelPorts', () => ({ registerKernelPorts: mocks.registerKernelPorts }));
 vi.mock('../clearInheritedRetrospectiveCaptureArm', () => ({ clearInheritedRetrospectiveCaptureArm: vi.fn() }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     resetDisplayScaleForStartup: vi.fn().mockResolvedValue(undefined),
@@ -77,7 +86,10 @@ function installRuntimeMocks(): void {
         if (mocks.bootstrapFailure !== null) {
             throw mocks.bootstrapFailure;
         }
-        return mocks.bootstrapPending ? new Promise<Record<string, never>>(() => undefined) : {};
+        if (mocks.bootstrapPending) {
+            return new Promise<Record<string, never>>(() => undefined);
+        }
+        return { bootstrapApplication: mocks.bootstrapApplication };
     });
     vi.doMock('../App', () => ({
         __esModule: true,
@@ -116,6 +128,26 @@ function App(): null {
 }
 function appWasIssued(): boolean {
     return mocks.render.mock.calls.some(([element]) => isValidElement(element) && element.type === App);
+}
+function expectPortsFilledOnceBeforeAppRender(): void {
+    const appRender = mocks.render.mock.calls.findIndex(([element]) => isValidElement(element) && element.type === App);
+    const appRenderOrder = mocks.render.mock.invocationCallOrder[appRender];
+    if (appRenderOrder === undefined) {
+        throw new Error('App was never rendered');
+    }
+    const registrars = [
+        mocks.registerDeviceEnginePorts,
+        mocks.registerSupportingServicePorts,
+        mocks.registerKernelPorts,
+    ];
+    for (const registrar of registrars) {
+        expect(registrar).toHaveBeenCalledExactlyOnceWith();
+    }
+    const firstCall = (registrar: (typeof registrars)[number]) =>
+        registrar.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY;
+    expect(firstCall(mocks.registerDeviceEnginePorts)).toBeLessThan(firstCall(mocks.registerSupportingServicePorts));
+    expect(firstCall(mocks.registerSupportingServicePorts)).toBeLessThan(firstCall(mocks.registerKernelPorts));
+    expect(firstCall(mocks.registerKernelPorts)).toBeLessThan(appRenderOrder);
 }
 function expectTerminalReport(firstReason: unknown, secondReason: unknown): void {
     expect(mocks.logError).toHaveBeenCalledOnce();
@@ -194,10 +226,13 @@ describe('initial App import recovery through main', () => {
         const app = gateApp();
         await firstPaint();
         expect(appWasIssued()).toBe(false);
+        expect(mocks.registerDeviceEnginePorts).not.toHaveBeenCalled();
         expect(mocks.reportError).not.toHaveBeenCalled();
         app.resolve({ App });
         await vi.waitFor(() => expect(appWasIssued()).toBe(true));
+        expectPortsFilledOnceBeforeAppRender();
         expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        expect(mocks.bootstrapApplication).not.toHaveBeenCalled();
         expect(mocks.reload).not.toHaveBeenCalled();
     });
 
@@ -210,6 +245,7 @@ describe('initial App import recovery through main', () => {
         await vi.waitFor(() => expect(mocks.appRequested).toHaveBeenCalledTimes(2));
         retry.resolve({ App });
         await vi.waitFor(() => expect(appWasIssued()).toBe(true));
+        expectPortsFilledOnceBeforeAppRender();
         expect(mocks.reportError).not.toHaveBeenCalled();
         expect(mocks.logError).not.toHaveBeenCalled();
         expect(mocks.reload).not.toHaveBeenCalled();
@@ -231,6 +267,7 @@ describe('initial App import recovery through main', () => {
         expect(mocks.roots).toHaveLength(1);
         expect(mocks.bootstrap).toHaveBeenCalledOnce();
         expect(appWasIssued()).toBe(false);
+        expect(mocks.registerDeviceEnginePorts).not.toHaveBeenCalled();
         expect(mocks.reload).not.toHaveBeenCalled();
         expect(document.body.textContent).toContain(
             'The application did not finish loading. Reload Sourdaw to try again.'
@@ -291,6 +328,31 @@ describe('initial App import recovery through main', () => {
         expect(rejected.cause).toBe(failure);
         expect(mocks.reportError).not.toHaveBeenCalled();
         expect(mocks.reload).not.toHaveBeenCalled();
+    });
+
+    it('runs the bootstrap entry once when its module resolves', async () => {
+        mocks.bootstrapPending = false;
+        const app = gateApp();
+        await firstPaint();
+        await vi.waitFor(() => expect(mocks.bootstrapApplication).toHaveBeenCalledExactlyOnceWith());
+        app.resolve({ App });
+        await vi.waitFor(() => expect(appWasIssued()).toBe(true));
+        expect(mocks.bootstrapApplication).toHaveBeenCalledOnce();
+        expect(mocks.rejectBootstrap).not.toHaveBeenCalled();
+    });
+
+    it('fails identity-transition configuration closed when the bootstrap entry throws', async () => {
+        const failure = new Error('bootstrap entry failed');
+        mocks.bootstrapPending = false;
+        mocks.bootstrapApplication.mockImplementationOnce(() => {
+            throw failure;
+        });
+        const app = gateApp();
+        await firstPaint();
+        await vi.waitFor(() => expect(mocks.rejectBootstrap).toHaveBeenCalledExactlyOnceWith(failure));
+        app.resolve({ App });
+        await vi.waitFor(() => expect(appWasIssued()).toBe(true));
+        expect(mocks.reportError).not.toHaveBeenCalled();
     });
 
     it('does not retry or report an import failure when the imported App throws while rendering', async () => {

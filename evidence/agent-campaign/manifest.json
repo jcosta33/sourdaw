@@ -270,7 +270,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
-                    "digest": "259a8b0ea7822e6f65e5b4e2f39775fdd6826c0b1320959a78cfd607fbe8f27e"
+                    "digest": "9245abd116e29fca2fa17fa7a2fe8a8884831bc9de02c7a8a309873cf885ad2b"
                 }
             ]
         },
@@ -398,7 +398,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts",
-                    "digest": "98b952fb3dc047b19f14140824e9e057abaee71be9e25c3513078402f7944282"
+                    "digest": "afc51487ca68228f2f995ac9131197e1749c3fc3a480577ffe758e9741d49cb0"
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts",
@@ -506,7 +506,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
-                    "digest": "e96b0910378f34213fa773040b7f7f276afb47449cfd86d8c77bea447329e034"
+                    "digest": "5c2acdfef10d46cae9961681a86a5a733d0c75ff3b01449d32e73585202fe406"
                 }
             ]
         },
@@ -782,7 +782,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "98db0f84d9f6d0e849d2920520f58d072f1196f9bbff94646a8600d251b03864"
+                    "digest": "c2115306b0d96dfdffcc4f450a08dc524c850a8d1be707e3063ae7a078fe7259"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -790,7 +790,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "21788fea99ed48fa4c017eafdd4b961f99f9afa4661f8e3d55f58c3ca4f311f2"
+                    "digest": "8526c59e24759e19f473e5cadb34cd8a9e64125c9e561f63b5963529404aace0"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",

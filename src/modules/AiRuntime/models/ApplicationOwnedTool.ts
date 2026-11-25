@@ -37,3 +37,8 @@ export type ApplicationToolReceipt = {
         retryable: boolean;
     };
 };
+
+/** A receipt's size as its per-call bound measures it: the UTF-8 bytes of its JSON serialization. */
+export function measureApplicationToolReceiptBytes(receipt: ApplicationToolReceipt): number {
+    return new TextEncoder().encode(JSON.stringify(receipt)).byteLength;
+}

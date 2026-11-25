@@ -90,10 +90,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
             'Skip on a solo keyboard arrangement with no other source below 200 Hz.',
             'Skip when the performance relies on dynamic contrast between sections.',
         ],
-        metrics: [
-            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' }],
         source: 'Cutting the low shoulder before compression stops sustained left-hand notes driving gain reduction the listener attributes to the right hand. The shortened decay that follows is what reads as tightness on a sustaining keyboard part.',
     },
     {
@@ -120,10 +117,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
             'Skip on sustained pad voicings, where the attack is the least of the sound.',
             'Skip when a limiter earlier in the chain has already flattened the attacks.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'increase' },
-            { metric: 'rms', direction: 'increase' },
-        ],
+        metrics: [{ metric: 'rms', direction: 'increase' }],
         source: 'An attack time longer than the key strike lets the strike pass and clamps the ring behind it, so makeup gain raises the strike relative to the sustain. The result is a wider peak-to-average ratio at a higher average level, which is what punch measures as.',
     },
     {
@@ -320,10 +314,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
             'Skip when no earlier stage controls peaks; this one alone will chase them and pump.',
             'Skip on a fixed-velocity programmed part with nothing to settle.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'A release spanning several chords produces the slow shared envelope that reads as cohesion, where a release tracking each chord would read as pumping. The soft knee keeps the onset of reduction from marking individual notes.',
     },
     {

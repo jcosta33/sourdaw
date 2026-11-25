@@ -4,11 +4,13 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { captureFreezeStateSnapshot } from '../../useCases/freezeBounce/freezeStateSnapshot';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
+import {
+    FREEZE_REFUSED_WHILE_RECORDING_MESSAGE,
+    isFreezeRefusedWhileRecording,
+} from '../../useCases/freezeBounce/isFreezeRefusedWhileRecording';
 import { readSettledFreezeState } from '../../useCases/freezeBounce/readSettledFreezeState';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
-
-import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, isFreezeRefusedWhileRecording } from './isFreezeRefusedWhileRecording';
 
 type MutableFreezeStateSnapshot = {
     frozen: boolean;

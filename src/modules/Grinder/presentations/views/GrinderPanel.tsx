@@ -7,7 +7,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobProps } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { Grid, Row, Stack } from '#/components/layout';
@@ -70,6 +70,8 @@ import { removeGrinderNeuralModel } from '../../useCases/removeGrinderNeuralMode
 import { restoreGrinderNeuralLibrary } from '../../useCases/restoreGrinderNeuralLibrary';
 import { setGrinderPanelUiLevel } from '../../useCases/setGrinderPanelUiLevel';
 import { ImportedNeuralLibraryCard } from '../components/ImportedNeuralLibraryCard';
+
+import { useGrinderGainControl } from './useGrinderGainControl';
 
 const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: typeof Sparkles }> = [
     { id: 'browse', label: 'Browse', icon: Search },
@@ -420,6 +422,7 @@ function GrinderKnob({
     step,
     defaultValue,
     unit,
+    control,
 }: {
     deviceId: string;
     value: number;
@@ -430,16 +433,24 @@ function GrinderKnob({
     step: number;
     defaultValue: number;
     unit?: string;
+    control?: {
+        change: RotaryKnobProps['onChange'];
+        gestureAuthority: RotaryKnobProps['gestureAuthority'];
+        cancel: () => void;
+    };
 }): ReactElement {
     return (
         <Stack
             align="center"
+            onPointerCancelCapture={control?.cancel}
+            onLostPointerCaptureCapture={control?.cancel}
             gap={1}
             className="min-w-[72px] rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-3 py-3 shadow-[var(--shadow-elevation-inset)]"
         >
             <RotaryKnob
                 value={value}
-                onChange={(next) => setGrinderParamWithAudio(deviceId, param, next)}
+                onChange={control?.change ?? ((next) => setGrinderParamWithAudio(deviceId, param, next))}
+                gestureAuthority={control?.gestureAuthority}
                 min={min}
                 max={max}
                 step={step}
@@ -1322,19 +1333,27 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
     );
 }
 
+function GrinderGainKnob({ deviceId, committedValue }: { deviceId: string; committedValue: number }): ReactElement {
+    const { preview, control } = useGrinderGainControl(deviceId);
+    return (
+        <GrinderKnob
+            deviceId={deviceId}
+            value={preview ?? committedValue}
+            param="gain"
+            label="Gain"
+            min={0}
+            max={10}
+            step={0.1}
+            defaultValue={5}
+            control={control}
+        />
+    );
+}
+
 function GrinderToneControls({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     return (
         <>
-            <GrinderKnob
-                deviceId={deviceId}
-                value={patch.gain}
-                param="gain"
-                label="Gain"
-                min={0}
-                max={10}
-                step={0.1}
-                defaultValue={5}
-            />
+            <GrinderGainKnob key={deviceId} deviceId={deviceId} committedValue={patch.gain} />
             <GrinderKnob
                 deviceId={deviceId}
                 value={patch.master}

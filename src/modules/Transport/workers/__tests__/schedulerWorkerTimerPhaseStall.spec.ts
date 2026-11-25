@@ -72,6 +72,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: actual.sanitizeTrackSnapshot,
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         addWarpMarker: actual.addWarpMarker,
         clampDeviceParamWrite: actual.clampDeviceParamWrite,
         clipHasActiveGainEnvelope: actual.clipHasActiveGainEnvelope,
@@ -88,7 +89,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         soloModeStore: actual.soloModeStore,
         adjustmentLayerStore: { value: null },
         gainEnvelopeStore: { value: null },
-        getTrackEligibility: vi.fn(),
+        getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
         markerStore: { value: null },
         vcaGroupStore: { value: null },
         warpStateStore: { value: null },

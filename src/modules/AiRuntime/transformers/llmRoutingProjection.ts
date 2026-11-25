@@ -7,19 +7,27 @@ import { findDeviceTarget, findSupportedSidechainDevices, findTrack } from './ll
 
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type RoutingProjectionLookup = {
-    readonly [Type in RuntimeActionType]: (context: ProjectContext, action: ActionOf<Type>) => ProjectContext;
+    readonly [Type in RuntimeActionType]: (
+        context: ProjectContext,
+        action: ActionOf<Type>,
+        acceptsSidechainInput: (deviceType: string) => boolean
+    ) => ProjectContext;
 };
 
 function unchangedContext(context: ProjectContext): ProjectContext {
     return context;
 }
 
-function projectAddSidechainRoute(context: ProjectContext, action: ActionOf<'addSidechainRoute'>): ProjectContext {
+function projectAddSidechainRoute(
+    context: ProjectContext,
+    action: ActionOf<'addSidechainRoute'>,
+    acceptsSidechainInput: (deviceType: string) => boolean
+): ProjectContext {
     const target = findTrack(context, action.payload.targetTrackId);
     if (!target) {
         return context;
     }
-    const targetDevice = findSupportedSidechainDevices(target).find(
+    const targetDevice = findSupportedSidechainDevices(target, acceptsSidechainInput).find(
         (device) => action.payload.targetDeviceId === undefined || device.id === action.payload.targetDeviceId
     );
     if (!targetDevice) {
@@ -150,7 +158,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     importStemSet: unchangedContext,
     addTrack: unchangedContext,
     removeTrack: projectRemoveTrack,
-    removeAllTracks: unchangedContext,
     renameTrack: unchangedContext,
     selectTrack: unchangedContext,
     muteTrack: unchangedContext,
@@ -182,7 +189,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     setLoopRegion: unchangedContext,
     setLoopEnabled: unchangedContext,
     setMetronomeEnabled: unchangedContext,
-    restoreLoopRegion: unchangedContext,
     addClip: unchangedContext,
     drawClip: unchangedContext,
     duplicateClipAt: unchangedContext,
@@ -240,7 +246,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     scaleVelocities: unchangedContext,
     scaleAllVelocities: unchangedContext,
     setAllVelocities: unchangedContext,
-    importMidiFile: unchangedContext,
     normalizeClip: unchangedContext,
     reverseClip: unchangedContext,
     glueClips: unchangedContext,
@@ -266,7 +271,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     setTrackOutput: projectSetTrackOutput,
     addSend: projectAddSend,
     removeSend: projectRemoveSend,
-    removeAutomationPoint: unchangedContext,
     setAutomationMode: unchangedContext,
     hideTrack: unchangedContext,
     disableTrack: unchangedContext,
@@ -277,7 +281,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     exportProject: unchangedContext,
     saveProject: unchangedContext,
     newProject: unchangedContext,
-    importAudioFile: unchangedContext,
     exportMidi: unchangedContext,
     foldTrack: unchangedContext,
     groupTracks: unchangedContext,
@@ -288,7 +291,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     reverseAutomation: unchangedContext,
     thinAutomation: unchangedContext,
     quantizeAutomation: unchangedContext,
-    loadPreset: unchangedContext,
     savePreset: unchangedContext,
     generateDrumPattern: unchangedContext,
     generateMelody: unchangedContext,
@@ -309,12 +311,10 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     joinCollabSession: unchangedContext,
     leaveCollabSession: unchangedContext,
     scanPlugins: unchangedContext,
-    loadExternalPlugin: unchangedContext,
     audioToMidi: unchangedContext,
     muteClip: unchangedContext,
     clearSolos: unchangedContext,
     setTrackNotes: unchangedContext,
-    setTrackInput: unchangedContext,
     zoomTracksVertical: unchangedContext,
     deleteTime: unchangedContext,
     insertTime: unchangedContext,
@@ -332,41 +332,24 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     renameTrackAlternative: unchangedContext,
     deleteTrackAlternative: unchangedContext,
     addChordEvent: unchangedContext,
-    addCvOutput: unchangedContext,
     addNotes: unchangedContext,
     addYeastProcessor: unchangedContext,
     assignToVca: unchangedContext,
-    autoOrganizeProject: unchangedContext,
-    captureScratchPad: unchangedContext,
-    clearAllMidiMappings: unchangedContext,
     clearChordTrack: unchangedContext,
     clearMidiOutput: unchangedContext,
-    clearScratchPad: unchangedContext,
-    commitScratchPad: unchangedContext,
-    compareToReference: unchangedContext,
-    completeMidi: unchangedContext,
     connectPush: unchangedContext,
     createAdjustmentLayer: unchangedContext,
     addAdjustmentRegion: unchangedContext,
     createCompGroup: unchangedContext,
     createPatternInstance: unchangedContext,
-    createProjectVersion: unchangedContext,
     createVcaGroup: unchangedContext,
-    createVersionBranch: unchangedContext,
     deleteMacro: unchangedContext,
     deleteTrackTemplate: unchangedContext,
     detachPatternInstance: unchangedContext,
-    detectSongStructure: unchangedContext,
-    detectTransients: unchangedContext,
     disconnectPush: unchangedContext,
     enableWarping: unchangedContext,
     exportDawProject: unchangedContext,
-    generateAllTransitions: unchangedContext,
-    generateBassline: unchangedContext,
-    generateFill: unchangedContext,
-    getMentorTips: unchangedContext,
     labelUndoBranch: unchangedContext,
-    loadRaveModel: unchangedContext,
     loadTrackTemplate: unchangedContext,
     nextSetlistItem: unchangedContext,
     playMacro: unchangedContext,
@@ -377,18 +360,10 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     removeFromVca: unchangedContext,
     removeYeastProcessor: unchangedContext,
     reorderYeastProcessor: unchangedContext,
-    restoreAutomationLanePoints: unchangedContext,
-    restoreClip: unchangedContext,
-    restoreProjectVersion: unchangedContext,
-    restoreTrack: unchangedContext,
     saveTrackTemplate: unchangedContext,
-    searchSamples: unchangedContext,
     setControlSurface: unchangedContext,
     setMidiOutput: unchangedContext,
-    setRaveBlend: unchangedContext,
     setVcaGain: unchangedContext,
-    setWarpAlgorithm: unchangedContext,
-    setWarpPitchShift: unchangedContext,
     setYeastArpPattern: unchangedContext,
     setYeastProcessorBypass: unchangedContext,
     setYeastProcessorParam: unchangedContext,
@@ -405,19 +380,23 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     toggleUndoTree: unchangedContext,
     triggerScene: unchangedContext,
     undo: unchangedContext,
-    variationMidi: unchangedContext,
 };
 
 function lookupRoutingProjection<Type extends RuntimeActionType>(
     context: ProjectContext,
-    action: ActionOf<Type>
+    action: ActionOf<Type>,
+    acceptsSidechainInput: (deviceType: string) => boolean
 ): ProjectContext {
     if (!Object.hasOwn(routingProjectionByActionType, action.type)) {
         return unchangedContext(context);
     }
-    return routingProjectionByActionType[action.type](context, action);
+    return routingProjectionByActionType[action.type](context, action, acceptsSidechainInput);
 }
 
-export function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeAction): ProjectContext {
-    return lookupRoutingProjection(context, action);
+export function applyAcceptedRoutingAction(
+    context: ProjectContext,
+    action: RuntimeAction,
+    acceptsSidechainInput: (deviceType: string) => boolean
+): ProjectContext {
+    return lookupRoutingProjection(context, action, acceptsSidechainInput);
 }

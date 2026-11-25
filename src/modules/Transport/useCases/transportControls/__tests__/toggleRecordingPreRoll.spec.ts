@@ -86,6 +86,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: mocks.discardRecording,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    isFrozenTrackRefusingRecording: () => false,
     gainEnvelopeStore: { value: null },
     activeRecordingRef: { current: [] },
     getTrackEligibility: () => ({ acceptsRecording: true }),
