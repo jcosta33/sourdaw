@@ -807,6 +807,21 @@ describe('live plugin state across an app-initiated teardown', () => {
 
                 expect(preservationReason(INSTANCE_ID)).toBe('restore-pending');
             });
+
+            // The load answers superseded and its task stays registered, so a read still preserves the stored chunk.
+            it('keeps reporting restore-pending for a load the rebuild overtook', async () => {
+                const load = Promise.withResolvers<PluginInstance>();
+                mocks.loadPlugin.mockReturnValueOnce(load.promise);
+                mocks.unloadPlugin.mockRejectedValueOnce(new Error('bridge down'));
+
+                const superseded = activate(SAVED_CHUNK);
+                const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+                load.resolve(pluginInstance());
+                await expect(superseded).resolves.toMatchObject({ reason: expect.stringContaining('superseded') });
+                await expect(rebuild).rejects.toThrow('bridge down');
+
+                expect(preservationReason(INSTANCE_ID)).toBe('restore-pending');
+            });
         });
 
         // The rebuild fence waits on this activation, and a restore issued behind the fence waits on the fence.
