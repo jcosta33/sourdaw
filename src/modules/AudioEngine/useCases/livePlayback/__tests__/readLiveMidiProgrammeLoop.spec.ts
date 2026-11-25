@@ -40,12 +40,10 @@ const projectMidiEvents: OfflineMidiEventProjector = (input) => {
     return input.events.map((event) => ({ ...event, startBeat: event.startBeat + input.clipStartBeat + shift }));
 };
 
-function strip(id: string): Track {
+function strip(id: string, deviceType = 'fermenter'): Track {
     return {
         ...createTrack({ id, name: id, kind: 'midi', withoutDefaultDevice: true }),
-        devices: [
-            { id: `${id}-instrument`, name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
-        ],
+        devices: [{ id: `${id}-instrument`, name: deviceType, type: deviceType, bypassed: false, parameterValues: {} }],
         clips: [
             {
                 id: `${id}-clip`,
@@ -82,10 +80,14 @@ function writeNotes(trackId: string, onsets: readonly number[]): void {
     });
 }
 
-function onsetsOf(span: { startSeconds: number; endSeconds: number }, delay: number): number[] {
+function onsetsOf(
+    span: { startSeconds: number; endSeconds: number },
+    delay: number,
+    deviceType = 'fermenter'
+): number[] {
     mocks.delayByStripId.set('lead', delay);
     const programme = readLiveMidiProgramme({
-        stripTracks: [strip('lead')],
+        stripTracks: [strip('lead', deviceType)],
         attachedInstanceIds: new Set(),
         carriedStripIds: new Set(['lead']),
         sampleRate: SAMPLE_RATE,
@@ -146,5 +148,13 @@ describe('readLiveMidiProgramme over a looping pass', () => {
         writeNotes('lead', [3.9, 5, 7.9, 8.1]);
 
         expect(onsetsOf(LOOP, 0)).toEqual([5, 7.9]);
+    });
+
+    // A drum machine is struck and takes no release, so its notes are admitted by a second path
+    // (`strikesForSpan`) that has to answer to the same shifted span.
+    it('windows the strikes of a strip that takes no release on their compensated time', () => {
+        writeNotes('lead', [3.7, 3.9, 5, 7.9]);
+
+        expect(onsetsOf(LOOP, DELAY_SECONDS, 'toaster')).toEqual([3.9 + DELAY_SECONDS, 5 + DELAY_SECONDS]);
     });
 });
