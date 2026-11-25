@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
     persistConfirmation: vi.fn<typeof persistPromptActionConfirmation>(),
     preview: vi.fn(),
     recordBatch: vi.fn(),
+    removeChatMessage: vi.fn(),
     refresh: vi.fn(),
     release: vi.fn(),
     settleBestEffort: vi.fn(),
@@ -59,6 +60,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 
 vi.mock('../../stores/chatStore', () => ({
     appendChatMessage: mocks.appendChatMessage,
+    removeChatMessage: mocks.removeChatMessage,
     updateChatMessage: mocks.updateChatMessage,
 }));
 
@@ -217,6 +219,15 @@ function readyRefresh(batch: ReturnType<typeof buildBatch>) {
     };
 }
 
+/** A refusal leaves exactly one new chat line stating why, and no replacement card message. */
+function expectOnlyRefusalLine(reason: string) {
+    expect(mocks.appendChatMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.appendChatMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'assistant', content: `Re-preview refused: ${reason}`, error: reason })
+    );
+    expect(mocks.appendChatMessage).not.toHaveBeenCalledWith(expect.objectContaining({ isCommandAction: true }));
+}
+
 function readingPlan(planDigest: string): BriefReadingPlan {
     return { batches: [], planDigest, trackNames: {}, constraintReading: { constraints: [], unsupported: [] } };
 }
@@ -295,7 +306,7 @@ describe('reproposePendingChatActions', () => {
             expect(mocks.compileApproval).not.toHaveBeenCalled();
             expect(mocks.preview).not.toHaveBeenCalled();
             expect(mocks.persistConfirmation).not.toHaveBeenCalled();
-            expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+            expectOnlyRefusalLine('Submit the request again to establish its whole-request intent.');
             expect(getPendingActionConfirmation(legacy.id)).toMatchObject({ status: 'proposed', supersededBy: null });
         }
     );
@@ -329,7 +340,7 @@ describe('reproposePendingChatActions', () => {
             currentStatus: 'invalidated',
         });
         expect(mocks.persistConfirmation).not.toHaveBeenCalled();
-        expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+        expectOnlyRefusalLine('This proposal is already invalidated.');
     });
 
     // Red when a proposal whose run already ended is replaced onto that run, which accepts no further batch.
@@ -343,7 +354,7 @@ describe('reproposePendingChatActions', () => {
                 { status: 'rejected', reason: `The run this proposal belongs to is already ${phase}.` }
             );
             expect(mocks.persistConfirmation).not.toHaveBeenCalled();
-            expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+            expectOnlyRefusalLine(`The run this proposal belongs to is already ${phase}.`);
         }
     );
 
@@ -357,7 +368,7 @@ describe('reproposePendingChatActions', () => {
             reason: 'The run this proposal belongs to is no longer recorded.',
         });
         expect(mocks.persistConfirmation).not.toHaveBeenCalled();
-        expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+        expectOnlyRefusalLine('The run this proposal belongs to is no longer recorded.');
     });
 
     // Red when a proposal holding prepared stems is replaced: retiring it discards the lease whose
@@ -369,7 +380,9 @@ describe('reproposePendingChatActions', () => {
             status: 'rejected',
             reason: 'This proposal holds prepared stem resources. Cancel it and ask again to re-prepare them.',
         });
-        expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+        expectOnlyRefusalLine(
+            'This proposal holds prepared stem resources. Cancel it and ask again to re-prepare them.'
+        );
         expect(mocks.persistConfirmation).not.toHaveBeenCalled();
         expect(mocks.settleBestEffort).not.toHaveBeenCalled();
         expect(getPendingActionConfirmation('confirmation-stems')).toMatchObject({
@@ -736,5 +749,23 @@ describe('reproposePendingChatActions', () => {
         });
         expect(mocks.settleBestEffort).not.toHaveBeenCalled();
         expect(mocks.recordBatch).not.toHaveBeenCalled();
+        const replacement = mocks.appendChatMessage.mock.calls
+            .map(([message]) => message as { id: string; isCommandAction?: boolean })
+            .find((message) => message.isCommandAction === true);
+        expect(replacement).toBeDefined();
+        expect(mocks.removeChatMessage).toHaveBeenCalledExactlyOnceWith(replacement?.id);
+        expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                content: 'Re-preview refused: Prepared action resources exceed the live confirmation limit.',
+            })
+        );
+    });
+
+    // Red when a refusal that arrives as a missing card is swallowed: Re-preview then shows nothing.
+    it('reports a card the store no longer holds', async () => {
+        await expect(reproposePendingChatActions({ confirmationId: 'confirmation-gone' })).resolves.toEqual({
+            status: 'missing',
+        });
+        expectOnlyRefusalLine('This proposal is no longer recorded.');
     });
 });
