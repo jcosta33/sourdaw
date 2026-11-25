@@ -38,6 +38,7 @@ import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers
 import { AutomationContextMenu } from './AutomationContextMenu';
 import { AutomationLaneControls } from './AutomationLaneControls';
 import { AutomationLaneHeader } from './AutomationLaneHeader';
+import { AutomationObjectRegion } from './AutomationObjectRegion';
 
 type AutomationLaneRowProps = {
     lane: AutomationLane;
@@ -571,28 +572,13 @@ export const AutomationLaneRow = ({
                         return null;
                     }
                     return (
-                        <g key={obj.id}>
-                            <rect
-                                x={objX}
-                                y={2}
-                                width={objW}
-                                height={LANE_HEIGHT - 4}
-                                rx={4}
-                                fill={`${curveColor}08`}
-                                stroke={curveColor}
-                                strokeWidth={1}
-                                strokeOpacity={0.4}
-                                strokeDasharray={obj.loopLength ? '6 3' : undefined}
-                            />
-                            <text
-                                x={objX + 4}
-                                y={14}
-                                className="text-[7px] fill-muted-foreground/50 pointer-events-none font-mono"
-                            >
-                                {obj.poolId ? '🔗 ' : ''}
-                                {obj.name}
-                            </text>
-                        </g>
+                        <AutomationObjectRegion
+                            key={obj.id}
+                            object={obj}
+                            x={objX}
+                            width={objW}
+                            curveColor={curveColor}
+                        />
                     );
                 })}
 
