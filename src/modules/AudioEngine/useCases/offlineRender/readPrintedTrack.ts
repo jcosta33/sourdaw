@@ -4,27 +4,12 @@ import { projectStripTrack } from './projectStripTrack';
 import { readPlayedFrozenBufferId } from './readPlayedFrozenBufferId';
 
 /**
- * Track fields no subgraph render reads: naming, layout and lane display, recording and monitoring
- * setup, edit grouping, the stored inactive alternatives, and solo (a freeze or bounce prints every
- * strip it builds whatever is soloed: it passes `resolvePrintReachability` no solo gate).
+ * Drops the track fields no subgraph render reads: naming, layout and lane display, recording and
+ * monitoring setup, edit grouping, the stored inactive alternatives, and solo (a freeze or bounce
+ * prints every strip it builds whatever is soloed: it passes `resolvePrintReachability` no solo gate).
+ * The returned type is whatever the destructuring leaves, so the dropped list is written once.
  */
-type UnreadTrackField =
-    | 'name'
-    | 'color'
-    | 'height'
-    | 'collapsed'
-    | 'hidden'
-    | 'notes'
-    | 'showVariationLanes'
-    | 'armed'
-    | 'inputMonitoring'
-    | 'inputId'
-    | 'groupId'
-    | 'alternatives'
-    | 'soloed'
-    | 'soloSafe';
-
-function omitUnreadFields(track: Track): Omit<Track, UnreadTrackField> {
+function omitUnreadFields(track: Track) {
     const {
         name: _name,
         color: _color,

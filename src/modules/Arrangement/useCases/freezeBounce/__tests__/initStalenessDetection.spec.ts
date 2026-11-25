@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
+import { type Track } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { digestFreezePrintInput } from '../digestFreezePrintInput';
@@ -420,7 +421,7 @@ describe('initStalenessDetection', () => {
             sourceContentHash: 'old-hash',
             renderSettings: CURRENT_RENDER_SETTINGS,
         };
-        const sharedSends = [] as never[];
+        const sharedSends: Track['sends'] = [];
         trackStore.set({
             tracks: [
                 {

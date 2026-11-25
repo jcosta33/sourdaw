@@ -54,6 +54,13 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         commitPitchEdit: vi.fn(),
+        captureOfflineRenderSessionSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        describeSubgraphPrintInput: vi.fn(),
+        readLiveOfflineRenderProjectModels: vi.fn(),
+        readLiveOfflineRenderSessionModels: vi.fn(),
+        selectSubgraphPrintInput: vi.fn(),
         captureOfflineRenderProjectSource: vi.fn(() => {
             throw new Error('Unexpected selection render capture in this fixture');
         }),
