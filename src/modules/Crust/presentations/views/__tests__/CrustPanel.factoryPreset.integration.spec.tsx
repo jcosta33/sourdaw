@@ -90,6 +90,7 @@ const BEFORE_RUNTIME = {
     satAlgorithm: 3,
 };
 const PROJECT = 'crust-factory-preset-view';
+let notifications: NotifyPayload[];
 type Root = { tracks: { tracks: Track[] } };
 function rawTrack(): Track {
     const track = getCrdtDoc<Root>('root')?.tracks.tracks[0];
@@ -137,9 +138,16 @@ describe('Crust factory preset history on the mounted panel', () => {
         clearUndoHistory();
         sessionStorage.removeItem('sourdaw-undo-session');
         configureAutomergeStoragePort(null);
-        setNotificationEventBus(
-            createEventBus<{ 'ui.notify': NotifyPayload; 'ui.confirm': ConfirmPayload; 'ui.prompt': PromptPayload }>()
-        );
+        notifications = [];
+        const events = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        events.on('ui.notify', (payload) => {
+            notifications.push(payload);
+        });
+        setNotificationEventBus(events);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => {} });
         const transition = runProjectLoadTransaction();
         expect(await transition.prepare()).toBe(true);
@@ -251,6 +259,92 @@ describe('Crust factory preset history on the mounted panel', () => {
         await act(() => undo());
         await act(() => undo());
         expect(rawTrack().name).toBe('Master');
+    });
+    it('reasserts an already selected preset without another project write or history entry', async () => {
+        await selectCrustFactoryPreset('a', 'punchy-bus');
+        expect(rawTrack().devices[0]!.parameterValues).toEqual(PUNCHY);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expectEngine(PUNCHY);
+        const before = structuredClone(rawTrack());
+        const history = structuredClone(undoHistoryStore.value);
+        const witness = captureDurableDocumentWitness();
+        await selectCrustFactoryPreset('a', 'punchy-bus');
+        expect(rawTrack()).toEqual(before);
+        expect(captureDurableDocumentWitness()).toEqual(witness);
+        expect(undoHistoryStore.value).toEqual(history);
+        expectEngine(PUNCHY);
+        expect(notifications).toEqual([]);
+    });
+    it.each([
+        {
+            reason: 'missing',
+            deviceId: 'missing',
+            prepare: (track: Track) => track,
+            verify: (track: Track) => expect(track.devices.map((device) => device.id)).not.toContain('missing'),
+        },
+        {
+            reason: 'frozen',
+            deviceId: 'a',
+            prepare: (track: Track) => {
+                track.frozen = true;
+            },
+            verify: (track: Track) => expect(track.frozen).toBe(true),
+        },
+        {
+            reason: 'wrong type',
+            deviceId: 'a',
+            prepare: (track: Track) => {
+                track.devices[0]!.type = 'eq';
+            },
+            verify: (track: Track) => expect(track.devices[0]!.type).toBe('eq'),
+        },
+    ])(
+        'refuses a $reason owner without changing project, history, or runtime',
+        async ({ deviceId, prepare, verify }) => {
+            await transactSnapshot((snapshotTransaction) => {
+                mutateCrdtDoc<Root>({
+                    id: 'root',
+                    snapshotTransaction,
+                    changeFn: (doc) => {
+                        prepare(doc.tracks.tracks[0]!);
+                    },
+                });
+                return Promise.resolve();
+            });
+            trackStore.hydrate();
+            const before = structuredClone(rawTrack());
+            verify(before);
+            const history = structuredClone(undoHistoryStore.value);
+            const witness = captureDurableDocumentWitness();
+            await selectCrustFactoryPreset(deviceId, 'punchy-bus');
+            expect(rawTrack()).toEqual(before);
+            expect(captureDurableDocumentWitness()).toEqual(witness);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+            expect(notifications).toMatchObject([
+                { level: 'warning', message: 'Could not load the preset. The Crust device is no longer editable.' },
+            ]);
+        }
+    );
+    it('retains the committed preset and history when the runtime update fails', async () => {
+        const before = structuredClone(rawTrack());
+        expect(before.devices[0]!.parameterValues).not.toEqual(PUNCHY);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        updateDeviceParam.mockImplementation(() => {
+            throw new Error('runtime unavailable');
+        });
+        await selectCrustFactoryPreset('a', 'punchy-bus');
+        expect(rawTrack().devices[0]!.parameterValues).toEqual(PUNCHY);
+        expect(rawTrack().devices[1]).toEqual(before.devices[1]);
+        expect(trackStore.value?.tracks[0]).toEqual(rawTrack());
+        expect(undoHistoryStore.value?.past).toMatchObject([{ action: { type: 'setCrustFactoryPreset' } }]);
+        expect(updateDeviceParam.mock.calls).toEqual([
+            ['track', 'a', 'gain', PUNCHY.gain],
+            ['track', 'a', 'gain', PUNCHY.gain],
+        ]);
+        expect(notifications).toMatchObject([
+            { level: 'warning', message: 'Punchy Bus was saved, but Crust could not finish applying it.' },
+        ]);
     });
     it('refuses a queued preset when a peer changes a captured parameter', async () => {
         const before = structuredClone(rawTrack());
