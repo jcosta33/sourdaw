@@ -134,6 +134,33 @@ describe('readLiveMidiProgramme compensation', () => {
         }
     });
 
+    // A latent device inserted mid-roll re-arms the writer while the clips stay where the play
+    // started placed them, so the notes read the play's own figure, not the live one.
+    it('keeps the figure the session’s clips were placed with when the live figure moves between two arms', () => {
+        const captured = new Map([
+            ['delayed', DELAYED_SECONDS],
+            ['aligned', 0],
+        ]);
+        const arm = (): ReturnType<typeof readLiveMidiProgramme> =>
+            readLiveMidiProgramme({
+                stripTracks: [strip('delayed'), strip('aligned')],
+                attachedInstanceIds: new Set(),
+                carriedStripIds: new Set(['delayed', 'aligned']),
+                sampleRate: SAMPLE_RATE,
+                span: { startSeconds: 0, endSeconds: Number.POSITIVE_INFINITY },
+                compensationDelaysByStripId: captured,
+            });
+
+        const first = arm();
+        mocks.delayByStripId.set('delayed', 0.75);
+        mocks.delayByStripId.set('aligned', 0.5);
+        const second = arm();
+
+        expect(timesOf(second, 'delayed')).toEqual(timesOf(first, 'delayed'));
+        expect(timesOf(second, 'delayed')).toEqual([1 + DELAYED_SECONDS, 1.5 + DELAYED_SECONDS, 2 + DELAYED_SECONDS]);
+        expect(timesOf(second, 'aligned')).toEqual([1, 1.5, 2]);
+    });
+
     // A claim names carried tracks and never a bus, while the engine's own
     // compensation counts a compensated device on a bus like any other, so the
     // set has to come through `engineHostedStripIds` rather than the claim alone.

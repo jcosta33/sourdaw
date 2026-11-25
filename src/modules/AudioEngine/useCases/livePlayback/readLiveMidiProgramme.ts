@@ -43,6 +43,13 @@ export type ReadLiveMidiProgrammeInput = Readonly<{
     /** The frame grid this session's notes are placed on. */
     sampleRate: number;
     span: LiveMidiSpan;
+    /**
+     * The compensation the same play's clips were placed with. A strip it names
+     * keeps that figure however the live one moves afterwards; one it does not
+     * name (a session with no clip programme to match, or a strip the programme
+     * never saw) is read live.
+     */
+    compensationDelaysByStripId?: ReadonlyMap<string, number>;
 }>;
 
 /**
@@ -99,7 +106,9 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
     }
     const hostedStripIds = carriedEngineHostedStripIds(input.carriedStripIds, input.stripTracks);
     function compensationDelaySeconds(stripId: string): number {
-        return getCompensationDelay(stripId, undefined, hostedStripIds);
+        return (
+            input.compensationDelaysByStripId?.get(stripId) ?? getCompensationDelay(stripId, undefined, hostedStripIds)
+        );
     }
     const projected = projectLiveMidiProgramme({
         stripTracks: input.stripTracks,

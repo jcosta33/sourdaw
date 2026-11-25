@@ -150,4 +150,24 @@ describe('readLiveGraphProgramme', () => {
 
         expect(vi.mocked(getCompensationDelay).mock.calls).toEqual([['audio-1', undefined, undefined]]);
     });
+
+    // The notes and automation of the same play read this back, so what the
+    // clips were placed with is what the programme has to state.
+    it('states the compensation each track was placed with', () => {
+        configureProjector();
+        vi.mocked(getCompensationDelay).mockReturnValueOnce(0.25);
+
+        const programme = readLiveGraphProgramme({
+            stripTracks: [createTrack({ id: 'audio-1', kind: 'audio' }), createTrack({ id: 'audio-2', kind: 'audio' })],
+            attachedInstanceIds: new Set(),
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(programme.compensationDelaysByStripId).toEqual(
+            new Map([
+                ['audio-1', 0.25],
+                ['audio-2', 0],
+            ])
+        );
+    });
 });

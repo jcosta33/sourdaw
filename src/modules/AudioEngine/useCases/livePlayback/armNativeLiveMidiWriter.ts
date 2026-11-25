@@ -246,6 +246,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
         carriedStripIds: input.carriedStripIds,
         sampleRate: input.sampleRate,
         span,
+        compensationDelaysByStripId: nativeLiveGraphSession.compensationDelaysByStripId,
     });
     reportExclusions(programme.exclusions);
 

@@ -139,7 +139,9 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         changes,
         projectBeatToSeconds,
         sampleRate,
-        compensationDelaySeconds: (stripId) => getCompensationDelay(stripId, undefined, hostedStripIds),
+        compensationDelaySeconds: (stripId) =>
+            nativeLiveGraphSession.compensationDelaysByStripId.get(stripId) ??
+            getCompensationDelay(stripId, undefined, hostedStripIds),
         vcaMultiplierByTrackId,
         slewTickSeconds: automationSlewTickSecondsForGrain(
             transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs

@@ -988,6 +988,7 @@ async function installRolledSession(input: {
     // rather than with what Web Audio was told to give up.
     const reboundStripIds = carriedStripIds(rebound.commands);
     // A model roll defers the programme claim to its admitted roll below.
+    nativeLiveGraphSession.compensationDelaysByStripId = installed.programme.compensationDelaysByStripId;
     nativeLiveGraphSession.programmeCarrier = !input.validateModelRoll && reboundStripIds.size > 0 && !shadowed;
     nativeLiveGraphSession.auditionOutputSuppressed = nativeLiveGraphSession.auditionOwner !== null;
     nativeLiveGraphSession.audibleCarrier =

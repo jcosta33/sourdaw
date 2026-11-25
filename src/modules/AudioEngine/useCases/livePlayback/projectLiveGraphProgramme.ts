@@ -133,6 +133,12 @@ export type LiveGraphProgramme = Readonly<{
     webVoicedStripIds: ReadonlySet<string>;
     /** Everything this projection could not carry, and why. */
     exclusions: readonly LiveGraphProgrammeExclusion[];
+    /**
+     * The compensation each track's clips were placed with. The notes of the
+     * same play read it back, so a delay that moves afterwards (a device
+     * inserted mid-roll) cannot move a strip's notes away from its clips.
+     */
+    compensationDelaysByStripId: ReadonlyMap<string, number>;
 }>;
 
 /**
@@ -193,6 +199,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
     const playbacksByStripId = new Map<string, AudioGraphClipPlayback[]>();
     const bakedStripIds = new Set<string>();
     const webVoicedStripIds = new Set<string>();
+    const compensationDelaysByStripId = new Map<string, number>();
     const exclusions: LiveGraphProgrammeExclusion[] = [];
 
     function admit(stripId: string, playback: AudioGraphClipPlayback): void {
@@ -212,6 +219,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
         }
 
         const compensationDelay = compensationDelaySeconds(track.id);
+        compensationDelaysByStripId.set(track.id, compensationDelay);
         const bake = frozenBake({ track, readBuffer });
         if (bake) {
             bakedStripIds.add(track.id);
@@ -330,5 +338,5 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
         }
     }
 
-    return { playbacksByStripId, bakedStripIds, webVoicedStripIds, exclusions };
+    return { playbacksByStripId, bakedStripIds, webVoicedStripIds, exclusions, compensationDelaysByStripId };
 }
