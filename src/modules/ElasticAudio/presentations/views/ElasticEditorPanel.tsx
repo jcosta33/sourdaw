@@ -46,6 +46,15 @@ import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 import { quantizeTransients } from '../../useCases/quantizeTransients';
 
 import { resolveAudibleSourceSpans, type SourceSpanBeats } from './audibleSourceSpans';
+import {
+    backingPixelRatio,
+    dimmedRanges,
+    markerColor,
+    strokeBeatGrid,
+    visibleBinRange,
+    visibleMarkers,
+    type WarpMarkerView,
+} from './elasticWaveformDrawing';
 
 type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
@@ -62,16 +71,6 @@ const AVAILABLE_STRETCH_MODES: StretchMode[] = STRETCH_MODES.filter((mode) => ge
 const AVAILABLE_ALGORITHMS: WarpAlgorithm[] = WARP_ALGORITHMS.filter(
     (algorithm) => getAlgorithmInfo(algorithm).available
 );
-
-import {
-    backingPixelRatio,
-    dimmedRanges,
-    markerColor,
-    strokeBeatGrid,
-    visibleBinRange,
-    visibleMarkers,
-    type WarpMarkerView,
-} from './elasticWaveformDrawing';
 
 type WarpStateView = {
     enabled: boolean;
@@ -580,6 +579,8 @@ type WaveformDrawing = {
     sourceId: string | null;
     width: number;
     height: number;
+    backingWidth: number;
+    backingHeight: number;
     containerWidth: number;
     dpr: number;
     beatWidth: number;
@@ -607,6 +608,32 @@ function sameMarkerVisuals(previous: readonly WarpMarkerView[], current: readonl
                 marker.locked === other.locked
             );
         })
+    );
+}
+
+function sameWaveformDrawing(previous: WaveformDrawing | null, current: WaveformDrawing): boolean {
+    return (
+        previous !== null &&
+        previous.canvas === current.canvas &&
+        previous.context === current.context &&
+        previous.peaks === current.peaks &&
+        previous.sourceId === current.sourceId &&
+        previous.width === current.width &&
+        previous.height === current.height &&
+        previous.containerWidth === current.containerWidth &&
+        previous.dpr === current.dpr &&
+        previous.beatWidth === current.beatWidth &&
+        previous.scrollLeft === current.scrollLeft &&
+        previous.windowsKey === current.windowsKey &&
+        previous.background === current.background &&
+        current.canvas.width === current.backingWidth &&
+        current.canvas.height === current.backingHeight &&
+        current.canvas.style.width === previous.cssWidth &&
+        current.canvas.style.height === previous.cssHeight &&
+        // Even a same-size backing assignment or context.reset() erases pixels and
+        // resets strokeStyle to black. Every completed draw leaves a nonblack grid/marker stroke.
+        previous.strokeStyle === current.context.strokeStyle &&
+        sameMarkerVisuals(previous.markers, current.markers)
     );
 }
 
@@ -662,30 +689,27 @@ function drawWaveform(args: DrawArgs): void {
     // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
     // removing a source invalidates its waveform cache. A new peak identity must redraw.
     const peaks = clipAudioBufferId ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, sourceBins) : null;
-    const previous = previousDrawingRef.current;
-    if (
-        previous &&
-        previous.canvas === canvas &&
-        previous.context === ctx &&
-        previous.peaks === peaks &&
-        previous.sourceId === clipAudioBufferId &&
-        previous.width === width &&
-        previous.height === height &&
-        previous.containerWidth === container.clientWidth &&
-        previous.dpr === dpr &&
-        previous.beatWidth === beatWidth &&
-        previous.scrollLeft === viewScrollLeft &&
-        previous.windowsKey === windowsKey &&
-        previous.background === background &&
-        canvas.width === backingWidth &&
-        canvas.height === backingHeight &&
-        canvas.style.width === previous.cssWidth &&
-        canvas.style.height === previous.cssHeight &&
-        // Even a same-size backing assignment or context.reset() erases pixels and
-        // resets strokeStyle to black. Every completed draw leaves a nonblack grid/marker stroke.
-        previous.strokeStyle === ctx.strokeStyle &&
-        sameMarkerVisuals(previous.markers, warpState.markers)
-    ) {
+    const drawing: WaveformDrawing = {
+        canvas,
+        context: ctx,
+        peaks,
+        sourceId: clipAudioBufferId,
+        width,
+        height,
+        backingWidth,
+        backingHeight,
+        containerWidth: container.clientWidth,
+        dpr,
+        beatWidth,
+        scrollLeft: viewScrollLeft,
+        windowsKey,
+        background,
+        cssWidth: canvas.style.width,
+        cssHeight: canvas.style.height,
+        markers: warpState.markers,
+        strokeStyle: ctx.strokeStyle,
+    };
+    if (sameWaveformDrawing(previousDrawingRef.current, drawing)) {
         return;
     }
     previousDrawingRef.current = null;
@@ -777,6 +801,8 @@ function drawWaveform(args: DrawArgs): void {
         sourceId: clipAudioBufferId,
         width,
         height,
+        backingWidth,
+        backingHeight,
         containerWidth: container.clientWidth,
         dpr,
         beatWidth,
