@@ -60,6 +60,13 @@ export type ResolveRenderContextInput = {
     startBeat?: number;
     tailSeconds?: number;
     sampleRate?: number;
+    /**
+     * The session's deepest latency, in seconds. Latency compensation holds
+     * every strip back until it meets that depth, so the content reaches the
+     * output that much later and the span grows by it. Not part of the tail,
+     * which stays the musician's own setting.
+     */
+    latencySeconds?: number;
 };
 
 export function resolveRenderContext(
@@ -68,12 +75,13 @@ export function resolveRenderContext(
 ): OfflineRenderContext {
     const normalized: Required<ResolveRenderContextInput> =
         typeof input === 'number'
-            ? { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100 }
+            ? { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100, latencySeconds: 0 }
             : {
                   durationBeats: input.durationBeats,
                   startBeat: input.startBeat ?? 0,
                   tailSeconds: input.tailSeconds ?? 0,
                   sampleRate: input.sampleRate ?? 44_100,
+                  latencySeconds: input.latencySeconds ?? 0,
               };
 
     const transport = source ? source.transport : transportStore.value;
@@ -98,7 +106,10 @@ export function resolveRenderContext(
         sampleRate: normalized.sampleRate,
         changes,
     });
-    const durationSeconds = Math.max(0, projection.durationSeconds) + Math.max(0, normalized.tailSeconds);
+    const durationSeconds =
+        Math.max(0, projection.durationSeconds) +
+        Math.max(0, normalized.tailSeconds) +
+        Math.max(0, normalized.latencySeconds);
 
     return {
         tracks,

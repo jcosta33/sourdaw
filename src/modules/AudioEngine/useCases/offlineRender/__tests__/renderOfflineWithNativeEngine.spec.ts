@@ -33,7 +33,9 @@ import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/s
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { offlineMidiEventProjectorState } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { clearReportedLatency } from '../../latencyCompensation/compensation/clearReportedLatency';
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
+import { reportLatency } from '../../latencyCompensation/compensation/reportLatency';
 import { captureOfflineRenderInput } from '../captureOfflineRenderInput';
 import { type NativeOfflineHostedRuntime } from '../nativeOfflineHostedDevice';
 import { offlineRenderCapturePorts } from '../offlineRenderCapturePorts';
@@ -971,6 +973,7 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
         clips: Clip[];
         devices?: Device[];
         captured?: NativeOfflineRenderInput['captured'];
+        frameCount?: number;
     }) {
         const keys = createTrack({
             id: 'midi-1',
@@ -982,8 +985,8 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
         return renderOfflineWithNativeEngine({
             transport: input.transport,
             sampleRate: 48_000,
-            frameCount: FRAMES,
-            durationSeconds: FRAMES / 48_000,
+            frameCount: input.frameCount ?? FRAMES,
+            durationSeconds: (input.frameCount ?? FRAMES) / 48_000,
             masterGainValue: 1,
             defaultTempo: 120,
             changes: [],
@@ -1229,6 +1232,63 @@ describe('renderOfflineWithNativeEngine — a loaded hosted instrument plays the
         expect(scheduled?.kind === 'schedule-midi' ? scheduled.notes.map((entry) => entry.time) : null).toEqual([
             0.25, 0.75, 1.25, 1.75,
         ]);
+    });
+
+    // The strip is held back 0.25 s to meet a deeper strip, so a note 0.05 s
+    // before the project end lands 0.2 s past it. The span the render is sized
+    // from has to carry that, or the engine is handed a frame it never renders.
+    it('prints a compensated note placed just before the project end (#7312)', async () => {
+        const clips = [midiClip({ id: 'clip-end', startBeat: 0, endBeat: 8 })];
+        midiStore.set({
+            probabilitySeed: PROBABILITY_SEED,
+            notesByClipId: { 'clip-end': [{ id: 'n-end', pitch: 60, startBeat: 7.9, duration: 0.05, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const keys = createTrack({ id: 'midi-1', name: 'Keys', kind: 'midi', devices: [synth], clips });
+        const deepFx = createTrack({
+            id: 'fx',
+            name: 'Fx',
+            kind: 'audio',
+            devices: [{ id: 'deep-1', name: 'Gluten', type: 'gluten', bypassed: false, parameterValues: {} }],
+        });
+        const project: OfflineRenderProjectSource = {
+            tracks: { tracks: [keys, deepFx], selectedTrackId: null },
+            midi: midiStore.value,
+            transport: { ...defaultTransportState, tempo: 120 },
+            tempoMap: null,
+            timeSignatureMap: null,
+            automationLanes: [],
+            takeLanes: null,
+            gainEnvelopes: {},
+            sidechainRoutes: [],
+            vcaGroups: [],
+            grooveTemplates: null,
+            chordTrack: null,
+            yeastProcessorsByDevice: {},
+        };
+        offlineRenderCapturePorts.createMidiProjector = () => createGrooveMidiEventProjector();
+        offlinePpqEndpointProjectorState.project = halfSecondPerBeat;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = ({ defaultTempo }) => defaultTempo;
+        offlinePpqEndpointProjectorState.beatAtSecondsFromAnchor = (_changes, anchorBeat, elapsedSeconds, tempo) =>
+            anchorBeat + (elapsedSeconds * tempo) / 60;
+        reportLatency('deep-1', 250);
+        const captured = captureOfflineRenderInput(
+            { durationBeats: 8, tailSeconds: 0, sampleRate: 48_000 },
+            { project }
+        );
+        vi.mocked(getCompensationDelay).mockReturnValueOnce(0.25);
+        const { transport, commands } = capturingTransport(captured.outputFrameCount);
+
+        await renderKeys({ transport, clips, captured, frameCount: captured.outputFrameCount });
+
+        const scheduled = commands.find((command) => command.kind === 'schedule-midi');
+        const times = scheduled?.kind === 'schedule-midi' ? scheduled.notes.map((entry) => entry.time) : [];
+        expect(times).toHaveLength(2);
+        for (const time of times) {
+            expect(Math.round(time * 48_000)).toBeLessThan(captured.outputFrameCount);
+        }
+        clearReportedLatency('deep-1');
     });
 
     it('sends nothing for a muted clip, and no command at all for a track with no notes', async () => {

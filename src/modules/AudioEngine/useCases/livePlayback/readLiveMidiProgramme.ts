@@ -19,8 +19,10 @@ import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Tran
 import { offlineMidiEventProjectorState } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { audioBufferCache } from '../../stores/audioBufferCache';
+import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
 import { bakedStripIds } from './bakedStripIds';
+import { carriedEngineHostedStripIds } from './carriedEngineHostedStripIds';
 import { liveTempoTimeline } from './liveTempoTimeline';
 import { projectLiveMidiProgramme, type LiveMidiProgramme, type LiveMidiSpan } from './projectLiveMidiProgramme';
 
@@ -52,6 +54,28 @@ export type ReadLiveMidiProgrammeInput = Readonly<{
  */
 export type LiveMidiProgrammeRead = LiveMidiProgramme & Readonly<{ probabilitySeed: number }>;
 
+/**
+ * Move every note of a target by its strip's compensation, once, here.
+ *
+ * Not in the projection: the export calls that projection too and adds its own
+ * shift (`projectNativeOfflineMidiCommands`), so a shift inside it would move
+ * an exported note twice. The figure is read as the audio programme reads its
+ * clips' (`readLiveGraphProgramme`), so a strip's notes and clips keep the
+ * offset they have in the mix.
+ */
+function compensateTargets(
+    targets: LiveMidiProgramme['targets'],
+    compensationDelaySeconds: (stripId: string) => number
+): LiveMidiProgramme['targets'] {
+    return targets.map((entry) => {
+        const delay = compensationDelaySeconds(entry.target.trackId);
+        if (delay === 0) {
+            return entry;
+        }
+        return { ...entry, events: entry.events.map((event) => ({ ...event, time: event.time + delay })) };
+    });
+}
+
 const EMPTY_PROGRAMME: LiveMidiProgramme = {
     targets: [],
     exclusions: [],
@@ -67,29 +91,34 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
     if (!midi || !project || !createProjector || !selectProbability) {
         return { ...EMPTY_PROGRAMME, probabilitySeed };
     }
-    return {
-        ...projectLiveMidiProgramme({
+    const hostedStripIds = carriedEngineHostedStripIds(input.carriedStripIds, input.stripTracks);
+    const projected = projectLiveMidiProgramme({
+        stripTracks: input.stripTracks,
+        attachedInstanceIds: input.attachedInstanceIds,
+        carriedStripIds: input.carriedStripIds,
+        bakedStripIds: bakedStripIds({
             stripTracks: input.stripTracks,
-            attachedInstanceIds: input.attachedInstanceIds,
-            carriedStripIds: input.carriedStripIds,
-            bakedStripIds: bakedStripIds({
-                stripTracks: input.stripTracks,
-                readBuffer: (bufferId) => audioBufferCache.get(bufferId),
-            }),
-            notesByClipId: midi.notesByClipId,
-            takeLanes: takeLaneStore.value,
-            tempoTimeline: liveTempoTimeline,
-            probabilitySeed,
-            defaultTempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
-            sampleRate: input.sampleRate,
-            changes: tempoMapStore.value?.changes ?? [],
-            projectPpqEndpoints: project,
-            projectMidiEvents: createProjector(),
-            selectProbability,
-            projectChordPitch: createChordPitchProjector?.() ?? null,
-            resolveArticulationId,
-            span: input.span,
+            readBuffer: (bufferId) => audioBufferCache.get(bufferId),
         }),
+        notesByClipId: midi.notesByClipId,
+        takeLanes: takeLaneStore.value,
+        tempoTimeline: liveTempoTimeline,
+        probabilitySeed,
+        defaultTempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
+        sampleRate: input.sampleRate,
+        changes: tempoMapStore.value?.changes ?? [],
+        projectPpqEndpoints: project,
+        projectMidiEvents: createProjector(),
+        selectProbability,
+        projectChordPitch: createChordPitchProjector?.() ?? null,
+        resolveArticulationId,
+        span: input.span,
+    });
+    return {
+        ...projected,
+        targets: compensateTargets(projected.targets, (stripId) =>
+            getCompensationDelay(stripId, undefined, hostedStripIds)
+        ),
         probabilitySeed,
     };
 }
