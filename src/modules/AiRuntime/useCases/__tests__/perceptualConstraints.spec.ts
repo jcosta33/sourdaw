@@ -3106,6 +3106,28 @@ describe('reading only governed protections and whole object names', () => {
             [unread('stop making the mix wider', NET_REASON)],
         ],
         ['keep the vocal&stop making the mix wider', [], [unread('stop making the mix wider', NET_REASON)]],
+        // a long whitespace run before the ampersand is one run, read the same as a single space
+        [
+            `keep the vocal bright${' '.repeat(9000)}&stop making the mix wider`,
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [unread('stop making the mix wider', NET_REASON)],
+        ],
+        [
+            `don't make the drums wider${' '.repeat(9000)}and the vocal louder`,
+            [
+                measured(
+                    'stereo-width-not-widened-v1',
+                    `don't make the drums wider${' '.repeat(9000)}and the vocal louder`,
+                    onTracks('drums')
+                ),
+                measured(
+                    'loudness-not-raised-v1',
+                    `don't make the drums wider${' '.repeat(9000)}and the vocal louder`,
+                    onTracks('vocal')
+                ),
+            ],
+            [],
+        ],
         [
             "don't make the mix wider&keep the vocal bright",
             [

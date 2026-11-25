@@ -167,8 +167,12 @@ export const BRACKET = `[${BRACKET_MARKS}]`;
  */
 export const INNER_ASIDE = String.raw`${OPENING_BRACKET}(?:(?!\b${HARD_BOUNDARY_WORD}\b)[^${BRACKET_MARKS}])*[${CLOSING_BRACKET_MARKS}](?!${CLAUSE_END})`;
 
-/** The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause. */
-export const CLAUSE_HEAD = String.raw`(?<=^|${CLAUSE_PUNCTUATION}\s*|${CLAUSE_SEPARATOR}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
+/**
+ * The object may stand before the verb only at the head of a clause, so it never swallows an earlier clause.
+ * An object starts on a word, so the lookbehind is asked only there; asked inside a run of whitespace it
+ * would read back over the whole run from every position in it.
+ */
+export const CLAUSE_HEAD = String.raw`(?=\S)(?<=^|${CLAUSE_PUNCTUATION}\s*|${CLAUSE_SEPARATOR}\s*|\b${CLAUSE_BOUNDARY_WORD}\s+)`;
 /** The prepositions an object follows a held noun or the low end by: "the level of the drums". */
 const ON_WORD = 'on';
 export const OBJECT_PREPOSITION = words(['of', ON_WORD, 'in']);
@@ -336,7 +340,7 @@ const DOES_NEGATION = String.raw`${DOES_NOT}(?!\s+${LINKING_VERB}\b)`;
  * The head of a purpose clause, after "so" or "so that": there "doesn't sound louder" asks for a bound
  * ("add some warmth so it doesn't sound louder") rather than describing the sound as it is.
  */
-export const PURPOSE_HEAD = String.raw`(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\s)`;
+export const PURPOSE_HEAD = String.raw`(?=\S)(?<=\b${SO}\s+(?:${THAT}\s+)?)(?!${THAT}\s)`;
 /**
  * Each modal followed by "not", and "cannot", the one modal written as one word with it: "must not", "cannot".
  */
@@ -453,7 +457,7 @@ const UNREFUSED_RELEASE = String.raw`(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}
  * its own. This is a lookahead holding a lookbehind: the verb ahead is a gerund and the release stands
  * right before it.
  */
-const RELEASED_GERUND = String.raw`(?<=${UNREFUSED_RELEASE}\s+)${GERUND}`;
+const RELEASED_GERUND = String.raw`(?=\S)(?<=${UNREFUSED_RELEASE}\s+)${GERUND}`;
 /**
  * A governing negation no release gives up, directly or through an intent: a release before the
  * negation gives up the "not" it leads to, so "stop trying to not keep the vocal bright" keeps it.
@@ -689,9 +693,10 @@ const CLAUSE_OPENING_VERB = String.raw`(?:${KEEP_VERBS}|${RELEASE_LEAD}|${STOPPI
 export const WANT_LEAD = String.raw`${WANTING_VERB}(?:\s+(?:${OBJECT_MEMBERS}|${PERMITTED_PERSON}))?(?:\s+${TO})?(?!\s+(?:${CLAUSE_OPENING_VERB}|${LEAVE_VERB})${WORD_END})`;
 /**
  * An ampersand, spaced or not, before a verb opening a clause of its own, which joins that clause as
- * "and" does: "keep the vocal bright&stop making the mix wider".
+ * "and" does: "keep the vocal bright&stop making the mix wider". A whitespace run is read from its start
+ * only, or from the ampersand itself, so a long run is scanned once rather than from every position in it.
  */
-export const CLAUSE_JOINING_AMPERSAND = String.raw`\s*${AMPERSAND}\s*(?=${CLAUSE_OPENING_VERB}${WORD_END})`;
+export const CLAUSE_JOINING_AMPERSAND = String.raw`(?:(?<!\s)\s*|(?<=\s))${AMPERSAND}\s*(?=${CLAUSE_OPENING_VERB}${WORD_END})`;
 /** A clause end, or an ampersand opening the next clause: "keep the mix from getting wider&keep the vocal bright". */
 export const JOINED_CLAUSE_END = String.raw`(?:${CLAUSE_END}|(?=${CLAUSE_JOINING_AMPERSAND}))`;
 /**
