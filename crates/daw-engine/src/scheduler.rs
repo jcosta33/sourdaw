@@ -440,6 +440,13 @@ pub enum GrandBoulePreviewEvent {
     },
 }
 
+/// The prepared network and ordered parameter writes share one callback admission.
+pub struct GrinderModelUpdate {
+    pub admission: NativeGrinderModelRequest,
+    /// Resolved, ordered and bounded by the control-side graph mapper.
+    pub parameters: Box<[(DeviceParam, f32)]>,
+}
+
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
     // Built-in effects
@@ -476,11 +483,12 @@ pub enum GraphCommand {
     /// [`GraphCommand::AddEffect`]'s.
     AddDetachedEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     SetParam(usize, DeviceParam, f32),
-    /// Control-prepared network and a reusable return box. Even a rejected
-    /// incoming request leaves through the off-callback reclaimer.
+    /// Apply the prepared model and parameters together if the request still
+    /// owns this Grinder. The update leaves through off-callback reclamation
+    /// whether or not it applies.
     SetGrinderModel {
         effect_id: usize,
-        request: Box<NativeGrinderModelRequest>,
+        update: Box<GrinderModelUpdate>,
     },
     SetBypass(usize, bool),
     /// Drop a Bacteria body's whole modulation-assignment table.
@@ -2727,11 +2735,8 @@ const GRINDER_PATCH_PRECEDENCE: &[&str] = &["neuralEnabled"];
 ///
 /// ## Why this body declares no latency
 ///
-/// Grinder's engine reports zero latency on both hosts today
-/// (`GrinderEngine::latency_samples` forwards `NeuralCapture::latency_samples`,
-/// which is 0), but even a future non-zero figure would follow Crust's own
-/// reasoning: a native-carried strip's Web Audio chain is built and gated
-/// shut rather than torn down (`startNativeLiveGraphSession.ts`), so its
+/// Grinder's DSP reports delay from its circuit stages. A native-carried
+/// strip's Web Audio chain is built and gated shut rather than torn down (`startNativeLiveGraphSession.ts`), so its
 /// `GrinderNode` goes on receiving `latency-changed` from the worklet and
 /// reporting the figure into `externalLatencyRegistry`
 /// (`wasmDeviceRegistry.ts` calls `reportLatency` on ready and on every
@@ -5428,7 +5433,7 @@ impl MasterWorkList {
 /// `Producer` of these across the public command vocabulary; the fields and
 /// constructors stay crate-private.
 pub struct RetiredGraphObjects {
-    grinder_request: Option<Box<NativeGrinderModelRequest>>,
+    grinder_update: Option<Box<GrinderModelUpdate>>,
     grinder_model: Option<NativePreparedNam>,
     effect: Option<ActiveEffect>,
     midi_fx: Option<Box<dyn MidiFx>>,
@@ -5451,7 +5456,7 @@ pub struct RetiredGraphObjects {
 impl RetiredGraphObjects {
     fn removed(effect: Option<ActiveEffect>, midi_fx: Option<Box<dyn MidiFx>>) -> Self {
         Self {
-            grinder_request: None,
+            grinder_update: None,
             grinder_model: None,
             effect,
             midi_fx,
@@ -6741,6 +6746,46 @@ impl AudioScheduler {
         }
     }
 
+    fn apply_grinder_model_update(
+        &mut self,
+        effect_id: usize,
+        update: &mut GrinderModelUpdate,
+    ) -> Option<NativePreparedNam> {
+        let admission = &mut update.admission;
+        if admission.authority.load(Ordering::Acquire) != admission.request
+            || admission
+                .model
+                .as_ref()
+                .is_some_and(|model| !model.lease.is_current())
+        {
+            return None;
+        }
+
+        let slot = self.effect_index.lookup(effect_id)?;
+        let effect = &mut self.effects[slot];
+        if !matches!(&effect.instance, PluginCore::Grinder(_)) {
+            return None;
+        }
+
+        let mut cleared_model = None;
+        for &(param, value) in update.parameters.iter() {
+            if let Some(model) = take_cleared_grinder_model(&mut effect.instance, param, value) {
+                cleared_model = Some(model);
+            }
+            if !apply_builtin_param(&mut effect.instance, param, value) {
+                self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+            }
+        }
+
+        if let PluginCore::Grinder(body) = &mut effect.instance {
+            admission.model = body.swap_native_model(admission.model.take());
+            body.activate_native_model();
+        }
+        self.pdc_dirty |= effect.refresh_declared_latency();
+        admission.applied.store(true, Ordering::Release);
+        cleared_model
+    }
+
     /// Apply one drained command to the graph, returning anything the command
     /// gave up for reclamation off the callback thread.
     fn apply_command(&mut self, cmd: GraphCommand) -> Option<RetiredGraphObjects> {
@@ -6761,27 +6806,14 @@ impl AudioScheduler {
                 }
                 GraphCommand::SetGrinderModel {
                     effect_id,
-                    mut request,
+                    mut update,
                 } => {
-                    if request.authority.load(Ordering::Acquire) == request.request
-                        && request
-                            .model
-                            .as_ref()
-                            .is_none_or(|model| model.lease.is_current())
-                    {
-                        if let Some(slot) = self.effect_index.lookup(effect_id) {
-                            if let PluginCore::Grinder(body) = &mut self.effects[slot].instance {
-                                request.model = body.swap_native_model(request.model.take());
-                                body.activate_native_model();
-                                request.applied.store(true, Ordering::Release);
-                            }
-                        }
-                    }
-                    if let Some(model) = &request.model {
+                    let mut retired = RetiredGraphObjects::removed(None, None);
+                    retired.grinder_model = self.apply_grinder_model_update(effect_id, &mut update);
+                    if let Some(model) = &update.admission.model {
                         model.lease.retire();
                     }
-                    let mut retired = RetiredGraphObjects::removed(None, None);
-                    retired.grinder_request = Some(request);
+                    retired.grinder_update = Some(update);
                     Some(retired)
                 }
                 GraphCommand::SetParam(id, param, value) => {
@@ -24903,24 +24935,63 @@ mod timeline_tests {
         let mut harness = Harness::new(64);
         let material = grinder_burst_material(4096);
         track_with_grinder(&mut harness, material.clone(), &grinder_patch());
+        harness.playing();
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(grinder_name(
+                "outputGain",
+            ))),
+            value: -3.0,
+            at_frame: 4096,
+        });
+        let slot = harness.scheduler.effect_index.lookup(7).unwrap();
+        assert!(
+            matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body)
+                if body.engine.latency_samples() == 7)
+        );
+        let values = [
+            ("neuralEnabled", 0.0),
+            ("engineMode", 1.0),
+            ("neuralPlacement", 1.0),
+            ("outputGain", -6.0),
+        ];
+        let applied = Arc::new(AtomicBool::new(false));
         let command = GraphCommand::SetGrinderModel {
             effect_id: 7,
-            request: Box::new(NativeGrinderModelRequest {
-                model: Some(model),
-                authority,
-                request: 1,
-                applied: Arc::new(AtomicBool::new(false)),
+            update: Box::new(GrinderModelUpdate {
+                admission: NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority,
+                    request: 1,
+                    applied: Arc::clone(&applied),
+                },
+                parameters: values
+                    .map(|(name, value)| (DeviceParam::BuiltinNamed(grinder_name(name)), value))
+                    .into(),
             }),
         };
         assert!(harness.command_tx.push(command).is_ok());
-        #[cfg(debug_assertions)]
-        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
-        #[cfg(not(debug_assertions))]
-        harness.scheduler.update_graph();
-        harness.playing();
-        let (actual, _) = render_master(&mut harness, 512, 8);
+        let mut actual = vec![0.0; 4096];
+        let mut right = vec![0.0; actual.len()];
+        assert_no_alloc::assert_no_alloc(|| {
+            harness.scheduler.update_graph();
+            for (left, right) in actual.chunks_mut(512).zip(right.chunks_mut(512)) {
+                harness.scheduler.process_block(left, right, 512);
+            }
+        });
+        assert!(applied.load(Ordering::Acquire));
+        assert!(witness.upgrade().unwrap().is_live());
+        assert!(
+            matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body)
+                if body.engine.latency_samples() == 0)
+        );
+        assert_eq!(harness.diagnostics().pdc_max_arrival_frames, 0);
+        assert_eq!(harness.scheduler.effects[slot].pending_params.len(), 1);
         let mut reference = GrinderEngine::new(GRINDER_RATE);
         for (name, value) in GRINDER_PATCH {
+            reference.set_param(name, value);
+        }
+        for (name, value) in values {
             reference.set_param(name, value);
         }
         reference.load_neural_model(text).unwrap();
@@ -24961,6 +25032,73 @@ mod timeline_tests {
     }
 
     #[test]
+    fn native_grinder_model_rejected_updates_preserve_latency_and_pcm() {
+        let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
+        use daw_dsp::grinder::engine::GrinderEngine;
+        use std::sync::atomic::AtomicU64;
+
+        let text = r#"{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[-0.25]}"#;
+        let material = grinder_burst_material(4096);
+        let mut harness = Harness::new(64);
+        track_with_grinder(&mut harness, material.clone(), &grinder_patch());
+        harness.playing();
+
+        for (effect_id, stale_request, stale_lease) in
+            [(7, true, false), (7, false, true), (999, false, false)]
+        {
+            let authority = Arc::new(AtomicU64::new(1));
+            let lease_authority = Arc::new(AtomicU64::new(1));
+            let model = native_grinder_prepared(text, Arc::clone(&lease_authority), 1);
+            let witness = Arc::downgrade(&model.lease);
+            if stale_request {
+                authority.store(0, Ordering::Release);
+            }
+            if stale_lease {
+                lease_authority.store(0, Ordering::Release);
+            }
+            let applied = Arc::new(AtomicBool::new(false));
+            let command = GraphCommand::SetGrinderModel {
+                effect_id,
+                update: Box::new(GrinderModelUpdate {
+                    admission: NativeGrinderModelRequest {
+                        model: Some(model),
+                        authority,
+                        request: 1,
+                        applied: Arc::clone(&applied),
+                    },
+                    parameters: [("neuralPlacement", 1.0), ("outputGain", -18.0)]
+                        .map(|(name, value)| (DeviceParam::BuiltinNamed(grinder_name(name)), value))
+                        .into(),
+                }),
+            };
+            assert!(harness.command_tx.push(command).is_ok());
+            assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+            assert!(!applied.load(Ordering::Acquire));
+            assert!(witness.strong_count() > 0, "model must leave by retirement");
+            drop(harness.retired_rx.pop().unwrap());
+            assert_eq!(witness.strong_count(), 0);
+        }
+
+        let slot = harness.scheduler.effect_index.lookup(7).unwrap();
+        assert!(
+            matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body)
+                if !body.has_native_model() && body.engine.latency_samples() == 7)
+        );
+        let (actual, _) = render_master(&mut harness, 512, 8);
+        let mut reference = GrinderEngine::new(GRINDER_RATE);
+        for (name, value) in GRINDER_PATCH {
+            reference.set_param(name, value);
+        }
+        let mut expected = material.clone();
+        let mut right = material;
+        for (left, right) in expected.chunks_mut(128).zip(right.chunks_mut(128)) {
+            reference.process_block(left, right);
+        }
+        assert!(actual.iter().any(|sample| sample.abs() > 1e-5));
+        assert!(max_abs_difference(&actual, &expected) < 1e-6);
+    }
+
+    #[test]
     fn native_grinder_model_retired_queue_retains_budget_and_stale_incoming_ownership() {
         let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
         use daw_dsp::grinder::nam::native_admission::*;
@@ -24974,11 +25112,14 @@ mod timeline_tests {
             let model = native_grinder_prepared(text, Arc::clone(&authority), request);
             harness.send(GraphCommand::SetGrinderModel {
                 effect_id: 7,
-                request: Box::new(NativeGrinderModelRequest {
-                    model: Some(model),
-                    authority: Arc::clone(&authority),
-                    request,
-                    applied: Arc::new(AtomicBool::new(false)),
+                update: Box::new(GrinderModelUpdate {
+                    admission: NativeGrinderModelRequest {
+                        model: Some(model),
+                        authority: Arc::clone(&authority),
+                        request,
+                        applied: Arc::new(AtomicBool::new(false)),
+                    },
+                    parameters: Box::default(),
                 }),
             });
         }
@@ -25005,11 +25146,14 @@ mod timeline_tests {
         authority.store(34, Ordering::Release);
         harness.send(GraphCommand::SetGrinderModel {
             effect_id: 999,
-            request: Box::new(NativeGrinderModelRequest {
-                model: Some(stale),
-                authority,
-                request: 33,
-                applied: Arc::new(AtomicBool::new(false)),
+            update: Box::new(GrinderModelUpdate {
+                admission: NativeGrinderModelRequest {
+                    model: Some(stale),
+                    authority,
+                    request: 33,
+                    applied: Arc::new(AtomicBool::new(false)),
+                },
+                parameters: Box::default(),
             }),
         });
         assert!(
@@ -25038,11 +25182,14 @@ mod timeline_tests {
             witness = Some(Arc::downgrade(&model.lease));
             let command = GraphCommand::SetGrinderModel {
                 effect_id: 7,
-                request: Box::new(NativeGrinderModelRequest {
-                    model: Some(model),
-                    authority: Arc::clone(&authority),
-                    request,
-                    applied: Arc::new(AtomicBool::new(false)),
+                update: Box::new(GrinderModelUpdate {
+                    admission: NativeGrinderModelRequest {
+                        model: Some(model),
+                        authority: Arc::clone(&authority),
+                        request,
+                        applied: Arc::new(AtomicBool::new(false)),
+                    },
+                    parameters: Box::default(),
                 }),
             };
             assert!(harness.command_tx.push(command).is_ok());
@@ -25083,11 +25230,14 @@ mod timeline_tests {
         let removed = Arc::downgrade(&model.lease);
         harness.send(GraphCommand::SetGrinderModel {
             effect_id: 7,
-            request: Box::new(NativeGrinderModelRequest {
-                model: Some(model),
-                authority: Arc::clone(&authority),
-                request: 4,
-                applied: Arc::new(AtomicBool::new(false)),
+            update: Box::new(GrinderModelUpdate {
+                admission: NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority: Arc::clone(&authority),
+                    request: 4,
+                    applied: Arc::new(AtomicBool::new(false)),
+                },
+                parameters: Box::default(),
             }),
         });
         assert!(harness
@@ -25108,11 +25258,14 @@ mod timeline_tests {
             .command_tx
             .push(GraphCommand::SetGrinderModel {
                 effect_id: 7,
-                request: Box::new(NativeGrinderModelRequest {
-                    model: Some(model),
-                    authority,
-                    request: 5,
-                    applied: Arc::new(AtomicBool::new(false))
+                update: Box::new(GrinderModelUpdate {
+                    admission: NativeGrinderModelRequest {
+                        model: Some(model),
+                        authority,
+                        request: 5,
+                        applied: Arc::new(AtomicBool::new(false))
+                    },
+                    parameters: Box::default(),
                 })
             })
             .is_ok());

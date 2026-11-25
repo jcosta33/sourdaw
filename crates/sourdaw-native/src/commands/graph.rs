@@ -178,7 +178,7 @@ use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::{MidiControlEvent, MidiNoteEvent};
 use daw_engine::scheduler::{
     precedence_first, BuiltinEffectType, GrandBoulePreviewEvent, GraphCommand,
-    GraphProgressSnapshot, PluginCore, ScoringReading, ScoringTelemetry,
+    GraphProgressSnapshot, GrinderModelUpdate, PluginCore, ScoringReading, ScoringTelemetry,
     TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
@@ -307,7 +307,7 @@ pub(super) const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE
 pub(super) const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 
 /// The most immediate device parameters one whole batch may carry, summed
-/// across every [`GraphCommandPayload::SetDeviceParameters`] record in it.
+/// across every immediate parameter record, including a grouped Grinder update.
 ///
 /// This ceiling bounds the sum of every record's key count in one batch.
 /// The honest maximum is one full patch written to every device slot of
@@ -478,6 +478,16 @@ pub enum GraphCommandPayload {
         target: DeviceParameterTargetPayload,
         write: DeviceParameterWritePayload,
     },
+    /// Swap the prepared Grinder model and write its parameters in the same
+    /// callback command. The values share the immediate parameter budgets.
+    #[serde(rename_all = "camelCase")]
+    SetGrinderModel {
+        track_id: String,
+        device_id: String,
+        request_id: String,
+        model_json: Option<String>,
+        values: HashMap<String, f64>,
+    },
     /// Land every named value on a built-in body at the next audio callback,
     /// replacing the value the body currently holds and leaving whatever the
     /// device's stamp queue is holding untouched.
@@ -502,14 +512,6 @@ pub enum GraphCommandPayload {
     /// resolved — because each entry becomes one `SetParam` op, and a batch
     /// of records at the per-record ceiling would otherwise carry no bound
     /// of its own.
-    #[serde(rename_all = "camelCase")]
-    SetGrinderModel {
-        track_id: String,
-        device_id: String,
-        request_id: String,
-        model_json: Option<String>,
-        values: HashMap<String, f64>,
-    },
     #[serde(rename_all = "camelCase")]
     SetDeviceParameters {
         track_id: String,
@@ -1630,10 +1632,10 @@ fn prepare_native_grinders(
                 .ops
                 .iter()
                 .find_map(|op| match op {
-                    GraphCommand::SetGrinderModel { effect_id, request }
+                    GraphCommand::SetGrinderModel { effect_id, update }
                         if *effect_id == device.native_effect_id =>
                     {
-                        Some(request)
+                        Some(&update.admission)
                     }
                     _ => None,
                 })
@@ -1697,10 +1699,8 @@ fn prepare_native_grinders(
                 .ops
                 .iter_mut()
                 .find_map(|op| match op {
-                    GraphCommand::SetGrinderModel { effect_id, request }
-                        if *effect_id == effect =>
-                    {
-                        Some(request)
+                    GraphCommand::SetGrinderModel { effect_id, update } if *effect_id == effect => {
+                        Some(&mut update.admission)
                     }
                     _ => None,
                 })
@@ -2324,7 +2324,7 @@ impl QueueBudgets {
         }
     }
 
-    /// Charges one `SetDeviceParameters` record's key count against both the
+    /// Charges one immediate parameter record's key count against both the
     /// per-record ceiling and the running total for the whole batch, before
     /// any of the record's keys are resolved. A refusal here leaves this
     /// record's ops unpushed — the caller (`map_command`) returns before
@@ -4708,33 +4708,23 @@ fn map_command(
                 return Err(GraphRefusal::GrinderModelTargetMismatch);
             }
             let effect_id = device.native_effect_id;
-            map_command(
-                &GraphCommandPayload::SetDeviceParameters {
-                    track_id: track_id.clone(),
-                    device_id: device_id.clone(),
-                    values: values.clone(),
-                },
-                registry,
-                samples,
-                timeline_lease,
-                MapEnv {
-                    sample_rate,
-                    hosted: &mut *hosted,
-                    attached_crumbs: &mut *attached_crumbs,
-                    levain_banks: &mut *levain_banks,
-                    ops: &mut *ops,
-                },
-                budgets,
-                touched,
-            )?;
+            budgets
+                .charge_immediate_device_parameters(values.len())
+                .map_err(|reason| GraphRefusal::with_command("set-device-parameters", reason))?;
+            let parameters =
+                immediate_device_parameters(BuiltinEffectType::Grinder, values, device_id)?
+                    .into_boxed_slice();
             let request = next_native_nam_request()?;
             ops.push(GraphCommand::SetGrinderModel {
                 effect_id,
-                request: Box::new(NativeGrinderModelRequest {
-                    model: None,
-                    authority: Arc::new(AtomicU64::new(request)),
-                    request,
-                    applied: Arc::new(AtomicBool::new(false)),
+                update: Box::new(GrinderModelUpdate {
+                    admission: NativeGrinderModelRequest {
+                        model: None,
+                        authority: Arc::new(AtomicU64::new(request)),
+                        request,
+                        applied: Arc::new(AtomicBool::new(false)),
+                    },
+                    parameters,
                 }),
             });
             Ok(())
@@ -10256,8 +10246,32 @@ mod tests {
             1
         );
 
+        let invalid = block_on_test(apply_graph_commands(
+            json!({"schemaVersion":2,"commands":[
+                {"kind":"set-grinder-model", "trackId":"t1", "deviceId":"d-nam", "requestId":"invalid", "modelJson":"{", "values":{"outputGain":-24.0}}
+            ]}),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .unwrap();
+        assert_eq!(invalid["acceptance"], "rejected");
+        assert!(
+            command_rx.pop().is_err(),
+            "a refused model leaves the command ring untouched"
+        );
+
+        let superseded = block_on_test(apply_graph_commands(
+            json!({"schemaVersion":2,"commands":[
+                {"kind":"set-grinder-model", "trackId":"t1", "deviceId":"d-nam", "requestId":"superseded", "modelJson":null, "values":{"outputGain":-18.0}}
+            ]}),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .unwrap();
+        assert_eq!(superseded["application"], "applied");
+
         let replaced = block_on_test(apply_graph_commands(json!({"schemaVersion":2,"commands":[
-            {"kind":"set-grinder-model", "trackId":"t1", "deviceId":"d-nam", "requestId":"replacement", "modelJson":second, "values":{}},
+            {"kind":"set-grinder-model", "trackId":"t1", "deviceId":"d-nam", "requestId":"replacement", "modelJson":second, "values":{"engineMode":1.0,"neuralEnabled":0.0,"neuralPlacement":1.0}},
             {"kind":"set-transport", "playing":true, "positionSeconds":0}
         ]}), &state, &CrumbsState::default())).unwrap();
         assert_eq!(replaced["application"], "applied");
@@ -10269,14 +10283,43 @@ mod tests {
             replaced["grinderModels"][0]["targetGeneration"],
             effect_id.unwrap().to_string()
         );
+        let mut updates = Vec::new();
         while let Ok(command) = command_rx.pop() {
-            assert!(
-                !matches!(&command, GraphCommand::AddDetachedEffect(..)),
-                "rolling replacement rebuilt unrelated amp state"
-            );
+            match &command {
+                GraphCommand::SetGrinderModel {
+                    effect_id: target,
+                    update,
+                } => {
+                    assert_eq!(Some(*target), effect_id);
+                    updates.push((update.admission.model.is_some(), update.parameters.to_vec()));
+                }
+                GraphCommand::SetParam(..) => panic!("a model update emitted a numeric prefix"),
+                GraphCommand::AddDetachedEffect(..) => {
+                    panic!("a rolling replacement rebuilt the amp")
+                }
+                _ => {}
+            }
             renderer.push(command).unwrap();
         }
+        let param = |name| DeviceParam::BuiltinNamed(BuiltinParamName::parse(name).unwrap());
+        assert_eq!(
+            updates,
+            [
+                (false, vec![(param("outputGain"), -18.0)]),
+                (
+                    true,
+                    vec![
+                        (param("neuralEnabled"), 0.0),
+                        (param("engineMode"), 1.0),
+                        (param("neuralPlacement"), 1.0),
+                    ]
+                ),
+            ]
+        );
         let (replacement, _) = renderer.render(FRAMES);
+        reference.set_param("neuralEnabled", 0.0);
+        reference.set_param("engineMode", 1.0);
+        reference.set_param("neuralPlacement", 1.0);
         reference.load_neural_model(second).unwrap();
         let mut expected_replacement = material.clone();
         let mut right = material;
@@ -10286,10 +10329,13 @@ mod tests {
         {
             reference.process_block(left, right);
         }
-        assert!(replacement
-            .iter()
-            .zip(&expected_replacement)
-            .all(|(a, b)| (a - b).abs() < 1e-6));
+        assert!(
+            replacement
+                .iter()
+                .zip(&expected_replacement)
+                .all(|(a, b)| (a - b).abs() < 1e-6),
+            "an obsolete request's output gain leaked into the replacement PCM"
+        );
         assert!(
             replacement
                 .iter()
