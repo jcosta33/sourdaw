@@ -110,6 +110,14 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        commitPitchEdit: vi.fn(),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,

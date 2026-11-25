@@ -201,7 +201,7 @@ describe('loadProofPatchWithAudio', () => {
         }));
     });
 
-    it('loads the patch into the store and sends the full patch to the engine', () => {
+    it('projects a committed patch into the store and sends the full patch to the engine', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
         const patch: ProofPatch = {
@@ -222,23 +222,7 @@ describe('loadProofPatchWithAudio', () => {
         expect(calls.get('lim_ceiling')).toBe(-1.5);
         expect(calls.get('input_gain')).toBe(DEFAULT_PATCH.inputGain);
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
-        expect(persistDevicePatch).toHaveBeenCalledTimes(1);
-        expect(persistDevicePatch).toHaveBeenCalledWith(
-            DEVICE_ID,
-            expect.objectContaining({
-                input_gain: DEFAULT_PATCH.inputGain,
-                lim_ceiling: -1.5,
-                eq_band1_freq: DEFAULT_PATCH.eqBands[1]!.freq,
-                dyn_band2_ratio: DEFAULT_PATCH.dynBands[2]!.ratio,
-                img_width3: DEFAULT_PATCH.imgBandWidth[3],
-                exc_band3_blend: DEFAULT_PATCH.excBands[3]!.blend,
-                dither_bits: DEFAULT_PATCH.ditherBits,
-                target_mode: 0,
-                target_lufs: DEFAULT_PATCH.targetLufs,
-                chain_order_4: DEFAULT_PATCH.chainOrder[4],
-            })
-        );
-        expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(124);
+        expect(persistDevicePatch).not.toHaveBeenCalled();
     });
 
     // The full sync's contract is the exact name set it reaches the device

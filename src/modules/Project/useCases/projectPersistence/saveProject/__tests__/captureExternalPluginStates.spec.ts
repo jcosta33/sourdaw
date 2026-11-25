@@ -36,6 +36,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    isExternalPluginDeviceType: (deviceType: string) => deviceType === 'external-plugin',
+}));
 vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mocks.executeAppActionBatch }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,

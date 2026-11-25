@@ -79,7 +79,6 @@ function setupCommitBoundary() {
 describe('command approval boundary', () => {
     afterEach(() => {
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
     });
 

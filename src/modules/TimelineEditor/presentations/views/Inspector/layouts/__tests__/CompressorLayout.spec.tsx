@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { dynamicsCompressorHiddenMakeupDb } from '#/utils/dynamicsCompressorMakeupLaw';
 
 import type { DeviceParameterView } from '../../../../../models/PluginDescriptorViewTypes';
 import type { Device } from '../../../../../models/TrackViewTypes';
@@ -40,7 +41,15 @@ vi.mock('../../SectionHeader', () => ({
     SectionHeader: ({ title }: { title: string }) => <div>{title}</div>,
 }));
 
-const PARAM_IDS = ['comp-threshold', 'comp-ratio', 'comp-attack', 'comp-release', 'comp-knee', 'comp-makeup'];
+const PARAM_IDS = [
+    'comp-threshold',
+    'comp-ratio',
+    'comp-attack',
+    'comp-release',
+    'comp-knee',
+    'comp-makeup',
+    'comp-auto-makeup',
+];
 
 const makeParam = (id: string): DeviceParameterView => {
     const deviceType = id.startsWith('sc-comp-') ? 'builtin-sidechain-compressor' : 'builtin-compressor';
@@ -79,14 +88,20 @@ describe('CompressorLayout', () => {
         );
     });
 
-    it('renders all 6 compressor parameters in the grid', () => {
+    it('renders every compressor parameter in the grid, the Auto Makeup switch last', () => {
         render(<Layout device={makeDevice()} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
         const ids = screen.getAllByTestId('param-control').map((el) => el.textContent);
         expect(ids).toEqual(PARAM_IDS);
     });
 
-    it('passes threshold/ratio/knee/makeup defaults to CompressorCurve when parameterValues are absent', () => {
-        render(<Layout device={makeDevice()} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
+    it('passes threshold/ratio/knee/makeup defaults to CompressorCurve for a new device, Auto Makeup off', () => {
+        render(
+            <Layout
+                device={makeDevice({ parameterValues: { 'comp-auto-makeup': 0 } })}
+                trackId="track-1"
+                parameters={PARAM_IDS.map(makeParam)}
+            />
+        );
         expect(mockCompressorCurve).toHaveBeenCalledWith(
             expect.objectContaining({
                 threshold: -20,
@@ -104,6 +119,7 @@ describe('CompressorLayout', () => {
                 'comp-ratio': 8,
                 'comp-knee': 3,
                 'comp-makeup': 4,
+                'comp-auto-makeup': 0,
             },
         });
         render(<Layout device={device} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
@@ -178,5 +194,27 @@ describe('CompressorLayout', () => {
             })
         );
         expect(screen.getAllByTestId('param-control')).toHaveLength(5);
+    });
+
+    it.each([
+        ['on', { 'comp-auto-makeup': 1 }],
+        ['absent, as a device stored before the switch', {}],
+    ])('draws the browser makeup on top of Makeup when Auto Makeup is %s', (_label, switchValue) => {
+        const device = makeDevice({
+            parameterValues: {
+                'comp-threshold': -30,
+                'comp-ratio': 6,
+                'comp-knee': 0,
+                'comp-makeup': 2,
+                ...switchValue,
+            },
+        });
+        render(<Layout device={device} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
+        const hidden = dynamicsCompressorHiddenMakeupDb({ thresholdDb: -30, kneeDb: 0, ratio: 6 });
+        // Hard knee: 0.6 · 30 · (1 − 1/6) dB, independent of the knee search.
+        expect(hidden).toBeCloseTo(15, 4);
+        expect(mockCompressorCurve).toHaveBeenLastCalledWith(
+            expect.objectContaining({ threshold: -30, ratio: 6, knee: 0, makeup: 2 + hidden })
+        );
     });
 });

@@ -66,6 +66,7 @@ const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string 
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    isFrozenTrackRefusingRecording: vi.fn(() => false),
     activeRecordingRef: { current: [] },
     timelineEditingStore: { value: null },
     trackStore: { value: { tracks: [] } },
@@ -146,6 +147,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hostsStoredControllers: actual.hostsStoredControllers,
+        readStoredControllerDefault: actual.readStoredControllerDefault,
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        hostsPadOutputs: actual.hostsPadOutputs,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         resolveDrumKitBy: actual.resolveDrumKitBy,
         resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,

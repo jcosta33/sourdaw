@@ -6,6 +6,7 @@ import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
 import { getExecutableCommandRegistrations, registerProductionCommandHandlers } from '#/modules/Command/useCases';
 import { getGlutenHandlers } from '#/modules/Gluten/useCases';
 import { getLevainHandlers } from '#/modules/Levain/useCases';
+import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getToasterHandlers } from '#/modules/Toaster/useCases';
 
 import { getProductionCommandHandlerMaps } from '../getProductionCommandHandlerMaps';
@@ -81,7 +82,7 @@ describe('getProductionCommandHandlerMaps', () => {
         );
 
         // Pattern instance actions share the Arrangement map rather than a separate map.
-        expect(handlerMaps).toHaveLength(42);
+        expect(handlerMaps).toHaveLength(43);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         const arrangementHandlers = getArrangementHandlers();
         for (const actionType of [
@@ -104,6 +105,9 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(allHandlers.filter(({ actionType }) => actionType === 'setGlutenFactoryPreset')).toEqual([
             { actionType: 'setGlutenFactoryPreset', handler: getGlutenHandlers().setGlutenFactoryPreset },
         ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setProofPatchSelection')).toEqual([
+            { actionType: 'setProofPatchSelection', handler: getProofHandlers().setProofPatchSelection },
+        ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setLevainIdentity')).toEqual([
             { actionType: 'setLevainIdentity', handler: getLevainHandlers().setLevainIdentity },
         ]);
@@ -116,16 +120,20 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(117);
+        expect(registrations).toHaveLength(120);
         expect(registrations.map(({ actionType }) => actionType)).toContain('stripSilence');
         expect(registrations.map(({ actionType }) => actionType)).toContain('extractGroove');
         expect(registrations.map(({ actionType }) => actionType)).toContain('applyGroove');
+        for (const actionType of ['hideTrack', 'foldTrack', 'setTrackHeight']) {
+            expect(registrations.map((registration) => registration.actionType)).toContain(actionType);
+        }
         expect(registrations.map(({ actionType }) => actionType)).toContain('setCompRegion');
         expect(registrations.map(({ actionType }) => actionType)).toContain('quantizeTransients');
         expect(registrations.map(({ actionType }) => actionType)).toContain('setProductionBrief');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('editTempoMap');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('restoreTempoMapEdit');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setBacteriaFactoryPatch');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setProofPatchSelection');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterFactoryKit');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setGlutenFactoryPreset');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setLevainIdentity');

@@ -1,4 +1,5 @@
 import { type DeviceNodeEntry } from '../buildDeviceChain';
+import { hostsPadOutputs } from '../deviceCapabilities/hostsPadOutputs';
 import { resolveToasterPadBinding } from '../resolveToasterPadBinding';
 
 import { type OfflineTrackStrip } from './types';
@@ -24,7 +25,7 @@ export function connectOfflineToasterPadRoutes({
         const destination = trackStripsById.get(track.id)?.inputNode;
         const toaster = deviceEntriesByTrack
             .get(binding.toasterParentTrackId)
-            ?.find((entry) => entry.deviceType === 'toaster');
+            ?.find((entry) => hostsPadOutputs(entry.deviceType));
         if (!destination || !toaster?.strategy.connectPadOutput || !toaster.strategy.setPadDryRouted) {
             continue;
         }

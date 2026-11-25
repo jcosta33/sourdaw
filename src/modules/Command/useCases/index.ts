@@ -11,7 +11,6 @@ export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { undoReplayPreparationPort } from './undoReplayPreparationPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
-export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { classifyCommandRecovery } from './classifyCommandRecovery';
@@ -127,9 +126,8 @@ export { commitActionUndoEntry } from './commitActionUndoEntry';
 export { commitUndoEntry } from './commitUndoEntry';
 export { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 export { legacyInverseReplayAdmission } from './legacyInverseReplayAdmission';
-// Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
-// (`setPitchEditDependencies`) now live in Knead/useCases — Knead owns the
-// pitch aggregate. See ADR 0011 Wave 3.
+// Pitch-edit dispatch (`getPitchHandlers`) now lives in Knead/useCases — Knead
+// owns the pitch aggregate. See ADR 0011 Wave 3.
 // Command palette + keyboard-shortcut orchestration (`setShortcutMapping`,
 // `resetShortcutMappings`, the command registry, selection helpers and the
 // shortcut store) now live in CommandInterface/* — that module owns the

@@ -614,8 +614,6 @@ describe('confirmPendingChatActions transaction admission', () => {
         commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
         commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
-        commandProjectDivergencePort.setProvider(null);
-        commandRuntimeRepairPort.setProvider(null);
         chatStore.set({
             messages: [
                 {
@@ -641,11 +639,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearUndoHistory();
         clearAiHistory();
         clearPendingActionConfirmations();
-        commandBatchPreviewPort.setProvider(null);
-        commandBatchPreviewPort.setRecoveryProvider(null);
         commandProjectRevisionPort.setProvider(null);
-        commandProjectDivergencePort.setProvider(null);
-        commandRuntimeRepairPort.setProvider(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         removeCrdtDoc('root');
     });

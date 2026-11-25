@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { acceptsSidechainInput } from '#/modules/AudioEngine/useCases';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { getAutomationTransformLaneId } from '../llmAutomationTransformLaneId';
@@ -52,11 +54,11 @@ describe('LLM bridge per-action lookups: default entries', () => {
     });
 
     it('leaves the routing context unchanged for an unlisted action', () => {
-        expect(applyAcceptedRoutingAction(context, unlistedAction)).toBe(context);
+        expect(applyAcceptedRoutingAction(context, unlistedAction, acceptsSidechainInput)).toBe(context);
     });
 
     it('never treats an unlisted action as a sidechain lifecycle invalidation', () => {
-        expect(hasInvalidatingSidechainLifecycleMutation([unlistedAction], context)).toBe(false);
+        expect(hasInvalidatingSidechainLifecycleMutation([unlistedAction], context, acceptsSidechainInput)).toBe(false);
     });
 });
 
@@ -82,11 +84,13 @@ describe('LLM bridge per-action lookups: inherited Object.prototype names', () =
     it('leaves the routing context unchanged for an inherited name', () => {
         // `constructor` would return its first argument, so a name that returns something else tells the guard apart.
         const stringifyingAction: RuntimeAction = JSON.parse('{"type":"toString","payload":{}}');
-        expect(applyAcceptedRoutingAction(context, stringifyingAction)).toBe(context);
+        expect(applyAcceptedRoutingAction(context, stringifyingAction, acceptsSidechainInput)).toBe(context);
     });
 
     it('never treats an inherited name as a sidechain lifecycle invalidation', () => {
-        expect(hasInvalidatingSidechainLifecycleMutation([inheritedAction], context)).toBe(false);
+        expect(hasInvalidatingSidechainLifecycleMutation([inheritedAction], context, acceptsSidechainInput)).toBe(
+            false
+        );
     });
 });
 

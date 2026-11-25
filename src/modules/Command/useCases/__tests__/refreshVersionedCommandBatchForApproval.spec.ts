@@ -14,8 +14,6 @@ import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandE
 describe('refreshVersionedCommandBatchForApproval', () => {
     afterEach(() => {
         clearHandlerRegistry();
-        commandBatchPreflightPort.setProvider(null);
-        commandProjectDivergencePort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
     });
 

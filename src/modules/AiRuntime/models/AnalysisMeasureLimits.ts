@@ -2,6 +2,11 @@
 export const ANALYSIS_MEASURE_MAX_TARGETS = 4;
 /** `analysis.compareReference` carries the reference's, each target's and the delta figures per metric, so four targets with every metric exceed the per-call receipt budget. */
 export const ANALYSIS_COMPARE_REFERENCE_MAX_TARGETS = 3;
+/**
+ * Most retained recipe expansions one preview holds: one per target a preview scope can name, since
+ * a request spanning several targets takes one expansion on each, and every prefix renders the scope.
+ */
+export const ANALYSIS_MEASURE_MAX_PREVIEW_RECIPES = ANALYSIS_MEASURE_MAX_TARGETS;
 export const ANALYSIS_MEASURE_MAX_ID_LENGTH = 256;
 export const ANALYSIS_MEASURE_MAX_WARNINGS = 8;
 export const ANALYSIS_MEASURE_MAX_WARNING_LENGTH = 200;

@@ -36,6 +36,7 @@ type TestTrack = {
     id: string;
     kind: 'audio' | 'midi' | 'vca';
     armed: boolean;
+    frozen?: boolean;
 };
 
 type TestTrackState = {
@@ -434,6 +435,35 @@ describe('toggleRecording', () => {
         // The take opens after the recorder start answers, so the assertion
         // must wait out the microtask the await introduces.
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalled());
+    });
+
+    it('does not engage a recording when the only armed track froze during the count-in (#7239)', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-midi', kind: 'midi', armed: true }] });
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: true,
+            countInBars: 1,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            playheadPosition: 0,
+        });
+
+        toggleRecording();
+        // The track freezes while the count-in runs, so no take can open on it.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-midi', kind: 'midi', armed: true, frozen: true }],
+        });
+        elapse(2000);
+
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Unfreeze the track to record on it.', 'warning')
+        );
+        expect(mocks.startRecording).toHaveBeenCalledOnce();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
     });
 
     it('should count a compound meter in its own beat unit rather than in quarter notes', async () => {
@@ -1454,6 +1484,46 @@ describe('toggleRecording', () => {
             expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
         });
 
+        it('refuses when the only armed track is frozen, since a take on it would be silent (#7239)', () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-midi', kind: 'midi', armed: true, frozen: true }],
+            });
+
+            toggleRecording();
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Unfreeze the track to record on it.', 'warning');
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        });
+
+        it('starts hardware capture only for the armed audio track that is not frozen (#7239)', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    { id: 'track-frozen', kind: 'audio', armed: true, frozen: true },
+                    { id: 'track-live', kind: 'audio', armed: true },
+                ],
+            });
+
+            toggleRecording();
+
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+            expect(mocks.startAudioRecording.mock.calls[0]?.[0]).toBe('track-live');
+        });
+
         it('admits recording with a single armed MIDI track — takes are not audio-only', async () => {
             vi.mocked(getTransportState).mockReturnValue({
                 ...defaultTransportState,
@@ -1471,6 +1541,27 @@ describe('toggleRecording', () => {
             await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
             expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+        });
+
+        it('engages an overdub that opens no new clip on an unfrozen armed MIDI track (#7239)', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: false,
+                overdubEnabled: true,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-midi', kind: 'midi', armed: true }],
+            });
+            // An overdub records into the existing clip, so `startRecording` opens none.
+            mocks.startRecording.mockReturnValue([]);
+
+            toggleRecording();
+
+            await vi.waitFor(() => expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true }));
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
         });
     });
 

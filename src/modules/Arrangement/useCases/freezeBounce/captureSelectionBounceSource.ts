@@ -3,6 +3,7 @@ import {
     captureOfflineRenderProjectSource,
     captureOfflineRenderRuntimeInput,
     getAudioContext,
+    hasPadOutputHost,
 } from '#/modules/AudioEngine/useCases';
 import {
     settlePendingProjectWritesAndCaptureRevision,
@@ -100,9 +101,7 @@ export function captureSelectionBounceSource(track: Track, signal?: AbortSignal)
         sidechainRoutes: project.sidechainRoutes,
         includeSendReturns: true,
     });
-    const toasterIds = new Set(
-        renderTracks.filter((row) => row.devices.some((device) => device.type === 'toaster')).map((row) => row.id)
-    );
+    const toasterIds = new Set(renderTracks.filter((row) => hasPadOutputHost(row.devices)).map((row) => row.id));
     const sourceTracks = tracks.filter(
         (row) => renderTracks.includes(row) || (row.parentId !== null && toasterIds.has(row.parentId))
     );

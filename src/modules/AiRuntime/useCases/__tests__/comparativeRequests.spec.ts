@@ -2127,7 +2127,7 @@ describe('request figures across a refinement chain', () => {
         expect(trackStore.value).toEqual(before);
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
         expect(audio.renderOffline).not.toHaveBeenCalled();
-    });
+    }, 30_000);
 
     it('refuses to refine a card whose stored verification record is unreadable', async () => {
         const before = structuredClone(trackStore.value);

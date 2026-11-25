@@ -15,6 +15,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectDivergencePort,
     commandProjectRevisionPort,
     configureCommandBatchIdempotency,
     redo,
@@ -24,6 +25,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
+    inspectAgentProjectDivergence,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -43,6 +45,7 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
+import { AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON } from './aiWorkflowCommandPreflightFixture';
 import { landProjectEdit } from './landProjectEdit';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
@@ -493,6 +496,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
         configureCollaborationAssetOwner({
             captureOwnerId: () => 'project:delete-muted-empty-tracks-workflow',
         });
@@ -538,7 +542,6 @@ describe('delete muted empty tracks prompt workflow', () => {
 
     afterEach(async () => {
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
-        commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();
@@ -882,7 +885,8 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);
@@ -921,7 +925,8 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);

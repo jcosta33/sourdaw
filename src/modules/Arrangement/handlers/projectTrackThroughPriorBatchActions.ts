@@ -6,9 +6,14 @@ import { getPlatformPlugins } from '../useCases/getPlatformPlugins';
 
 import { projectTrackAction } from './projectTrackAction';
 
-export function projectTrackThroughPriorBatchActions(track: Track, context: HandlerValidationContext): Track {
+/** A track created inside the batch passes `firstActionIndex` of the action after its creator: earlier actions ran before it existed. */
+export function projectTrackThroughPriorBatchActions(
+    track: Track,
+    context: HandlerValidationContext,
+    firstActionIndex = 0
+): Track {
     const projected = structuredClone(track);
-    for (const action of context.actions.slice(0, context.actionIndex)) {
+    for (const action of context.actions.slice(firstActionIndex, context.actionIndex)) {
         if (action.payload && 'trackId' in action.payload && action.payload.trackId !== projected.id) {
             continue;
         }

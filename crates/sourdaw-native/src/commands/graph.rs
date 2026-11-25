@@ -158,9 +158,10 @@ use crate::commands::graph_refusals::{
 };
 use crate::commands::levain::LevainBankStore;
 use crate::commands::offline_plugins::{
-    build_offline_instances, leaves_processing_on_drop, InFlightRender, OfflinePluginInstances,
-    OfflinePluginSeams,
+    build_offline_instances, leaves_processing_on_drop, offline_note_store, InFlightRender,
+    OfflinePluginInstances, OfflinePluginSeams, ScheduledNoteEvents, OFFLINE_NOTE_EVENT_CEILING,
 };
+use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_dsp::grand_boule::parameters::midi_to_key;
@@ -2994,12 +2995,10 @@ enum HostedBindingLaw {
     #[default]
     Engine,
     /// An offline render's graph: a device on a sounding strip gets an
-    /// independent offline instance of the effect the live one is, built for
-    /// this render alone, under the live instance's own engine plugin id
-    /// (`commands::offline_plugins`). A device on a strip that contributes
-    /// nothing is omitted, so no instance is built for silence, and an
-    /// instrument refuses by name, because no offline instance of a hosted
-    /// instrument is built yet.
+    /// independent offline instance of the effect or instrument the live one
+    /// is, built for this render alone, under the live instance's own engine
+    /// plugin id (`commands::offline_plugins`). A device on a strip that
+    /// contributes nothing is omitted, so no instance is built for silence.
     Offline,
 }
 
@@ -3018,26 +3017,50 @@ pub(crate) struct HostedInstances {
     bound: BTreeMap<String, String>,
 }
 
-/// One instance a device may bind to: where it splices, and the plugin's name
-/// for the refusals that are about it.
+/// One instance a device may bind to: where it splices, the plugin's name for
+/// the refusals that are about it, and — offline — the live runtime the
+/// snapshot saw.
 #[derive(Clone, Debug)]
 struct HostedInstance {
     device: EngineOwnedDevice,
     plugin_name: String,
+    /// Weak, so the snapshot never keeps a runtime alive or becomes the one
+    /// whose drop tears a plugin down. The engine law binds no snapshot and
+    /// holds an empty one.
+    live_runtime: Weak<SharedHostedPlugin>,
 }
 
 /// One instance an offline render bound, as the render builds it, with the
 /// identity it was mapped under: the build refuses a live record that no longer
-/// carries it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// holds the very runtime the mapping saw.
+#[derive(Clone, Debug)]
 pub(crate) struct BoundHostedInstance {
     pub(crate) instance_id: String,
     /// The first device that named it, for refusals.
     pub(crate) device_id: String,
     pub(crate) plugin_name: String,
+    /// The id the render's own graph registers the offline instance under —
+    /// the one the batch was mapped with, whatever the live engine calls the
+    /// instance by the time it is built.
     pub(crate) engine_plugin_id: usize,
     pub(crate) chain_kind: DeviceKind,
+    /// The live runtime the mapping saw: its load is the identity, because an
+    /// engine plugin id restarts with the engine and a reload can reuse a name.
+    pub(crate) live_runtime: Weak<SharedHostedPlugin>,
 }
+
+impl PartialEq for BoundHostedInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.instance_id == other.instance_id
+            && self.device_id == other.device_id
+            && self.plugin_name == other.plugin_name
+            && self.engine_plugin_id == other.engine_plugin_id
+            && self.chain_kind == other.chain_kind
+            && Weak::ptr_eq(&self.live_runtime, &other.live_runtime)
+    }
+}
+
+impl Eq for BoundHostedInstance {}
 
 impl HostedInstances {
     /// The live engine's own instances.
@@ -3052,6 +3075,7 @@ impl HostedInstances {
                         HostedInstance {
                             device,
                             plugin_name: String::new(),
+                            live_runtime: Weak::new(),
                         },
                     )
                 })
@@ -3080,6 +3104,7 @@ impl HostedInstances {
                                 chain_kind: instance.chain_kind,
                             },
                             plugin_name: instance.name.clone(),
+                            live_runtime: Arc::downgrade(&instance.runtime),
                         },
                     )
                 })
@@ -3115,17 +3140,19 @@ impl HostedInstances {
                 if !contributes_audio {
                     return Ok(None);
                 }
-                if instance.device.chain_kind != DeviceKind::Effect {
-                    return Err(GraphRefusal::HostedInstrumentOffline {
-                        device_id: device_id.to_string(),
-                        plugin_name: instance.plugin_name.clone(),
-                    });
-                }
                 self.bound
                     .entry(instance_id.to_string())
                     .or_insert_with(|| device_id.to_string());
                 Ok(Some(instance.device))
             }
+        }
+    }
+
+    /// The most note events one `schedule-midi` batch may carry under this law.
+    fn note_batch_ceiling(&self) -> usize {
+        match self.law {
+            HostedBindingLaw::Engine => MIDI_NOTE_STORE_CAPACITY,
+            HostedBindingLaw::Offline => OFFLINE_NOTE_EVENT_CEILING,
         }
     }
 
@@ -3141,6 +3168,7 @@ impl HostedInstances {
                     plugin_name: instance.plugin_name.clone(),
                     engine_plugin_id: instance.device.engine_plugin_id,
                     chain_kind: instance.device.chain_kind,
+                    live_runtime: instance.live_runtime.clone(),
                 })
             })
             .collect()
@@ -4910,9 +4938,15 @@ fn map_command(
             let plugin_id = midi_device_plugin_id(registry, track_id, device_id, "schedule-midi")?;
             // The store's ceiling, checked here because the store can only
             // answer a batch past it with a refusal counted on the audio
-            // thread. Exactly the capacity fits; one more does not.
-            if notes.len() > MIDI_NOTE_STORE_CAPACITY {
-                return Err(GraphRefusal::MidiNoteCeiling { notes: notes.len() });
+            // thread. Exactly the ceiling fits; one more does not. The live
+            // engine's store is the fixed live reserve; an offline render
+            // sizes its stores from the batch, up to the offline ceiling.
+            let ceiling = hosted.note_batch_ceiling();
+            if notes.len() > ceiling {
+                return Err(GraphRefusal::MidiNoteCeiling {
+                    notes: notes.len(),
+                    ceiling,
+                });
             }
             let mut mapped = notes
                 .iter()
@@ -6155,9 +6189,12 @@ const MAX_MAPPING_SESSIONS: usize = 4;
 
 /// One kept probe registry: the graph a session's accepted commands built,
 /// and the count of those commands (`revision`) that names which history it
-/// represents.
+/// represents. `scheduled` is the note events that history already schedules
+/// at each device, so a resume counts them against the offline ceiling as a
+/// replay would.
 struct GraphMappingSession {
     registry: GraphRegistry,
+    scheduled: ScheduledNoteEvents,
     revision: u64,
     touched: u64,
 }
@@ -6176,7 +6213,11 @@ impl GraphMappingSessions {
     /// The kept registry for `session_id` at exactly `revision`, cloned so the
     /// caller can map onto it without committing, or `None` when this process
     /// does not hold that history.
-    fn resume(&mut self, session_id: &str, revision: u64) -> Option<GraphRegistry> {
+    fn resume(
+        &mut self,
+        session_id: &str,
+        revision: u64,
+    ) -> Option<(GraphRegistry, ScheduledNoteEvents)> {
         self.touch_counter += 1;
         let touch = self.touch_counter;
         let session = self.sessions.get_mut(session_id)?;
@@ -6184,18 +6225,25 @@ impl GraphMappingSessions {
             return None;
         }
         session.touched = touch;
-        Some(session.registry.clone())
+        Some((session.registry.clone(), session.scheduled.clone()))
     }
 
     /// Keep `registry` as `session_id`'s state at `revision`, evicting the
     /// least-recently-touched session past [`MAX_MAPPING_SESSIONS`].
-    fn store(&mut self, session_id: &str, registry: GraphRegistry, revision: u64) {
+    fn store(
+        &mut self,
+        session_id: &str,
+        registry: GraphRegistry,
+        scheduled: ScheduledNoteEvents,
+        revision: u64,
+    ) {
         self.touch_counter += 1;
         let touched = self.touch_counter;
         self.sessions.insert(
             session_id.to_string(),
             GraphMappingSession {
                 registry,
+                scheduled,
                 revision,
                 touched,
             },
@@ -6226,7 +6274,7 @@ struct MappingSessionKeyPayload {
 }
 
 /// Replay already-accepted history onto a fresh registry, one ceiling-sized
-/// chunk at a time. Concatenated session history can exceed what a single
+/// chunk at a time, answering the note events that history schedules. Concatenated session history can exceed what a single
 /// honest batch may carry; packing it into one `GraphBatchPayload` would
 /// refuse commands this process already took. Each chunk is at most
 /// [`MAX_BATCH_COMMANDS`] so the incoming batch still meets the same ceiling.
@@ -6238,7 +6286,8 @@ fn replay_prior_commands(
     sample_rate: f32,
     hosted: &mut HostedInstances,
     levain_banks: &mut LevainBankStore,
-) -> Result<(), MappingFault> {
+) -> Result<ScheduledNoteEvents, MappingFault> {
+    let mut scheduled = ScheduledNoteEvents::new();
     while !commands.is_empty() {
         let rest = if commands.len() > MAX_BATCH_COMMANDS {
             commands.split_off(MAX_BATCH_COMMANDS)
@@ -6252,7 +6301,7 @@ fn replay_prior_commands(
             replace_topology: false,
             commands,
         };
-        map_batch(
+        let mapped = map_batch(
             &replay,
             registry,
             samples,
@@ -6264,9 +6313,10 @@ fn replay_prior_commands(
         .map_err(|reason| MappingFault::PriorNoLongerMaps {
             reason: Box::new(reason),
         })?;
+        add_scheduled_note_events(&mut scheduled, &scheduled_note_events(&mapped.ops));
         commands = rest;
     }
-    Ok(())
+    Ok(scheduled)
 }
 
 /// Map one batch against the graph a prior command sequence built — the
@@ -6362,7 +6412,7 @@ fn map_probe_batch(
 
     // Resume before replay: a held session at the stated revision *is* the
     // prior graph, so the replay below runs only to establish one.
-    let resumed: Option<GraphRegistry> = match &session_key {
+    let resumed: Option<(GraphRegistry, ScheduledNoteEvents)> = match &session_key {
         Some(key) => {
             let mut sessions = state
                 .graph_mapping_sessions
@@ -6403,12 +6453,13 @@ fn map_probe_batch(
         .lock()
         .map_err(|error| GraphRefusal::lock_poisoned("levain banks", &error))?;
 
-    let mut registry = match resumed {
-        Some(registry) => registry,
+    let (mut registry, prior_scheduled) = match resumed {
+        Some(resumed) => resumed,
         None => {
             let mut registry = GraphRegistry::default();
+            let mut prior_scheduled = ScheduledNoteEvents::new();
             if !prior_commands.is_empty() {
-                replay_prior_commands(
+                prior_scheduled = replay_prior_commands(
                     prior_commands,
                     batch.timeline_lease.as_deref(),
                     &mut registry,
@@ -6418,18 +6469,23 @@ fn map_probe_batch(
                     &mut levain_banks,
                 )?;
             }
-            registry
+            (registry, prior_scheduled)
         }
     };
 
     // `map_batch` mutates the registry it maps onto, so the pre-batch state is
     // kept aside: a rejected batch must leave the session exactly where the
     // accepted history put it.
-    let pre_batch = session_key.as_ref().map(|_| registry.clone());
+    let pre_batch = session_key
+        .as_ref()
+        .map(|_| (registry.clone(), prior_scheduled.clone()));
     let base_revision = session_key.as_ref().map(|key| key.revision).unwrap_or(0);
     let batch_len = batch.commands.len() as u64;
 
     let correlation = batch.correlation.clone();
+    // The probe refuses what the render refuses, so the offline note total is
+    // checked as the render checks it: the events at one device across the
+    // replayed history and this batch together, which one render store holds.
     let mapped = map_batch(
         &batch,
         &mut registry,
@@ -6438,7 +6494,13 @@ fn map_probe_batch(
         &mut hosted,
         &mut AttachedCrumbs::default(),
         &mut levain_banks,
-    );
+    )
+    .and_then(|mapped| {
+        let mut scheduled = prior_scheduled;
+        add_scheduled_note_events(&mut scheduled, &scheduled_note_events(&mapped.ops));
+        check_offline_note_totals(&scheduled)?;
+        Ok((mapped, scheduled))
+    });
     drop(levain_banks);
     drop(samples);
 
@@ -6448,12 +6510,19 @@ fn map_probe_batch(
             .lock()
             .map_err(|error| GraphRefusal::lock_poisoned("mapping sessions", &error))?;
         match (&mapped, pre_batch) {
-            (Ok(_), _) => sessions.store(&key.session_id, registry, base_revision + batch_len),
-            (Err(_), Some(pre_batch)) => sessions.store(&key.session_id, pre_batch, base_revision),
+            (Ok((_, scheduled)), _) => sessions.store(
+                &key.session_id,
+                registry,
+                scheduled.clone(),
+                base_revision + batch_len,
+            ),
+            (Err(_), Some((pre_batch, scheduled))) => {
+                sessions.store(&key.session_id, pre_batch, scheduled, base_revision)
+            }
             (Err(_), None) => {}
         }
         return match mapped {
-            Ok(mapped) => result_json(&GraphApplyResultPayload::mapped(
+            Ok((mapped, _)) => result_json(&GraphApplyResultPayload::mapped(
                 correlation,
                 mapped.reports,
             )),
@@ -6462,7 +6531,7 @@ fn map_probe_batch(
     }
 
     match mapped {
-        Ok(mapped) => result_json(&GraphApplyResultPayload::mapped(
+        Ok((mapped, _)) => result_json(&GraphApplyResultPayload::mapped(
             correlation,
             mapped.reports,
         )),
@@ -6498,8 +6567,11 @@ fn map_offline_batch(
     if batch.schema_version == 2 || !native_grinder_inputs(batch)?.is_empty() {
         return Err(GraphRefusal::NamOfflineGated);
     }
+    // An offline mapping is offline whatever instances it was handed: the note
+    // ceiling it maps under is the offline one.
+    hosted.law = HostedBindingLaw::Offline;
     let mut registry = GraphRegistry::default();
-    Ok(map_batch(
+    let mut ops = map_batch(
         batch,
         &mut registry,
         samples,
@@ -6508,7 +6580,65 @@ fn map_offline_batch(
         &mut AttachedCrumbs::default(),
         levain_banks,
     )?
-    .ops)
+    .ops;
+    size_offline_note_stores(&mut ops)?;
+    Ok(ops)
+}
+
+/// The note events a mapped batch schedules at each engine plugin id.
+fn scheduled_note_events(ops: &[GraphCommand]) -> ScheduledNoteEvents {
+    let mut scheduled = ScheduledNoteEvents::new();
+    for op in ops {
+        if let GraphCommand::ScheduleMidiNotes { plugin_id, notes } = op {
+            *scheduled.entry(*plugin_id).or_default() += notes.len();
+        }
+    }
+    scheduled
+}
+
+/// Add the note events one span of commands schedules to the running total.
+fn add_scheduled_note_events(total: &mut ScheduledNoteEvents, span: &ScheduledNoteEvents) {
+    for (plugin_id, events) in span {
+        *total.entry(*plugin_id).or_default() += events;
+    }
+}
+
+/// Refuse a batch that schedules more note events at one device than an
+/// offline store may reserve. Each batch passed the per-batch ceiling, but
+/// several batches at one device add up in one store.
+fn check_offline_note_totals(scheduled: &ScheduledNoteEvents) -> Result<(), GraphRefusal> {
+    match scheduled
+        .values()
+        .copied()
+        .find(|&events| events > OFFLINE_NOTE_EVENT_CEILING)
+    {
+        Some(notes) => Err(GraphRefusal::MidiNoteCeiling {
+            notes,
+            ceiling: OFFLINE_NOTE_EVENT_CEILING,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Replace the note store each built-in instrument is registered with by one
+/// sized for the events the batch schedules at it, after refusing a batch
+/// past the offline ceiling. Hosted instruments are sized at registration
+/// ([`OfflinePluginInstances::register`]) from the same count.
+fn size_offline_note_stores(ops: &mut [GraphCommand]) -> Result<(), GraphRefusal> {
+    let scheduled = scheduled_note_events(ops);
+    check_offline_note_totals(&scheduled)?;
+    for op in ops {
+        let (GraphCommand::AddEffect(id, _, Some(store))
+        | GraphCommand::AddDetachedEffect(id, _, Some(store))) = op
+        else {
+            continue;
+        };
+        let events = scheduled.get(id).copied().unwrap_or(0);
+        if events > store.capacity() {
+            *store = offline_note_store(events);
+        }
+    }
+    Ok(())
 }
 
 /// Drive one mapped batch through the offline scheduler, refusing a render
@@ -6541,7 +6671,7 @@ fn render_offline_ops(
     // id its table does not hold yet.
     if let Some(plugins) = plugins {
         plugins
-            .register(&mut renderer)
+            .register(&mut renderer, &scheduled_note_events(&ops))
             .map_err(GraphRefusal::OfflineRender)?;
     }
     for op in ops {
@@ -6578,6 +6708,20 @@ fn render_offline_ops(
     };
     if refusals != TimelineRtDiagnosticsSnapshot::default() {
         return Err(GraphRefusal::OfflineDroppedCommands { diagnostics });
+    }
+
+    // Scheduled notes have their own refusal counters, and a refusal there is
+    // a rest in the print where the project has a note: a batch the device's
+    // store could not hold whole (two batches that each passed the per-batch
+    // check can still exceed it together), or notes past the block's event
+    // buffer. Late notes are no refusal: a render located past a note's frame
+    // stores it behind the playhead on purpose.
+    let midi = renderer.midi_diagnostics();
+    if midi.midi_note_batches_refused != 0 || midi.scheduler_event_buffer_overflows != 0 {
+        return Err(GraphRefusal::OfflineDroppedMidi {
+            batches_refused: midi.midi_note_batches_refused,
+            event_buffer_overflows: midi.scheduler_event_buffer_overflows,
+        });
     }
     Ok(rendered)
 }
@@ -6632,8 +6776,11 @@ fn render_offline_batch(
 ///
 /// `render_id` names the render so `cancel_graph_offline` can stop it between
 /// blocks; a cancelled render answers an error starting
-/// `offline-render-cancelled`. It runs on the calling worker, never on `ui`,
-/// which is only ever asked to build and tear down instances.
+/// `offline-render-cancelled`. At most `MAX_OFFLINE_RENDERS_IN_FLIGHT` renders,
+/// named or not, run at once: one past that is refused with
+/// `offline-render-limit-reached` before anything is mapped or built for it.
+/// It runs on the calling worker, never on `ui`, which is only ever asked to
+/// build and tear down instances.
 pub async fn render_graph_offline(
     batch: Value,
     frames: u32,
@@ -6678,6 +6825,10 @@ pub(crate) async fn render_graph_offline_with(
     }
 
     let render = InFlightRender::begin(state, render_id).map_err(GraphRefusal::OfflineRender)?;
+    #[cfg(test)]
+    if let Some(after_admission) = &seams.after_admission {
+        after_admission();
+    }
     let mut hosted = HostedInstances::offline(state)?;
 
     // Both locks span only the mapping: every source the batch plays is cloned
@@ -6713,7 +6864,7 @@ pub(crate) async fn render_graph_offline_with(
     if let Some(after_mapping) = &seams.after_mapping {
         after_mapping(state);
     }
-    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams)
+    let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams, &render)
         .await
         .map_err(GraphRefusal::OfflineRender)?;
     let (left, right) =
@@ -15072,10 +15223,9 @@ mod tests {
     }
 
     /// The offline law's refusal side: an instance the engine does not hold
-    /// still refuses a sounding strip, and an attached instrument refuses by
-    /// device and plugin name, because no offline instance of one is built.
+    /// still refuses a sounding strip, by device and instance name.
     #[test]
-    fn an_offline_render_refuses_an_unattached_instance_and_a_hosted_instrument_by_name() {
+    fn an_offline_render_refuses_an_unattached_instance_by_name() {
         let Err(unattached) = map_offline_against(
             &batch(hosted_plugin_strip(true, false)),
             &AppState::default(),
@@ -15086,19 +15236,29 @@ mod tests {
             unattached.contains("'d-plugin'") && unattached.contains("not attached to the engine"),
             "{unattached}"
         );
+    }
 
-        let Err(instrument) = map_offline_against(
-            &batch(hosted_plugin_strip(true, false)),
-            &state_attaching("inst-1", 1_007, DeviceKind::Generator),
-        ) else {
-            panic!("a hosted instrument must not render offline yet");
+    /// An attached hosted instrument is admitted exactly as an effect is: on a
+    /// sounding strip it binds under the live instance's engine plugin id as a
+    /// generator, and on a silent strip nothing is bound for it.
+    #[test]
+    fn an_offline_render_binds_an_attached_instrument_on_a_sounding_strip_only() {
+        let state = state_attaching("inst-1", 1_007, DeviceKind::Generator);
+
+        let Ok((_, bound)) = map_offline_against(&batch(hosted_plugin_strip(true, false)), &state)
+        else {
+            panic!("an attached instrument on a sounding strip is admitted");
         };
-        assert!(
-            instrument.contains("'d-plugin'")
-                && instrument.contains("'Pro-Q Fixture'")
-                && instrument.contains("hosted instruments do not render offline yet"),
-            "{instrument}"
-        );
+        assert_eq!(bound.len(), 1);
+        assert_eq!(bound[0].engine_plugin_id, 1_007);
+        assert_eq!(bound[0].chain_kind, DeviceKind::Generator);
+
+        let Ok((_, silent)) =
+            map_offline_against(&batch(hosted_plugin_strip(false, false)), &state)
+        else {
+            panic!("an instrument on a silent strip is omitted, not refused");
+        };
+        assert!(silent.is_empty(), "no instance is built for silence");
     }
 
     /// The offline law's admission side: an attached effect on a sounding
@@ -15123,6 +15283,9 @@ mod tests {
                 plugin_name: "Pro-Q Fixture".to_string(),
                 engine_plugin_id: 1_007,
                 chain_kind: DeviceKind::Effect,
+                live_runtime: Arc::downgrade(
+                    &state.engine_plugins.lock().unwrap()["inst-1"].runtime
+                ),
             }]
         );
 
@@ -15138,7 +15301,7 @@ mod tests {
     /// One decision for both offline seams: the probe `map_graph_batch`
     /// admits and refuses exactly the hosted devices the render's mapping
     /// does, with the same reason. Mutation: map the probe against an empty
-    /// lookup again — the attached-effect rows diverge.
+    /// lookup again — the attached rows diverge.
     #[test]
     fn the_offline_probe_admits_and_refuses_exactly_what_the_render_maps() {
         let cases = [
@@ -15175,8 +15338,8 @@ mod tests {
             admitted += usize::from(probe.is_ok());
         }
         assert_eq!(
-            admitted, 2,
-            "both the attached effect and its silent strip map"
+            admitted, 3,
+            "the attached effect, its silent strip and the attached instrument map"
         );
     }
 
@@ -16278,6 +16441,272 @@ mod tests {
                 .iter()
                 .any(|sample| *sample != 0.0),
             "the note never sounded in the offline render"
+        );
+    }
+
+    /// An offline render holds the whole arrangement at once, so a built-in
+    /// instrument's store is sized from the notes the batch sends it: two
+    /// batches that together pass the live store's reserve print whole, where
+    /// a store built at the live reserve would refuse the second on the render
+    /// thread and the render would be refused for the rests it would carry.
+    #[test]
+    fn an_offline_render_sizes_a_builtins_note_store_from_the_notes_it_is_sent() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        // Five frames apart: no block holds more than its event buffer does.
+        let filling: Vec<Value> = (0..3 * MIDI_NOTE_STORE_CAPACITY)
+            .map(|index| note_at((480 + 5 * index) as f64 / f64::from(SAMPLE_RATE), 60, 0))
+            .collect();
+        let commands = |second: Value| {
+            json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": {} } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                { "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                  "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": filling },
+                second,
+            ])
+        };
+        let second_batch = |notes: Value| {
+            json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes })
+        };
+        let render = |second: Value| {
+            render_offline_batch(
+                &midi_batch(commands(second)),
+                &sample_pool(),
+                &mut LevainBankStore::default(),
+                40_000,
+                SAMPLE_RATE,
+            )
+        };
+
+        render(second_batch(json!([note_at(0.005, 62, 0)])))
+            .expect("a store sized from both batches takes the second");
+    }
+
+    /// The offline ceiling is the one an offline mapping refuses by: more
+    /// events than the live store holds map, one past the offline ceiling is
+    /// refused by name.
+    #[test]
+    fn an_offline_mapping_refuses_a_batch_past_the_offline_note_ceiling() {
+        let map = |count: usize| {
+            let notes: Vec<Value> = (0..count)
+                .map(|index| note_at(index as f64 / 48_000.0, 60, 0))
+                .collect();
+            let commands = json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": {} } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                { "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                  "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes },
+            ]);
+            map_offline_batch(
+                &midi_batch(commands),
+                &sample_pool(),
+                &mut LevainBankStore::default(),
+                48_000.0,
+                &mut HostedInstances::default(),
+            )
+            .map(|ops| ops.len())
+            .map_err(|refusal| refusal.to_string())
+        };
+
+        map(MIDI_NOTE_STORE_CAPACITY + 1).expect("past the live reserve, within the offline one");
+        map(OFFLINE_NOTE_EVENT_CEILING).expect("exactly the offline ceiling fits");
+        let refusal = map(OFFLINE_NOTE_EVENT_CEILING + 1)
+            .expect_err("one event past the offline ceiling is refused");
+        assert!(
+            refusal.contains(&format!(
+                "past the store's ceiling of {OFFLINE_NOTE_EVENT_CEILING}"
+            )),
+            "{refusal}"
+        );
+    }
+
+    /// The probe refuses what the render refuses: note events at one device
+    /// across the replayed prior and the incoming batch share one render store,
+    /// so each part under the ceiling can still pass it together.
+    #[test]
+    fn map_graph_batch_counts_note_events_across_the_prior_and_the_batch() {
+        const PRIOR_EVENTS: usize = OFFLINE_NOTE_EVENT_CEILING / 2;
+        let schedule = |count: usize, first_index: usize| {
+            let notes: Vec<Value> = (first_index..first_index + count)
+                .map(|index| note_at(index as f64 / 48_000.0, 60, 0))
+                .collect();
+            json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes })
+        };
+        let strip = json!({
+            "kind": "create-track-strip",
+            "trackId": "t1",
+            "name": "Lead",
+            "state": strip_state(1.0),
+            "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                           "parameterValues": {} } ],
+            "honorMuted": true,
+            "contributesAudio": true
+        });
+        let probe = |batch_events: usize| {
+            let state = AppState::default();
+            block_on_test(map_graph_batch(
+                json!([strip.clone(), schedule(PRIOR_EVENTS, 0)]),
+                json!({ "schemaVersion": 1,
+                        "commands": [schedule(batch_events, PRIOR_EVENTS)] }),
+                48_000.0,
+                None,
+                &state,
+            ))
+            .expect("a refusal resolves to a result")
+        };
+
+        let at_ceiling = probe(OFFLINE_NOTE_EVENT_CEILING - PRIOR_EVENTS);
+        assert_eq!(at_ceiling["acceptance"], "accepted", "{at_ceiling}");
+
+        let over = probe(OFFLINE_NOTE_EVENT_CEILING - PRIOR_EVENTS + 1);
+        assert_eq!(over["acceptance"], "rejected", "{over}");
+        // The refusal one batch holding every event gets from the render
+        let single = map_offline_batch(
+            &midi_batch(json!([
+                strip.clone(),
+                schedule(OFFLINE_NOTE_EVENT_CEILING + 1, 0)
+            ])),
+            &sample_pool(),
+            &mut LevainBankStore::default(),
+            48_000.0,
+            &mut HostedInstances::default(),
+        )
+        .map(|ops| ops.len())
+        .expect_err("one batch past the offline ceiling is refused")
+        .to_string();
+        // (it also names the command it indexes, which a total has none to name).
+        assert!(
+            single.ends_with(
+                over["reason"]
+                    .as_str()
+                    .expect("a rejection names its reason")
+            ),
+            "probe: {over}; render: {single}"
+        );
+    }
+
+    /// A resumed mapping session carries the note events its earlier batches
+    /// scheduled, so the probe refuses a total past the ceiling exactly as a
+    /// fresh replay of the same history does, and accepts one at the ceiling.
+    #[test]
+    fn a_resumed_mapping_session_counts_the_note_events_its_earlier_batches_scheduled() {
+        const FIRST_EVENTS: usize = OFFLINE_NOTE_EVENT_CEILING / 2;
+        let schedule = |count: usize, first_index: usize| {
+            let notes: Vec<Value> = (first_index..first_index + count)
+                .map(|index| note_at(index as f64 / 48_000.0, 60, 0))
+                .collect();
+            json!({ "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": notes })
+        };
+        let strip = json!({
+            "kind": "create-track-strip",
+            "trackId": "t1",
+            "name": "Lead",
+            "state": strip_state(1.0),
+            "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                           "parameterValues": {} } ],
+            "honorMuted": true,
+            "contributesAudio": true
+        });
+        let resumed_probe = |second_events: usize| {
+            let state = AppState::default();
+            let first = block_on_test(map_graph_batch(
+                json!([]),
+                batch_of(json!([strip.clone(), schedule(FIRST_EVENTS, 0)])),
+                48_000.0,
+                session_key("s1", 0),
+                &state,
+            ))
+            .expect("establishing apply resolves");
+            assert_eq!(first["acceptance"], "accepted", "{first}");
+            block_on_test(map_graph_batch(
+                json!([]),
+                batch_of(json!([schedule(second_events, FIRST_EVENTS)])),
+                48_000.0,
+                session_key("s1", 2),
+                &state,
+            ))
+            .expect("a refusal resolves to a result")
+        };
+        let fresh_probe = |second_events: usize| {
+            let state = AppState::default();
+            block_on_test(map_graph_batch(
+                json!([strip.clone(), schedule(FIRST_EVENTS, 0)]),
+                batch_of(json!([schedule(second_events, FIRST_EVENTS)])),
+                48_000.0,
+                None,
+                &state,
+            ))
+            .expect("a refusal resolves to a result")
+        };
+
+        let at_ceiling = resumed_probe(OFFLINE_NOTE_EVENT_CEILING - FIRST_EVENTS);
+        assert_eq!(at_ceiling["acceptance"], "accepted", "{at_ceiling}");
+
+        let over = resumed_probe(OFFLINE_NOTE_EVENT_CEILING - FIRST_EVENTS + 1);
+        assert_eq!(over["acceptance"], "rejected", "{over}");
+        let fresh = fresh_probe(OFFLINE_NOTE_EVENT_CEILING - FIRST_EVENTS + 1);
+        assert_eq!(fresh["acceptance"], "rejected", "{fresh}");
+        assert_eq!(
+            over["reason"], fresh["reason"],
+            "resumed: {over}; fresh: {fresh}"
+        );
+    }
+
+    /// More notes at one frame than a block's event buffer holds: the buffer
+    /// refuses the rest, and a print without them is not the batch.
+    #[test]
+    fn an_offline_render_refuses_notes_past_the_blocks_event_buffer() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        let chord: Vec<Value> = (0..200u32)
+            .map(|index| note_at(0.01, (index % 128) as u8, (index / 128) as u8))
+            .collect();
+
+        let refusal = render_offline_batch(
+            &midi_batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": {} } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                { "kind": "schedule-midi", "trackId": "t1", "deviceId": "d-ferm",
+                  "probabilitySeed": MIDI_PROBABILITY_SEED, "notes": chord },
+            ])),
+            &sample_pool(),
+            &mut LevainBankStore::default(),
+            1_440,
+            SAMPLE_RATE,
+        )
+        .expect_err("the block's event buffer cannot hold the chord");
+
+        assert!(
+            refusal.starts_with("offline-render-dropped-midi:")
+                && refusal.contains("note-store batch refusals: 0, event-buffer overflows: ")
+                && !refusal.contains("event-buffer overflows: 0"),
+            "{refusal}"
         );
     }
 

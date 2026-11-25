@@ -58,6 +58,7 @@ import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
+import { type AnsweringTurn, answeringStatus } from '../../stores/answeringStatus';
 import { machineMemoryStore } from '../../stores/machineMemoryStore';
 import { budgetLocalPlanningRequest } from '../../transformers/budgetLocalPlanningRequest';
 import {
@@ -87,7 +88,6 @@ import { describeNoAiBackendRemedy } from '../describeNoAiBackendRemedy';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
-import { type AnsweringTurn, answeringStatus } from './answeringStatus';
 import { getBackendChain } from './backendResolution/getBackendChain';
 import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategories';
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
@@ -1051,7 +1051,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     throw createToolPlanningAbortError();
                 }
                 if (isTerminalModelRejection || isAdmissionRejection) {
-                    settleReady(backend);
+                    // Admission can refuse before the local engine loads; a model rejection implies it loaded.
+                    settleRefusedAttempt(backend);
                     return { status: 'rejected', reason: error.message };
                 }
                 lastError = readChainAttemptFailure(error, normalizedAttemptError);

@@ -31,7 +31,13 @@ const shaper = {
     parameterValues: { attackGain: 1.5, sustainGain: 0.5 },
 };
 const track = { ...createTrack({ id: 'audio', name: 'Drums', kind: 'audio' }), devices: [shaper] };
-const input = { renderableTracks: [track], scheduledTracks: [track], sidechainRoutes: [], gainEnvelopes: {} };
+const input = {
+    frameCount: 48_000 * 60,
+    renderableTracks: [track],
+    scheduledTracks: [track],
+    sidechainRoutes: [],
+    gainEnvelopes: {},
+};
 
 describe('Transient Shaper offline backend admission', () => {
     it('selects the actual native body for an otherwise eligible shaper chain', async () => {

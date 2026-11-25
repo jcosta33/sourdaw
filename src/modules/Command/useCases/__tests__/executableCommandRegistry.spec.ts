@@ -1644,6 +1644,39 @@ const EXPECTED_COMMANDS = [
         'bounded-reversible',
         false
     ),
+    expectedCommand(
+        'hideTrack',
+        "Hide a track's row from the arrangement and mixer, or show it again; a hidden track still plays.",
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            hidden: { type: 'boolean', description: 'true=hide, false=show' },
+        },
+        ['trackId', 'hidden'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'foldTrack',
+        "Fold a folder track to hide its children's rows, or unfold it.",
+        {
+            trackId: { type: 'string', description: 'Existing folder track ID' },
+            folded: { type: 'boolean', description: 'true=fold, false=unfold' },
+        },
+        ['trackId', 'folded'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setTrackHeight',
+        "Set a track's row height in pixels, from 30 to 300.",
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            height: { type: 'number', minimum: 30, maximum: 300, description: 'Row height in pixels, 30 to 300' },
+        },
+        ['trackId', 'height'],
+        'bounded-reversible',
+        false
+    ),
 ];
 
 const EXPECTED_GROUNDING = [
@@ -3015,6 +3048,47 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['reorder yeast processor', 'move midi effect'],
         targetRules: [],
         valueRules: [],
+    },
+    {
+        actionType: 'hideTrack',
+        intentPhrases: ['hide', 'unhide'],
+        targetRules: [{ argument: 'trackId', capability: 'hideable-track', allowBatchLocal: false }],
+        valueRules: [
+            {
+                argument: 'hidden',
+                kind: 'boolean-intent',
+                truePhrases: ['hide'],
+                falsePhrases: ['unhide'],
+            },
+        ],
+    },
+    {
+        actionType: 'foldTrack',
+        intentPhrases: [
+            'fold folder',
+            'fold the folder',
+            'collapse folder',
+            'collapse the folder',
+            'unfold folder',
+            'unfold the folder',
+            'expand folder',
+            'expand the folder',
+        ],
+        targetRules: [{ argument: 'trackId', capability: 'folder-track', allowBatchLocal: false }],
+        valueRules: [
+            {
+                argument: 'folded',
+                kind: 'boolean-intent',
+                truePhrases: ['fold folder', 'fold the folder', 'collapse folder', 'collapse the folder'],
+                falsePhrases: ['unfold folder', 'unfold the folder', 'expand folder', 'expand the folder'],
+            },
+        ],
+    },
+    {
+        actionType: 'setTrackHeight',
+        intentPhrases: ['track height', 'row height', 'resize track'],
+        targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
+        valueRules: [{ argument: 'height', kind: 'number-if-present', requiredInPrompt: true }],
     },
 ] as const;
 

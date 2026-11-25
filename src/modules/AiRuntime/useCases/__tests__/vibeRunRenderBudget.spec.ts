@@ -86,8 +86,8 @@ vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
 
 /** The plan's receipt bound, lowered by one case below to just under what its run persists. */
 const receiptBound = vi.hoisted((): { value: number | null } => ({ value: null }));
-vi.mock('../../stores/agentRunStore', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../stores/agentRunStore')>();
+vi.mock('../../models/AgentRunPlanBounds', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../models/AgentRunPlanBounds')>();
     return {
         ...original,
         get MAX_PLAN_APPLICATION_TOOL_RECEIPTS() {

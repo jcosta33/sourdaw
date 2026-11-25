@@ -201,7 +201,6 @@ describe('the mounted ruler follows committed meter-map history', () => {
         clearHandlerRegistry();
         stopProjectionBridge();
         configureAutomergeStoragePort(null);
-        setTimeOperationDependencies(null);
         sessionStorage.removeItem('sourdaw-undo-session');
         removeCrdtDoc('root');
         vi.restoreAllMocks();

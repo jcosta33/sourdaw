@@ -269,6 +269,7 @@ export const grooveTemplateProjectorByActionType: {
     setToasterFactoryKit: leaveGrooveTemplateStateUnchanged,
     setBacteriaFactoryPatch: leaveGrooveTemplateStateUnchanged,
     setGlutenFactoryPreset: leaveGrooveTemplateStateUnchanged,
+    setProofPatchSelection: leaveGrooveTemplateStateUnchanged,
     createBus: leaveGrooveTemplateStateUnchanged,
     createFolder: leaveGrooveTemplateStateUnchanged,
     setSend: leaveGrooveTemplateStateUnchanged,

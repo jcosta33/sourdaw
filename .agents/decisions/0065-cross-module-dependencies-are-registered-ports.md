@@ -55,7 +55,7 @@ returning `null` for "no collaboration session", and every caller handles it. Th
 never accepts `null` to unregister.
 
 Only the composition root under `src/app/` may configure ports, through registrar functions. No
-module may export a mutable binding; the lint rule `import-x/no-mutable-exports` is the guard that
+module may export a mutable binding; the Oxlint rule `import/no-mutable-exports` is the guard that
 enforces it once the migration is complete. Registration must not run as a side effect of
 evaluation. `src/app/bootstrap.ts` must export one entry function, and `main.tsx` must call it and
 the port registrars explicitly, each once, in an order that `main.tsx` states. A registrar's
@@ -78,6 +78,6 @@ No dependency-injection library is added. `Container` and `inject()` keep their 
 A wiring fault fails loudly at its first read with the registrar to call, instead of silently
 skipping. Registration order becomes one list a reviewer can read in `main.tsx` and the entry
 function. Specs stop resetting ports between cases. Existing ports that already have this shape stay
-as they are; the others migrate module by module. The `import-x/no-mutable-exports` guard is turned
+as they are; the others migrate module by module. The `import/no-mutable-exports` guard is turned
 on by the change that migrates the last exported binding, and a later slice replaces registration at
 import with the explicit entry-function and registrar calls in `main.tsx`.

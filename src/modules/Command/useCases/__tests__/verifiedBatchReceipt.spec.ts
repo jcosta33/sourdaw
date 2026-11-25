@@ -375,7 +375,6 @@ describe('verified batch receipt', () => {
         undoTreeStore.set({ tree: createEmptyTree(), enabled: false });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         clearHandlerRegistry();
     });

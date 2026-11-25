@@ -6,11 +6,12 @@ import { logger } from '#/infra/logger/appLogger';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
+    commandProjectDivergencePort,
     compileVersionedCommandBatchEnvelope,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
-import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, inspectAgentProjectDivergence } from '#/modules/CrdtDocument/useCases';
 
 import {
     clearPendingActionConfirmations,
@@ -28,6 +29,7 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+import { AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON } from './aiWorkflowCommandPreflightFixture';
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
@@ -226,6 +228,7 @@ function proposePendingAppAction(
 describe('pending chat action confirmation', () => {
     beforeEach(() => {
         configureAiWorkflowCommandCheckpointRuntime();
+        commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
         commandBatchPreflightPort.setProvider(({ targetIds }) => ({
             audioGraphValid: true,
             availableAssetHashes: [],
@@ -309,7 +312,6 @@ describe('pending chat action confirmation', () => {
 
     afterEach(() => {
         resetAiWorkflowCommandCheckpointRuntime();
-        commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
         vi.restoreAllMocks();
     });
@@ -378,7 +380,8 @@ describe('pending chat action confirmation', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(getPendingActionConfirmation('confirm-stale')?.status).toBe('invalidated');
@@ -386,7 +389,7 @@ describe('pending chat action confirmation', () => {
             'assistant-1',
             expect.objectContaining({
                 pendingActionConfirmationStatus: 'invalidated',
-                content: expect.stringContaining('project changed'),
+                content: expect.stringContaining('project divergence is ambiguous-same-object'),
             })
         );
     });

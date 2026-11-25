@@ -11,8 +11,14 @@ export const PERCEPTUAL_CONSTRAINT_IDS = [
     'loudness-not-raised-v1',
     'loudness-not-lowered-v1',
     'stereo-width-held-v1',
+    'stereo-width-not-widened-v1',
+    'stereo-width-not-narrowed-v1',
     'dynamics-held-v1',
+    'dynamics-not-raised-v1',
+    'dynamics-not-reduced-v1',
     'brightness-held-v1',
+    'brightness-not-raised-v1',
+    'brightness-not-lowered-v1',
     'unsupported',
 ] as const;
 
@@ -30,8 +36,14 @@ export const MEASURED_PERCEPTUAL_CONSTRAINT_IDS = [
     'loudness-not-raised-v1',
     'loudness-not-lowered-v1',
     'stereo-width-held-v1',
+    'stereo-width-not-widened-v1',
+    'stereo-width-not-narrowed-v1',
     'dynamics-held-v1',
+    'dynamics-not-raised-v1',
+    'dynamics-not-reduced-v1',
     'brightness-held-v1',
+    'brightness-not-raised-v1',
+    'brightness-not-lowered-v1',
 ] as const;
 
 /**

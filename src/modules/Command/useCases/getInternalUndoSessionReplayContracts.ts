@@ -45,7 +45,12 @@ function createEntryBeginningReplayContract(actionType: 'restoreAutomationLanePo
 }
 
 function createCapturedDeviceReplayContract(
-    actionType: 'setBacteriaFactoryPatch' | 'setGlutenFactoryPreset' | 'setLevainIdentity' | 'setToasterFactoryKit'
+    actionType:
+        | 'setBacteriaFactoryPatch'
+        | 'setGlutenFactoryPreset'
+        | 'setLevainIdentity'
+        | 'setProofPatchSelection'
+        | 'setToasterFactoryKit'
 ): SessionActionContract {
     return {
         actionType,
@@ -54,6 +59,19 @@ function createCapturedDeviceReplayContract(
         validateArguments: (payload: unknown) =>
             validateVersionedCommandArguments(actionType, payload) &&
             getHandlerByType(actionType)?.validateSessionActionArguments?.(payload) === true,
+        validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+    };
+}
+
+/** A forward command whose own handler validates the whole undo entry it recorded. */
+function createOwnerEntryReplayContract(
+    actionType: 'commitRecording' | 'editTempoMap' | 'deleteTime' | 'zoomTracksVertical'
+): SessionActionContract {
+    return {
+        actionType,
+        operationVersion: 1,
+        role: 'forward',
+        validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
         validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
     };
 }
@@ -73,19 +91,21 @@ function createTransportBarsReplayContracts(): readonly SessionActionContract[] 
 }
 
 /**
+ * Not an agent command, but a person's vertical zoom is undoable and its undo survives a reload. The
+ * inverse restores the heights the zoom clamped from, and the zoom's own entry validator binds it.
+ */
+function createVerticalZoomReplayContracts(): readonly SessionActionContract[] {
+    return [createOwnerEntryReplayContract('zoomTracksVertical'), createInternalReplayContract('restoreTrackHeights')];
+}
+
+/**
  * Local actions and internal inverse actions are replayable session state, not
  * provider operations. Keep these contracts separate from executable discovery
  * while injecting them into the store-owned mirror at production registration.
  */
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
-        {
-            actionType: 'commitRecording',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('commitRecording', payload),
-            validateEntry: (entry) => getHandlerByType('commitRecording')?.validateSessionEntry?.(entry) === true,
-        },
+        createOwnerEntryReplayContract('commitRecording'),
         {
             actionType: 'insertAutomationLanePoints',
             operationVersion: 1,
@@ -100,16 +120,11 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
+        createCapturedDeviceReplayContract('setProofPatchSelection'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
-        {
-            actionType: 'editTempoMap',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('editTempoMap', payload),
-            validateEntry: (entry) => getHandlerByType('editTempoMap')?.validateSessionEntry?.(entry) === true,
-        },
+        createOwnerEntryReplayContract('editTempoMap'),
         {
             actionType: 'relinkClipAudioSources',
             operationVersion: 1,
@@ -123,13 +138,8 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
                         validateVersionedCommandArguments('relinkClipAudioSources', action.payload)
                 ) && getHandlerByType('relinkClipAudioSources')?.validateSessionEntry?.(entry) === true,
         },
-        {
-            actionType: 'deleteTime',
-            operationVersion: 1,
-            role: 'forward',
-            validateArguments: (payload: unknown) => validateVersionedCommandArguments('deleteTime', payload),
-            validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
-        },
+        createOwnerEntryReplayContract('deleteTime'),
+        ...createVerticalZoomReplayContracts(),
         ...createTransportBarsReplayContracts(),
         createInternalReplayContract('discardCreatedTrack'),
         createInternalReplayContract('discardDuplicatedClip'),

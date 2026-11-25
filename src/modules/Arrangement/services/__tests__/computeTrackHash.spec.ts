@@ -63,4 +63,19 @@ describe('computeTrackHash', () => {
 
         expect(hash1).toBe(hash2);
     });
+
+    it('keeps a hash computed before Auto Makeup existed current once the projection fills the switch on', async () => {
+        const clips: Clip[] = [{ id: 'c1', startBeat: 0, endBeat: 4, assetHash: 'hash1', gain: 1 } as Clip];
+        const compressorWith = (parameterValues: Record<string, number>): Device[] => [
+            { id: 'd1', name: 'Compressor', type: 'builtin-compressor', bypassed: false, parameterValues },
+        ];
+        const frozenWithoutKey = compressorWith({ 'comp-threshold': -24 });
+        const filledOn = compressorWith({ 'comp-threshold': -24, 'comp-auto-makeup': 1 });
+        const switchedOff = compressorWith({ 'comp-threshold': -24, 'comp-auto-makeup': 0 });
+
+        const frozenHash = await computeTrackHash(clips, frozenWithoutKey);
+
+        expect(await computeTrackHash(clips, filledOn)).toBe(frozenHash);
+        expect(await computeTrackHash(clips, switchedOff)).not.toBe(frozenHash);
+    });
 });

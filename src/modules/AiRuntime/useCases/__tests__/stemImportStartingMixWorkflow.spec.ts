@@ -823,7 +823,6 @@ describe('stem import and starting mix workflow', () => {
         clearAiHistory();
         clearUndoHistory();
         resetActionReplayAuthority();
-        commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState });
