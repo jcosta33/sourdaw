@@ -28,6 +28,7 @@ import {
     type WorkspaceObservation,
     WORKSPACE_STAGES,
 } from '../desktopEditorWorkspaceEvidence.ts';
+import { heldReadingsMatch } from '../desktopEditorWorkspacePlayhead.ts';
 import { scaleStep } from '../desktopEditorWorkspaceScale.ts';
 import * as editorSession from '../desktopFermenterDrive.ts';
 import { FermenterDriveError, FERMENTER_OBSERVATIONS, type FermenterDrive } from '../desktopFermenterEvidence.ts';
@@ -468,6 +469,14 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
 };
 
 describe('packaged editor workspace proof', () => {
+    it.each([
+        [['Bars3.1.000', 'Bars3.1.000'], true],
+        [['Bars2.4.240', 'Bars2.4.240'], false],
+        [['Bars3.1.000', 'Bars3.1.001'], false],
+        [['Bars3.1.000'], false],
+    ] as const)('requires the expected beat throughout the hold window: %s', (values, expected) => {
+        expect(heldReadingsMatch([...values], 8)).toBe(expected);
+    });
     it('rejects passed stage flags when timeline evidence is missing', async () => {
         const { options, env } = fixture();
         const record = await runEditorWorkspaceProof(options, env, {

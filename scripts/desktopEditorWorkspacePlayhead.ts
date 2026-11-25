@@ -12,6 +12,12 @@ export async function playhead(page: Page): Promise<number> {
     return beat;
 }
 
+export function heldReadingsMatch(values: string[], expected: number): boolean {
+    return (
+        values.length > 1 && values.every((value) => value === values[0] && renderedPlayheadBeat(value) === expected)
+    );
+}
+
 export async function heldPlayhead(page: Page, expected: number): Promise<number> {
     // Observe every animation frame for a bounded stability window, rather than one immediate reading.
     const values = await page.getByTestId('transport-playhead').evaluate(async (element) => {
@@ -23,7 +29,7 @@ export async function heldPlayhead(page: Page, expected: number): Promise<number
         } while (performance.now() - started < 400);
         return readings;
     });
-    assert(values.length > 1 && values.every((value) => value === values[0]));
+    assert(heldReadingsMatch(values, expected));
     assert.equal(await playhead(page), expected);
     return values.length;
 }
