@@ -59,467 +59,140 @@ describe('syncGrinderPatchToAudio', () => {
 
     it('writes the Rectifier Heavy factory preset in its original order', () => {
         const preset = GRINDER_PRESETS.find(({ id }) => id === 'gr-rectifier-heavy');
-        expect(preset).toBeDefined();
         if (!preset) throw new Error('Rectifier Heavy preset is missing');
-        const trace: Array<[string, number] | ['neural', unknown]> = [];
-        update_device_param.mockImplementation((_track, _device, key, value) => trace.push([key, value]));
-        update_device_patch.mockImplementation((_track, _device, patch) => trace.push(['neural', patch]));
         run(migrateGrinderPatch(preset.patch));
-        expect(trace).toMatchInlineSnapshot(`
-          [
-            [
-              "cabIrSlot",
-              0,
-            ],
-            [
-              "neuralEnabled",
-              0,
-            ],
-            [
-              "engineMode",
-              0,
-            ],
-            [
-              "inputImpedance",
-              1000,
-            ],
-            [
-              "inputGain",
-              0,
-            ],
-            [
-              "inputMode",
-              0,
-            ],
-            [
-              "gateEnabled",
-              0,
-            ],
-            [
-              "gateThreshold",
-              -60,
-            ],
-            [
-              "gateAttack",
-              2,
-            ],
-            [
-              "gateRelease",
-              120,
-            ],
-            [
-              "ampModel",
-              4,
-            ],
-            [
-              "gain",
-              9,
-            ],
-            [
-              "channel",
-              2,
-            ],
-            [
-              "bright",
-              0,
-            ],
-            [
-              "fat",
-              0,
-            ],
-            [
-              "tubeBias",
-              0.5,
-            ],
-            [
-              "tubeAge",
-              0,
-            ],
-            [
-              "millerCapacitance",
-              0.5,
-            ],
-            [
-              "gridConduction",
-              0.5,
-            ],
-            [
-              "couplingCapCharge",
-              0.5,
-            ],
-            [
-              "toneStackType",
-              1,
-            ],
-            [
-              "bass",
-              7,
-            ],
-            [
-              "mid",
-              5,
-            ],
-            [
-              "treble",
-              6,
-            ],
-            [
-              "presence",
-              5,
-            ],
-            [
-              "resonance",
-              6,
-            ],
-            [
-              "brightCap",
-              0,
-            ],
-            [
-              "master",
-              4,
-            ],
-            [
-              "powerTubeType",
-              0,
-            ],
-            [
-              "rectifierType",
-              0,
-            ],
-            [
-              "sagAmount",
-              0.6,
-            ],
-            [
-              "sagRecovery",
-              300,
-            ],
-            [
-              "negFeedback",
-              0.5,
-            ],
-            [
-              "powerAmpBias",
-              0.5,
-            ],
-            [
-              "transformerDrive",
-              0.3,
-            ],
-            [
-              "transformerHysteresis",
-              0.3,
-            ],
-            [
-              "transformerLfSaturation",
-              0.3,
-            ],
-            [
-              "cabType",
-              2,
-            ],
-            [
-              "cabEnabled",
-              1,
-            ],
-            [
-              "cabResonanceFreq",
-              80,
-            ],
-            [
-              "cabResonanceQ",
-              2,
-            ],
-            [
-              "cabDamping",
-              0.5,
-            ],
-            [
-              "cabOpenBack",
-              0,
-            ],
-            [
-              "coneBreakup",
-              0.3,
-            ],
-            [
-              "backEmf",
-              0.2,
-            ],
-            [
-              "micBlend",
-              0,
-            ],
-            [
-              "roomAmount",
-              0.1,
-            ],
-            [
-              "neuralPlacement",
-              0,
-            ],
-            [
-              "neuralTier",
-              0,
-            ],
-            [
-              "neuralMix",
-              1,
-            ],
-            [
-              "neuralCpuBudget",
-              1,
-            ],
-            [
-              "outputGain",
-              0,
-            ],
-            [
-              "outputMix",
-              1,
-            ],
-            [
-              "limiterEnabled",
-              1,
-            ],
-            [
-              "limiterThreshold",
-              -0.3,
-            ],
-            [
-              "routingMode",
-              0,
-            ],
-            [
-              "cleanBlend",
-              0,
-            ],
-            [
-              "preCompressorEnabled",
-              0,
-            ],
-            [
-              "preCompressorThreshold",
-              -24,
-            ],
-            [
-              "preCompressorRatio",
-              3,
-            ],
-            [
-              "preCompressorAttack",
-              16,
-            ],
-            [
-              "preCompressorRelease",
-              220,
-            ],
-            [
-              "preOverdriveEnabled",
-              0,
-            ],
-            [
-              "preOverdriveDrive",
-              2.8,
-            ],
-            [
-              "preOverdriveTone",
-              5.2,
-            ],
-            [
-              "preOverdriveLevel",
-              5.4,
-            ],
-            [
-              "preDistortionEnabled",
-              0,
-            ],
-            [
-              "preDistortionDrive",
-              5.2,
-            ],
-            [
-              "preDistortionTone",
-              4.4,
-            ],
-            [
-              "preDistortionLevel",
-              7.2,
-            ],
-            [
-              "preFuzzEnabled",
-              0,
-            ],
-            [
-              "preFuzzFuzz",
-              6.8,
-            ],
-            [
-              "preFuzzTone",
-              4.8,
-            ],
-            [
-              "preFuzzLevel",
-              6.4,
-            ],
-            [
-              "postCompressorEnabled",
-              0,
-            ],
-            [
-              "postCompressorThreshold",
-              -24,
-            ],
-            [
-              "postCompressorRatio",
-              3,
-            ],
-            [
-              "postCompressorAttack",
-              16,
-            ],
-            [
-              "postCompressorRelease",
-              220,
-            ],
-            [
-              "postOverdriveEnabled",
-              0,
-            ],
-            [
-              "postOverdriveDrive",
-              2.8,
-            ],
-            [
-              "postOverdriveTone",
-              5.2,
-            ],
-            [
-              "postOverdriveLevel",
-              5.4,
-            ],
-            [
-              "postDistortionEnabled",
-              0,
-            ],
-            [
-              "postDistortionDrive",
-              5.2,
-            ],
-            [
-              "postDistortionTone",
-              4.4,
-            ],
-            [
-              "postDistortionLevel",
-              7.2,
-            ],
-            [
-              "postFuzzEnabled",
-              0,
-            ],
-            [
-              "postFuzzFuzz",
-              6.8,
-            ],
-            [
-              "postFuzzTone",
-              4.8,
-            ],
-            [
-              "postFuzzLevel",
-              6.4,
-            ],
-            [
-              "preCompressorOrder",
-              0,
-            ],
-            [
-              "preOverdriveOrder",
-              1,
-            ],
-            [
-              "preDistortionOrder",
-              2,
-            ],
-            [
-              "preFuzzOrder",
-              3,
-            ],
-            [
-              "postCompressorOrder",
-              0,
-            ],
-            [
-              "postOverdriveOrder",
-              1,
-            ],
-            [
-              "postDistortionOrder",
-              2,
-            ],
-            [
-              "postFuzzOrder",
-              3,
-            ],
-            [
-              "neuralModelMode",
-              0,
-            ],
-            [
-              "neural",
-              {
-                "neuralModelMode": "builtin",
-              },
-            ],
-            [
-              "mic1Enabled",
-              1,
-            ],
-            [
-              "mic1PositionX",
-              0.3,
-            ],
-            [
-              "mic1PositionY",
-              0.1,
-            ],
-            [
-              "mic1Distance",
-              0.2,
-            ],
-            [
-              "mic1Gain",
-              0,
-            ],
-            [
-              "mic2Enabled",
-              0,
-            ],
-            [
-              "mic2PositionX",
-              0.6,
-            ],
-            [
-              "mic2PositionY",
-              0.1,
-            ],
-            [
-              "mic2Distance",
-              0.2,
-            ],
-            [
-              "mic2Gain",
-              0,
-            ],
-          ]
-        `);
-        const numeric = trace.filter(([key]) => key !== 'neural');
-        expect(update_device_param.mock.calls.map(([, , key, value]) => [key, value])).toEqual(numeric);
-        expect(persist_device_param.mock.calls.map(([, key, value]) => [key, value])).toEqual(numeric);
-        update_device_param.mockReset();
-        update_device_patch.mockReset();
+
+        const numeric = update_device_param.mock.calls.map(([, , key, value]) => `${key}=${value}`);
+        const trace = [
+            ...numeric.map((entry, index) => ({ order: update_device_param.mock.invocationCallOrder[index], entry })),
+            ...update_device_patch.mock.calls.map(([, , patch], index) => ({
+                order: update_device_patch.mock.invocationCallOrder[index],
+                entry: `neural=${patch.neuralModelMode}`,
+            })),
+        ]
+            .sort((a, b) => a.order - b.order)
+            .map(({ entry }) => entry);
+        const expected = `cabIrSlot=0
+neuralEnabled=0
+engineMode=0
+inputImpedance=1000
+inputGain=0
+inputMode=0
+gateEnabled=0
+gateThreshold=-60
+gateAttack=2
+gateRelease=120
+ampModel=4
+gain=9
+channel=2
+bright=0
+fat=0
+tubeBias=0.5
+tubeAge=0
+millerCapacitance=0.5
+gridConduction=0.5
+couplingCapCharge=0.5
+toneStackType=1
+bass=7
+mid=5
+treble=6
+presence=5
+resonance=6
+brightCap=0
+master=4
+powerTubeType=0
+rectifierType=0
+sagAmount=0.6
+sagRecovery=300
+negFeedback=0.5
+powerAmpBias=0.5
+transformerDrive=0.3
+transformerHysteresis=0.3
+transformerLfSaturation=0.3
+cabType=2
+cabEnabled=1
+cabResonanceFreq=80
+cabResonanceQ=2
+cabDamping=0.5
+cabOpenBack=0
+coneBreakup=0.3
+backEmf=0.2
+micBlend=0
+roomAmount=0.1
+neuralPlacement=0
+neuralTier=0
+neuralMix=1
+neuralCpuBudget=1
+outputGain=0
+outputMix=1
+limiterEnabled=1
+limiterThreshold=-0.3
+routingMode=0
+cleanBlend=0
+preCompressorEnabled=0
+preCompressorThreshold=-24
+preCompressorRatio=3
+preCompressorAttack=16
+preCompressorRelease=220
+preOverdriveEnabled=0
+preOverdriveDrive=2.8
+preOverdriveTone=5.2
+preOverdriveLevel=5.4
+preDistortionEnabled=0
+preDistortionDrive=5.2
+preDistortionTone=4.4
+preDistortionLevel=7.2
+preFuzzEnabled=0
+preFuzzFuzz=6.8
+preFuzzTone=4.8
+preFuzzLevel=6.4
+postCompressorEnabled=0
+postCompressorThreshold=-24
+postCompressorRatio=3
+postCompressorAttack=16
+postCompressorRelease=220
+postOverdriveEnabled=0
+postOverdriveDrive=2.8
+postOverdriveTone=5.2
+postOverdriveLevel=5.4
+postDistortionEnabled=0
+postDistortionDrive=5.2
+postDistortionTone=4.4
+postDistortionLevel=7.2
+postFuzzEnabled=0
+postFuzzFuzz=6.8
+postFuzzTone=4.8
+postFuzzLevel=6.4
+preCompressorOrder=0
+preOverdriveOrder=1
+preDistortionOrder=2
+preFuzzOrder=3
+postCompressorOrder=0
+postOverdriveOrder=1
+postDistortionOrder=2
+postFuzzOrder=3
+neuralModelMode=0
+neural=builtin
+mic1Enabled=1
+mic1PositionX=0.3
+mic1PositionY=0.1
+mic1Distance=0.2
+mic1Gain=0
+mic2Enabled=0
+mic2PositionX=0.6
+mic2PositionY=0.1
+mic2Distance=0.2
+mic2Gain=0`.split('\n');
+        expect(trace).toEqual(expected);
+        expect(update_device_patch.mock.calls.map(([, , patch]) => patch)).toEqual([{ neuralModelMode: 'builtin' }]);
+        const expectedNumeric = expected
+            .filter((entry) => !entry.startsWith('neural='))
+            .map((entry) => {
+                const [key, value] = entry.split('=');
+                return [key, Number(value)];
+            });
+        expect(update_device_param.mock.calls.map(([, , key, value]) => [key, value])).toEqual(expectedNumeric);
+        expect(persist_device_param.mock.calls.map(([, key, value]) => [key, value])).toEqual(expectedNumeric);
     });
 
     it('encodes finite parameters and the built-in neural command in playback order', () => {
