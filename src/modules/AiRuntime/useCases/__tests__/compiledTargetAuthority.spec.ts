@@ -2913,15 +2913,31 @@ describe('a figure-led word before the words of an indexed name replaces its ind
     const indexed = namedTracksContext(['01 Kick', '02 Snare']);
     const setKick = trackItem('setTrackGain', indexed.track('01 Kick'), { gain: 0.75 });
 
-    it.each(['set the 2nd kick volume to 75%', 'set 02: kick volume to 75%', 'set (02) kick volume to 75%'])(
-        'refuses a 01 Kick pick for "%s"',
-        (prompt) => {
-            const result = compileAndBridge(prompt, [setKick], [], indexed.context);
+    it.each([
+        'set the 2nd kick volume to 75%',
+        'set 02: kick volume to 75%',
+        'set (02) kick volume to 75%',
+        'set the second kick volume to 75%',
+        'set track2 kick volume to 75%',
+        'set kick 2 volume to 75%',
+    ])('refuses a 01 Kick pick for "%s"', (prompt) => {
+        const result = compileAndBridge(prompt, [setKick], [], indexed.context);
 
-            expect(result.actions).toEqual([]);
-            expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
-        }
-    );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it('grounds a 01 Kick pick for "set kick volume to 50%", whose figure carries a value unit', () => {
+        const result = compileAndBridge(
+            'set kick volume to 50%',
+            [trackItem('setTrackGain', indexed.track('01 Kick'), { gain: 0.5 })],
+            [],
+            indexed.context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
+    });
 
     it('grounds a 01 Kick pick for "set the kick volume to 75%", whose figure follows the words', () => {
         const result = compileAndBridge('set the kick volume to 75%', [setKick], [], indexed.context);

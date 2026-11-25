@@ -1,6 +1,7 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { getBestAgentReferenceNameRanges } from '../agentReference/getBestAgentReferenceNameRanges';
 import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
+import { ORDINAL_WORDS } from '../agentReference/ordinalWords';
 
 /** Words a list of track names may hold besides the names themselves. */
 const TARGET_LIST_WORDS: ReadonlySet<string> = new Set(['the', 'and', '&', 'both', 'track', 'tracks']);
@@ -22,20 +23,6 @@ type NamedTracks =
     | { status: 'unread' };
 
 type NamedRange = { id: string; start: number; end: number };
-
-/** The ordinal words a list may use to pick one of several same-named tracks. */
-export const ORDINAL_WORDS: readonly string[] = [
-    'first',
-    'second',
-    'third',
-    'fourth',
-    'fifth',
-    'sixth',
-    'seventh',
-    'eighth',
-    'ninth',
-    'tenth',
-];
 
 type ListedTrack = { id: string; name: string };
 

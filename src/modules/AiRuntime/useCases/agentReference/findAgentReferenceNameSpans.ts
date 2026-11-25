@@ -1,5 +1,6 @@
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
+import { ORDINAL_WORDS } from './ordinalWords';
 
 /** A range of the original text, `end` exclusive. */
 export type AgentReferenceTextRange = { start: number; end: number };
@@ -53,10 +54,19 @@ const ANY_OR_NO_JOINER = '([^\\p{L}\\p{N}]*)';
 const INDEX_WORD = /^\p{N}+$/u;
 
 /**
- * A word opening with a figure that closes the text, past any punctuation or space after it: "02 " in
- * "mute 02 ", "02: " in "mute 02: ", "2nd " in "mute the 2nd ".
+ * How far either side of a reading is read for the word beside it, so each reading costs the same
+ * whatever the length of the text around it.
  */
-const CLOSING_FIGURE_WORD = /(?<![\p{L}\p{N}])\p{N}[\p{L}\p{N}]*[^\p{L}\p{N}]*$/u;
+const ADJACENT_WORD_WINDOW = 64;
+
+/** The word closing the text, past any punctuation or space after it. */
+const WORD_BEFORE = /([\p{L}\p{N}]+)[^\p{L}\p{N}]*$/u;
+
+/** The word opening the text past any punctuation or space before it, and what follows that word. */
+const WORD_AFTER = /^[^\p{L}\p{N}]*([\p{L}\p{N}]+)(.*)$/su;
+
+/** A value unit right after a figure, which makes the figure a value rather than a position: "50%", "2 dB". */
+const VALUE_UNIT = /^\s*(?:%|d\s?b(?![\p{L}\p{N}]))/u;
 
 /**
  * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
@@ -395,9 +405,34 @@ function matchNameWords(
 }
 
 /**
+ * Whether a word reads as a position or a number: it holds a figure ("02", "2nd", "track2") or is an
+ * ordinal word ("second"), unless a value unit follows it ("50%", "2 dB").
+ */
+function readsAsPosition(word: string, rest: string): boolean {
+    if (ORDINAL_WORDS.includes(word)) {
+        return true;
+    }
+    return /\p{N}/u.test(word) && !VALUE_UNIT.test(rest);
+}
+
+/**
+ * Whether the word right before or right after the folded range, across any punctuation or space,
+ * reads as a position or a number, which then states which of several indexed names is meant.
+ */
+function isBesidePosition(folded: string, start: number, end: number): boolean {
+    const before = WORD_BEFORE.exec(folded.slice(Math.max(0, start - ADJACENT_WORD_WINDOW), start));
+    const wordBefore = before?.[1] ?? '';
+    if (before !== null && readsAsPosition(wordBefore, before[0].slice(wordBefore.length))) {
+        return true;
+    }
+    const after = WORD_AFTER.exec(folded.slice(end, end + ADJACENT_WORD_WINDOW));
+    return after !== null && readsAsPosition(after[1] ?? '', after[2] ?? '');
+}
+
+/**
  * The ranges stating a name an index word opens ("01 Kick") by the words after it, wherever no word
- * opening with a figure comes right before them, so "the kick" states 01 Kick while "02 kick", "02:
- * kick" and "the 2nd kick" never do.
+ * beside them reads as a position or a number, so "the kick" and "set kick to 50%" state 01 Kick
+ * while "02: kick", "the 2nd kick", "the second kick", "track2 kick" and "kick 2" never do.
  */
 function findUnindexedSpans(
     reading: NameReading,
@@ -409,7 +444,7 @@ function findUnindexedSpans(
         return [];
     }
     return matchNameWords(reading, words, separators.slice(1))
-        .filter((match) => !CLOSING_FIGURE_WORD.test(reading.folded.slice(0, match.index)))
+        .filter((match) => !isBesidePosition(reading.folded, match.index, match.index + match[0].length))
         .map((match): AgentReferenceNameSpan => ({
             start: reading.toTextOffset(match.index),
             end: reading.toTextOffset(match.index + match[0].length),
@@ -432,7 +467,7 @@ function findUnindexedSpans(
  * Lead; while beside Bass and Drums tracks "Bass & Drums", "Bass | Drums" and a bulleted list of the
  * two never state Bass Drums, nor beside Bass and Drum Bus tracks does "Bass & Drum Bus" state Bass
  * Drum. A name that an index word opens ("01 Kick") is also stated by its other words, least closely
- * of all, wherever no word opening with a figure comes right before them. A range the name as typed covers, both read
+ * of all, wherever no word beside them reads as a position or a number. A range the name as typed covers, both read
  * composed and with every dash as the hyphen, reads as typed and reaches as far as the typed name does,
  * short of the punctuation closing it, wherever the text goes on: "Kick (In)" reads Kick (In) more
  * closely than Kick In, "Hi–Hat" reads Hi-Hat more closely than Hi Hat, and "Lead?" in "mute Lead?!"

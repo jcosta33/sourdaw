@@ -1922,14 +1922,28 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         expect(resolveTrack(prompt, trackIdNamed(project, refused), project)).toMatchObject({ status: 'rejected' });
     });
 
-    it.each(['mute the 2nd kick', 'mute 02: kick', 'mute 02, kick'])(
-        'never resolves "%s" to 01 Kick, whose index another figure-led word replaces',
+    it.each([
+        'mute the 2nd kick',
+        'mute 02: kick',
+        'mute 02, kick',
+        'mute the second kick',
+        'mute track2 kick',
+        'mute kick 2',
+    ])('never resolves "%s" to 01 Kick, whose index another figure-led word replaces', (prompt) => {
+        const project = tracksNamed(['01 Kick', '02 Snare']);
+
+        expect(resolveTrack(prompt, trackIdNamed(project, '01 Kick'), project)).toMatchObject({
+            status: 'rejected',
+        });
+    });
+
+    it.each(['set kick volume to 50%', 'turn kick down 2 dB', 'set kick 50%', 'turn kick down by 2 dB'])(
+        'resolves "%s" to 01 Kick, whose figure carries a value unit',
         (prompt) => {
             const project = tracksNamed(['01 Kick', '02 Snare']);
+            const kickId = trackIdNamed(project, '01 Kick');
 
-            expect(resolveTrack(prompt, trackIdNamed(project, '01 Kick'), project)).toMatchObject({
-                status: 'rejected',
-            });
+            expect(resolveTrack(prompt, kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
         }
     );
 
