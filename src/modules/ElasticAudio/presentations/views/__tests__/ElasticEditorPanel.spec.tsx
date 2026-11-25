@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
     const waveformPeaks = new Map<string, Float32Array>();
     // Source duration the cache reports for every buffer; 4 s is 8 beats at the default 120 BPM.
     const source = { seconds: 4 };
+    const transport = { tempo: 120 };
     const trackStoreValue: {
         tracks: {
             id: string;
@@ -76,6 +77,7 @@ const mocks = vi.hoisted(() => {
             }
             return peaks;
         }),
+        transport,
         trackStoreValue,
         timelineEditingValue,
         clipSelectionValue,
@@ -138,9 +140,17 @@ vi.mock('#/infra/store/useStore', async (importOriginal) => {
             if (marker === 'warp') {
                 return { clipSettings: new Map(), defaultAlgorithm: 'repitch', globalPitchShift: 0 };
             }
+            if (marker === 'transport') {
+                return mocks.transport;
+            }
             return fallback ?? null;
         },
     };
+});
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const actual = await importOriginal<Record<string, unknown>>();
+    return { ...actual, transportStore: { __kind: 'transport' } };
 });
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
@@ -267,6 +277,7 @@ describe('ElasticEditorPanel', () => {
         vi.clearAllMocks();
         mocks.waveformPeaks.clear();
         mocks.source.seconds = 4;
+        mocks.transport.tempo = 120;
         mocks.background = '#151515';
         preferencesStore.trySet(defaultPreferences);
         mocks.trackStoreValue = {
@@ -688,6 +699,31 @@ describe('ElasticEditorPanel', () => {
                 expect(observed.peakXs[0]).toBe(bin);
             });
 
+            it('keeps saved markers aligned with the same source bins after a live tempo change', () => {
+                const clip = mocks.trackStoreValue.tracks[0]?.clips[0];
+                const state = mocks.warpStates.get('c1');
+                if (!clip || !state) {
+                    throw new Error('Missing fixture clip or warp state');
+                }
+                mocks.source.seconds = 120;
+                clip.endBeat = 240;
+                const bin = publishImpulse(120);
+                detectedMarker();
+                const savedMarkers = structuredClone(state.markers);
+                const observed = observeBeatSpace();
+                const view = render(<ElasticEditorPanel />);
+                flushFrame();
+
+                mocks.transport.tempo = 60;
+                view.rerender(<ElasticEditorPanel />);
+                flushFrame();
+
+                expect(observed.markerXs.at(-1)).toBe(TRANSIENT_BEAT * BEAT_WIDTH);
+                expect(observed.peakXs.at(-1)).toBe(bin);
+                expect(mocks.getWaveformPeaks).toHaveBeenLastCalledWith('buf-1', 9600);
+                expect(state.markers).toEqual(savedMarkers);
+            });
+
             it('draws a marker at the x of the waveform peak it marks for a clip with a trimmed head', () => {
                 const clip = mocks.trackStoreValue.tracks[0]?.clips[0] as
                     { endBeat: number; audioOffsetSeconds?: number } | undefined;
@@ -712,6 +748,26 @@ describe('ElasticEditorPanel', () => {
                 const container = screen.getByTestId('elastic-waveform-canvas').parentElement;
                 expect(container?.scrollLeft).toBe(120 * BEAT_WIDTH);
                 expect(observed.drawing.fill).toHaveBeenCalledWith(0, 0, 120 * BEAT_WIDTH, 120);
+            });
+
+            it('uses clip-start tempo for a legacy beat offset when scrolling and dimming', () => {
+                const clip = mocks.trackStoreValue.tracks[0]?.clips[0] as
+                    { audioOffsetBeats?: number; clipStartTempo?: number } | undefined;
+                if (!clip) {
+                    throw new Error('Missing fixture clip');
+                }
+                mocks.source.seconds = 120;
+                clip.audioOffsetBeats = 2;
+                clip.clipStartTempo = 60;
+                const drawing = observeDrawing();
+
+                render(<ElasticEditorPanel />);
+                flushFrame();
+
+                const container = screen.getByTestId('elastic-waveform-canvas').parentElement;
+                expect(container?.scrollLeft).toBe(4 * BEAT_WIDTH);
+                expect(drawing.fill).toHaveBeenCalledWith(0, 0, 4 * BEAT_WIDTH, 120);
+                expect(drawing.fill).not.toHaveBeenCalledWith(0, 0, 2 * BEAT_WIDTH, 120);
             });
 
             type StretchedClip = { endBeat: number; stretchMode?: string; stretchRatio?: number };

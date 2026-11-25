@@ -27,7 +27,6 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
-import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../stores/audioWarp';
@@ -38,6 +37,7 @@ import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
 import { cancelTransientDetection } from '../../useCases/elasticAudio/cancelTransientDetection';
 import { detectElasticEditorTransients } from '../../useCases/elasticAudio/detectElasticEditorTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
+import { resolveAudibleSourceSpans } from '../../useCases/elasticAudio/resolveAudibleSourceSpans';
 import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
 import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
@@ -45,7 +45,6 @@ import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 import { quantizeTransients } from '../../useCases/quantizeTransients';
 
-import { resolveAudibleSourceSpans, type SourceSpanBeats } from './audibleSourceSpans';
 import {
     backingPixelRatio,
     dimmedRanges,
@@ -54,7 +53,7 @@ import {
     visibleBinRange,
     visibleMarkers,
     type WarpMarkerView,
-} from './elasticWaveformDrawing';
+} from '../renderers/elasticWaveformDrawing';
 
 type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
@@ -133,6 +132,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const previousDrawingRef = useRef<WaveformDrawing | null>(null);
+    const sourceFrameRef = useRef<{ key: string; tempo: number } | null>(null);
     const scrolledToWindowRef = useRef<string | null>(null);
     const dragRef = useRef<DragState | null>(null);
     const didDragRef = useRef(false);
@@ -168,9 +168,16 @@ export const ElasticEditorPanel = (): ReactElement => {
     }, [clipId, elasticState.openClipId, elasticState.selectedMarkerIds, snapValue, transientSensitivity]);
 
     const beatWidth = Math.max(1, 40 * zoom);
-    const audioOffsetSeconds = clip ? resolveAudioSourceOffsetSeconds(clip, tempo) : 0;
+    const sourceFrameKey = `${clipId ?? ''}:${clip?.audioBufferId ?? ''}`;
+    let sourceFrame = sourceFrameRef.current;
+    if (sourceFrame?.key !== sourceFrameKey) {
+        sourceFrame = { key: sourceFrameKey, tempo: warpState.originalTempo ?? tempo };
+        sourceFrameRef.current = sourceFrame;
+    }
+    const sourceTempo = sourceFrame.tempo;
 
     useEffect(() => {
+        const audibleSpans = resolveAudibleSourceSpans(clip, sourceTempo, tempo);
         const args: DrawArgs = {
             canvasRef,
             containerRef,
@@ -178,9 +185,9 @@ export const ElasticEditorPanel = (): ReactElement => {
             beatWidth,
             warpState,
             clipAudioBufferId: clip?.audioBufferId ?? null,
-            audibleSpans: resolveAudibleSourceSpans(clip, tempo),
-            tempo,
-            scrollKey: `${clipId ?? ''}:${clip?.audioBufferId ?? ''}:${audioOffsetSeconds}`,
+            audibleSpans,
+            tempo: sourceTempo,
+            scrollKey: `${sourceFrameKey}:${audibleSpans[0]?.startBeats ?? 0}`,
             scrolledToWindowRef,
             viewScrollLeft,
         };
@@ -202,7 +209,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             canvas?.removeEventListener('contextlost', invalidate);
             canvas?.removeEventListener('contextrestored', restore);
         };
-    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip, tempo, audioOffsetSeconds]);
+    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip, tempo, sourceTempo, sourceFrameKey]);
 
     if (clipId === null || !isAudioClip) {
         return (
@@ -565,7 +572,7 @@ type DrawArgs = {
     beatWidth: number;
     warpState: WarpStateView;
     clipAudioBufferId: string | null;
-    audibleSpans: readonly SourceSpanBeats[];
+    audibleSpans: ReturnType<typeof resolveAudibleSourceSpans>;
     tempo: number;
     scrollKey: string;
     scrolledToWindowRef: { current: string | null };
@@ -660,9 +667,8 @@ function drawWaveform(args: DrawArgs): void {
     if (!ctx) {
         return;
     }
-    // Warp markers are source-content beats: seconds from the file start at the project tempo, the
-    // frame handleDetectTransients writes and splitClipSatellites keeps. The waveform is drawn in that
-    // same frame (x = file beat * beatWidth), so a marker sits on the transient it marks.
+    // Markers and peaks share the source tempo captured for this clip and buffer. Live project tempo
+    // changes only the playback projection, never this saved marker coordinate frame.
     const sourceSeconds = clipAudioBufferId ? (audioBufferCache.get(clipAudioBufferId)?.duration ?? 0) : 0;
     const sourceBeats = (sourceSeconds * tempo) / 60;
     const lastWindowEndBeats = audibleSpans.reduce((max, span) => Math.max(max, span.endBeats), 0);

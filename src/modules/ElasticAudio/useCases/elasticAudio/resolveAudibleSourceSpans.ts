@@ -2,7 +2,7 @@ import { projectAudioLoopPassSegments, resolveAudioSourceOffsetSeconds } from '#
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
-export type SourceSpanBeats = { startBeats: number; endBeats: number };
+type SourceSpanBeats = { startBeats: number; endBeats: number };
 
 type AudibleClip = Parameters<typeof resolveAudioSourceOffsetSeconds>[0] &
     Parameters<typeof projectAudioLoopPassSegments>[0]['clip'] & {
@@ -15,8 +15,8 @@ type AudibleClip = Parameters<typeof resolveAudioSourceOffsetSeconds>[0] &
 
 // Same gate and bound playback applies (`scheduleAudioClips`, `audioWaveformSpan`): an off clip
 // ignores its stored ratio.
-export function resolvePlaybackStretchRatio(clip: Pick<AudibleClip, 'stretchMode' | 'stretchRatio'> | null): number {
-    if (!clip?.stretchMode || clip.stretchMode === 'off') {
+function resolvePlaybackStretchRatio(clip: Pick<AudibleClip, 'stretchMode' | 'stretchRatio'>): number {
+    if (!clip.stretchMode || clip.stretchMode === 'off') {
         return 1;
     }
     return boundStretchRatio(clip.stretchRatio ?? 1);
@@ -35,18 +35,26 @@ function mergeSpans(spans: readonly SourceSpanBeats[]): SourceSpanBeats[] {
     return merged;
 }
 
-/**
- * The source ranges (in file beats at the project tempo) the clip plays: the union of every loop pass
- * the scheduler projects. An unlooped clip is one range from its offset, `ratio` source beats per beat.
- */
-export function resolveAudibleSourceSpans(clip: AudibleClip | null, tempo: number): SourceSpanBeats[] {
+/** Project playback into the editor's stable source beat frame without changing saved marker beats. */
+export function resolveAudibleSourceSpans(
+    clip: AudibleClip | null,
+    sourceTempo: number,
+    playbackTempo = sourceTempo
+): SourceSpanBeats[] {
     if (!clip) {
         return [];
     }
     const ratio = resolvePlaybackStretchRatio(clip);
+    const sourceBeatsPerTimelineBeat = sourceTempo / playbackTempo;
     const clipBeats = clip.endBeat - clip.startBeat;
-    const offsetBeats = (resolveAudioSourceOffsetSeconds(clip, tempo) * tempo) / 60;
-    const single = [{ startBeats: offsetBeats, endBeats: offsetBeats + clipBeats * ratio }];
+    const offsetBeats =
+        (resolveAudioSourceOffsetSeconds(clip, clip.clipStartTempo ?? playbackTempo) * sourceTempo) / 60;
+    const single = [
+        {
+            startBeats: offsetBeats,
+            endBeats: offsetBeats + clipBeats * ratio * sourceBeatsPerTimelineBeat,
+        },
+    ];
     if (!clip.loopEnabled) {
         return single;
     }
@@ -64,14 +72,16 @@ export function resolveAudibleSourceSpans(clip: AudibleClip | null, tempo: numbe
             iterationStartBeat,
             iterationEndBeat: Math.min(clip.endBeat, iterationStartBeat + loop.loopLengthBeats),
             stretchRatio: ratio,
-            tempoAtClipStart: clip.clipStartTempo ?? tempo,
-            secondsAtBeat: (beat) => (beat * 60) / tempo,
+            tempoAtClipStart: clip.clipStartTempo ?? playbackTempo,
+            secondsAtBeat: (beat) => (beat * 60) / playbackTempo,
         });
         for (const segment of segments) {
-            const startBeats = (segment.sourceStartSeconds * tempo) / 60;
+            const startBeats = (segment.sourceStartSeconds * sourceTempo) / 60;
             spans.push({
                 startBeats,
-                endBeats: startBeats + (segment.endOffsetBeats - segment.startOffsetBeats) * ratio,
+                endBeats:
+                    startBeats +
+                    (segment.endOffsetBeats - segment.startOffsetBeats) * ratio * sourceBeatsPerTimelineBeat,
             });
         }
     }
