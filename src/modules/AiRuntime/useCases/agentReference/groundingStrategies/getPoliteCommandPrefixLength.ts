@@ -1,5 +1,10 @@
-/** The polite carrier a command may open on: "could you please", then at most one "please". */
-const POLITE_COMMAND_PREFIX = /^\s*(?:(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+)?(?:please\s+)?/iu;
+/**
+ * The polite carrier a command may open on, as a pattern source: "could you please", then at most one
+ * "please" ("could you please please set" reads, "please please set" does not).
+ */
+export const POLITE_COMMAND_PREFIX_SOURCE = String.raw`^\s*(?:(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+)?(?:please\s+)?`;
+
+const POLITE_COMMAND_PREFIX = new RegExp(POLITE_COMMAND_PREFIX_SOURCE, 'iu');
 
 /** How many characters of `text` its polite carrier takes, leading whitespace included. */
 export function getPoliteCommandPrefixLength(text: string): number {

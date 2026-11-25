@@ -848,6 +848,19 @@ function isCueWithinDirectionalTargetReference(
     return false;
 }
 
+/** An unsafe control cue the action does not answer itself: `clearSolos` reads its own restriction. */
+function hasUnansweredUnsafeControlCue(input: {
+    actionName: string;
+    groundingRules: GroundingRules;
+    targetReferences: DirectionalTargetReferences;
+    text: string;
+}): boolean {
+    return (
+        hasUnsafeControlCue(input.text, input.groundingRules.intentPhrases, input.targetReferences) &&
+        !(input.actionName === 'clearSolos' && hasClearSolosRestriction(input.text))
+    );
+}
+
 function hasUnsafeControlCue(
     commandSource: string,
     carrierPhrases: readonly string[],
@@ -1294,6 +1307,25 @@ function continuesOntoNonTrackObject(
     return (
         reference !== null &&
         namesOnlyNonTrackObject(clause.text.slice(reference.index, reference.index + reference[0].length), context)
+    );
+}
+
+/**
+ * Whether a clause continues the level change before it onto this action's own fader: one more track
+ * reference and its figure, naming no other fader and no object other than a track.
+ */
+function continuesActionFaderLevel(input: {
+    actionName: string;
+    clause: PromptClause;
+    context: ProjectContext;
+    decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[];
+    groundingRules: GroundingRules;
+}): boolean {
+    const { actionName, clause, context } = input;
+    return (
+        isLevelContinuationClause(clause.masked, input.decibelLevelForms) &&
+        !namesLevelOutsideActionFader(actionName, clause, context) &&
+        !continuesOntoNonTrackObject(input.groundingRules, clause, context)
     );
 }
 
@@ -1842,8 +1874,12 @@ function resolveActionPromptScope({
         if (intent) {
             if (intent.actionType === actionName) {
                 if (
-                    hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences) &&
-                    !(actionName === 'clearSolos' && hasClearSolosRestriction(clause.text))
+                    hasUnansweredUnsafeControlCue({
+                        actionName,
+                        groundingRules,
+                        targetReferences: controlTargetReferences,
+                        text: clause.text,
+                    })
                 ) {
                     continue;
                 }
@@ -1882,9 +1918,7 @@ function resolveActionPromptScope({
         const previousScope = matchingScopes.at(-1);
         if (
             continuesScope &&
-            isLevelContinuationClause(clause.masked, decibelLevelForms) &&
-            !namesLevelOutsideActionFader(actionName, clause, context) &&
-            !continuesOntoNonTrackObject(groundingRules, clause, context)
+            continuesActionFaderLevel({ actionName, clause, context, decibelLevelForms, groundingRules })
         ) {
             if (previousScope) {
                 matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
@@ -1998,8 +2032,12 @@ function resolveActionPromptScope({
             return null;
         }
     } else if (
-        hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences) &&
-        !(actionName === 'clearSolos' && hasClearSolosRestriction(selectedScope.text))
+        hasUnansweredUnsafeControlCue({
+            actionName,
+            groundingRules,
+            targetReferences: selectedTargetReferences,
+            text: selectedScope.text,
+        })
     ) {
         return null;
     }

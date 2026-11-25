@@ -29,7 +29,7 @@ export type PromptDecibelFigure = {
 };
 
 /** `dB`, `db`, `d b`, immediately after the number. */
-const DECIBEL_UNIT_PATTERN = /^\s*d\s?b\b/iu;
+export const DECIBEL_UNIT_PATTERN = /^\s*d\s?b\b/iu;
 
 export const ARTICLES: ReadonlySet<string> = new Set(['a', 'an', 'the']);
 

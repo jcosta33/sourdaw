@@ -8,6 +8,7 @@ import {
     ABSOLUTE_CONNECTORS,
     ARTICLES,
     classifyPromptDecibelFigures,
+    DECIBEL_UNIT_PATTERN,
     LEVEL_DIRECTION_WORDS,
     LOUDER_SCOPE_PHRASES,
     type PromptNumber,
@@ -43,8 +44,6 @@ const COMPARISON_BOUNDARY_PATTERN = /\s+(?=(?:like|relative\s+to|compared\s+(?:t
 
 /** A project reference as the masking writes it: a clip name keeps its `clip` prefix. */
 const MASKED_REFERENCE_PATTERN = /clip□+|□+/gu;
-
-const DECIBEL_UNIT_PATTERN = /^\s*d\s?b\b/iu;
 
 type ClauseToken = { kind: 'reference'; start: number; end: number } | { kind: 'word'; word: string };
 
