@@ -415,6 +415,40 @@ describe('clip edit compensation guards', () => {
             expect(currentClip()).toEqual(prior);
         });
 
+        it.each([
+            {
+                name: 'an audio trim of the start',
+                action: trimStart(2),
+                reason: 'Action is not compensable inside an atomic batch: trimClipStart',
+            },
+            {
+                name: 'an audio slip',
+                action: {
+                    type: 'slipClipContent',
+                    payload: { clipId: 'clip-1', clipType: 'audio', offset: 1 },
+                } satisfies AppAction,
+                reason: 'Action is not compensable inside an atomic batch: slipClipContent',
+            },
+        ])('rejects $name planned after an earlier edit of the same audio clip', async ({ action, reason }) => {
+            registerHandlers();
+            seedClip({ startBeat: 0, endBeat: 8 });
+            const prior = structuredClone(currentClip());
+
+            // The audio capture reads the clip as the store holds it, so it is stale after a nudge in the batch.
+            const alone = await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
+            expect(alone.status).toBe('committed');
+            await undo();
+            expect(currentClip()).toEqual(prior);
+
+            const result = await executeAppActionBatch([nudge(1), action], {
+                source: 'prompt',
+                requireCompensation: true,
+            });
+
+            expect(result).toMatchObject({ status: 'rejected', reason });
+            expect(currentClip()).toEqual(prior);
+        });
+
         it('rejects a guarded edit planned after an earlier action split the clip', async () => {
             registerHandlers();
             seedClip({ startBeat: 0, endBeat: 8 });
