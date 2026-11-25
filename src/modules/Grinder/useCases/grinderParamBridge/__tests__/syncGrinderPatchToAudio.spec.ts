@@ -62,11 +62,20 @@ describe('syncGrinderPatchToAudio', () => {
         if (!preset) throw new Error('Rectifier Heavy preset is missing');
         run(migrateGrinderPatch(preset.patch));
 
+        function callOrder(orders: number[], index: number): number {
+            const order = orders[index];
+            if (order === undefined) throw new Error('Missing mock invocation order');
+            return order;
+        }
+
         const numeric = update_device_param.mock.calls.map(([, , key, value]) => `${key}=${value}`);
         const trace = [
-            ...numeric.map((entry, index) => ({ order: update_device_param.mock.invocationCallOrder[index], entry })),
+            ...numeric.map((entry, index) => ({
+                order: callOrder(update_device_param.mock.invocationCallOrder, index),
+                entry,
+            })),
             ...update_device_patch.mock.calls.map(([, , patch], index) => ({
-                order: update_device_patch.mock.invocationCallOrder[index],
+                order: callOrder(update_device_patch.mock.invocationCallOrder, index),
                 entry: `neural=${patch.neuralModelMode}`,
             })),
         ]
