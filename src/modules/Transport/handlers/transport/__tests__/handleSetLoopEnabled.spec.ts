@@ -26,7 +26,24 @@ describe('handleSetLoopEnabled', () => {
         expect(setLoopEnabled).toHaveBeenCalledWith(true);
     });
 
+    it('restores the whole previous region as its inverse when enabling replaces an empty region', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, loopStart: 0, loopEnd: 0 });
+        const before = { loopStart: 0, loopEnd: 0, isLooping: false };
+        const after = { loopStart: 0, loopEnd: 4, isLooping: true };
+
+        expect(handleSetLoopEnabled.describe({ type: 'setLoopEnabled', payload: { enabled: true } })).toMatchObject({
+            inverseAction: { type: 'restoreLoopRegion', payload: { expected: after, replacement: before } },
+            redoAction: { type: 'restoreLoopRegion', payload: { expected: before, replacement: after } },
+        });
+    });
+
     it('captures the previous enabled state as its inverse', () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            loopStart: 4,
+            loopEnd: 12,
+            isLooping: false,
+        });
         expect(handleSetLoopEnabled.describe({ type: 'setLoopEnabled', payload: { enabled: true } })).toMatchObject({
             inverseAction: { type: 'setLoopEnabled', payload: { enabled: false } },
         });

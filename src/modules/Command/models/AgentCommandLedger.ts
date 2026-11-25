@@ -510,7 +510,7 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
     {
         kind: 'outside-agent-scope',
         category: 'session',
-        reason: 'Session actions act on files, collaboration, hardware, MPE controller mode, monitoring, user libraries, macros and the undo stacks rather than on project content; agent reverts run through revert groups.',
+        reason: 'Session actions act on files, collaboration, hardware, MPE controller input mode (switching it while a take records writes the switch into that take as recorded input), monitoring, user libraries, macros and the undo stacks rather than on project content; agent reverts run through revert groups.',
         actionTypes: [
             'enableMpe',
             'disableMpe',
