@@ -94,6 +94,7 @@ class GrinderInstanceMock {
     load_neural_model(json: string): void {
         grinderLoadModelCalls.push(json);
         if (grinderModelRejection !== null) {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- wasm-bindgen throws the string created by JsValue::from_str
             throw grinderModelRejection;
         }
         this.hasModel = true;
