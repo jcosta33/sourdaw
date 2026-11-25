@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
+import { appliedAutomationBases } from '../../scheduling/applyAutomation/appliedAutomationBases';
+import { readAppliedAutomationValue } from '../../scheduling/applyAutomation/readAppliedAutomationValue';
 import { holdNoteExpression } from '../../scheduling/holdNoteExpression';
 import { postStoredControllerMove } from '../../scheduling/postStoredControllerMove';
 import { takeHeldNoteExpression } from '../../scheduling/takeHeldNoteExpression';
 import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
-import { appliedAutomationBases } from '../../scheduling/applyAutomation/appliedAutomationBases';
-import { readAppliedAutomationValue } from '../../scheduling/applyAutomation/readAppliedAutomationValue';
 
 /** The device nodes each track's strip holds, as the engine double answers `getTrackStrip`. */
 const deviceNodesByTrack = vi.hoisted(() => new Map<string, unknown[]>());

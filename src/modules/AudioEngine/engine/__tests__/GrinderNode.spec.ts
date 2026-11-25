@@ -4,7 +4,6 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { getGrinderTimedParameterName } from '../../models/GrinderTimedParameterControl';
 import { type RuntimeGrinderPreset } from '../../models/RuntimeGrinderPreset';
-
 import { createGrinderNode, isGrinderDevice } from '../GrinderNode';
 import { GRINDER_IDX, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
 

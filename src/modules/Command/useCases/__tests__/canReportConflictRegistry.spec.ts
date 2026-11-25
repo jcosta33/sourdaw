@@ -956,7 +956,9 @@ function createGrinderConflictFixture(): DivergedFixture {
             });
             flushAutomergeStorageWrites();
             const capture = captureRectifierHeavyPreset('grinder-conflict');
-            if (!capture) throw new Error('Expected Grinder capture');
+            if (!capture) {
+                throw new Error('Expected Grinder capture');
+            }
             const action = {
                 type: 'setGrinderFactoryPreset',
                 payload: {

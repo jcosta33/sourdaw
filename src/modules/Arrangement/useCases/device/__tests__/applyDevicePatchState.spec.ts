@@ -91,19 +91,19 @@ describe('applyDevicePatchState', () => {
             parameterValues: { master: 999, unrelatedLeaf: 0.7 },
         };
         const before = structuredClone(track);
-        const chunk = track.devices[0]!.deviceState!;
+        const chunk = track.devices[0].deviceState;
         const captured = { deviceState: chunk, parameterValues: { master: 999, gain: null } };
         const authored = { deviceState: chunk, parameterValues: { master: 999, gain: 9 } };
         const written = { deviceState: chunk, parameterValues: { master: 10, gain: 9 } };
         expect(applyDevicePatchState({ deviceId: 'synth', expected: captured, next: authored })).toBe(true);
-        expect(track.devices[0]!.parameterValues).toEqual({ master: 10, gain: 9, unrelatedLeaf: 0.7 });
+        expect(track.devices[0].parameterValues).toEqual({ master: 10, gain: 9, unrelatedLeaf: 0.7 });
         expect(io.publish).toHaveBeenCalledOnce();
 
         expect(
             applyDevicePatchState({ deviceId: 'synth', expected: written, next: captured, mode: 'restore-captured' })
         ).toBe(true);
         expect(track).toEqual(before);
-        expect(Object.hasOwn(track.devices[0]!.parameterValues, 'gain')).toBe(false);
+        expect(Object.hasOwn(track.devices[0].parameterValues, 'gain')).toBe(false);
         expect(io.publish).toHaveBeenCalledTimes(2);
     });
 

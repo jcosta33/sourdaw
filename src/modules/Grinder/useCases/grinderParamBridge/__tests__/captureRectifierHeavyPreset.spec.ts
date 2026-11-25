@@ -66,25 +66,21 @@ describe('captureRectifierHeavyPreset', () => {
     it('captures the actual preset footprint and exact existing presence without modifying the projection', () => {
         const preset = GRINDER_PRESETS.find((candidate) => candidate.id === 'gr-rectifier-heavy');
         expect(preset).toBeDefined();
-        if (!preset) throw new Error('Rectifier preset missing');
+        if (!preset) {
+            throw new Error('Rectifier preset missing');
+        }
         const commands = encodeGrinderPatchCommands(migrateGrinderPatch(preset.patch));
         const keys = commands.flatMap((command) => (command.kind === 'parameter' ? [command.key] : []));
-        const expectedAfter = Object.fromEntries(
-            commands.flatMap((command) =>
-                command.kind === 'parameter'
-                    ? [
-                          [
-                              command.key,
-                              clampDeviceParameterValue({
-                                  deviceType: 'grinder',
-                                  paramId: command.key,
-                                  value: command.value,
-                              }),
-                          ],
-                      ]
-                    : []
-            )
-        );
+        const expectedAfter: Record<string, number> = {};
+        for (const command of commands) {
+            if (command.kind === 'parameter') {
+                expectedAfter[command.key] = clampDeviceParameterValue({
+                    deviceType: 'grinder',
+                    paramId: command.key,
+                    value: command.value,
+                });
+            }
+        }
         const before = structuredClone(trackStore.value);
         const rawBefore = JSON.stringify(getCrdtDoc('root'));
         const capture = captureRectifierHeavyPreset('amp');
@@ -118,7 +114,10 @@ describe('captureRectifierHeavyPreset', () => {
         expect(captureRectifierHeavyPreset('missing')).toBeNull();
         const state = trackStore.value!;
         const track = state.tracks[0]!;
-        trackStore.set({ ...state, tracks: [{ ...track, devices: [...track.devices, { ...track.devices[0]! }] }] });
+        trackStore.set({
+            ...state,
+            tracks: [{ ...track, devices: [...track.devices, structuredClone(track.devices[0]!)] }],
+        });
         expect(captureRectifierHeavyPreset('amp')).toBeNull();
     });
 });

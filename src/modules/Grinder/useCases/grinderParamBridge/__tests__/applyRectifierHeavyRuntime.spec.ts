@@ -22,7 +22,7 @@ function rectifierAction(
         presetId: 'gr-rectifier-heavy',
         before: Object.fromEntries(Object.keys(after).map((key) => [key, before[key] ?? null])),
         after,
-        ...(direction && { direction }),
+        direction,
     };
 }
 

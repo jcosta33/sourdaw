@@ -63,8 +63,8 @@ import { automationStore } from '../../../stores/automationStore';
 import { modulationStore } from '../../../stores/modulationStore';
 import { applyModulationToEngine } from '../applyModulationToEngine';
 import { setModulationDependencies } from '../modulationDependencies';
-import { resetModulationSlew } from '../resetModulationSlew';
 import { readAppliedModulationValue } from '../readAppliedModulationValue';
+import { resetModulationSlew } from '../resetModulationSlew';
 import { revertMappingsToBase } from '../revertMappingsToBase';
 
 function createAutomationLaneFixture(input: {

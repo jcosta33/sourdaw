@@ -24,13 +24,12 @@ import {
     resetCrdtProjectAuthority,
     subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
-
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 
 import { type GrinderFactoryPresetAction } from '../../events/grinderAppActions';
 import { grinderFactoryPresetRuntimePort } from '../../useCases/grinderFactoryPresetRuntimePort';
-import { selectRectifierHeavyPreset } from '../../useCases/selectRectifierHeavyPreset';
 import { captureRectifierHeavyPreset } from '../../useCases/grinderParamBridge/captureRectifierHeavyPreset';
+import { selectRectifierHeavyPreset } from '../../useCases/selectRectifierHeavyPreset';
 import { invertGrinderFactoryPresetAction, isGrinderFactoryPresetSessionEntry } from '../grinderFactoryPresetCapture';
 
 function makeAction(): GrinderFactoryPresetAction {
@@ -109,7 +108,9 @@ describe('Grinder Rectifier project command', () => {
         const snapshots: unknown[] = [];
         let rootChanges = 0;
         const unsubscribeRoot = subscribeToCrdtChanges((docId) => {
-            if (docId === 'root') rootChanges++;
+            if (docId === 'root') {
+                rootChanges++;
+            }
         });
         const unsubscribe = trackStore.subscribe((state) =>
             snapshots.push(structuredClone(state?.tracks[0]?.devices[0]?.parameterValues))
