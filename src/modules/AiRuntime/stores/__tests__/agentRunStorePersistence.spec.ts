@@ -120,6 +120,10 @@ function storedAgentRunKeys(): string[] {
     return keys.toSorted();
 }
 
+function storedAgentRunEntries(): Record<string, string | null> {
+    return Object.fromEntries(storedAgentRunKeys().map((key) => [key, window.localStorage.getItem(key)]));
+}
+
 async function hydrateFreshStore(): Promise<typeof agentRunStore> {
     vi.resetModules();
     const fresh = await import('../agentRunStore');
@@ -203,6 +207,32 @@ describe('agent run persistence', () => {
         const rehydrated = await hydrateFreshStore();
         expect(rehydrated.value?.runs.map((run) => run.runId)).toEqual(legacyState.runs.map((run) => run.runId));
         expect(rehydrated.value?.runs.find((run) => run.runId === 'target-run')).toEqual(returned);
+    });
+
+    it('boots empty and never rewrites run storage when the index names a run whose key is missing', async () => {
+        seedCompletedRuns(3);
+        const runIds = (agentRunStore.value?.runs ?? []).map((run) => run.runId);
+        const missingKey = `${STORAGE_PREFIX}:run:seed-run-1`;
+        const missingText = window.localStorage.getItem(missingKey);
+        window.localStorage.removeItem(missingKey);
+        const torn = storedAgentRunEntries();
+
+        const freshStore = await hydrateFreshStore();
+        expect(freshStore.value?.runs ?? []).toEqual([]);
+        const { agentRunLifecycle: freshLifecycle } = await import('../../useCases/agentRunLifecycle');
+        expect(() =>
+            freshLifecycle.create({
+                runId: 'torn-session-run',
+                request: 'Refused.',
+                mode: 'plan',
+                createdRevision: 'r1',
+            })
+        ).toThrow('Agent run state could not be persisted locally');
+        expect(storedAgentRunEntries()).toEqual(torn);
+
+        window.localStorage.setItem(missingKey, missingText ?? '');
+        const rehydrated = await hydrateFreshStore();
+        expect(rehydrated.value?.runs.map((run) => run.runId)).toEqual(runIds);
     });
 
     it('evicts the oldest uncommitted terminal run at the count bound and leaves no stored copy of it', async () => {

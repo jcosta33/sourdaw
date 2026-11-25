@@ -43,6 +43,36 @@ function snapshotStorage(): Record<string, string | null> {
     );
 }
 
+function usedUnits(storage: Storage): number {
+    let total = 0;
+    for (let index = 0; index < storage.length; index++) {
+        const key = storage.key(index) ?? '';
+        total += key.length + (storage.getItem(key)?.length ?? 0);
+    }
+    return total;
+}
+
+/** Refuses any write that would leave more than `quota` key and value units stored, as a browser quota does. */
+function refuseWritesPast(quota: number): void {
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, text) {
+        const current = this.getItem(key);
+        const replacedUnits = current === null ? 0 : key.length + current.length;
+        if (usedUnits(this) - replacedUnits + key.length + text.length > quota) {
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        }
+        setItem.call(this, key, text);
+    });
+}
+
+/** Spies every write and removal, so a case can show a refused write touched nothing. */
+function spyOnWrites() {
+    return {
+        setItem: vi.spyOn(Storage.prototype, 'setItem'),
+        removeItem: vi.spyOn(Storage.prototype, 'removeItem'),
+    };
+}
+
 function items(count: number): Item[] {
     return Array.from({ length: count }, (_, index) => ({
         id: `item-${String(index)}`,
@@ -170,6 +200,110 @@ describe('createPartitionedLocalStorage', () => {
         expect(storage.trySet({ version: 1, items: items(1) })).toBe(false);
         expect(localStorage.getItem(LEGACY_KEY)).toBe(future);
         expect(storedPartKeys()).toEqual([]);
+    });
+
+    it.each([
+        ['missing', (key: string) => localStorage.removeItem(key)],
+        ['unparsable', (key: string) => localStorage.setItem(key, '{"json": not superjson')],
+    ])('never writes over storage whose index names a %s part', (_, tear) => {
+        const value = { version: 1, items: items(3) };
+        createStorage().trySet(value);
+        const partText = localStorage.getItem(`${PART_PREFIX}item-1`);
+        tear(`${PART_PREFIX}item-1`);
+        const torn = snapshotStorage();
+
+        const storage = createStorage();
+        expect(storage.get()).toBeNull();
+        const writes = spyOnWrites();
+        expect(storage.trySet({ version: 1, items: [] })).toBe(false);
+        expect(() => storage.set({ version: 1, items: items(1) })).toThrow();
+
+        expect(writes.setItem).not.toHaveBeenCalled();
+        expect(writes.removeItem).not.toHaveBeenCalled();
+        expect(snapshotStorage()).toEqual(torn);
+
+        vi.restoreAllMocks();
+        localStorage.setItem(`${PART_PREFIX}item-1`, partText ?? '');
+        const consistent = createStorage();
+        expect(consistent.get()).toEqual(value);
+        expect(consistent.trySet({ ...value, version: 2 })).toBe(true);
+    });
+
+    it('never writes over storage whose index another writer replaced while it was read', () => {
+        const first = { version: 1, items: items(3) };
+        const theirs = { version: 2, items: items(3) };
+        const writer = createStorage();
+        writer.trySet(theirs);
+        const theirIndexText = localStorage.getItem(INDEX_KEY) ?? '';
+        writer.trySet(first);
+        const getItem = Storage.prototype.getItem;
+        const setItem = Storage.prototype.setItem;
+        let committedMidRead = false;
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
+            if (!committedMidRead && key.startsWith(PART_PREFIX)) {
+                committedMidRead = true;
+                setItem.call(this, INDEX_KEY, theirIndexText);
+            }
+            return getItem.call(this, key);
+        });
+
+        const storage = createStorage();
+        expect(storage.get()).toBeNull();
+        vi.restoreAllMocks();
+        const afterRead = snapshotStorage();
+        const writes = spyOnWrites();
+        expect(storage.trySet({ version: 1, items: [] })).toBe(false);
+
+        expect(writes.setItem).not.toHaveBeenCalled();
+        expect(writes.removeItem).not.toHaveBeenCalled();
+        expect(snapshotStorage()).toEqual(afterRead);
+        vi.restoreAllMocks();
+        expect(createStorage().get()).toEqual(theirs);
+    });
+
+    it('migrates a legacy value that fits once but not twice within the quota', () => {
+        const legacy = {
+            version: 1,
+            items: Array.from({ length: 4 }, (_, index) => ({
+                id: `item-${String(index)}`,
+                label: 'x'.repeat(10_000),
+            })),
+        };
+        const legacyText = stringify(legacy);
+        localStorage.setItem(LEGACY_KEY, legacyText);
+        refuseWritesPast(Math.ceil(1.5 * (LEGACY_KEY.length + legacyText.length)));
+
+        const storage = createStorage();
+        expect(storage.get()).toEqual(legacy);
+        expect(storage.trySet(legacy)).toBe(true);
+
+        expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+        vi.restoreAllMocks();
+        expect(createStorage().get()).toEqual(legacy);
+    });
+
+    it('restores the legacy value byte for byte and leaves no part when a migration write is refused', () => {
+        const legacy = { version: 1, items: items(3) };
+        const legacyText = stringify(legacy);
+        localStorage.setItem(LEGACY_KEY, legacyText);
+        const setItem = Storage.prototype.setItem;
+        let partWrites = 0;
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, text) {
+            if (key.startsWith(PART_PREFIX) && ++partWrites === 2) {
+                throw new DOMException('Quota exceeded', 'QuotaExceededError');
+            }
+            setItem.call(this, key, text);
+        });
+
+        const storage = createStorage();
+        expect(storage.get()).toEqual(legacy);
+        expect(() => storage.set(legacy)).toThrow('Quota exceeded');
+
+        vi.restoreAllMocks();
+        expect(localStorage.getItem(LEGACY_KEY)).toBe(legacyText);
+        expect(storedPartKeys()).toEqual([]);
+        expect(localStorage.getItem(INDEX_KEY)).toBeNull();
+        expect(createStorage().get()).toEqual(legacy);
     });
 
     it('removes every key it owns on clear', () => {
