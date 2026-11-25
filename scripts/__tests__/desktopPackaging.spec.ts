@@ -136,7 +136,7 @@ describe('desktop afterPack native admission and hardening', () => {
 
 describe('portable desktop build inputs', () => {
     it('should remove only the renderer sample copy using Node from the desktop build entry point', () => {
-        const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
+        const manifest = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
         const commands = (manifest.scripts['desktop:build'] ?? '').split(' && ');
@@ -161,7 +161,7 @@ describe('portable desktop build inputs', () => {
     });
 
     it('should select the archiver from the toolchain without a machine-specific target override', () => {
-        const config = parse(readFileSync(new URL('../../.cargo/config.toml', import.meta.url), 'utf8'));
+        const config = parse(readFileSync(join(process.cwd(), '.cargo', 'config.toml'), 'utf8'));
         for (const target of Object.values(config.target ?? {})) {
             expect(target).not.toHaveProperty('ar');
         }
