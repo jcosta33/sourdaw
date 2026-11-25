@@ -276,6 +276,13 @@ impl HostedPluginRuntime for HostedRuntime {
 }
 
 impl HostedRuntime {
+    /// Whether the plugin has flagged a latency change not yet polled. Reads
+    /// the host's flag only, so a caller can decide whether the poll — which
+    /// runs on the UI thread — is worth the trip.
+    pub fn has_pending_latency_change(&self) -> bool {
+        delegate!(self, backend => backend.has_pending_latency_change())
+    }
+
     /// Leave the processing state from a thread that is not the audio thread.
     ///
     /// Not on the seam trait: it is the exception the gate documents, and only

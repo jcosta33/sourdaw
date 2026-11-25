@@ -9,7 +9,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/ind
 ## Key Subsystems
 
 - **Patch Model** (`models/ProofPatch.ts`): Modular processing chain definitions (EQ, Dynamic EQ, Exciter, Imager, Limiter), module reordering, filter band specifications, and target curve presets.
-- **Param Bridge** (`useCases/proofParamBridge/`): Fine-grained DSP parameter synchronization (`syncEqBands`, `syncDynBands`, `syncExciter`, `syncImager`, `setProofTarget`, `syncFullPatch`) and offline rendering preparation (`prepareOfflineProof`).
+- **Param Bridge** (`useCases/proofParamBridge/`): Fine-grained DSP parameter synchronization (`syncEqBands`, `syncDynBands`, `syncExciter`, `syncImager`, `syncFullPatch`) and offline rendering preparation (`prepareOfflineProof`).
 - **Chain & Target Validation** (`services/`): Module chain ordering rules (`isValidProofChainOrder`), dynamic crossover frequency constraints (`isValidDynCrossoverFreqs`), and dither conversions (`ditherModeToInt`).
 - **Loudness & Metering** (`stores/proofLoudnessHistory.ts`, `stores/proofStore.ts`): Short-term/integrated LUFS, true peak, and spectral balance history ring buffers.
 
