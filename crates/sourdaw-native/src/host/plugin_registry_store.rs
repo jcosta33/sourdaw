@@ -990,8 +990,10 @@ impl PluginRegistryStore {
     /// decisions laid over them: every row it wrote, and every removal
     /// [`apply_completed_scan_removals`](Self::apply_completed_scan_removals)
     /// made here. So a merge cannot resurrect a row a scan removed this
-    /// session, and it cannot erase a row the scan process wrote after this
-    /// one hydrated.
+    /// session, and it does not erase a row the scan process finished writing
+    /// before this persist read the file. There is no cross-process lock, so
+    /// when both processes read the file before either renames its temporary
+    /// file over it, the later rename drops the other's new rows.
     ///
     /// Each row is written with the fingerprint it carries, and this function
     /// never stats the file itself: the caller fingerprinted the file while its
@@ -2019,6 +2021,56 @@ mod tests {
             1,
         );
         scan_process.persist(&[]);
+
+        session.adopt_entry_written_elsewhere(
+            &session_registry,
+            &test_root.scan_policy(),
+            "aaaa1111",
+        );
+
+        assert!(session.last_known_entry("aaaa1111").is_some());
+        assert!(session_registry.lock().expect("registry lock").is_empty());
+    }
+
+    /// A row whose plugin file was rewritten after the row was written
+    /// describes a file that is gone, so it is a last-known location and never
+    /// a registry hit. The rewrite changes the size, which the fingerprint
+    /// compares.
+    #[test]
+    fn an_adopted_row_whose_plugin_file_was_rewritten_is_last_known_only() {
+        let test_root = TestRegistryRoot::create("registry-adopt-rewritten");
+        let session = test_root.store();
+        let session_registry = Mutex::new(HashMap::new());
+        session.hydrate_into(&session_registry, &test_root.scan_policy());
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+        test_root.write_plugin_file("Reverb.clap", b"clap-bytes-of-another-length");
+
+        session.adopt_entry_written_elsewhere(
+            &session_registry,
+            &test_root.scan_policy(),
+            "aaaa1111",
+        );
+
+        assert!(session.last_known_entry("aaaa1111").is_some());
+        assert!(session_registry.lock().expect("registry lock").is_empty());
+    }
+
+    /// A row whose plugin file was removed after the row was written is a
+    /// last-known location and never a registry hit.
+    #[test]
+    fn an_adopted_row_whose_plugin_file_was_removed_is_last_known_only() {
+        let test_root = TestRegistryRoot::create("registry-adopt-file-removed");
+        let session = test_root.store();
+        let session_registry = Mutex::new(HashMap::new());
+        session.hydrate_into(&session_registry, &test_root.scan_policy());
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+        fs::remove_file(&plugin_path).expect("the plugin file should be removed");
 
         session.adopt_entry_written_elsewhere(
             &session_registry,
