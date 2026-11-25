@@ -104,7 +104,7 @@ describe('ProcessorParams', () => {
 
     it('awaits a promise-returning command callback without throwing', () => {
         const onCommand = vi.fn(() => Promise.resolve());
-        const { rerender } = render(
+        render(
             <ProcessorParams
                 processorId="cm-2"
                 processorType="chordMemory"
@@ -118,7 +118,7 @@ describe('ProcessorParams', () => {
 
     it('swallows a rejecting command promise (no unhandled rejection)', () => {
         const onCommand = vi.fn(() => Promise.reject(new Error('boom')));
-        const { rerender } = render(
+        render(
             <ProcessorParams
                 processorId="cm-3"
                 processorType="chordMemory"
