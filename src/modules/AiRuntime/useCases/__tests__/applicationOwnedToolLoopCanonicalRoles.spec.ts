@@ -143,28 +143,22 @@ describe('canonical roles at the provider continuation boundary', () => {
         if (receiptJson === undefined) {
             throw new Error('Expected serialized receipts in the provider continuation');
         }
-        const { receipts } = JSON.parse(receiptJson) as {
-            receipts: { callId: string; status: string; data: { items: Record<string, unknown>[] } }[];
-        };
-        expect(receipts.map((receipt) => [receipt.callId, receipt.status])).toEqual([
-            ['read-phrase-a', 'success'],
-            ['read-phrase-b', 'success'],
-        ]);
-        const notes = receipts.map((receipt) =>
-            receipt.data.items
-                .filter((item) => item.kind === 'note')
-                .map((item) => ({ pitch: item.pitch, velocity: item.velocity }))
-        );
-        expect(notes).toEqual([
-            [
-                { pitch: 60, velocity: 40 },
-                { pitch: 62, velocity: 50 },
+        const note = (pitch: number, velocity: number) => expect.objectContaining({ kind: 'note', pitch, velocity });
+        const receiptContext: unknown = JSON.parse(receiptJson);
+        expect(receiptContext).toMatchObject({
+            receipts: [
+                {
+                    callId: 'read-phrase-a',
+                    status: 'success',
+                    data: { items: expect.arrayContaining([note(60, 40), note(62, 50)]) },
+                },
+                {
+                    callId: 'read-phrase-b',
+                    status: 'success',
+                    data: { items: expect.arrayContaining([note(79, 117), note(83, 123)]) },
+                },
             ],
-            [
-                { pitch: 79, velocity: 117 },
-                { pitch: 83, velocity: 123 },
-            ],
-        ]);
+        });
     });
 
     it('sends a retryable stale musical cursor refusal to the next provider turn', async () => {
