@@ -66,6 +66,15 @@ type ProjectReferenceMaskSpan = {
     start: number;
 };
 
+const countedDurationUnits: ReadonlySet<string> = new Set(['beat', 'beats', 'bar', 'bars', 'measure', 'measures']);
+
+function isCountedDurationUnit(prompt: string, start: number, value: string): boolean {
+    if (!countedDurationUnits.has(normalizePromptText(value))) {
+        return false;
+    }
+    return /\d+(?:\.\d+)?\s*-?\s*$/u.test(prompt.slice(0, start));
+}
+
 function collectProjectReferenceMaskSpans(
     prompt: string,
     references: readonly string[],
@@ -77,7 +86,7 @@ function collectProjectReferenceMaskSpans(
         for (const match of prompt.matchAll(pattern)) {
             const start = match.index;
             const value = match[0];
-            if (start === undefined || !value) {
+            if (start === undefined || !value || isCountedDurationUnit(prompt, start, value)) {
                 continue;
             }
             const end = start + value.length;
