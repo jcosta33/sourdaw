@@ -75,9 +75,10 @@ type ProjectReferenceMaskSpan = PromptRange & {
 
 type CountedDuration = PromptRange & {
     numberEnd: number;
+    unitStart: number;
 };
 
-const countedDurationPattern = /(?<![\p{L}\p{N}])(\d+(?:\.\d+)?)[-\s]*(?:beats?|bars?|measures?)(?![\p{L}\p{N}])/giu;
+const countedDurationPattern = /(?<![\p{L}\p{N}])(\d+(?:\.\d+)?)([-\s]*)(?:beats?|bars?|measures?)(?![\p{L}\p{N}])/giu;
 
 function overlaps(left: PromptRange, right: PromptRange): boolean {
     return left.start < right.end && right.start < left.end;
@@ -101,21 +102,33 @@ function findReferenceMatches(prompt: string, references: readonly string[]): Pr
 }
 
 function findCountedDurations(prompt: string): CountedDuration[] {
-    return findPromptMatches(prompt, countedDurationPattern).map((match) => {
-        const number = /^\d+(?:\.\d+)?/u.exec(match.value)?.[0] ?? '';
-        return { start: match.start, end: match.end, numberEnd: match.start + number.length };
+    return [...prompt.matchAll(countedDurationPattern)].flatMap((match) => {
+        const start = match.index;
+        const number = match[1] ?? '';
+        const separator = match[2] ?? '';
+        if (start === undefined || !number) {
+            return [];
+        }
+        const numberEnd = start + number.length;
+        return [{ start, end: start + match[0].length, numberEnd, unitStart: numberEnd + separator.length }];
     });
+}
+
+function namesDurationNumber(reference: PromptRange, duration: CountedDuration): boolean {
+    return (
+        reference.start <= duration.start && duration.numberEnd <= reference.end && reference.end <= duration.unitStart
+    );
 }
 
 /**
  * A counted duration the request states ("4 beat", "2-bar", "8--beats") is not an object reference,
- * unless its number is part of a reference name ("Take 2"): then the number names that object.
+ * unless a reference name ends its number before the unit ("Take 2" in "mute Take 2 Beat"): then the
+ * number names that object. A name that repeats the unit too ("4 Bar Loop" in "a 4 bar loop") is not.
  */
 function findProtectedCountedDurations(prompt: string, references: readonly string[]): PromptRange[] {
     const referenceMatches = findReferenceMatches(prompt, references);
     return findCountedDurations(prompt).filter(
-        (duration) =>
-            !referenceMatches.some((match) => match.start <= duration.start && duration.numberEnd <= match.end)
+        (duration) => !referenceMatches.some((match) => namesDurationNumber(match, duration))
     );
 }
 
