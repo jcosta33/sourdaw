@@ -22,11 +22,11 @@
 //! the new figure.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::LatencyChange;
+use crate::host::native_bridge::{LatencyChange, PluginControlError};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_engine::EngineHandle;
-use daw_plugin_host::take_pending_latency_requery_signal;
+use daw_plugin_host::{take_pending_latency_requery_signal, PluginError};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -37,7 +37,9 @@ use std::time::Duration;
 pub const PLUGIN_LATENCY_CHANGED_EVENT: &str = "plugin-latency-changed";
 
 /// How long a latency re-query may wait for the RT path to release the plugin.
-/// Matches the timeout every other control-path command uses.
+/// The visit first waits up to the control gate deadline
+/// (`CONTROL_GATE_DEADLINE` in `native_bridge`), then up to this long for the
+/// RT seam.
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// How long a hint-driven sweep's visit may hold one instance. Sized for the
@@ -99,7 +101,7 @@ pub fn notify_latency_change(instance_id: &str) {
 /// latency, which would corrupt compensation on every track using the plugin).
 pub fn latency_change_payload(
     instance_id: &str,
-    refreshed: &Result<Option<LatencyChange>, String>,
+    refreshed: &Result<Option<LatencyChange>, PluginControlError<PluginError>>,
 ) -> Option<PluginLatencyChanged> {
     match refreshed {
         Ok(Some(change)) => Some(PluginLatencyChanged {
@@ -126,7 +128,7 @@ pub fn latency_change_payload(
 /// one failed re-query is one diagnostic.
 pub fn latency_compensation(
     engine_plugin_id: Option<usize>,
-    refreshed: &Result<Option<LatencyChange>, String>,
+    refreshed: &Result<Option<LatencyChange>, PluginControlError<PluginError>>,
 ) -> Option<LatencyCompensation> {
     let Ok(Some(change)) = refreshed else {
         return None;
@@ -306,11 +308,22 @@ fn serve_wakes_and_hints(
 mod tests {
     use super::*;
 
-    fn changed(latency_ms: f64, latency_frames: usize) -> Result<Option<LatencyChange>, String> {
+    fn changed(
+        latency_ms: f64,
+        latency_frames: usize,
+    ) -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
         Ok(Some(LatencyChange {
             latency_ms,
             latency_frames,
         }))
+    }
+
+    fn timed_out() -> Result<Option<LatencyChange>, PluginControlError<PluginError>> {
+        Err(PluginControlError::Refused(
+            crate::host::native_bridge::PluginControlRefusal::TimedOut {
+                plugin: "fixture".to_string(),
+            },
+        ))
     }
 
     #[test]
@@ -334,7 +347,7 @@ mod tests {
     #[test]
     fn a_failed_requery_emits_nothing_rather_than_a_fabricated_latency() {
         assert_eq!(
-            latency_change_payload("inst-1", &Err("control path timed out".to_string())),
+            latency_change_payload("inst-1", &timed_out()),
             None,
             "a failed re-query must not publish a latency the plugin never reported"
         );
@@ -359,7 +372,7 @@ mod tests {
     #[test]
     fn a_failed_requery_compensates_nothing_rather_than_a_fabricated_latency() {
         assert_eq!(
-            latency_compensation(Some(7), &Err("control path timed out".to_string())),
+            latency_compensation(Some(7), &timed_out()),
             None,
             "a failed re-query must not aim a delay line at a latency the plugin never reported"
         );
@@ -531,6 +544,7 @@ mod tests {
     /// and the frames are what the fixture declared.
     #[test]
     fn a_sweep_services_a_flagged_instance_and_aims_the_compensation() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, _runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let (handle, mut command_rx, _retired_adoption_rx) =
@@ -571,6 +585,7 @@ mod tests {
     /// nothing, so one restart cannot loop.
     #[test]
     fn a_second_sweep_over_a_serviced_instance_publishes_nothing() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, _runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let engine: Engine = Arc::new(Mutex::new(None));
@@ -605,6 +620,7 @@ mod tests {
     /// forever — the flag dies with the instance instead.
     #[test]
     fn a_sweep_does_not_reraise_the_hint_for_an_instance_that_refuses_control() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, runtime) = sweep_fixture(441, true);
         runtime.begin_unload();
         let sink = RecordingEventSink::default();
@@ -624,6 +640,7 @@ mod tests {
     /// still standing and nothing else will read it.
     #[test]
     fn a_sweep_reraises_the_hint_for_a_live_instance_it_could_not_reach() {
+        let _hint_guard = crate::host::hint_test_support::guard();
         let (engine_plugins, runtime) = sweep_fixture(441, true);
         let sink = RecordingEventSink::default();
         let engine: Engine = Arc::new(Mutex::new(None));

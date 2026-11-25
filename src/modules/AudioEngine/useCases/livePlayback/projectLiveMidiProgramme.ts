@@ -50,7 +50,7 @@
  * than in the body.
  */
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import {
     frozenMidiTakeRepeats,
     projectFrozenMidiTakeWindow,
@@ -71,6 +71,7 @@ import { type OfflinePpqEndpointProjector } from '../../repositories/offlineSche
 import { getSourceOccurrenceOffset } from '../offlineRender/getSourceOccurrenceOffset';
 import { resolveTrackClipsWithComping, type ResolvedClip } from '../offlineRender/resolveTrackClipsWithComping';
 
+import { type ResolutionTempoTimeline } from './liveTempoTimeline';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { nativeMidiNoteSink } from './nativeMidiNoteSink';
 
@@ -110,6 +111,15 @@ export type LiveMidiProgrammeInput = Readonly<{
      */
     carriedStripIds: ReadonlySet<string>;
     notesByClipId: MidiStoreState['notesByClipId'];
+    /**
+     * The take lanes the comped clip set resolves against. Taken as a value
+     * because the live session reads the live store and an export reads the
+     * lanes it captured; `undefined` falls through to the live store, exactly
+     * as `resolveTrackClipsWithComping` does for the audio path.
+     */
+    takeLanes: TakeLaneStoreState | null | undefined;
+    /** The tempo map comp resolution converts against: live's, or the render's own. */
+    tempoTimeline: ResolutionTempoTimeline;
     /** `midiStore`'s own seed — what every carrier rolls a chance note with. */
     probabilitySeed: number;
     defaultTempo: number;
@@ -497,7 +507,7 @@ export function projectLiveMidiProgramme(input: LiveMidiProgrammeInput): LiveMid
         }
         nativeVoicedStripIds.add(track.id);
 
-        const notes = resolveTrackClipsWithComping(track.id, track.clips)
+        const notes = resolveTrackClipsWithComping(track.id, track.clips, input.takeLanes, input.tempoTimeline)
             // Muted clips render nothing, exactly as `scheduleMidiNotes` skips
             // them on the Web Audio path.
             .filter((clip) => clip.type === 'midi' && !clip.muted)

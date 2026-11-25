@@ -67,6 +67,16 @@ function registerHandlers(): void {
     reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
 }
 
+let recordingContext: AudioContext;
+
+function getRecordingContext(): AudioContext {
+    return recordingContext;
+}
+
+function getNoCompensationDelay(): number {
+    return 0;
+}
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audioEngine.updateDeviceParam,
@@ -931,7 +941,11 @@ describe('Proof cumulative disclosure in project truth', () => {
         const sentinelLane = createAutomationLane('track', 'b:input_gain', 'Other device input');
         automationStore.set({ lanes: [ceilingLane, sentinelLane] });
         const context = new AudioContext();
-        setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
+        recordingContext = context;
+        setAutomationRecordingDependencies({
+            getAudioContext: getRecordingContext,
+            getCompensationDelay: getNoCompensationDelay,
+        });
         transportStore.set({ ...defaultTransportState, isPlaying: true });
         startAutomationRecording();
         recordAutomationValue('track', 'b:input_gain', 0.7, 1);

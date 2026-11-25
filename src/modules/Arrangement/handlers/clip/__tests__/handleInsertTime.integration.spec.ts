@@ -112,7 +112,6 @@ describe('Insert Time moves each tempo and meter change with the material on its
         clearHandlerRegistry();
         stopProjectionBridge();
         configureAutomergeStoragePort(null);
-        setTimeOperationDependencies(null);
         sessionStorage.removeItem('sourdaw-undo-session');
         removeCrdtDoc('root');
         vi.restoreAllMocks();

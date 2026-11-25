@@ -184,6 +184,21 @@ describe('ExpandedChannelStrip', () => {
         expect(screen.getByText('C')).toBeInTheDocument();
     });
 
+    it('marks a hidden channel as hidden and dims it, and marks nothing on a shown one', () => {
+        const { unmount } = renderWithTooltip(
+            <ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />
+        );
+        expect(screen.queryByTestId(`channel-hidden-${mockTrack.id}`)).not.toBeInTheDocument();
+        expect(screen.getByTestId(`channel-${mockTrack.id}`)).not.toHaveClass('opacity-50');
+        unmount();
+
+        renderWithTooltip(
+            <ExpandedChannelStrip track={{ ...mockTrack, hidden: true }} isSelected={false} widthClass="w-40" />
+        );
+        expect(screen.getByTestId(`channel-hidden-${mockTrack.id}`)).toHaveTextContent('Hidden');
+        expect(screen.getByTestId(`channel-${mockTrack.id}`)).toHaveClass('opacity-50');
+    });
+
     it('renders 0.0 dB at unity gain', () => {
         renderWithTooltip(
             <ExpandedChannelStrip track={{ ...mockTrack, gain: 1 }} isSelected={false} widthClass="w-40" />

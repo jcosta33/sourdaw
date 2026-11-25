@@ -1,4 +1,4 @@
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import {
@@ -13,6 +13,26 @@ import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPen
 import { digestCommandBatchContent } from '../../../useCases/digestCommandBatchContent';
 import * as retainedReviewProjection from '../../../useCases/selectRetainedSectionRenderManualReviews';
 import { ChatPanel } from '../ChatPanel';
+
+const READINGS_WITH_PLANS = [
+    {
+        id: 'reading-1',
+        name: 'Darker top end',
+        descriptors: ['dark'],
+        planLines: [
+            'Batch 2 of 3: dark drums',
+            'Drums: Tame the top shelf. Expected: Brightness down.',
+            'Batch 3 of 3: dark vocal',
+            'Vocal: Soften the air band, De-ess. Expected: Air (high) down, Sibilance down.',
+        ],
+    },
+    {
+        id: 'reading-2',
+        name: 'More low-mid body',
+        descriptors: ['warm', 'vintage'],
+        planLines: ['Batch 2 of 2: warm and vintage bass', 'Bass: Add low-mid body. Expected: Low-mid energy up.'],
+    },
+];
 
 const useStoreMock = vi.hoisted(() => vi.fn());
 const metricApprovalMock = vi.hoisted(() => vi.fn());
@@ -793,6 +813,49 @@ describe('ChatPanel', () => {
         expect(screen.queryByRole('button', { name: 'Stop run' })).not.toBeInTheDocument();
     });
 
+    it('shows each reading its own plan inside its group, beside its button', () => {
+        usePendingChatState({
+            messages: [
+                {
+                    id: 'brief-card',
+                    role: 'assistant',
+                    content: 'This request reads more than one way',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'brief-confirmation',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+        metricApprovalMock.mockReturnValue({
+            canConfirm: true,
+            metricGoals: { status: 'not-required', reason: null, criteria: [] },
+            rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+            skip: { available: false, reason: null },
+            readings: READINGS_WITH_PLANS,
+        });
+
+        render(<ChatPanel />);
+
+        for (const reading of READINGS_WITH_PLANS) {
+            const group = screen.getByRole('group', { name: reading.name });
+            expect(
+                within(group)
+                    .getAllByRole('listitem')
+                    .map((item) => item.textContent)
+            ).toEqual(reading.planLines);
+            expect(within(group).getByRole('button', { name: `Plan reading: ${reading.name}` })).toBeInTheDocument();
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'Plan reading: Darker top end' }));
+        expect(chooseVibeBriefReading).toHaveBeenCalledExactlyOnceWith({
+            confirmationId: 'brief-confirmation',
+            readingId: 'reading-1',
+        });
+    });
+
     it('offers one button per reading on an ambiguous brief card, planning the chosen one on activation', () => {
         usePendingChatState({
             messages: [
@@ -815,10 +878,7 @@ describe('ChatPanel', () => {
             metricGoals: { status: 'not-required', reason: null, criteria: [] },
             rePreview: { available: false, reason: 'The proposal still matches the current project.' },
             skip: { available: false, reason: null },
-            readings: [
-                { id: 'reading-1', name: 'Darker top end', descriptors: ['dark'] },
-                { id: 'reading-2', name: 'More low-mid body', descriptors: ['warm', 'vintage'] },
-            ],
+            readings: READINGS_WITH_PLANS,
         });
 
         render(<ChatPanel />);

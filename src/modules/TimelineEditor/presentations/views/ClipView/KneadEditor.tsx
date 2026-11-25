@@ -12,7 +12,7 @@ import { useStore } from '#/infra/store/useStore';
 import { executeAddDeviceAction } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { kneadStore } from '#/modules/Knead/stores';
-import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
+import { analyzeClipPitch, hostsKnead, updateClipKneadState } from '#/modules/Knead/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
@@ -42,7 +42,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     } | null>(null);
 
     const track = tracks.find((time) => time.id === trackId);
-    const hasKnead = track?.devices.some((data) => data.type.toLowerCase() === 'knead') ?? false;
+    const hasKnead = hostsKnead(track?.devices ?? []);
 
     const kneadStoreState = useStore(kneadStore, {
         activeClipId: null,

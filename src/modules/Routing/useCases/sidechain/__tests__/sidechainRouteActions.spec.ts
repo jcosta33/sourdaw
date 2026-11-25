@@ -18,19 +18,27 @@ const mocks = vi.hoisted(() => ({
     }),
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    getTrackEligibility: vi.fn(() => ({ acceptsRoutingEndpoint: true })),
-    trackStore: {
-        get value() {
-            return { tracks: mocks.tracks };
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        ...actual,
+        getTrackEligibility: vi.fn(() => ({ acceptsRoutingEndpoint: true })),
+        trackStore: {
+            get value() {
+                return { tracks: mocks.tracks };
+            },
         },
-    },
-}));
+    };
+});
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    wireSidechainRoute: mocks.wireSidechainRoute,
-    unwireSidechainRoute: mocks.unwireSidechainRoute,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        ...actual,
+        wireSidechainRoute: mocks.wireSidechainRoute,
+        unwireSidechainRoute: mocks.unwireSidechainRoute,
+    };
+});
 
 let mockStoreValue: { value: unknown } = { value: null };
 

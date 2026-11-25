@@ -57,6 +57,7 @@ export { updateClipInStore } from './updateClipInStore';
 export { appendClipToTrack } from './appendClipToTrack';
 export { appendTrack } from './appendTrack';
 export { getTrackEligibility, shouldCreateLiveTrackStrip } from './trackEligibility';
+export { isFrozenTrackRefusingRecording } from './frozenTrackRecording';
 
 // Effective-audibility read model (mute ∪ solo): projects the authoritative live
 // solo planner into a per-track audibility map the offline exporter consumes,

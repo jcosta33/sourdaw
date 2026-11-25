@@ -31,7 +31,6 @@ async function importRuntime() {
     const transport = await import('#/modules/Transport/useCases');
     const audio = await import('../../index');
     const cache = await import('../../../stores/audioBufferCache');
-    const pitch = await import('../commitPitchEdit');
     const dsp = await import('../../../wasm/daw_dsp.js');
     return {
         projections,
@@ -45,7 +44,6 @@ async function importRuntime() {
         transport,
         audio,
         cache,
-        pitch,
         dsp,
     };
 }
@@ -212,7 +210,6 @@ beforeEach(() => {
     runtime.command.clearUndoHistory();
     runtime.arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
     runtime.knead.resetKneadForProject();
-    runtime.knead.setPitchEditDependencies({ commitPitchEdit: runtime.pitch.commitPitchEdit });
 });
 
 afterEach(async () => {

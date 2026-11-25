@@ -46,9 +46,6 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         ...new Set([...getVersionedCommandBatchDivergenceTargetIds(envelope), ...envelope.scope.protectedTargetIds]),
     ];
     const preflight = commandBatchPreflightPort.capture({ assetReferences: [], targetIds });
-    if (!preflight) {
-        throw new Error('Command target fingerprint capture is unavailable.');
-    }
     if (preflight.projectId !== envelope.projectId) {
         throw new Error(COMMAND_BATCH_PROJECT_IDENTITY_STALE_REASON);
     }
@@ -107,7 +104,7 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
     const metricFields: { metricGoalState?: string | null } = { metricGoalState: input.metricGoalState ?? null };
     // Recorded so revalidation recompiles with the input this compilation used: the decision alone cannot
     // say it, since metric admission escalates an allow batch to confirm without any explicit request.
-    const explicitFields: { explicitApprovalRequired?: boolean } = {
+    const explicitFields: { explicitApprovalRequired: boolean } = {
         explicitApprovalRequired: input.requireExplicitApproval !== false,
     };
     return {

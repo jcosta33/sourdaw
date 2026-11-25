@@ -1,5 +1,11 @@
 import { useStore } from '#/infra/store/useStore';
-import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    defaultTimelineEditingState,
+    markerStore,
+    timelineEditingStore,
+    trackStore,
+} from '#/modules/Arrangement/stores';
 import { getTimelineSurfaceMinimumHeight } from '#/modules/Arrangement/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
@@ -33,6 +39,7 @@ export const useArrangementMinimumHeight = (): number => {
     const chordState = useStore(chordTrackStore, { enabled: false, events: [] });
     const adjustmentState = useStore(adjustmentLayerStore, { layers: [] });
     const preferences = useStore(preferencesStore);
+    const showHiddenTracks = useStore(timelineEditingStore, defaultTimelineEditingState).showHiddenTracks;
 
     const hasUserTracks = tracks.some((track) => track.kind !== 'master' && track.kind !== 'folder');
     if (mode === 'automation' || !hasUserTracks) {
@@ -48,7 +55,12 @@ export const useArrangementMinimumHeight = (): number => {
             preferences.timelineMinimapHeight
         ),
         hasChords: chordState.events.length > 0 || chordState.enabled,
-        surfaceMinimumHeight: getTimelineSurfaceMinimumHeight(tracks, selectedTrackId, preferences.trackHeight),
+        surfaceMinimumHeight: getTimelineSurfaceMinimumHeight(
+            tracks,
+            selectedTrackId,
+            preferences.trackHeight,
+            showHiddenTracks
+        ),
         scratchPadHeight: scratchPadOpen ? getScratchPadRenderedHeight(scratchPadCollapsed, scratchPadHeight) : 0,
     });
 };

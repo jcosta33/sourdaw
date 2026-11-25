@@ -1,11 +1,11 @@
 import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
+import { getSidechainTargetCapability } from '#/modules/AudioEngine/useCases';
 import { type HandlerExecutionResult } from '#/utils/handlerContract';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { sidechainRoutesMatch, type SidechainRoute } from '../../models/SidechainRoute';
 import { sidechainStore } from '../../stores/sidechainStore';
 
-import { getSidechainTargetCapability } from './getSidechainTargetCapability';
 import { reconcileSidechainRouteRuntime } from './reconcileSidechainRouteRuntime';
 
 export function addSidechainRouteSnapshot(route: SidechainRoute): HandlerExecutionResult {

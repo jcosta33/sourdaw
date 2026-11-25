@@ -6,7 +6,7 @@ import {
     type HostedLlmProvider,
 } from '../../models/HostedLlmProvider';
 import { setCloudProviderConfig } from '../../repositories/cloudLlm/setCloudProviderConfig';
-import { llmStatusStore } from '../../stores/llmStatusStore';
+import { answeringStatus } from '../../stores/answeringStatus';
 
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 
@@ -119,7 +119,8 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
         thinking: configuration.thinking,
     });
 
-    if (llmStatusStore.value?.state === 'ready' && llmStatusStore.value.backend === 'cloud') {
-        llmStatusStore.set({ state: 'idle' });
+    const engineStatus = answeringStatus.readEngineStatus();
+    if (engineStatus?.state === 'ready' && engineStatus.backend === 'cloud') {
+        answeringStatus.publishEngineStatus({ state: 'idle' });
     }
 }

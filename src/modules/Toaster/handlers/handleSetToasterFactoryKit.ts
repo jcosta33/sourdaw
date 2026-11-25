@@ -1,16 +1,12 @@
 import {
     applyDevicePatchState,
     captureDevicePatchCommitValidation,
+    changesTrackOutsideDevicePlan,
     getPlannedDevicePatchState,
 } from '#/modules/Arrangement/useCases';
 import { projectTransitionEpoch } from '#/modules/Project/stores';
 import { createHandler } from '#/utils/createHandler';
-import {
-    type AppAction,
-    type AppActionType,
-    type HandlerExecutionResult,
-    type HandlerValidationContext,
-} from '#/utils/handlerContract';
+import { type AppAction, type HandlerExecutionResult, type HandlerValidationContext } from '#/utils/handlerContract';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 import { valuesEqual } from '#/utils/structuralEquality';
 
@@ -25,19 +21,6 @@ import {
 
 type Admission = NonNullable<ReturnType<typeof captureDevicePatchCommitValidation>>;
 const admissions = new WeakMap<ToasterFactoryKitAction, Admission>();
-
-const unplannedTrackChanges = new Set<AppActionType>([
-    'freezeTrack',
-    'unfreezeTrack',
-    'restoreFreezeState',
-    'flattenTrack',
-    'bounceInPlace',
-    'loadPreset',
-    'restorePresetDeviceChain',
-    'removeTrack',
-    'restoreTrack',
-    'discardCreatedTrack',
-]);
 
 function changesKitDevice(action: AppAction, deviceId: string): boolean {
     if (action.type === 'restoreDevice') {
@@ -65,12 +48,7 @@ function supportedBatch(action: ToasterFactoryKitAction, context?: HandlerValida
             if (changesKitDevice(sibling, deviceId)) {
                 return false;
             }
-            return !(
-                unplannedTrackChanges.has(sibling.type) &&
-                sibling.payload &&
-                'trackId' in sibling.payload &&
-                sibling.payload.trackId === trackId
-            );
+            return !changesTrackOutsideDevicePlan(sibling, trackId);
         }) ?? true
     );
 }

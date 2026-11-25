@@ -21,25 +21,50 @@ const audio_clock = vi.hoisted(() => ({ currentTime: 1.1, sampleRate: 48000 }));
 const ensure_track_strip = vi.hoisted(() => vi.fn());
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioEngine: { context: audio_clock, ensureTrackStrip: ensure_track_strip },
-    applyNoteExpression: apply_note_expression,
-    builtinSynthVoice: { read: () => synthVoices },
-    getDefaultBendRangeSemitones: () => 48,
-    getCompensationDelay: () => 0,
-    getFactoryDrumKitByIndex: () => null,
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: async () => true,
-    sendNativeLiveMidiNote: async () => true,
-    soundsNativeNotes: () => false,
-    startFaustNote: vi.fn(),
-    writeNativeBuiltinParameters: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        findPadOutputHost: actual.findPadOutputHost,
+        hasPadOutputHost: actual.hasPadOutputHost,
+        findMidiTransformDevice: actual.findMidiTransformDevice,
+        isMidiTransformDevice: actual.isMidiTransformDevice,
+        isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
+        resolveDrumKitBy: actual.resolveDrumKitBy,
+        resolveDrumKitOutputGain: actual.resolveDrumKitOutputGain,
+        resolveLiveNoteControls: actual.resolveLiveNoteControls,
+        resolveNoteReceivingInstrument: actual.resolveNoteReceivingInstrument,
+        audioEngine: { context: audio_clock, ensureTrackStrip: ensure_track_strip },
+        applyNoteExpression: apply_note_expression,
+        builtinSynthVoice: { read: () => synthVoices },
+        getDefaultBendRangeSemitones: () => 48,
+        getCompensationDelay: () => 0,
+        getFactoryDrumKitByIndex: () => null,
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: async () => true,
+        sendNativeLiveMidiNote: async () => true,
+        soundsNativeNotes: () => false,
+        startFaustNote: vi.fn(),
+        writeNativeBuiltinParameters: vi.fn(),
+    };
+});
 
-vi.mock('#/modules/PluginHost/useCases', () => ({
-    registerFaustDSP: vi.fn(),
-    isFaustInstrumentModule: () => false,
-}));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        isFaustModule: actual.isFaustModule,
+        compileFaustDSP: actual.compileFaustDSP,
+        createFaustNode: actual.createFaustNode,
+        forgetRetiredPluginInstances: actual.forgetRetiredPluginInstances,
+        getFaustModuleLatencyMs: actual.getFaustModuleLatencyMs,
+        markExternalPluginEngineAttached: actual.markExternalPluginEngineAttached,
+        readExternalPluginStatesBeforeEngineRetire: actual.readExternalPluginStatesBeforeEngineRetire,
+        registerBuiltinFaustDSP: actual.registerBuiltinFaustDSP,
+        setPluginBypass: actual.setPluginBypass,
+        setPluginParameter: actual.setPluginParameter,
+        registerFaustDSP: vi.fn(),
+        isFaustInstrumentModule: () => false,
+    };
+});
 
 // The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
 const synthVoices = vi.hoisted(() => ({

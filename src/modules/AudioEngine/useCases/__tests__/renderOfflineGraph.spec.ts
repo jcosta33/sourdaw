@@ -1429,7 +1429,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         expect(keyEdges).toHaveLength(1);
     });
 
-    it('warns and retains the compressor fallback when sidechain worklet preparation fails', async () => {
+    it('warns that ducking is lost when sidechain worklet preparation fails', async () => {
         const kick = TrackDummy.create({ id: 'kick' });
         const bass = TrackDummy.create({
             id: 'bass',
@@ -1453,13 +1453,28 @@ describe('renderOffline — graph construction and lifecycle', () => {
 
         await expect(renderOffline({ durationBeats: 4, onWarning })).resolves.toBe(renderedBuffer);
 
+        expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('ducking is lost'));
         expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('worklets blocked'));
     });
 
-    it('does not prepare the sidechain worklet without a valid persisted route', async () => {
+    it('prepares the sidechain worklet for an unkeyed compressor so it renders as live does', async () => {
         const bass = TrackDummy.create({
             id: 'bass',
             devices: [{ id: 'compressor-1', type: 'builtin-sidechain-compressor', bypassed: false } as never],
+        });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [bass] } as unknown as TrackStoreState })
+        );
+
+        await renderOffline(4);
+
+        expect(mocks.addWorkletModule).toHaveBeenCalledWith('/audio/worklets/sidechain-compressor-processor.js');
+    });
+
+    it('does not prepare the sidechain worklet when its only compressor is bypassed', async () => {
+        const bass = TrackDummy.create({
+            id: 'bass',
+            devices: [{ id: 'compressor-1', type: 'builtin-sidechain-compressor', bypassed: true } as never],
         });
         mocks.resolveRenderContext.mockReturnValue(
             makeContext({ tracks: { tracks: [bass] } as unknown as TrackStoreState })

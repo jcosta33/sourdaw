@@ -173,7 +173,6 @@ describe('executeSelectedTimeRangeDeletion', () => {
     });
 
     afterEach(() => {
-        setTimeOperationDependencies(null);
         takeLaneStore.set({ lanes: [] });
         vi.restoreAllMocks();
     });
@@ -208,7 +207,18 @@ describe('executeSelectedTimeRangeDeletion', () => {
     });
 
     it('returns truthful no-change for an empty target set without stores, dependencies, or identity allocation', () => {
-        setTimeOperationDependencies(null);
+        const forbidden = () => {
+            throw new Error('an empty target set must not use the time operation dependencies');
+        };
+        setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: forbidden, midi: forbidden, timelineMap: forbidden },
+            prepareAutomationTimeOperation: forbidden,
+            prepareAutomationTimeStateRestore: forbidden,
+            prepareMidiGlobalTimeTransaction: forbidden,
+            prepareMidiTimeStateRestore: forbidden,
+            prepareTimelineMapTimeOperation: forbidden,
+            prepareTimelineMapStateRestore: forbidden,
+        });
         trackStore.clear();
         midiStore.clear();
         const randomUuid = vi.spyOn(crypto, 'randomUUID');

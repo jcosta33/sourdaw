@@ -7,9 +7,9 @@ import { registerHandlerMap } from '#/modules/Command/stores';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS, MAX_PLAN_CAPABILITIES } from '../../models/AgentRunPlanBounds';
 import { MAX_METRIC_GOAL_STATE_BYTES } from '../../models/MetricGoalAdmission';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
-import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS, MAX_PLAN_CAPABILITIES } from '../../stores/agentRunStore';
 import { chatStore } from '../../stores/chatStore';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { agentRunLifecycle } from '../agentRunLifecycle';

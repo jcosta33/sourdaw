@@ -12,7 +12,7 @@
  * rather than a guessed placement, exactly as the audio programme refuses.
  */
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
@@ -21,6 +21,7 @@ import { offlinePpqEndpointProjectorState } from '../../repositories/offlineSche
 import { audioBufferCache } from '../../stores/audioBufferCache';
 
 import { bakedStripIds } from './bakedStripIds';
+import { liveTempoTimeline } from './liveTempoTimeline';
 import { projectLiveMidiProgramme, type LiveMidiProgramme, type LiveMidiSpan } from './projectLiveMidiProgramme';
 
 export type ReadLiveMidiProgrammeInput = Readonly<{
@@ -76,6 +77,8 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
                 readBuffer: (bufferId) => audioBufferCache.get(bufferId),
             }),
             notesByClipId: midi.notesByClipId,
+            takeLanes: takeLaneStore.value,
+            tempoTimeline: liveTempoTimeline,
             probabilitySeed,
             defaultTempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
             sampleRate: input.sampleRate,

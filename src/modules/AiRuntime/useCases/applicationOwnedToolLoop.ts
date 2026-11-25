@@ -54,6 +54,7 @@ import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
 import { type ProjectContextProductionBrief } from '../models/ProjectContext';
 import {
     type AdoptedRecipe,
+    type CumulativePreview,
     type RetainedCommand,
     type RetainedCommandSet,
     type RetainedCompilation,
@@ -1483,12 +1484,18 @@ type ExecutedRead = {
     metricRecipe?: MetricRecipeSource;
     /** Set only by a preview measurement; it is what makes the entry the loop retains a measured preview. */
     measuredPreview?: MeasuredPreview | null;
+    cumulative?: CumulativePreview;
     /** Set only by the brief compiler; it is what makes the entry the loop retains a brief. */
     briefChangeLines?: readonly string[] | null;
     composedBrief?: ProjectContextProductionBrief | null;
     mixIntent?: BriefMixIntent | null;
     mixAlternatives?: readonly BriefMixAlternative[];
 };
+
+type PreviewCompilation = Extract<RetainedCompilation, { kind: 'preview' }>;
+function withCumulative(preview: PreviewCompilation, cumulative?: CumulativePreview): PreviewCompilation {
+    return cumulative === undefined ? preview : { ...preview, cumulative };
+}
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
     if (
@@ -1509,7 +1516,8 @@ function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedComma
         };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {
-        return { kind: 'preview', ...retainable, measuredPreview: executed.measuredPreview };
+        const { measuredPreview, cumulative } = executed;
+        return withCumulative({ kind: 'preview', ...retainable, measuredPreview }, cumulative);
     }
     if (executed.recipe !== undefined && executed.recipe !== null) {
         return { kind: 'recipe', ...retainable, recipe: executed.recipe, metricRecipe: executed.metricRecipe };
@@ -2639,8 +2647,9 @@ export async function runApplicationOwnedToolLoop(
                     WHOLE_REQUEST_PREPARATION_TOOL_NAMES.has(call.name) ||
                     (call.name === ANALYSIS_MEASURE_TOOL_NAME &&
                         (call.arguments.subject === 'preview' ||
-                            call.arguments.proposal !== undefined ||
-                            call.arguments.recipeCallId !== undefined))
+                            [call.arguments.proposal, call.arguments.recipeCallId, call.arguments.recipeCallIds].some(
+                                (source) => source !== undefined
+                            )))
             )
         ) {
             return {

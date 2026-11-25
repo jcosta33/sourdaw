@@ -602,6 +602,97 @@ impl IRunLoopTrait for HostEditorFrame {
     }
 }
 
+/// Why a VST3 editor could not be opened, re-scaled or resized.
+///
+/// Built on the control path that drives the editor window, never on the
+/// audio thread.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EditorError {
+    /// The windowing session has no embedding path at all.
+    SessionRefused {
+        refusal: &'static str,
+        plugin_name: String,
+    },
+    /// This platform has no VST3 view type to embed with.
+    NoEmbeddingPath { plugin_name: String },
+    /// The controller creates no editor view.
+    NoEditor { plugin_name: String },
+    /// The view does not support this platform's view type.
+    PlatformTypeUnsupported { plugin_name: String },
+    /// The view does not answer `queryInterface` for itself.
+    ViewIdentityUnanswered { plugin_name: String },
+    /// The host frame could not be borrowed as an `IPlugFrame`.
+    FrameUnavailable { plugin_name: String },
+    /// `setFrame` refused the host frame.
+    FrameRefused { plugin_name: String },
+    /// `attached` refused the host window.
+    AttachRefused { plugin_name: String },
+    /// The view states no size before or after attaching.
+    NoStatedSize { plugin_name: String },
+    /// The view states no size at the new display scale.
+    NoSizeToRescale,
+    /// The view cannot be resized by the host.
+    FixedSize,
+    /// Another resize handshake holds the guard.
+    ResizeInProgress,
+    /// `checkSizeConstraint` refused the request.
+    SizeRefused,
+    /// `checkSizeConstraint` constrained the size to an empty rectangle.
+    SizeConstrainedToNothing,
+    /// `onSize` refused the constrained size.
+    ConstrainedSizeRefused,
+}
+
+impl std::fmt::Display for EditorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SessionRefused {
+                refusal,
+                plugin_name,
+            } => write!(f, "{refusal} ('{plugin_name}')"),
+            Self::NoEmbeddingPath { plugin_name } => write!(
+                f,
+                "[VST3] '{plugin_name}': this platform has no VST3 editor embedding path"
+            ),
+            Self::NoEditor { plugin_name } => write!(f, "[VST3] '{plugin_name}' offers no editor"),
+            Self::PlatformTypeUnsupported { plugin_name } => write!(
+                f,
+                "[VST3] '{plugin_name}' has an editor, but not one this platform can embed"
+            ),
+            Self::ViewIdentityUnanswered { plugin_name } => write!(
+                f,
+                "[VST3] '{plugin_name}': its editor view does not answer for its own identity"
+            ),
+            Self::FrameUnavailable { plugin_name } => {
+                write!(f, "[VST3] '{plugin_name}': the host frame is unavailable")
+            }
+            Self::FrameRefused { plugin_name } => {
+                write!(f, "[VST3] '{plugin_name}' refused the host's plug frame")
+            }
+            Self::AttachRefused { plugin_name } => write!(
+                f,
+                "[VST3] '{plugin_name}' refused to attach its editor to the host window"
+            ),
+            Self::NoStatedSize { plugin_name } => write!(
+                f,
+                "[VST3] '{plugin_name}' would not state a size for its editor"
+            ),
+            Self::NoSizeToRescale => f.write_str("[VST3] this editor states no size to re-scale"),
+            Self::FixedSize => f.write_str("[VST3] this editor is a fixed size"),
+            Self::ResizeInProgress => f.write_str("[VST3] a resize handshake is already running"),
+            Self::SizeRefused => f.write_str("[VST3] this editor refused the requested size"),
+            Self::SizeConstrainedToNothing => {
+                f.write_str("[VST3] this editor constrained the size to nothing")
+            }
+            Self::ConstrainedSizeRefused => {
+                f.write_str("[VST3] this editor refused to move to the constrained size")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EditorError {}
+
 /// One open editor: the plugin's view, the host's frame, and the state they
 /// share.
 ///
@@ -646,34 +737,38 @@ impl Vst3Editor {
         session: EditorSession,
         window: Option<EditorWindowResizer>,
         scale_factor: f64,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, EditorError> {
         if let Some(refusal) = session.refusal() {
-            return Err(format!("{refusal} ('{plugin_name}')"));
+            return Err(EditorError::SessionRefused {
+                refusal,
+                plugin_name: plugin_name.to_string(),
+            });
         }
         let Some(view_type) = platform_view_type() else {
-            return Err(format!(
-                "[VST3] '{plugin_name}': this platform has no VST3 editor embedding path"
-            ));
+            return Err(EditorError::NoEmbeddingPath {
+                plugin_name: plugin_name.to_string(),
+            });
         };
 
-        let view = create_editor_view(controller)
-            .ok_or_else(|| format!("[VST3] '{plugin_name}' offers no editor"))?;
+        let view = create_editor_view(controller).ok_or_else(|| EditorError::NoEditor {
+            plugin_name: plugin_name.to_string(),
+        })?;
 
         // SAFETY: `view` was just created and is not attached; `parent` is the
         // native handle the window seam produced for this platform.
         unsafe {
             if view.isPlatformTypeSupported(view_type) != kResultTrue {
-                return Err(format!(
-                    "[VST3] '{plugin_name}' has an editor, but not one this platform can embed"
-                ));
+                return Err(EditorError::PlatformTypeUnsupported {
+                    plugin_name: plugin_name.to_string(),
+                });
             }
         }
 
         let state = Arc::new(EditorFrameState::new(window, scale_factor));
         if !state.adopt(&view) {
-            return Err(format!(
-                "[VST3] '{plugin_name}': its editor view does not answer for its own identity"
-            ));
+            return Err(EditorError::ViewIdentityUnanswered {
+                plugin_name: plugin_name.to_string(),
+            });
         }
         let frame = ComWrapper::new(HostEditorFrame {
             state: Arc::clone(&state),
@@ -681,7 +776,9 @@ impl Vst3Editor {
         let frame_pointer = frame
             .as_com_ref::<IPlugFrame>()
             .map(|borrowed| borrowed.as_ptr())
-            .ok_or_else(|| format!("[VST3] '{plugin_name}': the host frame is unavailable"))?;
+            .ok_or_else(|| EditorError::FrameUnavailable {
+                plugin_name: plugin_name.to_string(),
+            })?;
 
         // Before `attached`, always: a view laying itself out against its new
         // parent may resize immediately, and with no frame that request has
@@ -695,9 +792,9 @@ impl Vst3Editor {
         // type's field order — and `parent` is live for the editor's whole life.
         if unsafe { view.setFrame(frame_pointer) } != kResultOk {
             state.disown();
-            return Err(format!(
-                "[VST3] '{plugin_name}' refused the host's plug frame"
-            ));
+            return Err(EditorError::FrameRefused {
+                plugin_name: plugin_name.to_string(),
+            });
         }
 
         // Every failure past this point has to take the frame back off the view
@@ -762,7 +859,7 @@ impl Vst3Editor {
     /// A fixed-size editor is re-scaled too. Its rect does not change, but what
     /// that rect is worth to the window seam does, so the window still moves —
     /// it is only the negotiation that a view refusing `canResize` is spared.
-    pub fn apply_content_scale(&self, scale_factor: f64) -> Result<EditorSize, String> {
+    pub fn apply_content_scale(&self, scale_factor: f64) -> Result<EditorSize, EditorError> {
         self.state
             .set_view_units_per_logical(view_units_per_logical_unit(scale_factor));
 
@@ -774,8 +871,7 @@ impl Vst3Editor {
         }
         // SAFETY: control path only; `self.view` is retained for this editor's
         // life, which is all `read_view_size` requires.
-        let stated = unsafe { read_view_size(&self.view) }
-            .ok_or_else(|| "[VST3] this editor states no size to re-scale".to_string())?;
+        let stated = unsafe { read_view_size(&self.view) }.ok_or(EditorError::NoSizeToRescale)?;
 
         let logical = self.state.to_logical(stated);
         if !self.can_resize() {
@@ -794,15 +890,15 @@ impl Vst3Editor {
     /// into one the view will actually run at. Both answers are honoured —
     /// forcing a size past either one is how an editor ends up drawing outside
     /// its window.
-    pub fn request_size(&self, requested: EditorSize) -> Result<EditorSize, String> {
+    pub fn request_size(&self, requested: EditorSize) -> Result<EditorSize, EditorError> {
         // SAFETY: control path only; `self.view` is retained for this editor's
         // life and attached from `open` until `Drop`.
         if unsafe { self.view.canResize() } != kResultTrue {
-            return Err("[VST3] this editor is a fixed size".to_string());
+            return Err(EditorError::FixedSize);
         }
 
         if !self.state.begin_resize() {
-            return Err("[VST3] a resize handshake is already running".to_string());
+            return Err(EditorError::ResizeInProgress);
         }
         // SAFETY: the resize guard was just taken, this is the control path, and
         // the view is attached from `open` until `Drop` — `negotiate_size`'s contract.
@@ -819,15 +915,15 @@ impl Vst3Editor {
     /// # Safety
     /// Called with the resize guard held, on the control path, with the view
     /// attached.
-    unsafe fn negotiate_size(&self, requested: EditorSize) -> Result<EditorSize, String> {
+    unsafe fn negotiate_size(&self, requested: EditorSize) -> Result<EditorSize, EditorError> {
         let mut rect = self.state.to_view_units(requested).to_rect();
         // SAFETY: the view is attached and live (this fn's contract), and
         // `rect` is a local the plugin may rewrite for the call's duration.
         if unsafe { self.view.checkSizeConstraint(&mut rect) } != kResultTrue {
-            return Err("[VST3] this editor refused the requested size".to_string());
+            return Err(EditorError::SizeRefused);
         }
-        let constrained = EditorSize::from_rect(&rect)
-            .ok_or_else(|| "[VST3] this editor constrained the size to nothing".to_string())?;
+        let constrained =
+            EditorSize::from_rect(&rect).ok_or(EditorError::SizeConstrainedToNothing)?;
         let granted = self.state.to_logical(constrained);
 
         let previous = self.state.granted();
@@ -836,7 +932,7 @@ impl Vst3Editor {
         // fn's contract); `rect` is a live local.
         if unsafe { self.view.onSize(&mut rect) } != kResultOk {
             self.state.restore_granted(previous);
-            return Err("[VST3] this editor refused to move to the constrained size".to_string());
+            return Err(EditorError::ConstrainedSizeRefused);
         }
         self.state.record_granted(granted);
         Ok(granted)
@@ -915,7 +1011,7 @@ unsafe fn attach(
     parent: *mut c_void,
     view_type: FIDString,
     plugin_name: &str,
-) -> Result<(), String> {
+) -> Result<(), EditorError> {
     if platform_states_content_scale() {
         // SAFETY: the view is live by this fn's contract.
         unsafe { apply_content_scale(view, state.view_units_per_logical() as f32) };
@@ -934,9 +1030,9 @@ unsafe fn attach(
     // SAFETY: the view is live, framed and not yet attached, and `parent` is a
     // live native handle of `view_type`'s kind — this fn's contract.
     if unsafe { view.attached(parent, view_type) } != kResultOk {
-        return Err(format!(
-            "[VST3] '{plugin_name}' refused to attach its editor to the host window"
-        ));
+        return Err(EditorError::AttachRefused {
+            plugin_name: plugin_name.to_string(),
+        });
     }
 
     // A plugin may settle on a different size once it can see its parent, and the
@@ -949,9 +1045,9 @@ unsafe fn attach(
         // SAFETY: the view is live and was attached just above; this is its
         // one detach.
         unsafe { view.removed() };
-        return Err(format!(
-            "[VST3] '{plugin_name}' would not state a size for its editor"
-        ));
+        return Err(EditorError::NoStatedSize {
+            plugin_name: plugin_name.to_string(),
+        });
     };
     state.record_granted(size);
     Ok(())
@@ -1231,6 +1327,25 @@ mod tests {
                 width: 800,
                 height: 600
             })
+        );
+    }
+
+    /// A session refusal names the plugin after the session's own reason, the
+    /// text the renderer shows when an editor cannot open.
+    #[test]
+    fn a_session_refusal_names_the_plugin_after_the_reason() {
+        let refusal = EditorError::SessionRefused {
+            refusal: "no embedding",
+            plugin_name: "Reverb".to_string(),
+        };
+
+        assert_eq!(refusal.to_string(), "no embedding ('Reverb')");
+        assert_eq!(
+            EditorError::NoEditor {
+                plugin_name: "Reverb".to_string()
+            }
+            .to_string(),
+            "[VST3] 'Reverb' offers no editor"
         );
     }
 }

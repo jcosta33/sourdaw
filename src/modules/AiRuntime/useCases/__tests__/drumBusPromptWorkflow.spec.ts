@@ -25,6 +25,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectDivergencePort,
     commandProjectRevisionPort,
     commandTrackDefaultsPort,
     configureCommandBatchIdempotency,
@@ -37,6 +38,7 @@ import {
 import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     captureProjectRevision,
+    inspectAgentProjectDivergence,
     projectRevisionMatchesLiveIgnoringSaveWrites,
     captureUnownedProjectMutations,
     createCrdtDoc,
@@ -71,6 +73,7 @@ import { getProjectContext } from '../getProjectContext';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
+import { AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON } from './aiWorkflowCommandPreflightFixture';
 import { advertisedAnswerSchema, readLocalPromptTool } from './answerWireFixture';
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
@@ -221,14 +224,17 @@ vi.hoisted(() => {
         const base = new (
             OriginalAudioContext as unknown as new (opts?: AudioContextOptions) => Record<string, unknown>
         )(options);
-        return Object.assign(base, {
+        const context: Record<string, unknown> = Object.assign(base, {
             currentTime: 0,
             createStereoPanner: () => ({
                 pan: createAudioParam(0),
                 connect: (dest: unknown) => dest,
                 disconnect: () => undefined,
             }),
+            // Every real AudioNode carries `context`: the compressor's Auto Makeup
+            // canceller builds its probe, scale and shaper from it.
             createDynamicsCompressor: () => ({
+                context,
                 threshold: createAudioParam(-24),
                 knee: createAudioParam(30),
                 ratio: createAudioParam(12),
@@ -238,7 +244,20 @@ vi.hoisted(() => {
                 connect: (dest: unknown) => dest,
                 disconnect: () => undefined,
             }),
+            createConstantSource: () => ({
+                offset: createAudioParam(1),
+                start: () => undefined,
+                stop: () => undefined,
+                connect: (dest: unknown) => dest,
+                disconnect: () => undefined,
+            }),
+            createWaveShaper: () => ({
+                curve: null,
+                connect: (dest: unknown) => dest,
+                disconnect: () => undefined,
+            }),
         });
+        return context;
     }
     globalThis.AudioContext = AudioContextWithStereoPanner as unknown as typeof AudioContext;
 });
@@ -1271,6 +1290,7 @@ describe('drum bus prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
         configureCommandBatchIdempotency({ canExecute: () => true });
@@ -1324,7 +1344,6 @@ describe('drum bus prompt workflow', () => {
         commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
-        commandBatchPreflightPort.setProvider(null);
         audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(null);
         audioEngineUseCases.configureRuntimeGraphTopologyValidator(null);
         audioEngineUseCases.audioEngine.setUseCaseDeviceCollaborators(null);
@@ -1513,6 +1532,7 @@ describe('drum bus prompt workflow', () => {
             'setTrackOutput',
             'createBus',
             'addDevice',
+            'setDeviceParameter',
             'addSend',
             'setTrackGain',
             'renderProjectSections',
@@ -1570,6 +1590,22 @@ describe('drum bus prompt workflow', () => {
                     deviceId: compressorDeviceId,
                     expectedDeviceIds: [],
                     expectedFrozen: false,
+                },
+            },
+            // The placed compressor starts with Auto Makeup off; the workflow's parallel gain
+            // was voiced with it on (ADR 0064).
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: compressorDeviceId,
+                    paramId: 'comp-auto-makeup',
+                    value: 1,
+                    expectedTrackId: parallelBusId,
+                    expectedDeviceType: 'builtin-compressor',
+                    expectedDeviceIds: [compressorDeviceId],
+                    expectedValue: 0,
+                    expectedTrackFrozen: false,
+                    automationRecordingPolicy: 'suppressed',
                 },
             },
             {
@@ -1707,6 +1743,7 @@ describe('drum bus prompt workflow', () => {
             'setTrackOutput',
             'createBus',
             'addDevice',
+            'setDeviceParameter',
             'addSend',
             'setTrackGain',
             'renderProjectSections',
@@ -1853,7 +1890,7 @@ describe('drum bus prompt workflow', () => {
         if (result.status !== 'invalidated') {
             throw new Error(`Expected invalidated confirmation, received ${result.status}`);
         }
-        expect(result.reason).toContain('project changed');
+        expect(result.reason).toBe(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
@@ -1922,7 +1959,7 @@ describe('drum bus prompt workflow', () => {
         expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content).toContain('comparison renderer unavailable');
         expect(receipt?.content).toContain('the project mutation will not replay');
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
 
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'failed',
@@ -2444,7 +2481,7 @@ describe('drum bus prompt workflow', () => {
             tailSeconds: failedJob.tailSeconds,
         });
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
             followUpStatus: 'retryable',
@@ -2483,7 +2520,7 @@ describe('drum bus prompt workflow', () => {
             })
         );
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
             followUpStatus: 'retryable',
@@ -2527,7 +2564,7 @@ describe('drum bus prompt workflow', () => {
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
 
         agentRunLifecycle.recordPendingEffectContinuation({
             runId: committedConfirmation.runId,
@@ -2550,7 +2587,7 @@ describe('drum bus prompt workflow', () => {
 
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
         ).toMatchObject({
@@ -3150,7 +3187,7 @@ describe('drum bus prompt workflow', () => {
 
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(artifactIds);
-        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.past).toHaveLength(10);
         expect(undoStore.value?.future).toEqual([]);
 
         trackStore.set({
@@ -4319,7 +4356,8 @@ describe('drum bus prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
         expect(captureProjectRevision()).not.toBe(approvedRevision);
         expect(JSON.stringify(getCrdtDoc('root'))).toContain('device-bass-comp-a-collaborator');
@@ -4334,9 +4372,7 @@ describe('drum bus prompt workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toContain(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
     });
 
     it.each(['webllm', 'cloud'] as const)(
@@ -4600,7 +4636,8 @@ describe('drum bus prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
@@ -4610,9 +4647,7 @@ describe('drum bus prompt workflow', () => {
         const terminalMessage = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(terminalMessage?.content).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        expect(terminalMessage?.content).toContain(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
     });
 
     it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
@@ -4814,7 +4849,8 @@ describe('drum bus prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: expect.objectContaining({ kind: 'ambiguous-same-object', mayReapply: false }),
         });
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
@@ -4823,9 +4859,7 @@ describe('drum bus prompt workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toContain(AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON);
     });
 
     it('reconciles a transient MF-06 runtime failure from committed durable routes', async () => {

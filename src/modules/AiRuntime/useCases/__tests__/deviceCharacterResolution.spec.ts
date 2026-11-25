@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getPlatformPlugins, getPluginById, isReverbDeviceType } from '#/modules/Arrangement/useCases';
-import { getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import { acceptsSidechainInput, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { queryAgentDiscovery } from '#/modules/Project/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
@@ -204,6 +204,7 @@ describe('planner device catalogue', () => {
 
     it('lets the planner add Crust to a track by its catalogue name', () => {
         const result = bridgeLlmToolCalls({
+            acceptsSidechainInput,
             calls: [{ name: 'addDevice', arguments: { trackId: 'track-bass', deviceType: 'Crust' } }],
             context: { ...getProjectContext(), tracks: [createVocalTrack('track-bass', 'Bass')] },
             projectPunchRegion: createPunchRegionPatch,

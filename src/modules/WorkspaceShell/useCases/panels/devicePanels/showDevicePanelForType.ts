@@ -1,24 +1,7 @@
 import { inject } from '#/infra/di/inject';
 
+import { devicePanelKindOf } from '../../../models/DevicePanelByDeviceType';
 import { WorkspaceEventBus } from '../../workspaceEventBus';
-
-// ── Device types that own a panel (kept in the use-case layer) ────────────────
-
-const PANELLED_DEVICE_TYPES: ReadonlySet<string> = new Set([
-    'fermenter',
-    'toaster',
-    'levain',
-    'dutch-oven',
-    'gluten',
-    'bacteria',
-    'grinder',
-    'proof',
-    'yeast',
-    'native-scoring',
-    'crust',
-    'builtin-crumbs',
-    'grand-boule',
-]);
 
 /**
  * Generic dispatch — for cases where the panel event is determined at runtime by device type.
@@ -29,7 +12,7 @@ const PANELLED_DEVICE_TYPES: ReadonlySet<string> = new Set([
 export const showDevicePanelForType = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function showDevicePanelForType(deviceType: string, deviceId: string): void {
-            if (!PANELLED_DEVICE_TYPES.has(deviceType)) {
+            if (devicePanelKindOf(deviceType) === null) {
                 return;
             }
 

@@ -1325,6 +1325,35 @@ describe('submitAdmittedPromptRequest', () => {
         });
     });
 
+    it('refuses a batch whose plan would hold more command ids than the run persists, before any card', async () => {
+        mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+            status: 'valid',
+            envelope: {
+                runId: RUN_ID,
+                batchId: 'batch-1',
+                idempotencyKey: 'batch-key-1',
+                scope: authority.scope,
+                commands: Array.from({ length: 257 }, (_, index) => ({ commandId: `command-${String(index)}` })),
+            },
+        });
+
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'prompt-bar',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+
+        expect(result).toEqual({ status: 'rejected', runId: RUN_ID });
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            "Command not executed: the run's plan cannot hold more than 256 entries in commandIds",
+            []
+        );
+        expect(pendingActionConfirmationStore.value?.confirmations ?? []).toEqual([]);
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'failed', plan: null, batches: [] });
+    });
+
     it('rejects a prompt longer than the configured request ceiling and reports the refusal', async () => {
         agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, requestChars: 10 });
 
