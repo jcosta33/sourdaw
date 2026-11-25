@@ -6869,6 +6869,24 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
     );
 
     it.each([
+        "don't change the rest of the mix",
+        "don't touch the rest of the song",
+        "don't change the rest of the project",
+        "don't change the rest of the tracks",
+        "don't touch the other tracks",
+        "don't change everything else in the mix",
+        'keep the rest of the mix as is',
+        'keep everything else in the mix unchanged',
+        'the other tracks stay',
+        'the rest of the mix as is',
+    ])('asks "mute Bass, %s" as restricting the pending changes, as "nothing else" does', (clause) => {
+        expect(outcomeOf(refine(P0_CARD, `mute Bass, ${clause}`, [vocalsBy(-3), bassMute]))).toEqual({
+            status: 'clarify',
+            said: expect.stringContaining('adds a change and says it replaces or restricts'),
+        });
+    });
+
+    it.each([
         "don't change anything else",
         'do not change anything else',
         "don't touch anything else",
@@ -7005,14 +7023,21 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
             });
         });
 
-        it.each(["don't touch Bass", "don't change Snare", 'do not touch Bass', "don't touch the drum bus"])(
-            'admits "%s" beside a removal, which names nothing the removal drops',
-            (clause) => {
-                expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
-                    status: 'valid',
-                });
-            }
-        );
+        it.each([
+            "don't touch Bass",
+            "don't change Snare",
+            'do not touch Bass',
+            "don't touch the drum bus",
+            "don't change the rest of the mix",
+            "don't touch the other tracks",
+            'keep the rest of the mix as is',
+            "don't change everything else in the mix",
+            'the other tracks stay',
+        ])('admits "%s" beside a removal, which names nothing the removal drops', (clause) => {
+            expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
+                status: 'valid',
+            });
+        });
 
         it.each([
             "don't touch the guitar pan",
