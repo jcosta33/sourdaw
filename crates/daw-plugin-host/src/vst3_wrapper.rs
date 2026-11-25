@@ -19,10 +19,10 @@ use crate::output_notes::{OutputNoteQueue, OUTPUT_NOTE_CAPACITY};
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
-    PluginHostRequestNotifier, ProcessMode, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
-    MAX_MIDI_EVENTS_PER_BLOCK,
+    signal_pending_process_refusal, signal_pending_service_change, AudioPlugin,
+    EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    LatencyChangeNotifier, PluginError, PluginHostRequestNotifier, ProcessMode, ProcessingGate,
+    ServiceChange, DEFAULT_EDITOR_CONTENT_SCALE, MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -1467,6 +1467,9 @@ pub struct Vst3Wrapper {
     layout_refusal: Option<String>,
     /// Whether that refusal has already been reported.
     layout_refusal_reported: bool,
+    /// The out-of-service reason this wrapper last answered `take_service_change`
+    /// with, so a state it already published is not published again.
+    published_out_of_service: Option<String>,
     /// Whether the factory calls this class an instrument. Copied off the
     /// instance at activation so the audio thread reads a plain bool.
     is_instrument: bool,
@@ -1570,6 +1573,7 @@ impl Vst3Wrapper {
             reported_restart_flags: 0,
             layout_refusal: None,
             layout_refusal_reported: false,
+            published_out_of_service: None,
         };
         wrapper.activate()?;
         Ok(wrapper)
@@ -1993,9 +1997,12 @@ impl Vst3Wrapper {
             self.layout_refusal_reported = false;
             // The control path's failure reporter is what prints it.
             signal_pending_process_refusal();
+            signal_pending_service_change();
             return Err(reason);
         }
-        self.layout_refusal = None;
+        if self.layout_refusal.take().is_some() {
+            signal_pending_service_change();
+        }
 
         if flags & RestartFlags_::kReloadComponent != 0 {
             self.read_only_parameters = self
@@ -2040,15 +2047,40 @@ impl Vst3Wrapper {
         if self.layout_refusal_reported {
             return None;
         }
+        let report = self.layout_refusal_line()?;
+        self.layout_refusal_reported = true;
+        Some(report)
+    }
+
+    /// The line naming the layout the host refused and what happens to the
+    /// slot's blocks, while a refusal stands.
+    fn layout_refusal_line(&self) -> Option<String> {
         let reason = self.layout_refusal.as_ref()?;
-        let handling = if self.fails_silent() {
+        Some(format!("{reason}; {}", self.unserved_block_handling()))
+    }
+
+    /// What a slot out of service does with its blocks.
+    fn unserved_block_handling(&self) -> &'static str {
+        if self.fails_silent() {
             "its blocks are silenced"
         } else {
             "its blocks pass through unprocessed"
-        };
-        let report = format!("{reason}; {handling}");
-        self.layout_refusal_reported = true;
-        Some(report)
+        }
+    }
+
+    /// The reason this slot is out of service now, or `None` while it is
+    /// served. A refused layout outranks a refused start.
+    fn out_of_service_reason(&self) -> Option<String> {
+        if let Some(line) = self.layout_refusal_line() {
+            return Some(line);
+        }
+        self.processing_start_refused.then(|| {
+            format!(
+                "'{}' refused to start processing; {}",
+                self.instance.name(),
+                self.unserved_block_handling()
+            )
+        })
     }
 
     /// Hand the plugin the parameter writes waiting for it, with no audio, while
@@ -2258,8 +2290,9 @@ impl Vst3Wrapper {
         self.sync_processing_state();
 
         if !self.processing.is_processing() {
-            if self.processing.wants_processing() {
+            if self.processing.wants_processing() && !self.processing_start_refused {
                 self.processing_start_refused = true;
+                signal_pending_service_change();
             }
             self.hold_host_parameter_updates(parameter_updates);
             Self::pass_through(inputs, outputs, num_samples);
@@ -2803,6 +2836,13 @@ impl HostedPluginRuntime for Vst3Wrapper {
     /// unprocessed exactly as a refused start does.
     fn has_passed_a_block_unprocessed(&self) -> bool {
         self.processing_start_refused || self.layout_refusal.is_some()
+    }
+
+    fn take_service_change(&mut self) -> Option<ServiceChange> {
+        let current = self.out_of_service_reason();
+        let change = ServiceChange::between(&self.published_out_of_service, &current)?;
+        self.published_out_of_service = current;
+        Some(change)
     }
 }
 

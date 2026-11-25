@@ -39,6 +39,7 @@ import { toExternalPluginParameters } from './toExternalPluginParameters';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 import { watchExternalPluginParameterEvents } from './watchExternalPluginParameterEvents';
 import { watchExternalPluginParameterRescan } from './watchExternalPluginParameterRescan';
+import { watchExternalPluginService } from './watchExternalPluginService';
 import { watchExternalPluginTail } from './watchExternalPluginTail';
 
 type ActivateExternalPluginInput = {
@@ -328,6 +329,8 @@ export function activateExternalPlugin({
     // Before the load for the same reason: a plugin that lengthens its tail
     // while it first activates must find the subscription already up.
     watchExternalPluginTail();
+    // And a plugin the host takes out of service on its first block.
+    watchExternalPluginService();
 
     if (onLatencyMs) {
         // Register before the load so a latency change the plugin flags during

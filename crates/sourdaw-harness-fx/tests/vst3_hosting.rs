@@ -12,8 +12,9 @@ mod support;
 
 use daw_plugin_host::vst3_wrapper::decode_state as decode_vst3_container;
 use daw_plugin_host::{
-    take_pending_process_refusal_signal, AudioPlugin, HostParameterUpdate, HostedPluginRuntime,
-    PluginHostRequest, ProcessMode, Vst3Wrapper,
+    take_pending_process_refusal_signal, take_pending_service_change_signal, AudioPlugin,
+    HostParameterUpdate, HostedPluginRuntime, PluginHostRequest, ProcessMode, ServiceChange,
+    Vst3Wrapper,
 };
 use sourdaw_harness_fx::state::decode;
 use sourdaw_harness_fx::{
@@ -38,6 +39,7 @@ fn refusal_hint_guard() -> std::sync::MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     take_pending_process_refusal_signal();
+    take_pending_service_change_signal();
     guard
 }
 
@@ -292,6 +294,83 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
         None,
         "the refusal is reported once"
     );
+}
+
+/// The refused layout is published to the slot once with the line naming it,
+/// again as back in service once a restart the host can route lands, and the
+/// hint that wakes the visit rises on both transitions.
+#[test]
+fn a_refused_layout_is_published_once_and_again_when_the_slot_recovers() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-io-unroutable-service");
+    let (mut wrapper, _requests) = wrapper_recording_requests(&plugin);
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 1.0);
+    wrapper
+        .apply_component_restart()
+        .expect_err("six output channels cannot be routed");
+    assert!(
+        take_pending_service_change_signal(),
+        "the refusal wakes the service visit"
+    );
+
+    let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
+        panic!("a standing refusal is published as out of service");
+    };
+    assert!(
+        reason.contains("Sourdaw Harness Fx Reconfiguring")
+            && reason.contains("main output bus runs 6 channels")
+            && reason.ends_with("its blocks pass through unprocessed"),
+        "{reason}"
+    );
+    assert_eq!(
+        wrapper.take_service_change(),
+        None,
+        "the same refusal is published once"
+    );
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 0.0);
+    assert_eq!(wrapper.apply_component_restart().ok(), Some(true));
+    assert!(
+        take_pending_service_change_signal(),
+        "the recovery wakes the service visit"
+    );
+    assert_eq!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::BackInService)
+    );
+    assert_eq!(wrapper.take_service_change(), None);
+}
+
+/// A plugin that declines `setProcessing` is published as out of service by
+/// the block that finds it so, and not again by the blocks after it.
+#[test]
+fn a_refused_start_of_processing_is_published_once() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-start-refused-service");
+    let mut wrapper = plugin.vst3_class(&VST3_START_REFUSED_CLASS_ID, ProcessMode::Realtime);
+    let (left, right) = distinct_pair();
+
+    assert_eq!(
+        wrapper.take_service_change(),
+        None,
+        "served until a block says otherwise"
+    );
+    process(&mut wrapper, &left, &right);
+    process(&mut wrapper, &left, &right);
+
+    assert!(
+        take_pending_service_change_signal(),
+        "the refused start wakes the service visit"
+    );
+    let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
+        panic!("a refused start is published as out of service");
+    };
+    assert!(
+        reason.contains("refused to start processing") && reason.contains("its blocks"),
+        "{reason}"
+    );
+    assert_eq!(wrapper.take_service_change(), None);
 }
 
 /// The control path's reporter is what takes the refusal's one report, so a

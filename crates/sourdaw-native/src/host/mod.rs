@@ -10,6 +10,7 @@ pub mod plugin_scan_worker;
 pub mod plugin_window;
 pub mod process_refusal_reporter;
 pub mod runtime_scope;
+pub mod service_watcher;
 pub mod tail_watcher;
 pub mod ui_thread;
 
@@ -141,7 +142,7 @@ pub(crate) mod hint_test_support {
         take_pending_editor_resize_signal, take_pending_latency_requery_signal,
         take_pending_main_thread_callback_signal, take_pending_parameter_events_signal,
         take_pending_parameter_flush_signal, take_pending_process_refusal_signal,
-        take_pending_tail_change_signal,
+        take_pending_service_change_signal, take_pending_tail_change_signal,
     };
     use std::sync::{Mutex, MutexGuard};
 
@@ -155,6 +156,7 @@ pub(crate) mod hint_test_support {
         take_pending_parameter_events_signal();
         take_pending_parameter_flush_signal();
         take_pending_tail_change_signal();
+        take_pending_service_change_signal();
         take_pending_process_refusal_signal();
         take_pending_editor_resize_signal();
         take_pending_latency_requery_signal();

@@ -756,6 +756,46 @@ pub trait HostedPluginRuntime: AudioPlugin {
     fn has_passed_a_block_unprocessed(&self) -> bool {
         false
     }
+
+    /// Take the change in whether the host has taken this instance out of
+    /// service, answering it once per change: the reason it is out now, or that
+    /// it is back. `None` while the answer is the one last given. Control path
+    /// only.
+    ///
+    /// The audio thread latches the states behind this and raises
+    /// [`signal_pending_service_change`]; this is the answer a control-path
+    /// visit reads afterwards. The default is `None`, for a backend that never
+    /// takes an instance out of service.
+    fn take_service_change(&mut self) -> Option<ServiceChange> {
+        None
+    }
+}
+
+/// A change in whether the host serves a hosted instance, published once per
+/// change by [`HostedPluginRuntime::take_service_change`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceChange {
+    /// The host stopped serving the instance, for `reason`. Its blocks are
+    /// passed through or silenced while this stands.
+    OutOfService { reason: String },
+    /// The instance is served again after an earlier `OutOfService`.
+    BackInService,
+}
+
+impl ServiceChange {
+    /// The change that takes an instance from the reason last published to the
+    /// one it has now, or `None` when they are the same.
+    pub fn between(published: &Option<String>, current: &Option<String>) -> Option<Self> {
+        if published == current {
+            return None;
+        }
+        Some(match current {
+            Some(reason) => Self::OutOfService {
+                reason: reason.clone(),
+            },
+            None => Self::BackInService,
+        })
+    }
 }
 
 /// Process-wide hint that some plugin latched a process failure.
@@ -777,6 +817,24 @@ pub fn signal_pending_process_refusal() {
 /// Read and clear the failure hint.
 pub fn take_pending_process_refusal_signal() -> bool {
     PROCESS_REFUSAL_PENDING.swap(false, Ordering::AcqRel)
+}
+
+/// Process-wide hint that some plugin was taken out of service or put back.
+///
+/// A hint, never the record: each wrapper's own latched state is. It names no
+/// instance because the audio thread that latches it cannot carry one.
+static SERVICE_CHANGE_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the service-change hint. **Called from the audio thread** for the
+/// processing refusals, so it is one release store and nothing else: it must
+/// stay allocation-, lock- and log-free.
+pub fn signal_pending_service_change() {
+    SERVICE_CHANGE_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the service-change hint.
+pub fn take_pending_service_change_signal() -> bool {
+    SERVICE_CHANGE_PENDING.swap(false, Ordering::AcqRel)
 }
 
 /// Serialises every test that reads or clears the failure hint.

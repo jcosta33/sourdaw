@@ -16,6 +16,7 @@ import {
     externalPluginActivationTasks,
 } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
+import { externalPluginServiceMessages } from './externalPluginServiceMessages';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -47,4 +48,6 @@ export function clearLoadedExternalPlugins(): void {
     // So do the tails they reported.
     externalPluginTailStore.set(defaultExternalPluginTailState);
     tailRevisionsDuringLoad.clear();
+    // And the out-of-service messages written to their slots.
+    externalPluginServiceMessages.clear();
 }
