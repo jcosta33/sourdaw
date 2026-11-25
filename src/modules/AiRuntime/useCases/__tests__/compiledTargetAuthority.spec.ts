@@ -3032,3 +3032,66 @@ describe('#5393 a compiled pick is stated only by the instruction that asks for 
         expect(authorityRefusals(result)).not.toEqual([]);
     });
 });
+
+describe('#5393 a pronoun reads back only the nearest earlier clause that names a track', () => {
+    it.each([
+        [
+            'mute Keys and set Vocals volume to 75% so it sits better',
+            [trackItem('muteTrack', mixKeys, { muted: true }), trackItem('setTrackGain', mixKeys, { gain: 0.75 })],
+            [mixKeys.id],
+        ],
+        [
+            'mute Keys and set Vocals volume to 50%, then pan it 20% left',
+            [
+                trackItem('muteTrack', mixKeys, { muted: true }),
+                trackItem('setTrackGain', mixVocals, { gain: 0.5 }),
+                trackItem('setTrackPan', mixKeys, { pan: -20 }),
+            ],
+            [mixKeys.id, mixVocals.id],
+        ],
+    ])('refuses the Keys call "%s" reads back no Keys for', (prompt, items, admitted) => {
+        const result = compileMix(prompt, items);
+
+        expect(targetsOf(result)).toEqual(admitted);
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+
+    it.each([
+        [
+            'mute Keys and set Vocals volume to 75% so it sits better',
+            [trackItem('muteTrack', mixKeys, { muted: true }), trackItem('setTrackGain', mixVocals, { gain: 0.75 })],
+            [mixKeys.id, mixVocals.id],
+        ],
+        [
+            'mute Keys and set Vocals volume to 50%, then pan it 20% left',
+            [
+                trackItem('muteTrack', mixKeys, { muted: true }),
+                trackItem('setTrackGain', mixVocals, { gain: 0.5 }),
+                trackItem('setTrackPan', mixVocals, { pan: -20 }),
+            ],
+            [mixKeys.id, mixVocals.id, mixVocals.id],
+        ],
+    ])('grounds the correctly paired "%s"', (prompt, items, expected) => {
+        const result = compileMix(prompt, items);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+});
+
+describe('#5393 an instruction naming no track reads the leading clause of its sentence that does', () => {
+    it.each([
+        ['On Vocals, set volume to 75%', [trackItem('setTrackGain', mixVocals, { gain: 0.75 })], [mixVocals.id]],
+        ['For Vocals, set the volume to 75%', [trackItem('setTrackGain', mixVocals, { gain: 0.75 })], [mixVocals.id]],
+        [
+            'Vocals and Keys: set volume to 75%',
+            [trackItem('setTrackGain', mixVocals, { gain: 0.75 }), trackItem('setTrackGain', mixKeys, { gain: 0.75 })],
+            [mixVocals.id, mixKeys.id],
+        ],
+    ])('grounds "%s"', (prompt, items, expected) => {
+        const result = compileMix(prompt, items);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+});

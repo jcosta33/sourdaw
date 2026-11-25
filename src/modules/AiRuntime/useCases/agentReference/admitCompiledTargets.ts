@@ -23,10 +23,11 @@ import { maskProjectReferences } from './groundingStrategies/maskProjectReferenc
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
-import { namesTrackPosition } from './namesTrackPosition';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
+import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
+import { scopeToInstruction } from './scopeToInstruction';
 
 /*
  * Compiled target authority (#5295).
@@ -62,9 +63,10 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * asks for the call's change, the clause the direct route grounds that action in, less the request's
  * restrictions and the values any call of the batch writes, so another instruction's name never
  * picks its target ("set Vocals volume to 75% and mute Keys" states no Keys gain). An instruction that
- * refers back with "it", "its" or "that track" also reads the request before it, so it may pick by a
- * name an earlier instruction states ("turn Vocals down and pan it left"); a call no clause grounds
- * reads the whole request. A selection reference ("this track", "the selected track", "it" or "its"
+ * refers back with "it", "its" or "that track" before naming a track of its own also reads the nearest
+ * earlier clause naming one ("turn Vocals down and pan it left"), and one naming no track reads the
+ * clauses leading its sentence ("On Vocals, set volume to 75%"); a call no clause grounds reads the
+ * whole request. A selection reference ("this track", "the selected track", "it" or "its"
  * outside every object name for the selected track) that resolves to the picked objects states those
  * picks only when the text names no object of that kind, by name, id or, for a track, position, or
  * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
@@ -312,7 +314,8 @@ function listsSelectionBesideName(text: string, capability: Capability, context:
  */
 function readsSelectionReference(text: string, capability: Capability, context: ProjectContext): boolean {
     const namesObject =
-        namesObjectByName(text, capability, context) || (capability === 'track' && namesTrackPosition(text));
+        namesObjectByName(text, capability, context) ||
+        (capability === 'track' && readTrackPosition(text) !== undefined);
     return !namesObject || listsSelectionBesideName(text, capability, context);
 }
 
@@ -467,36 +470,23 @@ function getProtectedIds(
     return { protectedIds, genericRestrictionIds };
 }
 
-/** Whether the instruction refers back to an object an earlier one states: "it", "its" or "that track". */
-function refersBack(instruction: string, context: ProjectContext): boolean {
-    return (
-        mentionsSelectionPronoun(instruction, context) ||
-        DEMONSTRATIVE_TRACK_REFERENCE.test(normalizeAgentReferenceText(instruction))
-    );
+/** Whether the text names a track by whole name, id or position. */
+function namesTrack(text: string, context: ProjectContext): boolean {
+    return namesObjectByName(text, 'track', context) || readTrackPosition(text) !== undefined;
+}
+
+/** Where the instruction first refers back with "it", "its" or "that track", outside every object name. */
+function findBackReference(instruction: string, context: ProjectContext): number | undefined {
+    const pronoun = SELECTION_PRONOUN.exec(maskObjectNames(instruction, context))?.index;
+    const demonstrative = DEMONSTRATIVE_TRACK_REFERENCE.exec(normalizeAgentReferenceText(instruction))?.index;
+    const positions = [pronoun, demonstrative].filter((position) => position !== undefined);
+    return positions.length === 0 ? undefined : Math.min(...positions);
 }
 
 /**
- * The text with everything outside the instruction blanked, except the request before it when the
- * instruction refers back to what an earlier one states.
- */
-function scopeToInstruction(
-    text: string,
-    instruction: AgentReferenceTextRange | undefined,
-    context: ProjectContext
-): string {
-    if (instruction === undefined) {
-        return text;
-    }
-    const throughInstruction = blankRange(text, { start: instruction.end, end: text.length });
-    if (refersBack(text.slice(instruction.start, instruction.end), context)) {
-        return throughInstruction;
-    }
-    return blankRange(throughInstruction, { start: 0, end: instruction.start });
-}
-
-/**
- * The text the targets are read from: the call's own instruction, and the request before it when it
- * refers back ("mute Vocals and bypass the EQ on it"), with the request's restrictions and the values
+ * The text the targets are read from: the call's own instruction, with the clause it refers back to
+ * ("mute Vocals and bypass the EQ on it") and the clauses leading its sentence ("On Vocals, set volume
+ * to 75%"), with the request's restrictions and the values
  * the batch writes blanked, so a name stated only by another instruction, to protect an object or as
  * a new name is never read as picking a target.
  */
@@ -507,9 +497,22 @@ function getEvidenceText(
 ): string {
     const unrestricted = restrictionRanges.reduce(blankRange, request.prompt);
     const unwritten = maskWrittenValues(unrestricted, input.valueTexts, input.context);
-    const instruction =
-        input.instruction === undefined ? undefined : extendInstruction(request, input.instruction, input.catalog);
-    return scopeToInstruction(unwritten, instruction, input.context);
+    if (input.instruction === undefined) {
+        return unwritten;
+    }
+    const { context, catalog } = input;
+    const instruction = extendInstruction(request, input.instruction, catalog);
+    return scopeToInstruction({
+        text: unwritten,
+        maskedPrompt: request.maskedPrompt,
+        clauses: request.clauses,
+        instruction,
+        reader: {
+            namesTrack: (text) => namesTrack(text, context),
+            findBackReference: (text) => findBackReference(text, context),
+            givesInstruction: (masked) => resolveClauseActionIntent(masked, catalog) !== null,
+        },
+    });
 }
 
 /**

@@ -3,7 +3,6 @@ import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuot
 
 import { blankRanges } from './blankRanges';
 import { PROJECT_REFERENCE_MASK_GLYPH } from './groundingStrategies/maskProjectReferences';
-import { POSITION_REFERENCE } from './namesTrackPosition';
 import { protectionCandidates } from './protectionCandidates';
 import {
     CONNECTIVE_WORDS,
@@ -20,6 +19,7 @@ import {
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { readRequestTargetTrackIds } from './readRequestTargetTrackIds';
 import { readRoleFamilyProtection, type RoleTrackIds } from './readRoleFamilyProtection';
+import { readTrackPosition } from './readTrackPosition';
 import { refinementRequestReading } from './refinementRequestReading';
 import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
 
@@ -123,16 +123,16 @@ function readMember(input: MemberInput): MemberReading {
     }
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
     const controls = content.filter((token) => isControl(token.lower)).map((token) => token.lower);
-    const position = slot.strict ? POSITION_REFERENCE.exec(lowered) : null;
-    if (position !== null) {
+    const position = slot.strict ? readTrackPosition(lowered) : undefined;
+    if (position !== undefined) {
         const leftover = lowered
-            .replace(position[0], ' ')
+            .replace(position, ' ')
             .split(/\s+/u)
             .filter(
                 (word) => word.length > 0 && !CONNECTIVE_WORDS.has(word) && !isControl(word) && !KIND_NOUNS.has(word)
             );
         if (leftover.length === 0) {
-            return { kind: 'position', text: position[0].replace(/^the\s+/u, '') };
+            return { kind: 'position', text: position.replace(/^the\s+/u, '') };
         }
     }
     const selectionPhrase = content
