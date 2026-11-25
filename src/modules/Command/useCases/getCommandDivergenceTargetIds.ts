@@ -136,6 +136,7 @@ const extraTargetsByActionType: {
     setToasterFactoryKit: noExtraTargets,
     setBacteriaFactoryPatch: noExtraTargets,
     setGlutenFactoryPreset: noExtraTargets,
+    setProofPatchSelection: noExtraTargets,
     createBus: noExtraTargets,
     createFolder: noExtraTargets,
     setSend: noExtraTargets,

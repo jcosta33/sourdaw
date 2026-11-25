@@ -93,6 +93,7 @@ export const trackCreationByActionType: { readonly [Type in AppActionType]: Trac
     setToasterFactoryKit: 'none',
     setBacteriaFactoryPatch: 'none',
     setGlutenFactoryPreset: 'none',
+    setProofPatchSelection: 'none',
     createBus: 'planned',
     createFolder: 'planned',
     setSend: 'none',

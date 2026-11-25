@@ -155,6 +155,7 @@ export const trackNameProjectionByActionType: {
     setToasterFactoryKit: keepTrackNames,
     setBacteriaFactoryPatch: keepTrackNames,
     setGlutenFactoryPreset: keepTrackNames,
+    setProofPatchSelection: keepTrackNames,
     createBus: projectCreatedBusName,
     createFolder: keepTrackNames,
     setSend: keepTrackNames,

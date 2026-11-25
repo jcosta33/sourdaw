@@ -204,6 +204,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     setToasterFactoryKit: describeFromRegistry,
     setBacteriaFactoryPatch: describeFromRegistry,
     setGlutenFactoryPreset: describeFromRegistry,
+    setProofPatchSelection: describeFromRegistry,
     createBus: describeFromRegistry,
     createFolder: describeFromRegistry,
     setSend: describeFromRegistry,

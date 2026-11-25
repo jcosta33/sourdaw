@@ -146,6 +146,7 @@ const lowerByActionType: {
     setToasterFactoryKit: cloneForReplay,
     setBacteriaFactoryPatch: cloneForReplay,
     setGlutenFactoryPreset: cloneForReplay,
+    setProofPatchSelection: cloneForReplay,
     createBus: cloneForReplay,
     createFolder: cloneForReplay,
     setSend: cloneForReplay,
