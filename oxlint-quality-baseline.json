@@ -9040,7 +9040,7 @@
     },
     "src/modules/AudioEngine/stores/audioBufferCache.ts": {
         "eslint/complexity": {
-            "count": 12
+            "count": 11
         },
         "eslint/max-depth": {
             "count": 3
@@ -9049,7 +9049,7 @@
             "count": 9
         },
         "eslint/max-params": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 2
@@ -9101,7 +9101,7 @@
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferPersistenceAttempts.ts": {
