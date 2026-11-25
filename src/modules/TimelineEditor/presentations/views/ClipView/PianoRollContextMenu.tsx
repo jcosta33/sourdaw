@@ -21,8 +21,10 @@ import {
     strumNotes,
     restoreStrumOriginals,
     snapClipToScale,
+    getGrooveSourceClipName,
     getGrooveTemplate,
     getStraightGrooveTemplateId,
+    resolveGrooveExtractionTemplateId,
     type projectPianoRollTakeNotes,
 } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -107,8 +109,9 @@ export const PianoRollContextMenu = ({
     };
 
     const handleExtractGroove = async (): Promise<void> => {
-        const templateId = `groove-${clipId}-v1`;
-        await executeUserAppAction({ type: 'extractGroove', payload: { clipId, templateId } });
+        const sourceName = getGrooveSourceClipName(clipId) ?? clipId;
+        await executeUserAppAction({ type: 'extractGroove', payload: { clipId, sourceName } });
+        const templateId = resolveGrooveExtractionTemplateId({ clipId, sourceName, subdivision: '1/16' });
         const extractedTemplateId = getGrooveTemplate(templateId)?.id ?? getStraightGrooveTemplateId();
         setGrooveTemplateId(extractedTemplateId);
     };
