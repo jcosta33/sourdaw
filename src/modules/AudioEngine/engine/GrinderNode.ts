@@ -139,6 +139,24 @@ function matchesOfflineSetupReady(
     return true;
 }
 
+function createGrinderFallbackControlTarget(target: RuntimeDeviceControlTarget | undefined, offline: boolean) {
+    if (!target) {
+        return undefined;
+    }
+    const capturedParameterIds = Object.freeze([
+        ...new Set([...target.parameterIds.filter(isGrinderRuntimeParameter), 'bypass']),
+    ]);
+    return Object.freeze({
+        trackId: target.trackId,
+        deviceId: target.deviceId,
+        deviceType: target.deviceType,
+        capturedParameterIds,
+        parameterIds: Object.freeze([
+            ...new Set([...capturedParameterIds, ...(offline ? [] : GRINDER_LIVE_PARAMETER_IDS)]),
+        ]),
+    });
+}
+
 export function isGrinderDevice(deviceType: string): boolean {
     return deviceType === 'grinder';
 }
@@ -207,19 +225,7 @@ export async function createGrinderNode(
     const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
     const canCoalesce = !offline && typeof requestAnimationFrame === 'function';
     const workletGeneration = allocateWorkletControlGeneration();
-    const capturedParameterIds = Object.freeze([
-        ...new Set([...(controlTarget?.parameterIds.filter(isGrinderRuntimeParameter) ?? []), 'bypass']),
-    ]);
-    const fallbackControlTarget = controlTarget
-        ? Object.freeze({
-              trackId: controlTarget.trackId,
-              deviceId: controlTarget.deviceId,
-              deviceType: controlTarget.deviceType,
-              parameterIds: Object.freeze([
-                  ...new Set([...capturedParameterIds, ...(offline ? [] : GRINDER_LIVE_PARAMETER_IDS)]),
-              ]),
-          })
-        : undefined;
+    const fallbackControlTarget = createGrinderFallbackControlTarget(controlTarget, offline);
     let nextControlSequence = 1;
     let setupHandshake: ReturnType<typeof createReadyHandshake> | null = null;
     let setupSequence = 0;
@@ -295,8 +301,8 @@ export async function createGrinderNode(
 
     const queueParamPost = (name: string, value: number, sampleFrame?: number): void => {
         const scheduling = toControlScheduling(sampleFrame);
-        if (!fallbackControlTarget?.parameterIds.includes(name)) return;
-        if (scheduling.targetFrame !== null && !capturedParameterIds.includes(name)) return;
+        if (!fallbackControlTarget || !fallbackControlTarget.parameterIds.includes(name)) return;
+        if (scheduling.targetFrame !== null && !fallbackControlTarget.capturedParameterIds.includes(name)) return;
         const pending = Object.freeze({ value, ...scheduling });
         if (scheduling.targetFrame !== null) {
             // Scheduled fallback controls apply on the render thread. Their latency
@@ -308,7 +314,7 @@ export async function createGrinderNode(
             postFallbackControl(name, pending);
             return;
         }
-        if (!canCoalesce || !capturedParameterIds.includes(name)) {
+        if (!canCoalesce || !fallbackControlTarget.capturedParameterIds.includes(name)) {
             // Offline setup cannot wait for an animation frame. Newly admitted live
             // controls post now so they cannot cross a later structured neural patch.
             postFallbackControl(name, pending);
@@ -418,7 +424,7 @@ export async function createGrinderNode(
                     trackId: fallbackControlTarget.trackId,
                     deviceId: fallbackControlTarget.deviceId,
                     deviceType: fallbackControlTarget.deviceType,
-                    parameterIds: capturedParameterIds,
+                    parameterIds: fallbackControlTarget.capturedParameterIds,
                     allowUncapturedImmediate: !offline,
                 }),
                 correlation: Object.freeze({ workletGeneration }),
