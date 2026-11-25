@@ -342,6 +342,21 @@ function breaksIntoSiblingList(reading: NameReading, match: RegExpExecArray, joi
     return listed.end >= end && new Set([...nearNames, ...listed.names]).size > 1;
 }
 
+/** The forms of the first word a reading of the words must find: the first word, or the final one's number forms. */
+function getFirstWordForms(tokens: readonly string[], forms: AgentReferenceNameForms): string[] {
+    const firstWord = tokens[0];
+    if (firstWord === undefined) {
+        return [];
+    }
+    return tokens.length > 1 || forms === 'exact' ? [firstWord] : getNumberForms(firstWord);
+}
+
+/** The words a name an index word opens ("01 Kick") is also stated by, none for any other name. */
+function getUnindexedWords(tokens: readonly string[]): readonly string[] {
+    const [indexWord, ...words] = tokens;
+    return indexWord !== undefined && words.length > 0 && INDEX_WORD.test(indexWord) ? words : [];
+}
+
 /**
  * Every match of the words, in order and in the forms the reading allows, joined across space, dashes,
  * the name's own punctuation, nothing where the words may run together, and any other punctuation
@@ -357,10 +372,6 @@ function matchNameWords(
         return [];
     }
     const finalForms = reading.forms === 'exact' ? [finalToken] : getNumberForms(finalToken);
-    const firstWordForms = tokens.length > 1 ? tokens.slice(0, 1) : finalForms;
-    if (!firstWordForms.some((form) => reading.folded.includes(form))) {
-        return [];
-    }
     const words = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`];
     const needle = words
         .map((word, index) => {
@@ -393,8 +404,8 @@ function findUnindexedSpans(
     tokens: readonly string[],
     separators: readonly string[]
 ): AgentReferenceNameSpan[] {
-    const [indexWord, ...words] = tokens;
-    if (indexWord === undefined || words.length === 0 || !INDEX_WORD.test(indexWord)) {
+    const words = getUnindexedWords(tokens);
+    if (words.length === 0) {
         return [];
     }
     return matchNameWords(reading, words, separators.slice(1))
@@ -438,6 +449,12 @@ export function findAgentReferenceNameSpans(
         .filter((token) => token.length > 0);
     const finalToken = tokens.at(-1);
     if (finalToken === undefined) {
+        return [];
+    }
+    const foldedForPresence = foldCharacters(text);
+    const statesFirstWord = (words: readonly string[]) =>
+        getFirstWordForms(words, forms).some((form) => foldedForPresence.includes(form));
+    if (!statesFirstWord(tokens) && !statesFirstWord(getUnindexedWords(tokens))) {
         return [];
     }
     const { transformed: folded, offsets } = transformWithOffsets(text, foldCharacters);
