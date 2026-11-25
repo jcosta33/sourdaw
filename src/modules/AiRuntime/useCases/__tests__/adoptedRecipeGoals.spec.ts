@@ -16,7 +16,9 @@ import {
     tearDownVibeRunFixture,
     type RenderInput,
 } from '../../__tests__/vibeRunWorkflowFixture';
-import { appendChatMessage } from '../../stores/chatStore';
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
+import { appendChatMessage, chatStore } from '../../stores/chatStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { proposeAnswerSuggestion } from '../aiPanelActions/proposeAnswerSuggestion';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
@@ -155,6 +157,47 @@ function suggest(recipeId: string, targetId = VOCAL_ID, recipeRole = 'vocal') {
         },
     });
     return proposeAnswerSuggestion(messageId);
+}
+
+const RECEIPT_BOUND = 1024;
+
+function paddingReceipt(index: number): ApplicationToolReceipt {
+    return {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId: `padding-${String(index)}`,
+        toolName: 'analysis.measure',
+        turn: 0,
+        origin: 'application-verification',
+        revision: 'revision-1',
+        status: 'success',
+        data: {},
+        summary: 'Measured preview.',
+        warnings: [],
+        error: null,
+    };
+}
+
+/** Fills to its receipt bound the plan of the run whose adopted proposal is being measured. */
+function fillMeasuringRunPlanReceipts(): void {
+    const runId = chatStore.value?.messages.find((message) => message.stoppableRunId !== undefined)?.stoppableRunId;
+    const run = runId === undefined ? undefined : agentRunLifecycle.get(runId);
+    if (runId === undefined || run?.plan === null || run?.plan === undefined) {
+        throw new Error('Expected the measuring run to hold a plan.');
+    }
+    const kept = run.plan.applicationToolReceipts ?? [];
+    agentRunLifecycle.recordApplicationToolEvidence({
+        runId,
+        summary: run.plan.summary,
+        applicationToolReceipts: [
+            ...kept,
+            ...Array.from({ length: RECEIPT_BOUND - kept.length }, (_, index) => paddingReceipt(index)),
+        ],
+        revision: run.revisions.planned ?? 'revision-1',
+        scope: run.scope,
+        grants: run.grants,
+        budgets: run.budgets,
+    });
 }
 
 function onlyCard() {
@@ -325,6 +368,24 @@ describe("an adopted recipe proposal is verified against the recipe's own expect
         const view = getAgentApprovalView({ confirmationId: onlyCard().id });
         expect(view?.metricGoals.status).toBe('blocked');
         expect(view?.canConfirm).toBe(false);
+    });
+
+    it('refuses the request with the plan-bound reason, persisting no card, when the plan cannot hold the preview', async () => {
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
+            fillMeasuringRunPlanReceipts();
+            return renderTrack(input);
+        });
+
+        await expect(suggest('vocal-warm')).resolves.toBe('requested');
+
+        expect(proposedCards()).toEqual([]);
+        const messages = chatStore.value?.messages ?? [];
+        const reason = `the run's plan cannot hold more than ${String(RECEIPT_BOUND)} entries in applicationToolReceipts`;
+        expect(messages.find((message) => message.content.startsWith('Command not executed'))).toMatchObject({
+            content: `Command not executed: ${reason}`,
+            error: reason,
+        });
+        expect(messages.filter((message) => message.stoppableRunId !== undefined)).toEqual([]);
     });
 
     it("freezes the same goals when the last commit's recipe is repeated on another track", async () => {

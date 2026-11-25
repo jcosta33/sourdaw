@@ -3,6 +3,7 @@ import { updateChatMessage } from '../../stores/chatStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { type compileAgentActionExecution } from '../compileAgentActionExecution';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { describeAgentRunPlanBoundRefusal } from '../describeAgentRunPlanBoundRefusal';
 import { type getProjectContext } from '../getProjectContext';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 
@@ -15,6 +16,8 @@ type AdoptedRecipeMeasurement =
     /** The preview could not run; the card is still shown and the metric admission blocks Confirm as missing. */
     | { status: 'unmeasured' }
     | { status: 'stopped' }
+    /** The run's plan cannot hold the preview's evidence; the request ends with this reason and persists nothing. */
+    | { status: 'refused'; reason: string }
     | { status: 'measured'; metricGoalState: string; agentApproval: CompiledExecution['agentApproval'] };
 
 /**
@@ -65,9 +68,14 @@ export async function measureAdoptedRecipeProposal(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    // Evidence the run's plan cannot keep leaves the card unmeasured, as a preview that could not run does.
-    if (recordBatchPreviewEvidence(liveRun, input.revision, agentApproval.metricGoalState, proof.receipts) !== null) {
-        return { status: 'unmeasured' };
+    const planRefusal = recordBatchPreviewEvidence(
+        liveRun,
+        input.revision,
+        agentApproval.metricGoalState,
+        proof.receipts
+    );
+    if (planRefusal !== null) {
+        return { status: 'refused', reason: describeAgentRunPlanBoundRefusal(planRefusal) };
     }
     return { status: 'measured', metricGoalState: JSON.stringify(proof.state), agentApproval };
 }

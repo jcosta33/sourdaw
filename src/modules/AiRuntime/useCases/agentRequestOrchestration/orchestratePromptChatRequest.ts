@@ -765,6 +765,22 @@ async function dispatchPromptPlan(input: {
                 });
                 return undefined;
             }
+            if (measurement?.status === 'refused') {
+                tryRecordTerminalFailure({
+                    runId: admission.runId,
+                    error: normalizeAgentFailure({
+                        category: 'budget',
+                        source: 'provider-planning',
+                        knownDomain: true,
+                    }),
+                    terminal: true,
+                });
+                updateChatMessage(assistantMessageId, {
+                    content: `Command not executed: ${measurement.reason}`,
+                    error: measurement.reason,
+                });
+                return undefined;
+            }
             const measured = measurement?.status === 'measured' ? measurement : null;
             const confirmationId = persistPromptActionConfirmation({
                 runId: admission.runId,
