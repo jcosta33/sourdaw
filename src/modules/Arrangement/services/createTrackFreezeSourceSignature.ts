@@ -2,6 +2,7 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
+import { encodeStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
 import { type Clip, type DeviceStateChunk } from '../models/Track';
 
 /**
@@ -45,7 +46,7 @@ type TrackFreezeSource = {
     devices: readonly {
         id: string;
         type: string;
-        parameterValues: Readonly<Record<string, number>>;
+        parameterValues: Record<string, number>;
         bypassed: boolean;
         /** The device's own persisted state chunk; render state the offline
          *  render hydrates the device from. */
@@ -272,7 +273,9 @@ export function createTrackFreezeSourceSignature(source: TrackFreezeSource): str
         .sort((alpha, buffer) => alpha.startBeat - buffer.startBeat || alpha.id.localeCompare(buffer.id))
         .map(clipSignatureEntry);
     const deviceSignatures = source.devices.map((device) => {
-        const parameters = Object.entries(device.parameterValues)
+        // The stored form, so a value the projection filled to its legacy reading signs
+        // as the absence a track frozen before that parameter existed was hashed from.
+        const parameters = Object.entries(encodeStoredDeviceParameterValues(device.type, device.parameterValues))
             .sort(([alpha], [buffer]) => alpha.localeCompare(buffer))
             .map(([name, value]) => `${name}=${value}`)
             .join(',');

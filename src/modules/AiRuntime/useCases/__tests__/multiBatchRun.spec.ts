@@ -197,6 +197,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         ['make it warmer and less muddy', ['warm', 'muddy']],
         ['make it less muddy but keep the vocal intimate', ['muddy']],
         ['keep the vocal intimate and make it less muddy', ['muddy']],
+        ['keep the vocal intimate and make it tighter', ['tight']],
         ['make the whole mix warmer around the track called Wider', ['warm']],
         ['make the whole mix warmer around "Wider"', ['warm']],
         ['make this mix warmer and more open', ['wide']],
@@ -254,6 +255,36 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
                 plan?.batches.reduce((total, batch) => total + batch.targetIds.length, 0) ?? 0
             );
             expect(plan?.schemaVersion).toBe(2);
+        }
+    );
+
+    it.each([
+        ['keep the vocal intimate and make it punchier', ['punchy']],
+        ['keep the vocal intimate and make it more glued', ['glued']],
+        ['keep the vocal intimate and make it more controlled', ['controlled']],
+    ] satisfies readonly (readonly [string, readonly string[]])[])(
+        'does not schedule a vibe run whose batch contradicts a kept intimacy for %s',
+        async (prompt, requestedDescriptors) => {
+            scriptPlanningTurns([
+                briefIntake,
+                () => [
+                    {
+                        id: 'brief-compile',
+                        name: 'brief.compile',
+                        arguments: {
+                            vision: 'A chosen sound',
+                            mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors },
+                        },
+                    },
+                ],
+                proposeBrief,
+            ]);
+            await sendChatMessage(prompt);
+            const brief = requireOnlyProposedCard();
+            expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toBeUndefined();
+            expect(cardContent(brief)).toContain(
+                'would be asked to move a metric one way and another, or to move one the request holds'
+            );
         }
     );
 
@@ -984,7 +1015,10 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
                 '- Batch 4 of 4: warm bass — Bass',
             ].join('\n')
         );
-        expect(content).not.toContain('bright');
+        // The withheld quality plans no batch; the brief records it as a hold instead.
+        const batchLines = content.split('\n').filter((line) => line.startsWith('- Batch '));
+        expect(batchLines.filter((line) => line.includes('bright'))).toEqual([]);
+        expect(content).toContain("Must hold (Vocal): don't let the vocal get brighter");
     });
 
     it('proposes warmth without widening for a contrastive request, with each batch still awaiting approval', async () => {

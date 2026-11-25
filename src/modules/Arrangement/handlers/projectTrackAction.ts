@@ -5,6 +5,7 @@ import { type Track } from '../stores/trackStore';
 import { clampClipGain } from '../transformers/clampClipGain';
 import { clampTrackHeight } from '../useCases/clampTrackHeight';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
+import { clampTrackPan } from '../useCases/setTrackGainPan/clampTrackPan';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -47,7 +48,8 @@ function projectTrackColor(action: ActionOf<'setTrackColor'>, projected: Track):
 }
 
 function projectTrackPan(action: ActionOf<'setTrackPan'>, projected: Track): void {
-    projected.pan = action.payload.pan;
+    // The writer clamps, so a later action plans against the pan the store will hold.
+    projected.pan = clampTrackPan(action.payload.pan);
 }
 
 function projectHidden(action: ActionOf<'hideTrack'>, projected: Track): void {

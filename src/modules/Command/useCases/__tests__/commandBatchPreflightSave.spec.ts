@@ -44,7 +44,6 @@ describe('command preflight save and content authority', () => {
     afterEach(() => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
-        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         vi.unstubAllGlobals();
     });

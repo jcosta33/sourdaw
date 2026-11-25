@@ -1,7 +1,7 @@
-import { type RuntimeActionType } from '../../models/RuntimeAction';
+import { type AppActionType } from '#/utils/handlerContract';
 
 type DeniedPromptIntent = {
-    actionType: RuntimeActionType;
+    actionType: AppActionType;
     phrases: readonly string[];
 };
 
@@ -32,7 +32,7 @@ const DENIED_PROMPT_INTENTS: readonly DeniedPromptIntent[] = [
     },
 ];
 
-export function findDeniedPromptIntent(normalized: string): RuntimeActionType | null {
+export function findDeniedPromptIntent(normalized: string): AppActionType | null {
     for (const intent of DENIED_PROMPT_INTENTS) {
         if (intent.phrases.includes(normalized)) {
             return intent.actionType;

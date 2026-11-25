@@ -67,7 +67,9 @@ import { usePianoRollOpeningScroll } from '../../hooks/usePianoRollOpeningScroll
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
+import { PianoRollCanvas } from './PianoRollCanvas';
 import { PianoRollContextMenu } from './PianoRollContextMenu';
+import { PianoRollNoteNavigator } from './PianoRollNoteNavigator';
 import { PianoRollToolbar } from './PianoRollToolbar';
 
 type PianoRollTakeNotes = ReturnType<typeof projectPianoRollTakeNotes>;
@@ -515,51 +517,72 @@ export const PianoRoll = ({
         : new Set(Array.from(selectedNoteIds, (id) => primaryTakeProjection?.baseOwnersByViewId.get(id)?.row.id ?? id));
 
     return (
-        <Stack grow className="min-w-0 overflow-hidden">
-            <div
-                className="min-w-0 shrink-0 overflow-x-auto overflow-y-hidden"
-                onFocusCapture={revealFocusedToolbarControl}
-            >
-                <PianoRollToolbar
-                    gridSnap={gridSnap}
-                    onGridSnapChange={setGridSnap}
-                    scaleRoot={keyRoot}
-                    onScaleRootChange={setProjectKeyRoot}
-                    scaleType={scaleName}
-                    onScaleTypeChange={setProjectScaleName}
-                    isFolded={isFolded}
-                    onToggleFolded={() => setIsFolded((param) => !param)}
-                    constrainToScale={constrainToScale}
-                    onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
-                    stepInput={stepRecord?.active ?? false}
-                    onToggleStepInput={() => toggleStepRecordingForClip({ clipId })}
-                    showGhostNotes={showGhostNotes}
-                    onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
-                    chordMode={chordMode}
-                    onToggleChordMode={() => setChordMode((param) => !param)}
-                    chordType={chordType}
-                    onChordTypeChange={setChordType}
-                    paintMode={paintMode}
-                    onTogglePaintMode={() => setPaintMode((param) => !param)}
-                    lassoMode={lassoMode}
-                    onToggleLassoMode={() => setLassoMode((param) => !param)}
-                    notePreviewEnabled={notePreviewEnabled}
-                    onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
-                    zoom={zoom}
-                    onZoomChange={setZoom}
-                    rowHeight={rowHeight}
-                    onRowHeightChange={changeRowHeight}
-                    openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
-                    focusedClipId={focusedClipId}
-                    onFocusedClipIdChange={setFocusedClipId}
-                    showExpressionView={showExpressionView}
-                    onToggleExpressionView={() => setShowExpressionView((param) => !param)}
-                    activeExpressionLane={activeExpressionLane}
-                    onActiveExpressionLaneChange={setActiveExpressionLane}
-                    mpeExpressionLanes={mpeExpressionLanes}
-                />
-            </div>
-            <Stack grow className="min-h-0 overflow-hidden">
+        <PianoRollNoteNavigator
+            clipId={clipId}
+            notes={notes}
+            openedClipNotes={openedClipNotes}
+            clips={editedClips}
+            selectedNoteIds={selectedNoteIds}
+            setSelectedNoteIds={setSelectedNoteIds}
+            canvasRef={canvasRef}
+            toolbar={
+                <div className="min-w-0 overflow-x-auto overflow-y-hidden" onFocusCapture={revealFocusedToolbarControl}>
+                    <PianoRollToolbar
+                        gridSnap={gridSnap}
+                        onGridSnapChange={setGridSnap}
+                        scaleRoot={keyRoot}
+                        onScaleRootChange={setProjectKeyRoot}
+                        scaleType={scaleName}
+                        onScaleTypeChange={setProjectScaleName}
+                        isFolded={isFolded}
+                        onToggleFolded={() => setIsFolded((param) => !param)}
+                        constrainToScale={constrainToScale}
+                        onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
+                        stepInput={stepRecord?.active ?? false}
+                        onToggleStepInput={() => toggleStepRecordingForClip({ clipId })}
+                        showGhostNotes={showGhostNotes}
+                        onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
+                        chordMode={chordMode}
+                        onToggleChordMode={() => setChordMode((param) => !param)}
+                        chordType={chordType}
+                        onChordTypeChange={setChordType}
+                        paintMode={paintMode}
+                        onTogglePaintMode={() => setPaintMode((param) => !param)}
+                        lassoMode={lassoMode}
+                        onToggleLassoMode={() => setLassoMode((param) => !param)}
+                        notePreviewEnabled={notePreviewEnabled}
+                        onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
+                        zoom={zoom}
+                        onZoomChange={setZoom}
+                        rowHeight={rowHeight}
+                        onRowHeightChange={changeRowHeight}
+                        openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
+                        focusedClipId={focusedClipId}
+                        onFocusedClipIdChange={setFocusedClipId}
+                        showExpressionView={showExpressionView}
+                        onToggleExpressionView={() => setShowExpressionView((param) => !param)}
+                        activeExpressionLane={activeExpressionLane}
+                        onActiveExpressionLaneChange={setActiveExpressionLane}
+                        mpeExpressionLanes={mpeExpressionLanes}
+                    />
+                </div>
+            }
+            contextMenu={
+                ctxMenu ? (
+                    <PianoRollContextMenu
+                        menu={ctxMenu}
+                        clipId={clipId}
+                        notes={contextUsesFrozenRows ? notes : baseNotes}
+                        takeProjection={takeProjections.get(clipId)}
+                        selectedNoteIds={contextSelectedNoteIds}
+                        onClose={() => setCtxMenu(null)}
+                        onSelectAll={() => setSelectedNoteIds(new Set(notes.map((node) => node.id)))}
+                        onClearSelection={() => setSelectedNoteIds(new Set())}
+                    />
+                ) : null
+            }
+        >
+            <>
                 <Row
                     align="stretch"
                     grow
@@ -605,55 +628,27 @@ export const PianoRoll = ({
                         })}
                     </DawSideRail>
 
-                    {/*
-                     * Layout extent. This wrapper — plain CSS, bounded by
-                     * nothing — is what makes the arrangement scrollable, so
-                     * every beat stays reachable at every zoom. `flex-1`
-                     * fills the viewport when the content is shorter than it;
-                     * `minWidth` takes over once the content is longer.
-                     */}
-                    <div className="flex-1" style={{ minWidth: contentWidth }}>
-                        {/*
-                         * Viewport canvas. Its backing store covers only what
-                         * is on screen (see usePianoRollRenderer), so it sticks
-                         * to the right edge of the pitch rail — the left edge
-                         * of the content area — while the wrapper above scrolls
-                         * past it. `left` must equal the rail's own width or
-                         * the drawn slice and the visible slice disagree, which
-                         * is why both read the same constant.
-                         */}
-                        <canvas
-                            ref={canvasRef}
-                            className="sticky outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
-                            style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor, height: contentHeight }}
-                            tabIndex={0}
-                            // Marks this surface as a canvas editor. The global
-                            // keyboard contract reads
-                            // `closest('[data-canvas-editor]')` and, while it has
-                            // focus, admits only editor-safe shortcuts
-                            // (transport, undo/redo, save, panel toggles) so
-                            // arrangement commands do not act from inside the
-                            // roll. Keys `handleKeyDown` consumes are claimed
-                            // with preventDefault and skipped globally.
-                            data-canvas-editor=""
-                            onMouseDown={(event) => {
-                                openingScroll.settle();
-                                handleMouseDown(event);
-                            }}
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseLeave}
-                            onPointerCancel={cancelLasso}
-                            onBlur={cancelLasso}
-                            onDoubleClick={handleDoubleClick}
-                            onKeyDown={(event) => {
-                                openingScroll.settle();
-                                handleKeyDown(event);
-                            }}
-                            onContextMenu={handleContextMenu}
-                            aria-label="Piano roll editor"
-                        />
-                    </div>
+                    <PianoRollCanvas
+                        canvasRef={canvasRef}
+                        contentWidth={contentWidth}
+                        contentHeight={contentHeight}
+                        cursor={hoverCursor}
+                        onMouseDown={(event) => {
+                            openingScroll.settle();
+                            handleMouseDown(event);
+                        }}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseLeave}
+                        onPointerCancel={cancelLasso}
+                        onBlur={cancelLasso}
+                        onDoubleClick={handleDoubleClick}
+                        onKeyDown={(event) => {
+                            openingScroll.settle();
+                            handleKeyDown(event);
+                        }}
+                        onContextMenu={handleContextMenu}
+                    />
                 </Row>
 
                 {/* I4: Expression View bottom panel */}
@@ -756,19 +751,7 @@ export const PianoRoll = ({
                         </div>
                     </Row>
                 ) : null}
-            </Stack>
-            {ctxMenu ? (
-                <PianoRollContextMenu
-                    menu={ctxMenu}
-                    clipId={clipId}
-                    notes={contextUsesFrozenRows ? notes : baseNotes}
-                    takeProjection={takeProjections.get(clipId)}
-                    selectedNoteIds={contextSelectedNoteIds}
-                    onClose={() => setCtxMenu(null)}
-                    onSelectAll={() => setSelectedNoteIds(new Set(notes.map((node) => node.id)))}
-                    onClearSelection={() => setSelectedNoteIds(new Set())}
-                />
-            ) : null}
-        </Stack>
+            </>
+        </PianoRollNoteNavigator>
     );
 };

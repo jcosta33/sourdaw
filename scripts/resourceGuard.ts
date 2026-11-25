@@ -188,8 +188,8 @@ const measuredScriptBudgets = new Map<string, number>([
     ['lint', 4864 * 1024 ** 2],
     // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
     ['lint:full', 6500 * 1024 ** 2],
-    // The focused batch that touched seven spec files at once peaked at 4423 MiB.
-    ['test:run', 6144 * 1024 ** 2],
+    // The agent campaign harness and acceptance corpora specs run together peaked at 6794 MiB.
+    ['test:run', 7680 * 1024 ** 2],
     // A focused single-crate cargo:test filter peaked at about 4710 MiB under the guard.
     ['cargo:test', 5632 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
@@ -589,6 +589,7 @@ type ResourceSessionInput = {
     availableMemoryBytes?: number;
     memorySampler?: () => number | undefined;
     activeRssSampler?: (owner: ReservationRecord) => number | undefined;
+    processHost?: ProcessTreeHost;
     memoryReserveBytes?: number;
     waitIntervalMs?: number;
     onWait?: (message: string) => void;
@@ -691,7 +692,7 @@ export function reservationRssBytes(
     return reservationTreeRssBytes(owner, reservationProcessTree(owner), host);
 }
 
-export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHost = processTreeHost): boolean {
+function reservationProcessesAlive(owner: ReservationRecord, host: ProcessTreeHost): boolean {
     if (isSameProcess(owner.pid, owner.processStartedAt, host)) {
         return true;
     }
@@ -704,17 +705,26 @@ export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHos
         owner.childPid !== undefined &&
         childStartedAt !== undefined &&
         tree.invalidated.get(owner.childPid)?.has(childStartedAt) === true;
-    if (owner.childPid !== undefined && !childRetired && isSameProcess(owner.childPid, childStartedAt, host)) {
+    return owner.childPid !== undefined && !childRetired && isSameProcess(owner.childPid, childStartedAt, host);
+}
+
+function reservationInOrphanGrace(owner: ReservationRecord): boolean {
+    return owner.processToken !== undefined && (owner.orphanUntil ?? 0) > Date.now();
+}
+
+export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHost = processTreeHost): boolean {
+    if (reservationProcessesAlive(owner, host)) {
         return true;
     }
+    const tree = reservationProcessTree(owner);
     const rssBytes = reservationTreeRssBytes(owner, tree, host);
     if (rssBytes === undefined || rssBytes > 0) {
         return true;
     }
-    return owner.processToken !== undefined && (owner.orphanUntil ?? 0) > Date.now();
+    return reservationInOrphanGrace(owner);
 }
 
-function liveReservations(root: string): Array<{ owner: ReservationRecord; path: string }> {
+function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: ReservationRecord; path: string }> {
     mkdirSync(root, { recursive: true });
     const live: Array<{ owner: ReservationRecord; path: string }> = [];
     for (const name of readdirSync(root)) {
@@ -724,7 +734,7 @@ function liveReservations(root: string): Array<{ owner: ReservationRecord; path:
         const path = join(root, name);
         try {
             const owner = reservationWithState(path);
-            if (reservationIsLive(owner)) {
+            if (reservationIsLive(owner, host)) {
                 live.push({ owner, path });
             } else {
                 removeReservation(path);
@@ -767,7 +777,8 @@ export async function enterResourceSession(input: ResourceSessionInput = {}): Pr
     );
     const reserveBytes = input.memoryReserveBytes ?? defaultMemoryReserveBytes;
     const readAvailableMemory = input.memorySampler ?? (() => input.availableMemoryBytes ?? availableMemoryBytes());
-    const sampleActiveRss = input.activeRssSampler ?? reservationRssBytes;
+    const processHost = input.processHost ?? processTreeHost;
+    const sampleActiveRss = input.activeRssSampler ?? ((owner) => reservationRssBytes(owner, processHost));
     const waitIntervalMs = input.waitIntervalMs ?? 1_000;
     const token = randomUUID();
     const reservationPath = join(reservationsRoot, `${token}.json`);
@@ -798,7 +809,7 @@ export async function enterResourceSession(input: ResourceSessionInput = {}): Pr
             if (availableBytes === undefined) {
                 throw new Error('available memory could not be measured');
             }
-            const reservations = liveReservations(reservationsRoot);
+            const reservations = liveReservations(reservationsRoot, processHost);
             let activeHeadroomBytes = 0;
             for (const reservation of reservations) {
                 const rssBytes = sampleActiveRss(reservation.owner);
@@ -806,7 +817,17 @@ export async function enterResourceSession(input: ResourceSessionInput = {}): Pr
                     if (!existsSync(reservation.path)) {
                         continue;
                     }
-                    throw new Error('active validation memory could not be measured');
+                    // reservationIsLive keeps an unreadable reservation alive, so an unreadable
+                    // sample is unknown usage: hold its full reservation and keep waiting while
+                    // its owner may still run. A dead owner past its orphan grace never recovers.
+                    if (
+                        !reservationProcessesAlive(reservation.owner, processHost) &&
+                        !reservationInOrphanGrace(reservation.owner)
+                    ) {
+                        throw new Error('active validation memory could not be measured');
+                    }
+                    activeHeadroomBytes += reservation.owner.reservedRssBytes;
+                    continue;
                 }
                 activeHeadroomBytes += Math.max(0, reservation.owner.reservedRssBytes - rssBytes);
             }

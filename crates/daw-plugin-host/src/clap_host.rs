@@ -45,9 +45,18 @@ const HIDE_ASKED: u8 = 2;
 /// The closed slot's "not closed", and its two reports, ordered so that
 /// `fetch_max` keeps the stronger one: an editor reported destroyed stays
 /// destroyed whatever a second report says.
-const NOT_CLOSED: u8 = 0;
-const CLOSED_ALIVE: u8 = 1;
-const CLOSED_DESTROYED: u8 = 2;
+const NOT_CLOSED: u64 = 0;
+const CLOSED_ALIVE: u64 = 1;
+const CLOSED_DESTROYED: u64 = 2;
+/// The low bits of a packed `closed` report that hold the report itself.
+const CLOSED_REPORT_BITS: u32 = 2;
+
+/// A `closed` report and the editor generation it was made against, in one
+/// word: the generation above the report, so `fetch_max` keeps the newest
+/// editor's report and, within one editor, destroyed over merely closed.
+fn pack_editor_closed(generation: u64, report: u64) -> u64 {
+    (generation << CLOSED_REPORT_BITS) | report
+}
 
 /// One editor size held in a single atomic, so the plugin's own callback can
 /// state both dimensions without a lock and without tearing them apart.
@@ -111,16 +120,21 @@ pub struct HostCallbackState {
     main_thread_callback_pending: AtomicBool,
     /// The newest show or hide the plugin asked of its editor window.
     editor_visibility_ask: AtomicU8,
-    /// Whether the plugin reported its editor gone, and whether destroyed.
-    editor_closed_ask: AtomicU8,
+    /// Whether the plugin reported its editor gone, and whether destroyed,
+    /// packed by [`pack_editor_closed`] with the editor generation the report
+    /// was made against. Zero means nothing is pending.
+    editor_closed_ask: AtomicU64,
+    /// Counts the editor windows installed on this instance. A `closed` report
+    /// carries the count it read, so one made against an editor that has since
+    /// been replaced cannot tear down its successor.
+    editor_generation: AtomicU64,
     /// Whether the plugin reported new resize constraints not yet re-read.
     editor_resize_hints_changed: AtomicBool,
     /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty
     /// and parameter-rescan — which a plugin raises where allocating is
-    /// ordinary. Its install also gates the `[thread-safe]` asks' acceptance:
-    /// it happens exactly when the native engine takes the instance, which is
-    /// exactly the set the drain thread serves, so an instance with no install
-    /// is one whose recorded ask nothing would ever carry.
+    /// ordinary. It is installed when the native engine takes the instance;
+    /// the `[thread-safe]` editor asks do not wait on it, because the editor
+    /// drain serves an instance the engine has not taken as well.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
     /// The timers and descriptors this instance registered through
     /// `clap.timer-support` and `clap.posix-fd-support`. Shared with the
@@ -247,9 +261,8 @@ impl HostCallbackState {
     /// install wins; a second call changes nothing and reports `false`, so the
     /// wake cannot be hijacked mid-life.
     ///
-    /// The install is also the `[thread-safe]` asks' acceptance gate — see
-    /// [`Self::request_editor_resize`] — and the moment the instance joins the
-    /// set the request watcher sweeps. A main-thread callback the plugin asked
+    /// The install is also the moment the instance joins the set the request
+    /// watcher sweeps. A main-thread callback the plugin asked
     /// for before then had its hint raised while no sweep could find it, so the
     /// hint is raised again here and the ask is served on the next sweep rather
     /// than left until the plugin happens to ask again.
@@ -288,18 +301,19 @@ impl HostCallbackState {
         // preemption spanning an entire editor lifecycle, and its outcome is one
         // wrong resize the plugin can ask again for.
         self.pending_editor_resize.store(0, Ordering::Release);
+        self.editor_generation.fetch_add(1, Ordering::AcqRel);
         self.editor_resize_available.store(true, Ordering::Release);
     }
 
     /// Record an editor size the plugin asked for, and report whether it will
     /// actually be applied.
     ///
-    /// Three ways it will not, and each is a `false` rather than a silent drop:
-    /// a dimension with no area is not a size; an editor with no host window has
-    /// nothing to resize; and an instance with no wake installed is one the
-    /// drain thread never serves, so accepting would be a claim nothing backs.
-    /// CLAP lets the host refuse, and a refusal a plugin can see beats an
-    /// acceptance it cannot verify.
+    /// Two ways it will not, and each is a `false` rather than a silent drop: a
+    /// dimension with no area is not a size, and an editor with no host window
+    /// has nothing to resize. A window is installed only on an instance the
+    /// embedding host's editor drain serves, engine-owned or not yet attached,
+    /// so the window is the whole gate: a dormant instance has no
+    /// host-request wake yet and must still be answered.
     ///
     /// The recording is [`Self::request_parameters_flush`]'s discipline exactly:
     /// the packed size slot is the record, the process-wide hint is the wake,
@@ -312,9 +326,6 @@ impl HostCallbackState {
             return false;
         }
         if !self.editor_resize_available.load(Ordering::Acquire) {
-            return false;
-        }
-        if self.request_notifier.get().is_none() {
             return false;
         }
 
@@ -338,9 +349,6 @@ impl HostCallbackState {
         if !self.editor_resize_available.load(Ordering::Acquire) {
             return false;
         }
-        if self.request_notifier.get().is_none() {
-            return false;
-        }
 
         let asked = match visibility {
             EditorVisibility::Show => SHOW_ASKED,
@@ -353,13 +361,23 @@ impl HostCallbackState {
 
     /// Record that the plugin's editor ended on its own. CLAP marks
     /// `gui.closed` `[thread-safe]`, so this is atomics and the hint only.
+    ///
+    /// The generation is read first: a plugin thread that reads it, then
+    /// stalls across the host closing this editor and opening the next, stores
+    /// a report the take recognises as the old editor's.
     pub fn mark_editor_closed(&self, was_destroyed: bool) {
-        let reported = if was_destroyed {
+        let generation = self.editor_generation.load(Ordering::Acquire);
+        self.record_editor_closed(generation, was_destroyed);
+    }
+
+    fn record_editor_closed(&self, generation: u64, was_destroyed: bool) {
+        let report = if was_destroyed {
             CLOSED_DESTROYED
         } else {
             CLOSED_ALIVE
         };
-        self.editor_closed_ask.fetch_max(reported, Ordering::AcqRel);
+        self.editor_closed_ask
+            .fetch_max(pack_editor_closed(generation, report), Ordering::AcqRel);
         signal_pending_editor_resize();
     }
 
@@ -395,7 +413,14 @@ impl HostCallbackState {
             HIDE_ASKED => Some(EditorVisibility::Hide),
             _ => None,
         };
-        let closed = match self.editor_closed_ask.swap(NOT_CLOSED, Ordering::AcqRel) {
+        let current = self.editor_generation.load(Ordering::Acquire);
+        let packed = self.editor_closed_ask.swap(NOT_CLOSED, Ordering::AcqRel);
+        let report = if packed >> CLOSED_REPORT_BITS == current {
+            packed & ((1 << CLOSED_REPORT_BITS) - 1)
+        } else {
+            NOT_CLOSED
+        };
+        let closed = match report {
             CLOSED_DESTROYED => Some(EditorClosed {
                 was_destroyed: true,
             }),
@@ -1498,7 +1523,7 @@ mod tests {
     }
 
     #[test]
-    fn a_show_or_hide_is_accepted_only_where_a_window_and_a_wake_will_carry_it() {
+    fn a_show_or_hide_is_accepted_only_where_a_window_will_carry_it() {
         let _guard = resize_signal_guard();
         let (state, _requests) = state_with_open_editor();
         let host = host_with_state(&state);
@@ -1515,12 +1540,17 @@ mod tests {
         assert!(!unsafe { host_gui_request_show(&host as *const clap_host) });
         assert!(state.take_editor_window_asks().is_empty());
 
-        let unwoken = HostCallbackState::default();
-        unwoken.set_editor_resize_available(true);
-        let unwoken_host = host_with_state(&unwoken);
-        // SAFETY: as above, for `unwoken`.
-        assert!(!unsafe { host_gui_request_show(&unwoken_host as *const clap_host) });
-        assert!(unwoken.take_editor_window_asks().is_empty());
+        // An instance loaded before the engine ran has a window and no
+        // host-request wake, and its editor drain still serves it.
+        let dormant = HostCallbackState::default();
+        dormant.set_editor_resize_available(true);
+        let dormant_host = host_with_state(&dormant);
+        // SAFETY: as above, for `dormant`.
+        assert!(unsafe { host_gui_request_show(&dormant_host as *const clap_host) });
+        assert_eq!(
+            dormant.take_editor_window_asks().visibility,
+            Some(EditorVisibility::Show)
+        );
     }
 
     /// gui.h: with `was_destroyed` the host must acknowledge with `destroy`, so
@@ -1552,6 +1582,34 @@ mod tests {
         state.discard_editor_window_asks();
 
         assert!(state.take_editor_window_asks().is_empty());
+    }
+
+    /// A plugin thread that read the generation while one editor was open and
+    /// stored its `closed` only after the host had closed that editor and
+    /// opened the next — past the open's discard — reports about the old one.
+    #[test]
+    fn a_closed_report_made_against_a_replaced_editor_does_not_close_its_successor() {
+        let _guard = resize_signal_guard();
+        let state = HostCallbackState::default();
+        state.set_editor_resize_available(true);
+        let read_while_first_was_open = state.editor_generation.load(Ordering::Acquire);
+        state.set_editor_resize_available(false);
+        state.discard_editor_window_asks();
+        state.set_editor_resize_available(true);
+
+        state.record_editor_closed(read_while_first_was_open, true);
+
+        assert_eq!(state.take_editor_window_asks().closed, None);
+
+        state.mark_editor_closed(true);
+
+        assert_eq!(
+            state.take_editor_window_asks().closed,
+            Some(EditorClosed {
+                was_destroyed: true
+            }),
+            "a report made against the open editor still closes it"
+        );
     }
 
     #[test]
@@ -1768,10 +1826,12 @@ mod tests {
         );
     }
 
-    /// With no wake installed nothing carries the ask onto the control path, so
-    /// accepting it would be a claim the host cannot keep.
+    /// An instance loaded before the engine ran has an editor window and no
+    /// host-request wake yet; the editor drain serves it all the same, so its
+    /// resize is recorded rather than refused.
     #[test]
-    fn a_resize_request_is_refused_when_no_wake_is_installed() {
+    fn a_resize_request_is_recorded_with_a_window_and_no_wake_installed() {
+        let _guard = resize_signal_guard();
         let state = HostCallbackState::default();
         state.set_editor_resize_available(true);
         let host = host_with_state(&state);
@@ -1779,8 +1839,8 @@ mod tests {
         // SAFETY: `host` is a live local descriptor whose `host_data` points at
         // a `state` that outlives the call.
         let accepted = unsafe { host_gui_request_resize(&host as *const clap_host, 1024, 768) };
-        assert!(!accepted);
-        assert_eq!(state.take_editor_resize(), None);
+        assert!(accepted);
+        assert_eq!(state.take_editor_resize(), Some((1024, 768)));
     }
 
     #[test]

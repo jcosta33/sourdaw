@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, describe, expect, it, type TestContext } from 'vitest';
+import { afterAll, describe, expect, it, type TestContext, vi } from 'vitest';
 
 import {
     SOURDAW_E2E_PORT_ENV,
@@ -266,7 +266,7 @@ describe('resource admission', () => {
         }
     });
 
-    it('stops admission when a still-registered reservation cannot be sampled', async () => {
+    it('waits on the full reservation while a registered reservation cannot be sampled', async () => {
         const root = fixtureRoot('unsampled-registered');
         try {
             const first = await enterResourceSession({
@@ -274,15 +274,179 @@ describe('resource admission', () => {
                 requiredRssBytes: 1024 ** 3,
                 availableMemoryBytes: 8 * 1024 ** 3,
             });
+            let availableBytes = 2 * 1024 ** 3 + 1024 ** 3 + 512 * 1024 ** 2;
+            let samples = 0;
+            const waits: string[] = [];
+            let admitted = false;
+            const secondPromise = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memorySampler: () => {
+                    samples += 1;
+                    return availableBytes;
+                },
+                activeRssSampler: () => undefined,
+                waitIntervalMs: 10,
+                onWait: (message) => waits.push(message),
+            }).then((session) => {
+                admitted = true;
+                return session;
+            });
+
+            await vi.waitFor(() => expect(samples).toBeGreaterThanOrEqual(3));
+            expect(admitted).toBe(false);
+            expect(waits).toEqual(['waiting for validation capacity: need 4096 MiB, 3584 MiB available']);
+
+            availableBytes = 4 * 1024 ** 3;
+            const second = await secondPromise;
+            expect(admitted).toBe(true);
+            second.release();
+            first.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reaps a dead owner reservation before sampling it', async () => {
+        const root = fixtureRoot('dead-owner-unsampled');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            const deadPath = join(reservationsRoot, 'dead.json');
+            writeFileSync(
+                deadPath,
+                JSON.stringify({
+                    token: 'dead',
+                    pid: 2 ** 22 + 12_345,
+                    cwd: 'fixture',
+                    command: 'fixture',
+                    startedAt: 'Mon Nov  9 10:00:00 2026',
+                    processStartedAt: 'Mon Nov  9 10:00:00 2026',
+                    reservedRssBytes: 1024,
+                })
+            );
+            const sampledTokens: string[] = [];
+            const session = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 4 * 1024 ** 3,
+                activeRssSampler: (owner) => {
+                    sampledTokens.push(owner.token);
+                    return undefined;
+                },
+            });
+
+            expect(sampledTokens).toEqual([]);
+            expect(existsSync(deadPath)).toBe(false);
+            session.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('stops admission on an unreadable reservation whose owner is dead and past its orphan grace', async () => {
+        const root = fixtureRoot('dead-owner-unreadable-table');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            writeFileSync(
+                join(reservationsRoot, 'dead.json'),
+                JSON.stringify({
+                    token: 'dead',
+                    pid: 2 ** 22 + 12_345,
+                    cwd: 'fixture',
+                    command: 'fixture',
+                    startedAt: 'Mon Nov  9 10:00:00 2026',
+                    processStartedAt: 'Mon Nov  9 10:00:00 2026',
+                    reservedRssBytes: 1024 ** 3,
+                    processToken: 'session',
+                    orphanUntil: 0,
+                })
+            );
+            const unreadableTableHost: ProcessTreeHost = {
+                platform: () => 'linux',
+                processTable: () => undefined,
+                processStartedAt: () => undefined,
+                terminateWindowsTree: () => undefined,
+                kill: () => {
+                    throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+                },
+            };
+
             await expect(
                 enterResourceSession({
                     root,
                     requiredRssBytes: 1024 ** 3,
-                    availableMemoryBytes: 8 * 1024 ** 3,
-                    activeRssSampler: () => undefined,
+                    availableMemoryBytes: 1024 ** 3,
+                    memoryReserveBytes: 0,
+                    processHost: unreadableTableHost,
+                    waitIntervalMs: 10,
                 })
             ).rejects.toThrow('active validation memory could not be measured');
-            first.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps waiting on an unreadable reservation whose dead owner is still inside its orphan grace', async () => {
+        const root = fixtureRoot('dead-owner-orphan-grace-unreadable-table');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            writeFileSync(
+                join(reservationsRoot, 'grace.json'),
+                JSON.stringify({
+                    token: 'grace',
+                    pid: 2 ** 22 + 12_345,
+                    cwd: 'fixture',
+                    command: 'fixture',
+                    startedAt: 'Mon Nov  9 10:00:00 2026',
+                    processStartedAt: 'Mon Nov  9 10:00:00 2026',
+                    reservedRssBytes: 1024 ** 3,
+                    processToken: 'session',
+                    orphanUntil: Date.now() + 60_000,
+                })
+            );
+            const unreadableTableHost: ProcessTreeHost = {
+                platform: () => 'linux',
+                processTable: () => undefined,
+                processStartedAt: () => undefined,
+                terminateWindowsTree: () => undefined,
+                kill: () => {
+                    throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+                },
+            };
+            let availableBytes = 1024 ** 3 + 512 * 1024 ** 2;
+            let samples = 0;
+            let settled: 'pending' | 'admitted' | 'rejected' = 'pending';
+            const admission = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memoryReserveBytes: 0,
+                memorySampler: () => {
+                    samples += 1;
+                    return availableBytes;
+                },
+                processHost: unreadableTableHost,
+                waitIntervalMs: 10,
+            }).then(
+                (session) => {
+                    settled = 'admitted';
+                    return session;
+                },
+                (error: unknown) => {
+                    settled = 'rejected';
+                    throw error;
+                }
+            );
+
+            await vi.waitFor(() => expect(samples).toBeGreaterThanOrEqual(3));
+            expect(settled).toBe('pending');
+
+            availableBytes = 2 * 1024 ** 3;
+            const session = await admission;
+            expect(settled).toBe('admitted');
+            session.release();
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1944,7 +2108,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['test:run', 'src/x.spec.ts'],
-            expected: 6 * 1024 ** 3,
+            expected: 7680 * 1024 ** 2,
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },

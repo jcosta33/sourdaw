@@ -188,6 +188,7 @@ export { compileSendPreFaderAction } from './device/sendManagement/compileSendPr
 export { listSendDestinations } from './device/sendManagement/listSendDestinations';
 export { commitSendEdit } from './device/sendManagement/commitSendEdit';
 export { commitSendLevel } from './device/sendManagement/commitSendLevel';
+export { createDeviceParameterControl } from './device/setDeviceParameter/createDeviceParameterControl';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 

@@ -53,6 +53,15 @@ async function rejectIdentityTransitionAfterBootstrapFailure(error: unknown): Pr
     }
 }
 
+function importApplicationModules() {
+    return Promise.all([
+        import('./App'),
+        import('./registerDeviceEnginePorts'),
+        import('./registerSupportingServicePorts'),
+        import('./registerKernelPorts'),
+    ]);
+}
+
 async function renderApplication(): Promise<void> {
     if (hasDesktopBridge) {
         const [{ resetDisplayScaleForStartup }, { clearInheritedRetrospectiveCaptureArm }] = await Promise.all([
@@ -70,9 +79,11 @@ async function renderApplication(): Promise<void> {
 
     // A remounted iframe has a 5s window for AppShell. Bootstrap's import graph
     // includes WASM and must not occupy that window; AppShell effects await init.
-    void import('./bootstrap').catch((error: unknown) => {
-        void rejectIdentityTransitionAfterBootstrapFailure(error);
-    });
+    void import('./bootstrap')
+        .then(({ bootstrapApplication }) => bootstrapApplication())
+        .catch((error: unknown) => {
+            void rejectIdentityTransitionAfterBootstrapFailure(error);
+        });
     const renderingModules = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
@@ -89,20 +100,34 @@ async function renderApplication(): Promise<void> {
     registerNotificationEventBus();
     const reactRoot = createRoot(root);
     reactRoot.render(<ApplicationFirstPaint />);
-    // The identical specifier preserves evaluated module identities; retry only
+    // The identical specifiers preserve evaluated module identities; retry only
     // this graph's failed fetch, without replaying any startup work above.
-    void import('./App')
+    void importApplicationModules()
         .catch(async (error: unknown) => {
             const firstImportError = error;
             // A rejected graph can still have failing sibling fetches in flight.
             // Give their module-map entries time to settle before the sole retry.
             await new Promise<void>((resolve) => setTimeout(resolve, 100));
-            return import('./App').catch((error: unknown) => {
+            return importApplicationModules().catch((error: unknown) => {
                 throw new AggregateError([firstImportError, error], 'Sourdaw App import failed after its single retry');
             });
         })
         .then(
-            ({ App }) => reactRoot.render(<App />),
+            ([{ App }, { registerDeviceEnginePorts }, { registerSupportingServicePorts }, { registerKernelPorts }]) => {
+                // Bootstrap resolves independently and may not have run yet, and the
+                // preset browser reads factory presets while App renders, so these
+                // three port groups are filled here, before the first App render,
+                // whichever import finishes first. Bootstrap fills them again in its
+                // own order; a registrar fills the same ports each time, so the
+                // second call is a no-op.
+                registerDeviceEnginePorts();
+                registerSupportingServicePorts();
+                registerKernelPorts();
+                return App;
+            }
+        )
+        .then(
+            (App) => reactRoot.render(<App />),
             (error: unknown) => {
                 // Logged, not raised: the reload view below recovers this failure, so it is
                 // no uncaught page error, unlike a failed first paint.

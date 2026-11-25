@@ -1,5 +1,5 @@
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../models/AgentRunPlanBounds';
 import { maximalReceiptContextBytes } from '../services/applicationToolReceiptBudget';
-import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../stores/agentRunStore';
 
 /**
  * Bounds on the receipts the application measures itself, at turn 0 with origin

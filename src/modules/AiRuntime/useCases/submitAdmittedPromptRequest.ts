@@ -29,6 +29,7 @@ import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
+import { describeAgentRunPlanBoundRefusal } from './describeAgentRunPlanBoundRefusal';
 import { describePlannedAction } from './describePlannedAction';
 import { executePromptActionGroup } from './executePromptActionGroup';
 import { getProjectContext } from './getProjectContext';
@@ -38,6 +39,7 @@ import { notifyAiChange } from './notifyAiChange';
 import { parsePromptToActions } from './parsePromptToActions';
 import { type PlannedPromptActions, planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
+import { recordPromptBarRunPlan } from './recordPromptBarRunPlan';
 import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
@@ -429,30 +431,21 @@ export async function submitAdmittedPromptRequest(
             throw new Error(parsed.reason);
         }
         const authority = compiled.commandBatch.authority;
-        const run = agentRunLifecycle.get(runId);
-        if (!run) {
-            throw new Error('Admitted prompt run disappeared before command planning.');
-        }
-        agentRunLifecycle.recordPlan({
+        const planRefusal = recordPromptBarRunPlan({
             runId,
-            summary: actionLabels.join('\n'),
+            actionLabels,
             metricGoalState: compiled.metricGoalState,
-            applicationToolReceipts: planned.result.applicationToolReceipts ?? [],
-            commandIds: parsed.envelope.commands.map((command) => command.commandId),
-            serializedBatchIdentity: parsed.envelope.idempotencyKey,
+            receipts: planned.result.applicationToolReceipts,
+            envelope: parsed.envelope,
+            authority,
             revision: planned.projectRevision,
-            scope: {
-                targetIds: [...authority.scope.targetIds],
-                targetRanges: authority.scope.targetRanges.map((range) => ({ ...range })),
-                protectedTargetIds: [...authority.scope.protectedTargetIds],
-                protectedRanges: authority.scope.protectedRanges.map((range) => ({ ...range })),
-            },
-            grants: {
-                ...authority.grants,
-                allowedOperationPrefixes: [...authority.grants.allowedOperationPrefixes],
-            },
-            budgets: run.budgets,
         });
+        if (planRefusal !== null) {
+            transitionTerminalRun(runId, 'failed');
+            await releasePlanOwnedStemResources();
+            notifyAiChange(`Command not executed: ${describeAgentRunPlanBoundRefusal(planRefusal)}`, []);
+            return { status: 'rejected', runId };
+        }
         agentRunLifecycle.recordBatch({
             runId,
             batch: {

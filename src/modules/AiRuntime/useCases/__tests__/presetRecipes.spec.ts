@@ -312,6 +312,8 @@ const CHAIN_PRESET_EXCLUSIONS: Readonly<Record<string, string>> = {
     'fx-chain-guitar-clean': OVERSIZE,
     'fx-chain-drum-punch': OVERSIZE,
     'fx-chain-vocal-strip': OVERSIZE,
+    // Its compressor's Auto Makeup write (on, against a new device's off) is its seventeenth command.
+    'fx-chain-master-bus': OVERSIZE,
 };
 
 /**
@@ -359,7 +361,6 @@ const DESCRIBED_PRESET_RECIPES: readonly (readonly [string, string, readonly str
     ['fx-comp-gentle-mix', 'preset:fx-comp-gentle-mix:glued', ['master']],
     ['factory-faust-zita-vocal-plate', 'preset:factory-faust-zita-vocal-plate:bright', ['vocal']],
     ['factory-faust-tape-slapback', 'preset:factory-faust-tape-slapback:vintage', ['vocal', 'guitar']],
-    ['fx-chain-master-bus', 'preset:fx-chain-master-bus:glued', ['bus', 'master']],
     ['fx-lofi-vinyl', 'preset:fx-lofi-vinyl:lo-fi', []],
     ['fx-lofi-vinyl', 'preset:fx-lofi-vinyl:vintage', []],
     ['fx-lofi-retro-radio', 'preset:fx-lofi-retro-radio:lo-fi', []],
@@ -458,10 +459,10 @@ describe('preset recipes', () => {
 
         // Red when discovery counts a write the added device already holds, or the recipe drops a stated value.
         it('offers a chain that fits the ceiling only once writes the added devices already hold are left out', () => {
-            const recipe = publishedFrom('fx-chain-master-bus').find(
-                (entry) => entry.id === 'preset:fx-chain-master-bus:glued'
+            const recipe = publishedFrom('fx-creative-shimmer').find(
+                (entry) => entry.id === 'preset:fx-creative-shimmer'
             );
-            const stated = chainOf(factoryPreset('fx-chain-master-bus'));
+            const stated = chainOf(factoryPreset('fx-creative-shimmer'));
 
             expect(recipe?.steps.flatMap((step) => step.parameters)).toEqual(
                 stated.flatMap((device) =>
@@ -475,7 +476,7 @@ describe('preset recipes', () => {
                 expectedCommands(stated, null).length
             );
             expect(expectedCommands(stated, null).length).toBeLessThanOrEqual(RECIPE_EXPANSION_MAX_COMMANDS);
-            expect(discoveredIds(['glue'], 'bus')).toContain('preset:fx-chain-master-bus:glued');
+            expect(discoveredIds([], null, null, ['shimmer'])).toContain('preset:fx-creative-shimmer');
         });
     });
 
@@ -670,6 +671,7 @@ describe('preset recipes', () => {
             ['fx-chain-guitar-clean', 'clean', 'guitar'],
             ['fx-chain-drum-punch', 'punch', 'drums'],
             ['fx-chain-vocal-strip', 'channel-strip', 'vocal'],
+            ['fx-chain-master-bus', 'polish', 'master'],
         ])('withholds %s found by the term %s, as it does by descriptor', async (presetId, term, role) => {
             const receipt = await runTool(`loop-oversize-${presetId}`, 'recipe.discover', {
                 presetTerms: [term],

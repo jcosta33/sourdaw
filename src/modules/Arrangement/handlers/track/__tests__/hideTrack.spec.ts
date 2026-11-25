@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { handleHideTrack } from '../hideTrack';
 
 const mocks = vi.hoisted(() => ({
     hideTrack: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; hidden: boolean; devices?: never[] }[] } | null>(),
+    getTrackStoreState:
+        vi.fn<() => { tracks: { id: string; hidden: boolean; kind?: string; devices?: never[] }[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/toggleTrackState/hideTrack', () => ({
@@ -94,6 +97,61 @@ describe('handleHideTrack', () => {
             expect(handleHideTrack.validationRefusalReason?.(action, context(action))).toBe(
                 'Track "t1" does not exist'
             );
+        });
+
+        function masterHideAction(
+            hidden: boolean,
+            expectedHidden?: boolean
+        ): Extract<AppAction, { type: 'hideTrack' }> {
+            return { type: 'hideTrack', payload: { trackId: 'master', hidden, expectedHidden } };
+        }
+
+        it('refuses to hide the master track, writing nothing', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'master', kind: 'master', hidden: false }],
+            });
+            const action = masterHideAction(true);
+            const batch = { actions: [action], actionIndex: 0 };
+
+            expect(handleHideTrack.validate?.(action, batch)).toBe(false);
+            expect(handleHideTrack.validationRefusalReason?.(action, batch)).toBe('The master track cannot be hidden');
+            expect(mocks.hideTrack).not.toHaveBeenCalled();
+        });
+
+        it('shows a master track a saved project holds hidden', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'master', kind: 'master', hidden: true }],
+            });
+            const action = masterHideAction(false);
+
+            expect(handleHideTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(action)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenCalledWith('master', false);
+        });
+
+        it("undoes and redoes the show of a master saved hidden through describe's own actions", () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'master', kind: 'master', hidden: true }],
+            });
+            const forward = masterHideAction(false);
+            const description = handleHideTrack.describe(forward, { actions: [forward], actionIndex: 0 });
+            const { inverseAction, redoAction } = description;
+            if (inverseAction?.type !== 'hideTrack' || redoAction?.type !== 'hideTrack') {
+                throw new Error('Expected a guarded inverse and redo');
+            }
+
+            expect(handleHideTrack.execute(forward)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenLastCalledWith('master', false);
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master', hidden: false }] });
+            expect(handleHideTrack.validate?.(inverseAction, { actions: [inverseAction], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(inverseAction)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenLastCalledWith('master', true);
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master', hidden: true }] });
+            expect(handleHideTrack.validate?.(redoAction, { actions: [redoAction], actionIndex: 0 })).toBe(true);
+            expect(handleHideTrack.execute(redoAction)).toEqual({ status: 'written' });
+            expect(mocks.hideTrack).toHaveBeenLastCalledWith('master', false);
         });
 
         it('validates a restore only against the state it expects', () => {

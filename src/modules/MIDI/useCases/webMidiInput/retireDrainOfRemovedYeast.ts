@@ -1,3 +1,5 @@
+import { isMidiTransformDevice } from '#/modules/AudioEngine/useCases';
+
 import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 
 import type { ActiveNoteData } from '../../models/WebMidiTypes';
@@ -27,7 +29,9 @@ export function retireDrainOfRemovedYeast(input: RetireDrainOfRemovedYeastInput)
     if (noteData.yeastSessionEnded === true) {
         return true;
     }
-    const holdsYeast = input.chainDevices?.some((device) => device.id === yeastDeviceId && device.type === 'yeast');
+    const holdsYeast = input.chainDevices?.some(
+        (device) => device.id === yeastDeviceId && isMidiTransformDevice(device.type)
+    );
     if (holdsYeast === true) {
         return false;
     }

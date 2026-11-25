@@ -20,7 +20,9 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
-import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
+import { assertFreezeSourceUnchangedUnlessRecording } from './assertFreezeSourceUnchangedUnlessRecording';
+import { assertRenderReadsHashedTrack } from './assertRenderReadsHashedTrack';
+import { confirmFreezeSourceBeforeRender } from './confirmFreezeSourceBeforeRender';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
@@ -28,7 +30,11 @@ import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
+import { refuseFreezeCommit } from './refuseFreezeCommit';
+import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
+import { restoreCancelledFreeze } from './restoreCancelledFreeze';
+import { settledBeforeFreeze } from './settledBeforeFreeze';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -69,6 +75,7 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
     if (activeFreezeTasks.get(trackId) === abortController) {
         activeFreezeTasks.delete(trackId);
+        settledBeforeFreeze.delete(trackId);
     }
 }
 
@@ -93,7 +100,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     if (!getTrackEligibility(track.kind).acceptsFreeze) {
         return false;
     }
-    const previousFreeze = captureFreezeStateSnapshot(track);
+    const previousFreeze = rememberSettledFreezeState(track);
 
     if (activeFreezeTasks.has(trackId)) {
         activeFreezeTasks.get(trackId)!.abort();
@@ -117,9 +124,14 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        // Re-hashes the live source: the render reads it, not `track`. The check that follows is
+        // synchronous and the MIDI capture and render call come straight after it, so no edit can
+        // land between the last live read and the render's own.
+        const hashedTrack = await confirmFreezeSourceBeforeRender(trackId, hash, isCurrentFreezeTask, taskIdentity);
+        if (!hashedTrack) {
             return false;
         }
+        assertRenderReadsHashedTrack(hashedTrack);
 
         const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
 
@@ -196,12 +208,12 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             throw new Error(silentBake.message);
         }
 
-        await assertFreezeSourceUnchanged(trackId, hash);
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        await assertFreezeSourceUnchangedUnlessRecording(trackId, hash, () => isCurrentFreezeTask(taskIdentity));
+        // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
+        if (refuseFreezeCommit(trackId, () => isCurrentFreezeTask(taskIdentity))) {
             return false;
         }
 
-        // Synchronous from here to the commit write: no await can let a note land in between.
         assertFreezeMidiUnchanged(renderedMidi);
 
         const renderedAt = Date.now();
@@ -260,17 +272,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }
 
         if (abortController.signal.aborted) {
-            // A cancelled refresh keeps the take it was replacing, so the track stays
-            // frozen on it and can still be unfrozen; a cancelled first freeze is unfrozen.
-            scope(() => {
-                updateTrack(trackId, (time) => ({
-                    ...time,
-                    frozen: previousFreeze.frozen,
-                    frozenBufferId: previousFreeze.frozenBufferId,
-                    freezeState: previousFreeze.freezeState,
-                }));
-            });
-            return true;
+            return restoreCancelledFreeze({ trackId, pendingFreeze, settled: previousFreeze, scope });
         }
 
         const errorMessage = error instanceof Error ? error.message : String(error);

@@ -28,6 +28,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Broadcast Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -18,
                     'comp-ratio': 4,
                     'comp-attack': 5,
@@ -51,7 +52,11 @@ export async function createPodcastTemplate(): Promise<void> {
                     'eq-high-q': 0.7,
                 },
             },
-            { type: 'builtin-limiter', name: 'Voice Limit', params: { 'lim-threshold': -3, 'lim-release': 80 } },
+            {
+                type: 'builtin-limiter',
+                name: 'Voice Limit',
+                params: { 'lim-auto-makeup': 1, 'lim-threshold': -3, 'lim-release': 80 },
+            },
         ],
     });
     const musicBus = createBus({
@@ -110,6 +115,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Mic Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -20,
                     'comp-ratio': 3,
                     'comp-attack': 5,
@@ -145,6 +151,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Mic Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -20,
                     'comp-ratio': 3,
                     'comp-attack': 5,
@@ -180,6 +187,7 @@ export async function createPodcastTemplate(): Promise<void> {
                 type: 'builtin-compressor',
                 name: 'Mic Comp',
                 params: {
+                    'comp-auto-makeup': 1,
                     'comp-threshold': -20,
                     'comp-ratio': 3,
                     'comp-attack': 5,

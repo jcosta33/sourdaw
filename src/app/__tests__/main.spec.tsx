@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
         return null;
     },
     bootstrap: vi.fn(),
+    bootstrapApplication: vi.fn<() => void>(),
     reportError: vi.fn(),
     logError: vi.fn<(error: Error) => void>(),
     clearInheritedRetrospectiveCaptureArm: vi.fn(),
@@ -138,6 +139,10 @@ vi.mock('../clearInheritedRetrospectiveCaptureArm', () => ({
 }));
 
 vi.mock('../reloadApplication', () => ({ reloadApplication: mocks.reloadApplication }));
+
+vi.mock('../registerDeviceEnginePorts', () => ({ registerDeviceEnginePorts: vi.fn() }));
+vi.mock('../registerSupportingServicePorts', () => ({ registerSupportingServicePorts: vi.fn() }));
+vi.mock('../registerKernelPorts', () => ({ registerKernelPorts: vi.fn() }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     resetDisplayScaleForStartup: mocks.resetDisplayScaleForStartup,
@@ -310,7 +315,7 @@ describe('app main composition', () => {
         mocks.resolveAppComposition.mockReturnValue('browser-host');
         vi.doMock('../bootstrap', () => {
             mocks.bootstrap();
-            return {};
+            return { bootstrapApplication: mocks.bootstrapApplication };
         });
         vi.doMock('../App', () => ({
             App: mocks.App,

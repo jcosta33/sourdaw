@@ -6,5 +6,6 @@ export function buildBriefReadings(alternatives: readonly BriefMixAlternative[])
         id: `reading-${String(index + 1)}`,
         name: alternative.name,
         descriptors: [...alternative.requestedDescriptors],
+        plan: structuredClone(alternative.plan),
     }));
 }

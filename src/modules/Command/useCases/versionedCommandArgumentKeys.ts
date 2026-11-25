@@ -1626,7 +1626,9 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            color: 1,
             folderTrackId: 1,
+            initialAlternativeId: 1,
             name: 1,
         },
         required: ['name'],
@@ -4910,7 +4912,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            audioBufferId: 1,
+            audioBufferId: 126,
             blobs: 616,
             clipId: 1,
             contour: 165,

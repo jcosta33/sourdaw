@@ -74,6 +74,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -22, maximum: -14 },
                     { paramId: 'comp-ratio', minimum: 4, maximum: 6 },
                     { paramId: 'comp-attack', minimum: 5, maximum: 15 },
@@ -94,7 +95,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip at very fast tempi where a 50 ms release cannot recover between sixteenth notes.',
             'Skip when the kit already sounds gated or truncated.',
         ],
-        metrics: [{ metric: 'crestFactor', direction: 'increase' }],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' }],
         source: 'A release shorter than the gap between hits shortens the audible decay of each drum, which is the mechanism behind a tight kit rather than any single frequency move. The small low shelf trim removes the sustained shoulder under the kick that the compressor would otherwise lengthen.',
     },
     {
@@ -108,6 +109,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -20, maximum: -12 },
                     { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -121,11 +123,8 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip when a fast peak limiter already sits ahead of this point.',
             'Skip on brushed or very soft playing, where the body is all there is.',
         ],
-        metrics: [
-            { metric: 'crestFactor', direction: 'increase' },
-            { metric: 'transientDensity', direction: 'hold' },
-        ],
-        source: 'An attack of 20 ms or longer lets the initial strike through untouched and clamps only the decay behind it, so makeup gain raises the strike relative to the body. Peak-to-average therefore widens even though the average level rises.',
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
+        source: 'An attack of 20 ms or longer lets the initial strike through untouched and clamps only the decay behind it, so makeup gain raises the strike relative to the body. Peak-to-average therefore widens.',
     },
     {
         id: 'drums-wide',
@@ -312,6 +311,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-compressor',
                 parameters: [
+                    { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
                     { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 4 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
@@ -327,10 +327,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip when the kit is a single stereo loop with no internal balance to bind.',
             'Skip when downstream bus compression already reduces this material.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'Glue comes from a shared gain envelope across the whole kit, which needs a soft knee and a release long enough to span several hits rather than to track each one. A few decibels of reduction is enough; more turns cohesion into pumping.',
     },
     {

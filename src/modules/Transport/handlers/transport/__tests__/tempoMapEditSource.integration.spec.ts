@@ -185,8 +185,6 @@ describe('tempo edits preserve the physical audio programme', () => {
     });
 
     afterEach(() => {
-        commandBatchPreflightPort.setProvider(null);
-        commandBatchPreviewPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         clearUndoHistory();
         clearHandlerRegistry();

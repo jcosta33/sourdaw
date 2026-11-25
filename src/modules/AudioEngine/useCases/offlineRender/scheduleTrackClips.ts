@@ -42,6 +42,9 @@ import { type OfflineYeastMidiProcessor } from '../../repositories/offlineSchedu
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
+import { hasPadOutputHost } from '../deviceCapabilities/hasPadOutputHost';
+import { hostsPadOutputs } from '../deviceCapabilities/hostsPadOutputs';
+import { isMidiTransformDevice } from '../deviceCapabilities/isMidiTransformDevice';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 import { projectNoteExpressionCurves } from '../noteExpression/projectNoteExpressionCurves';
@@ -473,7 +476,7 @@ export async function scheduleTrackClips({
         silent: receiverSilent,
     } = selectOfflineNoteReceiver(track.devices, deviceEntries);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
-    const isToaster = instrumentEntry?.deviceType === 'toaster';
+    const isToaster = instrumentEntry !== undefined && hostsPadOutputs(instrumentEntry.deviceType);
     const toasterDeviceId = isToaster ? instrumentEntry.deviceId : null;
 
     // If this is a Toaster track, gather all clips from its child tracks.
@@ -587,7 +590,7 @@ export async function scheduleTrackClips({
     }
     const parentTrack =
         track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
-    const isToasterChild = !instrumentControls && parentTrack?.devices.some((device) => device.type === 'toaster');
+    const isToasterChild = !instrumentControls && parentTrack && hasPadOutputHost(parentTrack.devices);
     const workletEvents: WorkletMidiEvent[] = [];
     // Read off the strategy, not `instrumentControls`, like expression: only an
     // instrument whose engine honours a stored controller carries one.
@@ -655,7 +658,7 @@ export async function scheduleTrackClips({
     function projectTrackChannelBend(): ReturnType<OfflineChannelBendProjector> {
         // A Yeast track's notes are the rack's, whichever instrument voices them: the stored controllers
         // take the same exclusion, live and here.
-        const hasYeast = track.devices.some((device) => device.type === 'yeast');
+        const hasYeast = track.devices.some((device) => isMidiTransformDevice(device.type));
         if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
             return [];
         }
@@ -835,7 +838,10 @@ export async function scheduleTrackClips({
     const yeastSourceTracks = new Map<string, Track>();
     if (processYeastMidi && !isToasterChild) {
         for (const { sourceTrack } of clipsToProcess) {
-            if (sourceTrack.kind === 'midi' && sourceTrack.devices.some((device) => device.type === 'yeast')) {
+            if (
+                sourceTrack.kind === 'midi' &&
+                sourceTrack.devices.some((device) => isMidiTransformDevice(device.type))
+            ) {
                 yeastSourceTracks.set(sourceTrack.id, sourceTrack);
             }
         }
@@ -1047,7 +1053,7 @@ export async function scheduleTrackClips({
             const sourceNotes = frozenSource
                 ? []
                 : selectMidiNotesForRecordingPass(midi.notesByClipId[clip.id] ?? [], clip.midiTakeRecordingPassIndex);
-            const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
+            const hasYeast = sourceTrack.devices.some((device) => isMidiTransformDevice(device.type));
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
             }

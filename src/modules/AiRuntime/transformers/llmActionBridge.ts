@@ -79,6 +79,7 @@ export type {
 } from './llmActionBridgeContracts';
 
 type BridgeLlmToolCallsInput = {
+    acceptsSidechainInput: (deviceType: string) => boolean;
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     markerSignatures?: readonly MarkerPlanningSignature[];
@@ -99,6 +100,7 @@ function serializePromptData(value: unknown): string {
 }
 
 function bridgeToolCall({
+    acceptsSidechainInput,
     call,
     context,
     index,
@@ -107,6 +109,7 @@ function bridgeToolCall({
     sectionSignatures,
     sidechainRouteDeviceAdmissions,
 }: {
+    acceptsSidechainInput: (deviceType: string) => boolean;
     call: ToolCallResult;
     context: ProjectContext;
     index: number;
@@ -140,7 +143,13 @@ function bridgeToolCall({
         return trackResult;
     }
 
-    const routingResult = bridgeRoutingToolCall({ call, context, index, sidechainRouteDeviceAdmissions });
+    const routingResult = bridgeRoutingToolCall({
+        acceptsSidechainInput,
+        call,
+        context,
+        index,
+        sidechainRouteDeviceAdmissions,
+    });
     if (routingResult !== null) {
         return routingResult;
     }
@@ -203,6 +212,7 @@ function canonicalizeLoopActionOrder(actions: RuntimeAction[]): RuntimeAction[] 
 }
 
 export function bridgeLlmToolCalls({
+    acceptsSidechainInput,
     calls,
     context,
     markerSignatures = [],
@@ -319,6 +329,7 @@ export function bridgeLlmToolCalls({
 
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({
+            acceptsSidechainInput,
             call,
             context: prospectiveContext,
             index,
@@ -553,14 +564,14 @@ export function bridgeLlmToolCalls({
             }
             actions.push(result);
             if (hasSidechainCall) {
-                prospectiveContext = applyAcceptedRoutingAction(prospectiveContext, result);
+                prospectiveContext = applyAcceptedRoutingAction(prospectiveContext, result, acceptsSidechainInput);
             }
         } else {
             rejections.push(result);
         }
     }
 
-    if (hasInvalidatingSidechainLifecycleMutation(actions, context)) {
+    if (hasInvalidatingSidechainLifecycleMutation(actions, context, acceptsSidechainInput)) {
         return {
             actions: [],
             rejections: [

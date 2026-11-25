@@ -61,4 +61,18 @@ describe('setMasterChain', () => {
             expect(track.devices.length).toBeGreaterThan(0);
         }
     });
+
+    it.each([
+        ['edm', 'Brickwall'],
+        ['rock', 'Brickwall'],
+        ['podcast', 'Broadcast Limit'],
+    ] as const)('states Auto Makeup on in the %s master limiter', (preset, limiterName) => {
+        const track = makeMasterTrack();
+        setMasterChain(track, preset);
+
+        const limiter = track.devices.find((device) => device.type === 'builtin-limiter');
+
+        expect(limiter?.name).toBe(limiterName);
+        expect(limiter?.parameterValues['lim-auto-makeup']).toBe(1);
+    });
 });

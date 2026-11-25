@@ -8,17 +8,25 @@ import { setTrackState } from '../../repositories/track/setTrackState';
  * entry be filed, because that entry's inverse can only ever conflict and a conflicted
  * entry stays on the stack, refusing every later undo press.
  */
-export function createFolder(name: string, trackIdOverride?: string): boolean {
+export function createFolder(
+    name: string,
+    trackIdOverride?: string,
+    identity?: { color: string; initialAlternativeId: string }
+): boolean {
     const state = getTrackState();
     if (!state) {
         return false;
     }
 
     // `trackIdOverride` carries the id `materializeCommandApplicationIds` minted before
-    // `describe()` ran, so the undo inverse can name this exact track. Omitting the key
-    // entirely when absent keeps the created track's id generation untouched for callers
-    // that pass nothing.
-    const folder = createTrack({ name, kind: 'folder', ...(trackIdOverride ? { id: trackIdOverride } : {}) });
+    // `describe()` ran, so the undo inverse can name this exact track.
+    const folder = createTrack({
+        name,
+        kind: 'folder',
+        id: trackIdOverride || undefined,
+        color: identity?.color,
+        initialAlternativeId: identity?.initialAlternativeId,
+    });
     setTrackState({
         ...state,
         tracks: [...state.tracks, folder],
