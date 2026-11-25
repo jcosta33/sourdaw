@@ -111,28 +111,43 @@ function findCountedDurations(prompt: string): CountedDuration[] {
     });
 }
 
-function namesDurationNumber(reference: PromptRange, duration: CountedDuration): boolean {
-    return reference.start < duration.start && duration.numberEnd <= reference.end;
+const explicitEntitySuffixPattern = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu;
+
+function isFollowedByEntityWord(prompt: string, end: number): boolean {
+    return explicitEntitySuffixPattern.test(prompt.slice(end));
+}
+
+function namesDurationNumber(prompt: string, reference: PromptRange, duration: CountedDuration): boolean {
+    if (duration.numberEnd > reference.end) {
+        return false;
+    }
+    return reference.start < duration.start || isFollowedByEntityWord(prompt, reference.end);
 }
 
 /**
  * A counted duration the request states ("4 beat", "2-bar", "8--beats") is not an object reference,
- * unless a reference name that starts before its number covers it ("Take 2" in "mute Take 2 Beat",
- * "Verse and Chorus 8 Bars"): then the number belongs to that name. A name starting at the number
- * ("4 Bar Loop" in "a 4 bar loop") or none covering it ("4" in "for 4 beats") leaves the duration counted.
+ * unless a reference name covers its number and either starts before it ("Take 2" in "mute Take 2
+ * Beat", "Verse and Chorus 8 Bars") or is followed by an entity word ("8 Bars" in "mute the 8 Bars
+ * clip"): then the number belongs to that name. A name starting at the number and followed by
+ * nothing of the kind ("4 Bar Loop" in "a 4 bar loop") or none covering it ("4" in "for 4 beats")
+ * leaves the duration counted.
  */
 function findProtectedCountedDurations(prompt: string, references: readonly string[]): PromptRange[] {
     const referenceMatches = findReferenceMatches(prompt, references);
     return findCountedDurations(prompt).filter(
-        (duration) => !referenceMatches.some((match) => namesDurationNumber(match, duration))
+        (duration) => !referenceMatches.some((match) => namesDurationNumber(prompt, match, duration))
     );
 }
 
 type ProjectReferenceMaskState = {
-    protectedRanges: readonly PromptRange[];
+    protectedRanges: PromptRange[];
     spans: ProjectReferenceMaskSpan[];
 };
 
+/**
+ * A reference match that runs into a protected duration is itself skipped, and so is every later
+ * match inside it: a nested name ("Drums" in "8 Bars Drums") must not mask a fragment of its container.
+ */
 function collectProjectReferenceMaskSpans(
     prompt: string,
     references: readonly string[],
@@ -140,10 +155,11 @@ function collectProjectReferenceMaskSpans(
     getReplacement: (match: string, end: number) => string
 ): void {
     for (const match of findReferenceMatches(prompt, references)) {
-        if (
-            state.protectedRanges.some((range) => overlaps(range, match)) ||
-            state.spans.some((span) => overlaps(span, match))
-        ) {
+        if (state.protectedRanges.some((range) => overlaps(range, match))) {
+            state.protectedRanges.push(match);
+            continue;
+        }
+        if (state.spans.some((span) => overlaps(span, match))) {
             continue;
         }
         state.spans.push({ start: match.start, end: match.end, replacement: getReplacement(match.value, match.end) });
@@ -158,10 +174,7 @@ export function maskProjectReferences(prompt: string, context: ProjectContext): 
         spans: [],
     };
     collectProjectReferenceMaskSpans(prompt, semanticReferences, state, (match, end) => {
-        const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
-            prompt.slice(end)
-        );
-        if (explicitEntitySuffix) {
+        if (isFollowedByEntityWord(prompt, end)) {
             return PROJECT_REFERENCE_MASK_GLYPH.repeat(match.length);
         }
         return `clip${PROJECT_REFERENCE_MASK_GLYPH.repeat(match.length - 'clip'.length)}`;

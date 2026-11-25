@@ -56,6 +56,7 @@ describe('maskProjectReferences', () => {
         ['a 4 bar loop', '4 Bar Loop', 'a 4 bar loop'],
         ['for 8 bars', '8 Bars', 'for 8 bars'],
         ['for 4 beats', '4', 'for 4 beats'],
+        ['mute 8 Bars Drums', '8 Bars Drums', 'mute 8 Bars Drums'],
     ])('keeps the counted duration in %s when a clip is named %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });
@@ -65,6 +66,7 @@ describe('maskProjectReferences', () => {
         ['make the beat louder', 'Beat', 'make the clip louder'],
         ['mute the Beat Loop', 'Beat Loop', 'mute the clip□□□□□'],
         ['mute Verse and Chorus 8 Bars', 'Verse and Chorus 8 Bars', `mute clip${'□'.repeat(19)}`],
+        ['mute the 8 Bars clip', '8 Bars', 'mute the □□□□□□ clip'],
     ])('still masks a clip reference in %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });
@@ -73,5 +75,11 @@ describe('maskProjectReferences', () => {
         const masked = maskProjectReferences('mute Take 2 Beat', contextWithClipNamed('Beat', 'Take 2'));
         expect(masked).not.toContain('Take 2');
         expect(masked).not.toContain('Beat');
+    });
+
+    it('keeps a decimal count when a track is named by its whole part', () => {
+        expect(maskProjectReferences('mute Take 2.5 beats', contextWithClipNamed('Beat', 'Take 2'))).toBe(
+            'mute Take 2.5 beats'
+        );
     });
 });
