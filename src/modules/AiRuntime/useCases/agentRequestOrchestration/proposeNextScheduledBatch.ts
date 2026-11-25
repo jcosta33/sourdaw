@@ -18,7 +18,6 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { describeAgentRunPlanBoundRefusal } from '../describeAgentRunPlanBoundRefusal';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
-import { getProjectContext } from '../getProjectContext';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
@@ -37,6 +36,8 @@ import { preflightVibeRunBatch } from './preflightVibeRunBatch';
 import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
 import { recordBatchPreviewEvidence } from './recordBatchPreviewEvidence';
 import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
+
+import type { getProjectContext } from '../getProjectContext';
 
 type ScheduledBatchOutcome =
     | { status: 'awaiting-approval' }

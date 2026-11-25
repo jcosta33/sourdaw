@@ -4093,16 +4093,10 @@
         }
     },
     "src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
-            "count": 3
+            "count": 2
         },
         "eslint/max-params": {
-            "count": 1
-        },
-        "sourdaw-craft/no-silent-catch": {
             "count": 1
         }
     },
