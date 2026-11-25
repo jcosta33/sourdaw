@@ -3,12 +3,7 @@ import { runInNewContext } from 'node:vm';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-    admitBlackHoleInput,
-    restoreBlackHoleInput,
-    cardDeviceId,
-    type InputSelection,
-} from '../desktopGrandBouleAuditionDrive.ts';
+import { assertBlackHoleInput, cardDeviceId } from '../desktopGrandBouleAuditionDrive.ts';
 import {
     auditionFailure,
     freshAuditionObservations,
@@ -206,76 +201,29 @@ describe('actual bounded receive worklet', () => {
     });
 });
 
-describe('owned BlackHole default input selection', () => {
-    function commands(initial: string, failSet = false) {
-        let current = initial;
+describe('read-only BlackHole input admission', () => {
+    function selector(current: string) {
         const calls: string[][] = [];
         return {
             calls,
-            setExternal: (value: string) => {
-                current = value;
-            },
-            read: () => current,
-            run: (args: string[]): string => {
+            run(args: string[]): string {
                 calls.push(args);
-                if (args.join(' ') === '-c -t input') {
-                    return current;
+                if (args.length !== 3 || args.join(' ') !== '-c -t input') {
+                    throw new Error('unexpected audio command');
                 }
-                if (args.length === 4 && args.slice(0, 3).join(' ') === '-t input -s') {
-                    if (failSet) {
-                        throw new Error('selection failed');
-                    }
-                    current = args[3]!;
-                    return '';
-                }
-                throw new Error('unexpected audio command');
+                return current;
             },
         };
     }
-    it('restores A only after this run selected BlackHole and it remains current', () => {
-        const source = commands('A');
-        const selection: InputSelection = { prior: null, changed: false };
-        admitBlackHoleInput(selection, source.run);
-        restoreBlackHoleInput(selection, source.run);
-        expect(source.read()).toBe('A');
-        expect(source.calls).toEqual([
-            ['-c', '-t', 'input'],
-            ['-t', 'input', '-s', 'BlackHole 2ch'],
-            ['-c', '-t', 'input'],
-            ['-c', '-t', 'input'],
-            ['-t', 'input', '-s', 'A'],
-        ]);
+    it('checks the exact current input without selecting a device', () => {
+        const source = selector('BlackHole 2ch');
+        assertBlackHoleInput(source.run);
+        expect(source.calls).toEqual([['-c', '-t', 'input']]);
     });
-    it('preserves external C after A to BlackHole to C', () => {
-        const source = commands('A');
-        const selection: InputSelection = { prior: null, changed: false };
-        admitBlackHoleInput(selection, source.run);
-        source.setExternal('C');
-        restoreBlackHoleInput(selection, source.run);
-        expect(source.read()).toBe('C');
-        expect(source.calls).toEqual([
-            ['-c', '-t', 'input'],
-            ['-t', 'input', '-s', 'BlackHole 2ch'],
-            ['-c', '-t', 'input'],
-            ['-c', '-t', 'input'],
-        ]);
-    });
-    it('does not restore a selection that failed or was already BlackHole', () => {
-        const failed = commands('A', true);
-        const selection: InputSelection = { prior: null, changed: false };
-        expect(() => admitBlackHoleInput(selection, failed.run)).toThrow('selection failed');
-        restoreBlackHoleInput(selection, failed.run);
-        expect(failed.calls).toEqual([
-            ['-c', '-t', 'input'],
-            ['-t', 'input', '-s', 'BlackHole 2ch'],
-        ]);
-        const unchanged = commands('BlackHole 2ch');
-        admitBlackHoleInput(selection, unchanged.run);
-        restoreBlackHoleInput(selection, unchanged.run);
-        expect(unchanged.calls).toEqual([
-            ['-c', '-t', 'input'],
-            ['-c', '-t', 'input'],
-        ]);
+    it.each(['Built-in Microphone', ''])('rejects missing or drifted exact input %j', (current) => {
+        const source = selector(current);
+        expect(() => assertBlackHoleInput(source.run)).toThrow();
+        expect(source.calls).toEqual([['-c', '-t', 'input']]);
     });
     it.each([null, 'device-card-', 'device-card-a/b', 'unrelated'])(
         'rejects absent or invalid inspector identity %s',

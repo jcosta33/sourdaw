@@ -2889,6 +2889,13 @@ function assertPackagedGrandBouleAudition(candidate: UnknownRecord): void {
         env: { FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' },
     });
     expect(stringAt(proof, 'run').trimEnd().split('\n')).toEqual([
+        'if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then',
+        '  if ! SwitchAudioSource -t input -s "BlackHole 2ch"; then',
+        '    echo "::warning::Could not preselect BlackHole input; the packaged audition will verify the current input"',
+        '  fi',
+        'else',
+        '  echo "::warning::BlackHole input preselection is limited to GitHub-hosted runners"',
+        'fi',
         'node scripts/proveDesktopFermenter.ts --audition --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
         '  --json "$RUNNER_TEMP/sourdaw-grand-boule-audition-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"',
     ]);
@@ -2913,6 +2920,13 @@ describe('health gates workflow contract', () => {
         for (const change of [
             { if: FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", '') },
             { if: FERMENTER_ADMISSION.replace('!cancelled()', 'always()') },
+            {
+                run: stringAt(proof, 'run').replace(
+                    'if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then',
+                    'if true; then'
+                ),
+            },
+            { run: stringAt(proof, 'run').replace('SwitchAudioSource -t input -s "BlackHole 2ch"', 'true') },
             { run: stringAt(proof, 'run').replace('--audition ', '') },
             { run: stringAt(proof, 'run').replace('sourdaw-fermenter-build-', 'different-receipt-') },
             { env: { FERMENTER_CAPTURE_OUTCOME: 'success' } },

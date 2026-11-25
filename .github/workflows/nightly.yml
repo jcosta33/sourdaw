@@ -680,6 +680,13 @@ jobs:
         env:
           FERMENTER_CAPTURE_OUTCOME: ${{ steps.capture-fermenter.outcome }}
         run: |
+          if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+            if ! SwitchAudioSource -t input -s "BlackHole 2ch"; then
+              echo "::warning::Could not preselect BlackHole input; the packaged audition will verify the current input"
+            fi
+          else
+            echo "::warning::BlackHole input preselection is limited to GitHub-hosted runners"
+          fi
           node scripts/proveDesktopFermenter.ts --audition --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \
             --json "$RUNNER_TEMP/sourdaw-grand-boule-audition-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
 

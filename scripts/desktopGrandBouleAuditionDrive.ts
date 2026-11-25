@@ -18,27 +18,10 @@ const DEVICE = 'BlackHole 2ch';
 function audio(args: string[]): string {
     return execFileSync('SwitchAudioSource', args, { encoding: 'utf8', timeout: 5000 }).trim();
 }
-export type InputSelection = { prior: string | null; changed: boolean };
 type AudioCommand = (args: string[]) => string;
 
-export function admitBlackHoleInput(selection: InputSelection, run: AudioCommand = audio): void {
-    selection.prior = run(['-c', '-t', 'input']);
-    if (selection.prior !== DEVICE) {
-        run(['-t', 'input', '-s', DEVICE]);
-        selection.changed = true;
-    }
+export function assertBlackHoleInput(run: AudioCommand = audio): void {
     assert.equal(run(['-c', '-t', 'input']), DEVICE);
-}
-
-export function restoreBlackHoleInput(selection: InputSelection, run: AudioCommand = audio): void {
-    if (!selection.changed || selection.prior === null) {
-        return;
-    }
-    if (run(['-c', '-t', 'input']) !== DEVICE) {
-        return;
-    }
-    run(['-t', 'input', '-s', selection.prior]);
-    selection.changed = false;
 }
 
 export function cardDeviceId(testId: string | null): string {
@@ -270,18 +253,16 @@ export async function driveDesktopGrandBouleAudition(
     binary: string,
     observations: AuditionObservations
 ): Promise<void> {
-    const selection: InputSelection = { prior: null, changed: false };
     try {
         assert.equal(audio(['-c', '-t', 'output']), DEVICE);
         observations.output = DEVICE;
         assert(audio(['-a', '-t', 'input']).split('\n').includes(DEVICE));
-        admitBlackHoleInput(selection);
+        assertBlackHoleInput();
         observations.input = DEVICE;
     } catch {
         observations.unavailable = 'exact-blackhole-device-unavailable';
     }
     if (observations.unavailable) {
-        restoreBlackHoleInput(selection);
         return;
     }
     let app: Awaited<ReturnType<typeof launchEditorSession>> | undefined;
@@ -301,7 +282,7 @@ export async function driveDesktopGrandBouleAudition(
             8 * STEP_TIMEOUT_MS
         );
         try {
-            assert.equal(audio(['-c', '-t', 'input']), DEVICE);
+            assertBlackHoleInput();
             capture = await step('admit BlackHole media capture', () => captureBlackHole(page), STEP_TIMEOUT_MS);
         } catch (error) {
             observations.unavailable =
@@ -327,13 +308,9 @@ export async function driveDesktopGrandBouleAudition(
                 await capture.dispose();
             }
         } finally {
-            try {
-                if (app) {
-                    await quitEditorSession(app);
-                    observations.appQuit = true;
-                }
-            } finally {
-                restoreBlackHoleInput(selection);
+            if (app) {
+                await quitEditorSession(app);
+                observations.appQuit = true;
             }
         }
     }

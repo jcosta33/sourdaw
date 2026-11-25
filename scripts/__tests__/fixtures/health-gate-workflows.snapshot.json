@@ -2174,7 +2174,7 @@
             "env": {
               "FERMENTER_CAPTURE_OUTCOME": "${{ steps.capture-fermenter.outcome }}"
             },
-            "run": "node scripts/proveDesktopFermenter.ts --audition --receipt \"$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\" \\\n  --json \"$RUNNER_TEMP/sourdaw-grand-boule-audition-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\"\n"
+            "run": "if [ \"${RUNNER_ENVIRONMENT:-}\" = \"github-hosted\" ]; then\n  if ! SwitchAudioSource -t input -s \"BlackHole 2ch\"; then\n    echo \"::warning::Could not preselect BlackHole input; the packaged audition will verify the current input\"\n  fi\nelse\n  echo \"::warning::BlackHole input preselection is limited to GitHub-hosted runners\"\nfi\nnode scripts/proveDesktopFermenter.ts --audition --receipt \"$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\" \\\n  --json \"$RUNNER_TEMP/sourdaw-grand-boule-audition-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json\"\n"
           },
           {
             "name": "Upload the Grand Boule output audition record",
