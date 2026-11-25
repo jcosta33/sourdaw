@@ -685,7 +685,7 @@ const EXPECTED_COMMANDS = [
             grooveId: {
                 type: 'string',
                 description:
-                    "Groove template ID read from project.discover domain 'groove', or the ID an earlier extractGroove in this batch creates (groove-<clipId>-v1)",
+                    "Groove template ID read from project.discover domain 'groove', or the ID an earlier extractGroove in this batch creates (a clip's first extraction is groove-<clipId>-v1; a re-extraction takes the next free groove-<clipId>-vN)",
             },
             amount: {
                 type: 'number',

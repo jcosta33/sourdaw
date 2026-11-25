@@ -1911,7 +1911,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             createGrooveTemplate({ ...template, name: 'Collaborator groove' });
             flushAutomergeStorageWrites();
 
-            const refusal = await executeAppAction({ type: 'extractGroove', payload: { clipId: 'clip-a' } }).then(
+            const refusal = await executeAppAction({
+                type: 'extractGroove',
+                payload: { clipId: 'clip-a', templateId: template.id },
+            }).then(
                 () => null,
                 (error: unknown) => error
             );
