@@ -16,9 +16,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 describe('syncGrinderPatchToAudio', () => {
-    const update_device_param = vi.fn();
-    const persist_device_param = vi.fn();
-    const update_device_patch = vi.fn();
+    const update_device_param = vi.fn<(track: string, device: string, key: string, value: number) => void>();
+    const persist_device_param = vi.fn<(device: string, key: string, value: number) => void>();
+    const update_device_patch = vi.fn<(track: string, device: string, patch: Record<string, unknown>) => void>();
     const ref = { trackId: 'track-1', deviceId: 'device-1' };
 
     function run(patch: GrinderPatch): void {
@@ -86,7 +86,9 @@ describe('syncGrinderPatchToAudio', () => {
             throw new Error('Missing imported neural mode or structured patch call');
         }
         for (const { order } of [...audioProfile, ...persistedProfile]) {
-            if (order === undefined) throw new Error('Missing imported neural profile call order');
+            if (order === undefined) {
+                throw new Error('Missing imported neural profile call order');
+            }
             expect(order).toBeLessThan(audioModeOrder);
         }
         expect(audioModeOrder).toBeLessThan(persistModeOrder);
@@ -99,12 +101,16 @@ describe('syncGrinderPatchToAudio', () => {
 
     it('writes the Rectifier Heavy factory preset in its original order', () => {
         const preset = GRINDER_PRESETS.find(({ id }) => id === 'gr-rectifier-heavy');
-        if (!preset) throw new Error('Rectifier Heavy preset is missing');
+        if (!preset) {
+            throw new Error('Rectifier Heavy preset is missing');
+        }
         run(migrateGrinderPatch(preset.patch));
 
         function callOrder(orders: number[], index: number): number {
             const order = orders[index];
-            if (order === undefined) throw new Error('Missing mock invocation order');
+            if (order === undefined) {
+                throw new Error('Missing mock invocation order');
+            }
             return order;
         }
 
@@ -116,7 +122,7 @@ describe('syncGrinderPatchToAudio', () => {
             })),
             ...update_device_patch.mock.calls.map(([, , patch], index) => ({
                 order: callOrder(update_device_patch.mock.invocationCallOrder, index),
-                entry: `neural=${patch.neuralModelMode}`,
+                entry: `neural=${String(patch.neuralModelMode)}`,
             })),
         ]
             .sort((a, b) => a.order - b.order)
@@ -407,7 +413,7 @@ mic2Gain=0`.split('\n');
         );
 
         const neural_calls = update_device_param.mock.calls.filter(
-            ([, , key]) => (key as string).startsWith('neuralCustom') || key === 'neuralModelMode'
+            ([, , key]) => key.startsWith('neuralCustom') || key === 'neuralModelMode'
         );
         expect(neural_calls).toEqual([
             ['track-1', 'device-1', 'neuralCustomTier', 1],
@@ -426,7 +432,7 @@ mic2Gain=0`.split('\n');
         ]);
 
         const persisted_calls = persist_device_param.mock.calls.filter(
-            ([, key]) => (key as string).startsWith('neuralCustom') || key === 'neuralModelMode'
+            ([, key]) => key.startsWith('neuralCustom') || key === 'neuralModelMode'
         );
         expect(persisted_calls).toEqual([
             ['device-1', 'neuralCustomTier', 1],
@@ -539,7 +545,7 @@ mic2Gain=0`.split('\n');
         run(migrateGrinderPatch({ ...DEFAULT_PATCH }));
 
         const neural_custom_calls = update_device_param.mock.calls.filter(([, , key]) =>
-            (key as string).startsWith('neuralCustom')
+            key.startsWith('neuralCustom')
         );
         expect(neural_custom_calls).toHaveLength(0);
         expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'neuralModelMode', 0);

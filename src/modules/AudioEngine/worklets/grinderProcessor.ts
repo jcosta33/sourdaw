@@ -193,6 +193,15 @@ const MAX_NEURAL_CONV_LAYERS = 10;
 
 type UnknownRecord = Record<string, unknown>;
 
+function isGrinderParameterList(value: unknown): value is string[] {
+    return (
+        Array.isArray(value) &&
+        value.length <= GRINDER_PARAMETER_COUNT &&
+        value.every((id: unknown) => typeof id === 'string' && isGrinderRuntimeParameter(id)) &&
+        new Set(value).size === value.length
+    );
+}
+
 type ScheduledFallbackControl = {
     parameterId: string;
     value: number;
@@ -497,12 +506,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
             !isBoundedId(message.target.deviceId) ||
             !isBoundedId(message.target.deviceType) ||
             typeof message.target.allowUncapturedImmediate !== 'boolean' ||
-            !Array.isArray(message.target.parameterIds) ||
-            message.target.parameterIds.length > GRINDER_PARAMETER_COUNT ||
-            !message.target.parameterIds.every(
-                (id: unknown) => typeof id === 'string' && isGrinderRuntimeParameter(id)
-            ) ||
-            new Set(message.target.parameterIds).size !== message.target.parameterIds.length ||
+            !isGrinderParameterList(message.target.parameterIds) ||
             !isRecord(message.correlation) ||
             !hasOnlyKeys(message.correlation, ['workletGeneration']) ||
             !isPositiveSafeInteger(message.correlation.workletGeneration)

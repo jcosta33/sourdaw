@@ -139,21 +139,29 @@ function matchesOfflineSetupReady(
     return true;
 }
 
-function createGrinderFallbackControlTarget(target: RuntimeDeviceControlTarget | undefined, offline: boolean) {
+function createGrinderFallbackControlTarget({
+    target,
+    offline,
+}: {
+    target: RuntimeDeviceControlTarget | undefined;
+    offline: boolean;
+}) {
     if (!target) {
         return undefined;
     }
     const capturedParameterIds = Object.freeze([
         ...new Set([...target.parameterIds.filter(isGrinderRuntimeParameter), 'bypass']),
     ]);
+    let parameterIds = capturedParameterIds;
+    if (!offline) {
+        parameterIds = Object.freeze([...new Set([...capturedParameterIds, ...GRINDER_LIVE_PARAMETER_IDS])]);
+    }
     return Object.freeze({
         trackId: target.trackId,
         deviceId: target.deviceId,
         deviceType: target.deviceType,
         capturedParameterIds,
-        parameterIds: Object.freeze([
-            ...new Set([...capturedParameterIds, ...(offline ? [] : GRINDER_LIVE_PARAMETER_IDS)]),
-        ]),
+        parameterIds,
     });
 }
 
@@ -225,7 +233,7 @@ export async function createGrinderNode(
     const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
     const canCoalesce = !offline && typeof requestAnimationFrame === 'function';
     const workletGeneration = allocateWorkletControlGeneration();
-    const fallbackControlTarget = createGrinderFallbackControlTarget(controlTarget, offline);
+    const fallbackControlTarget = createGrinderFallbackControlTarget({ target: controlTarget, offline });
     let nextControlSequence = 1;
     let setupHandshake: ReturnType<typeof createReadyHandshake> | null = null;
     let setupSequence = 0;
@@ -301,8 +309,12 @@ export async function createGrinderNode(
 
     const queueParamPost = (name: string, value: number, sampleFrame?: number): void => {
         const scheduling = toControlScheduling(sampleFrame);
-        if (!fallbackControlTarget || !fallbackControlTarget.parameterIds.includes(name)) return;
-        if (scheduling.targetFrame !== null && !fallbackControlTarget.capturedParameterIds.includes(name)) return;
+        if (!fallbackControlTarget || !fallbackControlTarget.parameterIds.includes(name)) {
+            return;
+        }
+        if (scheduling.targetFrame !== null && !fallbackControlTarget.capturedParameterIds.includes(name)) {
+            return;
+        }
         const pending = Object.freeze({ value, ...scheduling });
         if (scheduling.targetFrame !== null) {
             // Scheduled fallback controls apply on the render thread. Their latency
