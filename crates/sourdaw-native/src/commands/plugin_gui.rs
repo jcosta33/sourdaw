@@ -780,6 +780,10 @@ fn remove_recorded_editor_window(
 /// running this inline risks a circular-wait deadlock with GUI-affine plugins
 /// and freezes the whole app event loop otherwise.
 ///
+/// Takes the instance's lifecycle lease for the plugin's close, because an
+/// attach holds that lease while the instance is in neither store, and a close
+/// that ignored it would skip the plugin's `close_gui`.
+///
 /// Emits `plugin-gui-closed` on the same condition that removes the label, and
 /// only then. The frontend shows an open editor as open, and the OS is free to
 /// close one behind its back — a title-bar click, the owner-destroy cascade —
@@ -789,7 +793,7 @@ fn remove_recorded_editor_window(
 /// idempotent against: a second report for the same window, or a report for a
 /// window a newer editor has already replaced, changes no state and so says
 /// nothing.
-pub fn reset_plugin_gui_state_after_os_close(
+pub async fn reset_plugin_gui_state_after_os_close(
     instance_id: &str,
     window_label: &str,
     windows_host: &dyn PluginWindowHost,
@@ -831,7 +835,13 @@ pub fn reset_plugin_gui_state_after_os_close(
         return;
     }
 
-    close_owning_plugin_gui(instance_id, windows_host, state);
+    // Taken after the claim and held only across the plugin's close: an attach
+    // moves the instance between the stores under this lease, and a close that
+    // ran mid-move found it in neither and left the plugin's editor open.
+    {
+        let _lifecycle_guard = lock_plugin_lifecycle(instance_id).await;
+        close_owning_plugin_gui(instance_id, windows_host, state);
+    }
 
     events.emit(
         PLUGIN_GUI_CLOSED_EVENT,
@@ -1674,7 +1684,10 @@ mod tests {
         // The map, the attach's lease and its guard, and `gate` above.
         let idle_holders = Arc::strong_count(&gate);
 
-        std::thread::scope(|scope| {
+        let lease_held_while_plugin_closes = std::thread::scope(|scope| {
+            // Parks the plugin's `close_gui` on the shell thread, where the
+            // lease can be observed while the plugin is being closed.
+            let held_close = windows.hold_next_task();
             let close = scope.spawn(|| {
                 crate::block_on_test(close_plugin_gui("in-transit".to_string(), &windows, &state))
             });
@@ -1699,16 +1712,111 @@ mod tests {
                 .insert("in-transit".to_string(), in_transit);
             drop(attach_lease);
 
+            held_close.until_held();
+            let lease_held =
+                super::super::plugins::try_lock_plugin_lifecycle("in-transit").is_none();
+            held_close.release();
+
             close
                 .join()
                 .expect("the close thread should not panic")
                 .expect("the close should succeed once the move is done");
+            lease_held
         });
 
         assert_eq!(
             recorded_threads(&gui_threads),
             [windows.thread_id, windows.thread_id],
             "the plugin's editor must be closed, not only its window destroyed"
+        );
+        assert!(
+            lease_held_while_plugin_closes,
+            "the close must hold the lifecycle lease while the plugin's editor closes, or an \
+             attach can move the instance out from under it"
+        );
+    }
+
+    /// The title-bar close takes the same path as a command through an attach:
+    /// the report claims the window record, finds the instance in neither store
+    /// and, without the lease, skips the plugin's `close_gui` while still
+    /// telling the frontend the editor closed.
+    #[test]
+    fn an_os_close_made_while_an_attach_moves_the_instance_still_closes_the_plugins_editor() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "in-transit", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui("in-transit".to_string(), &windows, &state))
+            .expect("the fixture editor should open");
+        let label = state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .get("in-transit")
+            .cloned()
+            .expect("the open must have recorded a window");
+
+        let attach_lease = super::super::plugins::try_lock_plugin_lifecycle("in-transit")
+            .expect("nothing else holds the instance");
+        let in_transit = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove("in-transit")
+            .expect("the fixture is engine-owned");
+        let gate = super::super::plugins::plugin_lifecycle_gate("in-transit");
+        // The map, the attach's lease and its guard, and `gate` above.
+        let idle_holders = Arc::strong_count(&gate);
+        let events = RecordingEventSink::default();
+
+        std::thread::scope(|scope| {
+            let report = scope.spawn(|| {
+                crate::block_on_test(reset_plugin_gui_state_after_os_close(
+                    "in-transit",
+                    &label,
+                    &windows,
+                    &state,
+                    &events,
+                ))
+            });
+            // A report parked on the lease holds two more clones of its gate.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while Arc::strong_count(&gate) < idle_holders + 2 {
+                assert!(
+                    !report.is_finished(),
+                    "the OS-close report ran inside the attach's move instead of waiting for it"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the OS-close report never reached the lifecycle lease"
+                );
+                std::thread::yield_now();
+            }
+
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .insert("in-transit".to_string(), in_transit);
+            drop(attach_lease);
+
+            report.join().expect("the report thread should not panic");
+        });
+
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the plugin's editor must be closed on the shell's thread, not only its window gone"
+        );
+        let emitted: Vec<String> = events
+            .events()
+            .into_iter()
+            .map(|(event, _)| event)
+            .collect();
+        assert_eq!(
+            emitted,
+            [PLUGIN_GUI_CLOSED_EVENT.to_string()],
+            "the frontend is told the editor closed exactly once"
         );
     }
 
@@ -1735,13 +1843,13 @@ mod tests {
             .cloned()
             .expect("the open must have recorded a window");
 
-        reset_plugin_gui_state_after_os_close(
+        crate::block_on_test(reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             &label,
             &windows,
             &state,
             &NoopEventSink,
-        );
+        ));
 
         assert_eq!(
             recorded_threads(&gui_threads),
@@ -1800,13 +1908,13 @@ mod tests {
         );
 
         let events = RecordingEventSink::default();
-        reset_plugin_gui_state_after_os_close(
+        crate::block_on_test(reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             &closed_label,
             &windows,
             &state,
             &events,
-        );
+        ));
 
         assert_ne!(
             state
@@ -1885,13 +1993,13 @@ mod tests {
             let events = Arc::clone(&events);
             let closed_label = closed_label.clone();
             std::thread::spawn(move || {
-                reset_plugin_gui_state_after_os_close(
+                crate::block_on_test(reset_plugin_gui_state_after_os_close(
                     "engine-owned-fixture",
                     &closed_label,
                     windows.as_ref(),
                     &state,
                     events.as_ref(),
-                );
+                ));
                 let _ = report_answered.send(());
             })
         };
@@ -2066,13 +2174,22 @@ mod tests {
             // down itself — and the reopen's own retirement below then finds
             // the record gone.
             if let Some(stale_label) = self.report_once.lock().expect("report once").take() {
-                reset_plugin_gui_state_after_os_close(
-                    instance_id,
-                    &stale_label,
-                    self.inner,
-                    self.state,
-                    self.events,
-                );
+                // This hop runs inside the open's own runtime, so the report
+                // drives its future from a thread of its own.
+                std::thread::scope(|scope| {
+                    scope
+                        .spawn(|| {
+                            crate::block_on_test(reset_plugin_gui_state_after_os_close(
+                                instance_id,
+                                &stale_label,
+                                self.inner,
+                                self.state,
+                                self.events,
+                            ));
+                        })
+                        .join()
+                        .expect("the report thread should not panic");
+                });
             }
             self.created
                 .lock()
@@ -2290,20 +2407,20 @@ mod tests {
             );
 
         let events = RecordingEventSink::default();
-        reset_plugin_gui_state_after_os_close(
+        crate::block_on_test(reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
             &NoWindowHost,
             &state,
             &events,
-        );
-        reset_plugin_gui_state_after_os_close(
+        ));
+        crate::block_on_test(reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
             &NoWindowHost,
             &state,
             &events,
-        );
+        ));
 
         assert!(state
             .plugin_windows
@@ -2465,13 +2582,13 @@ mod tests {
             );
 
         let events = RecordingEventSink::default();
-        reset_plugin_gui_state_after_os_close(
+        crate::block_on_test(reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             "plugin-engine-owned-fixture",
             &NoWindowHost,
             &state,
             &events,
-        );
+        ));
 
         assert!(state
             .plugin_windows
@@ -2535,13 +2652,13 @@ mod tests {
             .insert("engine-owned-fixture".to_string(), live_label.clone());
 
         let events = RecordingEventSink::default();
-        reset_plugin_gui_state_after_os_close(
+        crate::block_on_test(reset_plugin_gui_state_after_os_close(
             "engine-owned-fixture",
             &closed_label,
             &NoWindowHost,
             &state,
             &events,
-        );
+        ));
 
         assert_eq!(
             state
@@ -2581,13 +2698,13 @@ mod tests {
             .expect("plugin_windows lock")
             .insert("ghost".to_string(), "plugin-ghost".to_string());
 
-        reset_plugin_gui_state_after_os_close(
+        crate::block_on_test(reset_plugin_gui_state_after_os_close(
             "ghost",
             "plugin-ghost",
             &NoWindowHost,
             &state,
             &NoopEventSink,
-        );
+        ));
 
         assert!(state
             .plugin_windows
