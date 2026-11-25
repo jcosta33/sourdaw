@@ -4,6 +4,12 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 import {
+    admitBlackHoleInput,
+    restoreBlackHoleInput,
+    cardDeviceId,
+    type InputSelection,
+} from '../desktopGrandBouleAuditionDrive.ts';
+import {
     auditionFailure,
     freshAuditionObservations,
     measureSignalWindow,
@@ -11,12 +17,6 @@ import {
     type AuditionObservations,
     type SignalWindow,
 } from '../desktopGrandBouleAuditionEvidence.ts';
-import {
-    admitBlackHoleInput,
-    restoreBlackHoleInput,
-    cardDeviceId,
-    type InputSelection,
-} from '../desktopGrandBouleAuditionDrive.ts';
 import { RECEIVE_WORKLET } from '../desktopGrandBouleCapture.ts';
 
 function signal(firstFrame = 0, frames = 32768, preview = 0.01, sentinel = 0.02): SignalWindow {
