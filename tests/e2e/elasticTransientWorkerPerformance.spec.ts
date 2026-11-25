@@ -799,6 +799,7 @@ async function sourceState(page: Page, last = false, { includePcmDigest = true }
         const raw = getCrdtDoc<{ warpStates?: { states: Record<string, { markers: unknown[] }> } }>('root');
         return {
             clipId: clip?.id,
+            audioBufferId: clip?.audioBufferId,
             ready: Boolean(source),
             sampleRate: source?.sampleRate,
             frames: source?.length,
@@ -1196,9 +1197,9 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     expect(before).toMatchObject({ sampleRate: RATE, frames: RATE * SECONDS, channels: 2, raw: [], projected: [] });
     expect(before.pcm).toHaveLength(2);
     const fixture = await page.evaluate(
-        async ({ path, clipId }) => {
+        async ({ path, clipId, audioBufferId }) => {
             const dense: DenseElasticFixture = await import(path);
-            if (!clipId) {
+            if (!clipId || !audioBufferId) {
                 throw new Error('The stereo source was not imported');
             }
             const { projectStore } = await import('/src/modules/Project/stores/index.ts');
@@ -1208,9 +1209,9 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
             if (!project?.dirty) {
                 throw new Error('The dense fixture did not leave a project edit for autosave');
             }
-            return { ...seeded, clipId, key: getProjectSnapshotKey(project.createdAt) };
+            return { ...seeded, clipId, audioBufferId, key: getProjectSnapshotKey(project.createdAt) };
         },
-        { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId }
+        { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId, audioBufferId: before.audioBufferId }
     );
     const readPreserved = (historyHeads?: typeof fixture.historyHeads) =>
         page.evaluate(
@@ -1282,6 +1283,16 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
         .toBe(true);
     expect(await sourceState(page)).toEqual(detected);
     expect(await readPreserved(fixture.historyHeads)).toEqual(seeded);
+
+    // Reopen from a blank project's runtime so the named load must restore the source from disk.
+    await launch_new_project(page);
+    const sourceIsResident = await page.evaluate(async (audioBufferId) => {
+        const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/index.ts');
+        return audioBufferCache.get(audioBufferId) !== undefined;
+    }, fixture.audioBufferId);
+    expect(sourceIsResident, 'The named reopen must restore the original source into an empty runtime cache slot').toBe(
+        false
+    );
 
     const namedReopen = await page.evaluate(async (key) => {
         const { loadRecentProject } = await import('/src/modules/Project/useCases/index.ts');

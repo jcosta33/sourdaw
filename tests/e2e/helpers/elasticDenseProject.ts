@@ -164,11 +164,12 @@ function observeNamedAutosave(status: HTMLElement, preference: Pick<Preferences,
             if (typeof callback !== 'function' || delay !== preference.autoSaveIntervalMs) {
                 return Reflect.apply(target, receiver, args);
             }
+            const autosave = callback;
             scheduled = performance.now();
             function observedCallback(this: unknown, ...received: unknown[]) {
                 const mark = performance.mark('dense-elastic-named-autosave');
                 firstFire.resolve({ fired: mark.startTime, pending: status.textContent === 'Detecting…' });
-                Reflect.apply(callback, this, received);
+                Reflect.apply(autosave, this, received);
             }
             return Reflect.apply(target, receiver, [observedCallback, delay, ...extra]);
         },
