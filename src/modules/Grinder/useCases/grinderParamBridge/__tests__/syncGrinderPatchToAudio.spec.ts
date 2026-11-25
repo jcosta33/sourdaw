@@ -48,9 +48,14 @@ describe('syncGrinderPatchToAudio', () => {
         run(
             migrateGrinderPatch({ ...DEFAULT_PATCH, neuralModelSource: 'imported', neuralModelProfile: entry.profile })
         );
-        const call = update_device_patch.mock.calls.find(([, , patch]) => typeof patch.modelJson === 'string');
-        expect(call).toBeDefined();
-        expect(JSON.parse(call?.[2].modelJson ?? 'null')).toEqual(document);
+        const patchIndex = update_device_patch.mock.calls.findIndex(
+            ([, , patch]) => typeof patch.modelJson === 'string'
+        );
+        const modelJson = update_device_patch.mock.calls[patchIndex]?.[2].modelJson;
+        if (typeof modelJson !== 'string') {
+            throw new TypeError('Missing imported neural model JSON');
+        }
+        expect(JSON.parse(modelJson)).toEqual(document);
 
         const audioProfile = update_device_param.mock.calls
             .map(([, , key, value], index) => ({
@@ -75,9 +80,6 @@ describe('syncGrinderPatchToAudio', () => {
         );
         const persistModeIndex = persist_device_param.mock.calls.findIndex(
             ([, key, value]) => key === 'neuralModelMode' && value === 1
-        );
-        const patchIndex = update_device_patch.mock.calls.findIndex(
-            ([, , patch]) => typeof patch.modelJson === 'string'
         );
         const audioModeOrder = update_device_param.mock.invocationCallOrder[audioModeIndex];
         const persistModeOrder = persist_device_param.mock.invocationCallOrder[persistModeIndex];
