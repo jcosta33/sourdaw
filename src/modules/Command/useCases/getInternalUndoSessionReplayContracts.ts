@@ -48,6 +48,7 @@ function createCapturedDeviceReplayContract(
     actionType:
         | 'setBacteriaFactoryPatch'
         | 'setGlutenFactoryPreset'
+        | 'setGrandBouleDeviceState'
         | 'setGrinderFactoryPreset'
         | 'setLevainIdentity'
         | 'setProofPatchSelection'
@@ -121,6 +122,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         },
         createCapturedDeviceReplayContract('setBacteriaFactoryPatch'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
+        createCapturedDeviceReplayContract('setGrandBouleDeviceState'),
         createCapturedDeviceReplayContract('setGrinderFactoryPreset'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
         createCapturedDeviceReplayContract('setProofPatchSelection'),
