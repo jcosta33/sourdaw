@@ -100,15 +100,17 @@ Report the concrete break or none.
     `src/modules/AiRuntime/useCases/__tests__/recipeHoldTolerance.spec.ts` must go red. Also check that
     every route compiling a goal of that source reads the same table (`readRecipeExpectationTolerance`),
     and that a hold on a metric with no entry is refused or unsupported, never zero.
-12. **An answer cites only post-intake evidence and stands alone (#5934, introduced by #5807, fixed by #6341 and
-    #6360).** #5807's public approval flagged the pre-intake query and the unpinned guards as optional; both were
-    nonblocking items misclassified. Factual source: a measurement or `project.query` page read before intake
-    cannot be cited by an answer after intake, including beside a valid later read. Delete
-    `read.receipt.turn <= intake.turn ||` in `composeMeasuredAnswer.ts` and
-    `src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts` ("does not reuse a successful pre-intake
-    measurement", "rejects an earlier metric beside a compatible later measurement") must fail. Later-valid
-    control: pair each refusal case with a later valid read that completes, so the refusal is not passing because
-    everything refuses. Answer alone: replace `calls.length > 1` with `false` in the answer validator of
-    `applicationOwnedToolLoop.ts` and "refuses two answers by the answer-alone rule" in
-    `src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts` must fail. Window guards compose production
-    prompts (`test-observation-scope.md` probe 6).
+12. **An answer cites only post-intake evidence and stands alone (#5934; query and metric branches from #5807,
+    answer-alone rule from #5167; fixed by #6341 and #6360).** #5807's public approval flagged the pre-intake query
+    and the unpinned guards as optional; both were nonblocking items misclassified. Factual source: a measurement
+    or `project.query` page read before intake cannot be cited by an answer after intake, including beside a
+    valid later read. The guard `read.receipt.turn <= intake.turn ||` sits at two sites in
+    `composeMeasuredAnswer.ts`; delete each separately. The measurement branch (`resolveMetricReference`) must
+    fail `src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts` ("does not reuse a successful
+    pre-intake measurement", "rejects an earlier metric beside a compatible later measurement"); the query-page
+    branch (`composeReadStatement`) must fail `src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts`
+    "refuses a pre-intake query even when a later query succeeds". Later-valid control: pair each refusal case
+    with a later valid read that completes, so the refusal is not passing because everything refuses. Answer
+    alone: replace `calls.length > 1` with `false` in the answer validator of `applicationOwnedToolLoop.ts` and
+    "refuses two answers by the answer-alone rule" in `answerOutcome.spec.ts` must fail. Window guards compose
+    production prompts (`test-observation-scope.md` probe 6).

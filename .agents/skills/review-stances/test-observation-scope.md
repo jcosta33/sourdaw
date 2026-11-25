@@ -16,17 +16,15 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    `project-integrity.md` probe 6; saved inverses holding bad captures are `project-integrity.md` probe 3;
    exact-inverse inputs are in `moving-coordinate-inverses.md`. For rejected partial merges, pair this with the
    real-store probe in `command-entry-and-state-oracles.md` probe 1. Removing the producer, reload fence or
-   copy must fail the case.
-   (#4036, #5578, #5064, #5157, #4564)
+   copy must fail the case. A no-op request is observed through raw heads and both history stacks, never its
+   returned value (`command-entry-and-state-oracles.md` probe 11).
+   (#4036, #5578, #5064, #5157, #4564, #5926)
 
 2. **Final equality hides a write followed by restoration.**
    Probe: count writes from a sentinel placed before the action and observe settled transitions, since
    notifications can miss a root install; keep identical-content replacement and an aborted private preview
-   as clean controls, and compare any reported verdict with the final state it describes. A no-op request is
-   observed through raw heads and both history stacks: asserting the returned or resolved value cannot see the
-   one-ulp write and Undo step a 0 dB relative level request recorded
-   (`command-entry-and-state-oracles.md` probe 11).
-   (#5649, #5274, #5926)
+   as clean controls, and compare any reported verdict with the final state it describes.
+   (#5649, #5274)
 
 3. **A flag, setter or presence stands for what the musician consumes.**
    Probe: observe PCM against an independent input, decoded bytes, painted pixels and console output during

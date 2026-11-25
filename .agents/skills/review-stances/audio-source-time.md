@@ -19,14 +19,7 @@ the mutation that must fail it. Report the concrete break or none.
    the clip across the change and require its projected source window to change. Include zero and negative
    offsets so pre-roll is retained. Converting any reader at the base tempo must fail its parity case. A change
    inside the clip's audible span needs integrated source-to-timeline mapping and separate edit-history review;
-   a clip-start conversion alone does not prove it. The Strip Silence scan must also read every channel (#6304,
-   fixed by #6339): its first-channel-only `getChannelData(0)` scanner, present since e415a55cc4 and kept by the
-   #2169 extraction, dropped right-only islands. Drive stereo PCM at 120 BPM, 48 kHz, -40 dB and a 0.5-beat
-   minimum (left at beats 0-2 and 8-10, right at 4-6: islands 0-2, 4-6, 8-10), then channel-swapped,
-   right-only, third-channel-only and opposite-polarity PCM with common source-frame windows; a mono fixture
-   cannot prove all-channel retention. Scanning channel 0 only, or averaging channels (which cancels
-   anti-phase PCM), must fail the `all-channel physical PCM islands` cases in
-   `src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts`.
+   a clip-start conversion alone does not prove it.
 2. **Source geometry survives storage hydration (#2169).** Publication normalizes an unsupported tempo (600 BPM
    becomes 120 BPM), so a fixture at that tempo disagrees with the published project once a storage flush exposes
    hydration. Exercise the analysis path through the real storage flush and hydration with supported geometry
@@ -141,6 +134,13 @@ the mutation that must fail it. Report the concrete break or none.
     present/value capture; an older restore payload that omits the alias still means leave live, not delete.
     Reject malformed capture unions at serialized argument admission. A default-zero fixture or an equality that
     drops absent keys cannot prove this contract.
+15. **Every source reader reads every channel (#6304, fixed by #6339).** The Strip Silence scanner, from
+    e415a55cc4 and kept by #2169, read only `getChannelData(0)` and dropped right-only islands. Drive stereo PCM at
+    120 BPM, 48 kHz, -40 dB and a 0.5-beat minimum (left at beats 0-2 and 8-10, right at 4-6: islands 0-2, 4-6,
+    8-10), then channel-swapped, right-only, third-channel-only and opposite-polarity PCM with common source-frame
+    windows; a mono fixture cannot prove all-channel retention. Scanning channel 0 only, or averaging channels
+    (which cancels anti-phase PCM), must fail the `all-channel physical PCM islands` cases in
+    `src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts`.
 
 ## Relocated
 
