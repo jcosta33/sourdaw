@@ -141,9 +141,6 @@ describe('validateActions', () => {
             type: 'addAutomationLane',
             payload: { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', laneId: 'lane-1' },
         },
-        { type: 'generateDrumPattern', payload: { style: 'house', startBeat: 4 } },
-        { type: 'generateMelody', payload: { style: 'ambient', octave: 4 } },
-        { type: 'generateChordProgression', payload: { style: 'jazz', startBeat: 4 } },
         { type: 'extractGroove', payload: { clipId: 'clip-1', templateId: 'groove-1' } },
         { type: 'createCollabSession', payload: { name: 'Review', sessionId: 'session-1' } },
         {

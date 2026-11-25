@@ -135,23 +135,6 @@ export const trackPresets: readonly PresetAction[] = [
         buildAction: trackAction('unfreezeTrack', (id) => ({ trackId: id })),
     },
     {
-        id: 'bounce-in-place',
-        label: 'Bounce Track In Place',
-        keywords: ['bounce in place', 'bounce track', 'render in place', 'bip'],
-        category: 'Track',
-        requiresSelection: 'track',
-        isDestructive: true,
-        buildAction: trackAction('bounceInPlace', (id) => ({ trackId: id })),
-    },
-    {
-        id: 'bounce-new-track',
-        label: 'Bounce to New Track',
-        keywords: ['bounce to new', 'bounce new track'],
-        category: 'Track',
-        requiresSelection: 'track',
-        buildAction: trackAction('bounceToNewTrack', (id) => ({ trackId: id })),
-    },
-    {
         id: 'hide-track',
         label: 'Hide Track',
         keywords: ['hide track', 'hide'],

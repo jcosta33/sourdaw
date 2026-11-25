@@ -17,7 +17,6 @@ describe('mixPresets', () => {
         const expected: Record<string, string> = {
             'analyze-mix': 'analyzeMix',
             'autofix-mix': 'autoFixMix',
-            'consolidate-all': 'consolidateAllTracks',
             'latency-report': 'getLatencyReport',
         };
         for (const preset of mixPresets) {

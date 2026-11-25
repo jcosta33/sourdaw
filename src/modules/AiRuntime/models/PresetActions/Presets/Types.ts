@@ -30,17 +30,7 @@ export type PresetAction = {
 };
 
 export type PresetCategory =
-    | 'Transport'
-    | 'Track'
-    | 'Clip'
-    | 'MIDI'
-    | 'Device'
-    | 'Workspace'
-    | 'Mix'
-    | 'Generate'
-    | 'File'
-    | 'Automation'
-    | 'Collaboration';
+    'Transport' | 'Track' | 'Clip' | 'MIDI' | 'Device' | 'Workspace' | 'Mix' | 'File' | 'Automation' | 'Collaboration';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

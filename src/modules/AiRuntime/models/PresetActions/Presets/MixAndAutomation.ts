@@ -16,13 +16,6 @@ export const mixPresets: readonly PresetAction[] = [
         buildAction: () => ({ type: 'autoFixMix' }),
     },
     {
-        id: 'consolidate-all',
-        label: 'Consolidate All Tracks',
-        keywords: ['consolidate all', 'bounce all', 'render all'],
-        category: 'Mix',
-        buildAction: () => ({ type: 'consolidateAllTracks' }),
-    },
-    {
         id: 'latency-report',
         label: 'Show Latency Report',
         keywords: ['latency', 'latency report', 'audio latency'],

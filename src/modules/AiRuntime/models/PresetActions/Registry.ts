@@ -9,7 +9,6 @@
 import { clipPresets } from './Presets/Clip';
 import { devicePresets } from './Presets/Device';
 import { filePresets, collaborationPresets } from './Presets/FileAndCollaboration';
-import { generatePresets } from './Presets/Generate';
 import { midiPresets } from './Presets/Midi';
 import { mixPresets, automationPresets } from './Presets/MixAndAutomation';
 import { trackPresets } from './Presets/Track';
@@ -26,7 +25,6 @@ export const PRESET_ACTIONS = [
     ...devicePresets,
     ...clipPresets,
     ...midiPresets,
-    ...generatePresets,
     ...workspacePresets,
     ...mixPresets,
     ...automationPresets,
@@ -42,7 +40,6 @@ export const CATEGORY_ORDER = [
     'Clip',
     'MIDI',
     'Device',
-    'Generate',
     'Workspace',
     'Mix',
     'Automation',

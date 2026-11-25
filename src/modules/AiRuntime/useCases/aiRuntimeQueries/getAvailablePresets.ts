@@ -20,7 +20,6 @@ type GetAvailablePresetsOutput = Array<{
         | 'Device'
         | 'Workspace'
         | 'Mix'
-        | 'Generate'
         | 'File'
         | 'Automation'
         | 'Collaboration';
