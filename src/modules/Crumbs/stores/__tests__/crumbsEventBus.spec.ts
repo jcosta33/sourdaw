@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type BusModule = typeof import('../crumbsEventBus');
 
-const payload = { deviceId: 'crumbs-1', mode: 'slicer' } as const;
+const payload = { deviceId: 'crumbs-1', mode: 'slice' } as const;
 
 describe('crumbsEventBus', () => {
     let emitCrumbsModeChanged: BusModule['emitCrumbsModeChanged'];
