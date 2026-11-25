@@ -154,6 +154,8 @@ vi.mock('../../../models/ProofPatch', async (importOriginal) => {
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     persistDevicePatch: persistDevicePatchMock,
+    // This view fixture has a synthetic track but no raw document owner.
+    captureDevicePatchCommitValidation: () => ({ matchesCommittedParameters: () => true }),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({

@@ -14,6 +14,7 @@ import {
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     createAutomationLane,
@@ -77,11 +78,15 @@ function getNoCompensationDelay(): number {
     return 0;
 }
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    updateDeviceParam: audioEngine.updateDeviceParam,
-    updateDevicePatch: audioEngine.updateDevicePatch,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        ...actual,
+        captureDeviceParameterRuntimeWriteAuthority: vi.fn(actual.captureDeviceParameterRuntimeWriteAuthority),
+        updateDeviceParam: audioEngine.updateDeviceParam,
+        updateDevicePatch: audioEngine.updateDevicePatch,
+    };
+});
 
 function projectParameter(deviceId: string, parameter: string): number | undefined {
     return trackStore.value?.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId)
@@ -1042,6 +1047,11 @@ describe('Proof cumulative disclosure in project truth', () => {
         expect(documentParameter('a', 'lim_ceiling')).toBeUndefined();
         expect(captureUndoHistory()).toEqual(baselineHistory);
 
+        await selectTier('shape');
+        const device = getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.devices[0];
+        expect(device?.deviceState).toEqual({ version: 1, data: { disclosureTier: 'shape' } });
+        expect(ceiling).toHaveAttribute('aria-valuenow', String(preview));
+        expect(captureUndoHistory()).toEqual(baselineHistory);
         fireEvent.pointerUp(ceiling, { pointerId: 1 });
         await waitFor(() => expect(documentParameter('a', 'lim_ceiling')).toBe(preview));
         expect(projectParameter('a', 'lim_ceiling')).toBe(preview);
@@ -1117,6 +1127,103 @@ describe('Proof cumulative disclosure in project truth', () => {
             unsubscribe();
         }
     });
+
+    it.each(['before release', 'during admission'] as const)(
+        'refuses a held ceiling release on an identical replacement published %s',
+        async (phase) => {
+            const parameters = { input_gain: 2 };
+            seedProofParameters(parameters);
+            await seedSentinel();
+            const baseline = captureUndoHistory();
+            const device = () => getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.devices[0];
+            const original = device();
+            const originalIdentity = original && getObjectId(original);
+            if (!original || !originalIdentity) {
+                throw new Error('Missing the original Proof owner');
+            }
+            const replacement = structuredClone(original);
+
+            render(<ProofPanel deviceId="a" />);
+            const entered = Promise.withResolvers<void>();
+            const held = Promise.withResolvers<void>();
+            const barrier = transactSnapshot(async (snapshotTransaction) => {
+                entered.resolve();
+                await held.promise;
+                mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                    id: 'root',
+                    snapshotTransaction,
+                    changeFn: (doc) => {
+                        const track = doc.tracks.tracks[0];
+                        if (!track) {
+                            throw new Error('Missing the Proof track');
+                        }
+                        track.devices.splice(0, 1, replacement);
+                    },
+                });
+                trackStore.hydrate();
+            });
+            await entered.promise;
+            try {
+                // The mocked engine accepts the preview under this receipt.
+                const runtime = {
+                    owner: Symbol('preview receipt'),
+                    isCurrent: () => true,
+                    canCommit: () => true,
+                    release: vi.fn(),
+                };
+                vi.mocked(captureDeviceParameterRuntimeWriteAuthority).mockReturnValueOnce(runtime);
+                audioEngine.updateDeviceParam.mockClear();
+                const ceiling = beginMasterCeilingPreview();
+                const previewValue = Number(ceiling.getAttribute('aria-valuenow'));
+                expect(audioEngine.updateDeviceParam.mock.calls).toEqual([
+                    ['track', 'a', 'lim_ceiling', previewValue, runtime.owner],
+                ]);
+                if (phase === 'before release') {
+                    await act(async () => {
+                        held.resolve();
+                        await barrier;
+                    });
+                }
+                audioEngine.updateDeviceParam.mockClear();
+                fireEvent.pointerUp(ceiling, { pointerId: 1 });
+                const settlement = proofLimiterCeiling.settlement('a');
+                if (!settlement) {
+                    throw new Error('Expected the held ceiling to wait on the snapshot');
+                }
+                await act(async () => {
+                    held.resolve();
+                    await barrier;
+                    await settlement.done;
+                });
+
+                const committedDevice = device();
+                expect(committedDevice && getObjectId(committedDevice)).not.toBe(originalIdentity);
+                expect(committedDevice).toEqual(replacement);
+                expectProofParameters(parameters);
+                expect(captureUndoHistory()).toEqual(baseline);
+                expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+                expect(audioEngine.updateDeviceParam.mock.calls).toEqual([
+                    ['track', 'a', 'lim_ceiling', -1, runtime.owner],
+                ]);
+                expect(runtime.release).toHaveBeenCalledOnce();
+
+                await pressProofSlider('Master limiter ceiling', -1, -0.9, 'lim_ceiling');
+                const editedValue = Number(ceiling.getAttribute('aria-valuenow'));
+                expectProofParameters({ ...parameters, lim_ceiling: editedValue });
+                expect(captureUndoHistory().past).toHaveLength(baseline.past.length + 1);
+                await act(() => undo());
+                expectProofParameters(parameters);
+                expect(captureUndoHistory().past).toEqual(baseline.past);
+                expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+                await act(() => redo());
+                expectProofParameters({ ...parameters, lim_ceiling: editedValue });
+                expect(ceiling).toHaveAttribute('aria-valuenow', String(editedValue));
+            } finally {
+                held.resolve();
+                await barrier;
+            }
+        }
+    );
 
     it('refuses the held release and its waiting bypass when the owner freezes during admission', async () => {
         render(<ProofPanel deviceId="a" />);
