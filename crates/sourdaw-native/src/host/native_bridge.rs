@@ -166,9 +166,19 @@ fn without_stalling_async_worker<ResultValue>(wait: impl FnOnce() -> ResultValue
 
 type PendingParameterUpdate = HostParameterUpdate;
 
+/// One pending write: a parameter, its value, and the sample of the next
+/// process call it applies at.
+///
+/// A slot is keyed by `(param_id, sample_offset)`, not by the parameter alone:
+/// automation hands one parameter several points inside one block, and each is
+/// a point of the ramp the plugin is owed rather than a newer value replacing
+/// an older one. Two writes for the same parameter at the same sample do still
+/// collapse to the later — that is the coalescing a control write and an audio
+/// write at the head of one block rely on.
 struct PendingParameterSlot {
     param_id: AtomicU32,
     value_bits: AtomicU64,
+    sample_offset: AtomicU32,
     sequence: AtomicU64,
     state: AtomicU8,
 }
@@ -178,6 +188,7 @@ impl PendingParameterSlot {
         Self {
             param_id: AtomicU32::new(0),
             value_bits: AtomicU64::new(0.0f64.to_bits()),
+            sample_offset: AtomicU32::new(0),
             sequence: AtomicU64::new(0),
             state: AtomicU8::new(PENDING_PARAMETER_EMPTY),
         }
@@ -203,11 +214,11 @@ impl PendingParameterQueue {
         }
     }
 
-    fn enqueue(&self, param_id: u32, value: f64) -> Result<(), ()> {
+    fn enqueue(&self, param_id: u32, value: f64, sample_offset: u32) -> Result<(), ()> {
         let value_bits = value.to_bits();
         let sequence = self.next_sequence.fetch_add(1, Ordering::Relaxed);
 
-        if self.coalesce(param_id, value_bits, sequence) {
+        if self.coalesce(param_id, sample_offset, value_bits, sequence) {
             return Ok(());
         }
 
@@ -224,13 +235,14 @@ impl PendingParameterQueue {
             {
                 slot.param_id.store(param_id, Ordering::Relaxed);
                 slot.value_bits.store(value_bits, Ordering::Relaxed);
+                slot.sample_offset.store(sample_offset, Ordering::Relaxed);
                 slot.sequence.store(sequence, Ordering::Relaxed);
                 slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
                 return Ok(());
             }
         }
 
-        if self.coalesce(param_id, value_bits, sequence) {
+        if self.coalesce(param_id, sample_offset, value_bits, sequence) {
             return Ok(());
         }
 
@@ -238,7 +250,7 @@ impl PendingParameterQueue {
     }
 
     /// Fold a write into the pending value this queue already holds for the
-    /// same parameter, if it holds one.
+    /// same parameter at the same sample, if it holds one.
     ///
     /// The fold keeps the later sequence, never simply the later writer: two
     /// producers — the control path and the audio thread — take their sequence
@@ -248,7 +260,7 @@ impl PendingParameterQueue {
     /// value the automation had already moved past. A write the slot subsumes
     /// still counts as queued: the parameter's pending value is at least as new
     /// as the one being folded in.
-    fn coalesce(&self, param_id: u32, value_bits: u64, sequence: u64) -> bool {
+    fn coalesce(&self, param_id: u32, sample_offset: u32, value_bits: u64, sequence: u64) -> bool {
         for slot in &self.slots {
             if slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY {
                 continue;
@@ -268,6 +280,13 @@ impl PendingParameterQueue {
                 )
                 .is_err()
             {
+                continue;
+            }
+
+            // Read under the claim: a restamp moves a slot's offset only while
+            // it holds the slot the same way.
+            if slot.sample_offset.load(Ordering::Relaxed) != sample_offset {
+                slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
                 continue;
             }
 
@@ -307,12 +326,13 @@ impl PendingParameterQueue {
             let update = PendingParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Relaxed)),
+                sample_offset: slot.sample_offset.load(Ordering::Relaxed),
             };
             let sequence = slot.sequence.load(Ordering::Relaxed);
-            if let Some(existing) = entries[..count]
-                .iter_mut()
-                .find(|entry| entry.update.param_id == update.param_id)
-            {
+            if let Some(existing) = entries[..count].iter_mut().find(|entry| {
+                entry.update.param_id == update.param_id
+                    && entry.update.sample_offset == update.sample_offset
+            }) {
                 if sequence > existing.sequence {
                     *existing = PendingParameterDrainEntry { update, sequence };
                 }
@@ -335,6 +355,36 @@ impl PendingParameterQueue {
         self.slots
             .iter()
             .any(|slot| slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_EMPTY)
+    }
+
+    /// Move every pending write to the head of whichever block delivers it.
+    /// Audio thread only, after a block the plugin was not handed.
+    ///
+    /// The offsets a write carries name samples of the block it was queued
+    /// for; once that block has passed without reaching the plugin they name
+    /// samples of a block that no longer exists, and left as they are they
+    /// would sort behind the next block's own early points. A late write is
+    /// delivered at the head, exactly as [`HostedPluginSlot`] re-stamps a
+    /// retained note. A slot mid-publish is its producer's, so it is left to
+    /// publish the offset it chose: that producer is writing for the block
+    /// about to run.
+    fn restamp_to_block_head(&self) {
+        for slot in &self.slots {
+            if slot
+                .state
+                .compare_exchange(
+                    PENDING_PARAMETER_READY,
+                    PENDING_PARAMETER_WRITING,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+            {
+                continue;
+            }
+            slot.sample_offset.store(0, Ordering::Relaxed);
+            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+        }
     }
 
     /// Drop every write this queue holds, leaving any slot mid-publish to the
@@ -366,11 +416,16 @@ impl PendingParameterQueue {
     }
 }
 
+/// Order a drain the way a plugin is owed it: by the sample each write applies
+/// at, and by issue order among writes at one sample, so the later of two
+/// writes to one parameter is the one it ends on. An insertion sort because the
+/// audio thread runs it and it allocates nothing.
 fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
+    let key = |entry: &PendingParameterDrainEntry| (entry.update.sample_offset, entry.sequence);
     for index in 1..entries.len() {
         let entry = entries[index];
         let mut cursor = index;
-        while cursor > 0 && entries[cursor - 1].sequence > entry.sequence {
+        while cursor > 0 && key(&entries[cursor - 1]) > key(&entry) {
             entries[cursor] = entries[cursor - 1];
             cursor -= 1;
         }
@@ -969,10 +1024,18 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// serialises the control-thread producer against the audio thread's drain,
     /// and it serialises two producers by exactly the same transitions: a slot
     /// is owned by whoever won the CAS into `WRITING`. Coalescing keeps at most
-    /// one pending value per parameter id: where a write meets a pending one
-    /// for the same id, the later sequence number survives, so a control write
-    /// and an audio write of the same parameter before one process call
-    /// collapse to the later of the two rather than to both.
+    /// one pending value per parameter id and sample: where a write meets a
+    /// pending one for the same id at the same `sample_offset`, the later
+    /// sequence number survives, so a control write and an audio write of the
+    /// same parameter at the head of one process call collapse to the later of
+    /// the two rather than to both. Writes at different samples are distinct
+    /// points of one ramp and each reaches the plugin, in sample order.
+    ///
+    /// `sample_offset` is the sample of the next process call the write
+    /// applies at, in the frame of reference the engine hands that call (see
+    /// `NativePlugin::apply_parameter_on_audio_thread`). A block the plugin is
+    /// not handed leaves its writes queued and moves them to the head of the
+    /// block that delivers them.
     ///
     /// That ordering is what coalescing guarantees, and only that. A producer
     /// takes its sequence number before it reaches a slot, so one descheduled
@@ -984,12 +1047,19 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// A non-finite value is refused without touching the queue, mirroring the
     /// control path: `NaN` reaching the plugin is a parameter the host can
     /// never move back.
-    pub fn enqueue_parameter_on_audio_thread(&self, param_id: u32, value: f64) -> bool {
+    pub fn enqueue_parameter_on_audio_thread(
+        &self,
+        param_id: u32,
+        value: f64,
+        sample_offset: u32,
+    ) -> bool {
         if !value.is_finite() {
             return false;
         }
 
-        self.pending_parameters.enqueue(param_id, value).is_ok()
+        self.pending_parameters
+            .enqueue(param_id, value, sample_offset)
+            .is_ok()
     }
 
     pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), ParameterWriteError> {
@@ -1009,8 +1079,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             });
         }
 
+        // A control write has no timeline position: it lands at the head of
+        // the next block.
         self.pending_parameters
-            .enqueue(param_id, value)
+            .enqueue(param_id, value, 0)
             .map_err(|()| ParameterWriteError::QueueFull {
                 plugin: self.name.clone(),
             })?;
@@ -1021,7 +1093,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         // from. Queued first so a write that arrives while the audio thread
         // holds the seam is delivered by the next control visit rather than
         // lost.
-        let _ = self.editor_parameter_writes.enqueue(param_id, value);
+        let _ = self.editor_parameter_writes.enqueue(param_id, value, 0);
         if let Some(_guard) = self.try_claim_control() {
             // SAFETY: the guard holds the control side of the access seam, so
             // the audio thread cannot be inside the wrapper.
@@ -1771,7 +1843,9 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
 
         if processed.is_none() {
             // Non-RT state/editor control owns the plugin, or it is unloading
-            // or inactive: the block passes through as-is, and is counted.
+            // or inactive: the block passes through as-is, and is counted. Its
+            // parameter writes stay queued, late, for the next block's head.
+            self.plugin.pending_parameters.restamp_to_block_head();
             self.plugin.record_unserved_block();
         }
     }
@@ -1865,14 +1939,17 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
                 // retention array holds, and this block's events go back
                 // behind it: the staged ones fit, and any the queue cannot
                 // hold are counted as dropped.
+                // Its parameter writes are late the same way the notes are.
                 self.retain_events(midi_events);
+                self.plugin.pending_parameters.restamp_to_block_head();
                 self.plugin.record_unserved_block();
             }
         }
     }
 
-    fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64) -> bool {
-        self.plugin.enqueue_parameter_on_audio_thread(id, value)
+    fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64, sample_offset: u32) -> bool {
+        self.plugin
+            .enqueue_parameter_on_audio_thread(id, value, sample_offset)
     }
 
     fn name(&self) -> &str {
@@ -2065,7 +2142,8 @@ mod tests {
     }
 
     /// The parameter updates each process call was handed, one entry per call.
-    type ProcessedBlocks = Arc<Mutex<Vec<Vec<(u32, f64)>>>>;
+    /// Each update is `(parameter id, value, sample offset)`.
+    type ProcessedBlocks = Arc<Mutex<Vec<Vec<(u32, f64, u32)>>>>;
 
     /// A backend that records the parameter updates every process call is
     /// handed — the only place a queued write becomes observable to the plugin.
@@ -2081,7 +2159,7 @@ mod tests {
             self.processed.lock().expect("the process log").push(
                 updates
                     .iter()
-                    .map(|update| (update.param_id, update.value))
+                    .map(|update| (update.param_id, update.value, update.sample_offset))
                     .collect(),
             );
         }
@@ -2200,20 +2278,20 @@ mod tests {
     fn an_audio_thread_parameter_write_reaches_the_next_process() {
         let (mut slot, _shared, processed) = process_recording_slot();
 
-        assert!(slot.apply_parameter_on_audio_thread(3, 0.75));
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.75, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
             *processed.lock().expect("the process log"),
-            vec![vec![(3, 0.75)]]
+            vec![vec![(3, 0.75, 0)]]
         );
     }
 
     /// Two producers now write the same queue. A parameter the user is holding
-    /// and an automation lane writing the same id before one process call must
-    /// reach the plugin as one value — the later of the two — rather than as
-    /// two updates the plugin applies in whatever order the slots happen to sit
-    /// in.
+    /// and an automation lane writing the same id at the head of one process
+    /// call must reach the plugin as one value — the later of the two — rather
+    /// than as two updates the plugin applies in whatever order the slots
+    /// happen to sit in.
     #[test]
     fn an_audio_thread_write_coalesces_with_a_control_write_by_sequence() {
         let (mut slot, shared, processed) = process_recording_slot();
@@ -2221,12 +2299,60 @@ mod tests {
         shared
             .enqueue_parameter(3, 0.1)
             .expect("the pending queue has room");
-        assert!(slot.apply_parameter_on_audio_thread(3, 0.9));
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.9, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
             *processed.lock().expect("the process log"),
-            vec![vec![(3, 0.9)]]
+            vec![vec![(3, 0.9, 0)]]
+        );
+    }
+
+    /// The engine's offset travels with the write into the update the runtime
+    /// is handed, and a UI edit queued beside the automation stays at the head
+    /// of the block. Several automation points for one parameter all reach the
+    /// plugin, in sample order, in the one process call they were queued for.
+    #[test]
+    fn an_audio_thread_write_reaches_the_plugin_at_its_sample_offset() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 10));
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 200));
+        shared
+            .enqueue_parameter(9, 0.5)
+            .expect("the pending queue has room");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(9, 0.5, 0), (4, 0.2, 10), (4, 0.8, 200)]]
+        );
+    }
+
+    /// A block the plugin is not handed leaves its writes queued, and the
+    /// offsets they carry name samples of a block that has passed. They are
+    /// delivered late, at the head of the next block the plugin receives, and
+    /// ahead of that block's own points — never sorted in among them as if
+    /// they were still on time.
+    #[test]
+    fn a_write_queued_for_an_unserved_block_lands_at_the_head_of_the_next() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 100));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.2, 0), (4, 0.8, 100)]],
+            "the unserved block's write arrives once, at the head, ahead of the \
+             next block's own point"
         );
     }
 
@@ -2237,7 +2363,7 @@ mod tests {
     fn an_audio_thread_write_refuses_a_non_finite_value() {
         let (mut slot, _shared, processed) = process_recording_slot();
 
-        assert!(!slot.apply_parameter_on_audio_thread(3, f64::NAN));
+        assert!(!slot.apply_parameter_on_audio_thread(3, f64::NAN, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
@@ -2270,12 +2396,12 @@ mod tests {
             .state
             .store(PENDING_PARAMETER_READY, Ordering::Release);
 
-        assert!(slot.apply_parameter_on_audio_thread(3, 0.1));
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.1, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
             *processed.lock().expect("the process log"),
-            vec![vec![(3, 0.9)]],
+            vec![vec![(3, 0.9, 0)]],
             "the newer sequence's value survives the write that arrived after it"
         );
     }
@@ -2305,7 +2431,7 @@ mod tests {
         queue.slots[0].param_id.store(7, Ordering::Relaxed);
 
         queue.clear();
-        assert!(queue.enqueue(9, 0.1).is_ok());
+        assert!(queue.enqueue(9, 0.1, 0).is_ok());
 
         // The interrupted producer finishes its publish.
         queue.slots[0]
@@ -2330,10 +2456,12 @@ mod tests {
                 PendingParameterUpdate {
                     param_id: 7,
                     value: 0.9,
+                    sample_offset: 0,
                 },
                 PendingParameterUpdate {
                     param_id: 9,
                     value: 0.1,
+                    sample_offset: 0,
                 },
             ]
         );
@@ -2343,8 +2471,8 @@ mod tests {
     fn pending_parameter_queue_coalesces_and_drains_latest_value() {
         let queue = PendingParameterQueue::new();
 
-        assert!(queue.enqueue(7, 0.25).is_ok());
-        assert!(queue.enqueue(7, 0.75).is_ok());
+        assert!(queue.enqueue(7, 0.25, 0).is_ok());
+        assert!(queue.enqueue(7, 0.75, 0).is_ok());
 
         let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
         let count = queue.drain(&mut drained);
@@ -2355,6 +2483,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 7,
                 value: 0.75,
+                sample_offset: 0,
             }
         );
         assert_eq!(queue.drain(&mut drained), 0);
@@ -2370,10 +2499,10 @@ mod tests {
         let queue = PendingParameterQueue::new();
 
         for index in 0..=PENDING_PARAMETER_CAPACITY {
-            assert!(queue.enqueue(7, index as f64).is_ok(), "write {index}");
+            assert!(queue.enqueue(7, index as f64, 0).is_ok(), "write {index}");
         }
         assert!(
-            queue.enqueue(9, 0.5).is_ok(),
+            queue.enqueue(9, 0.5, 0).is_ok(),
             "the repeated writes left no room for another parameter"
         );
 
@@ -2385,10 +2514,12 @@ mod tests {
                 PendingParameterUpdate {
                     param_id: 7,
                     value: PENDING_PARAMETER_CAPACITY as f64,
+                    sample_offset: 0,
                 },
                 PendingParameterUpdate {
                     param_id: 9,
                     value: 0.5,
+                    sample_offset: 0,
                 },
             ]
         );
@@ -2399,10 +2530,10 @@ mod tests {
         let queue = PendingParameterQueue::new();
 
         for index in 0..PENDING_PARAMETER_CAPACITY {
-            assert!(queue.enqueue(index as u32, index as f64).is_ok());
+            assert!(queue.enqueue(index as u32, index as f64, 0).is_ok());
         }
 
-        assert_eq!(queue.enqueue(999, 0.5), Err(()));
+        assert_eq!(queue.enqueue(999, 0.5, 0), Err(()));
 
         let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
         let count = queue.drain(&mut drained);
@@ -2413,6 +2544,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 0,
                 value: 0.0,
+                sample_offset: 0,
             }
         );
         assert_eq!(
@@ -2420,6 +2552,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: (PENDING_PARAMETER_CAPACITY - 1) as u32,
                 value: (PENDING_PARAMETER_CAPACITY - 1) as f64,
+                sample_offset: 0,
             }
         );
     }
@@ -2428,8 +2561,8 @@ mod tests {
     fn pending_parameter_queue_keeps_updates_when_drain_output_is_full() {
         let queue = PendingParameterQueue::new();
 
-        assert!(queue.enqueue(1, 0.1).is_ok());
-        assert!(queue.enqueue(2, 0.2).is_ok());
+        assert!(queue.enqueue(1, 0.1, 0).is_ok());
+        assert!(queue.enqueue(2, 0.2, 0).is_ok());
 
         let mut first_drain = [PendingParameterUpdate::default(); 1];
         assert_eq!(queue.drain(&mut first_drain), 1);
@@ -2438,6 +2571,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 1,
                 value: 0.1,
+                sample_offset: 0,
             }
         );
 
@@ -2448,7 +2582,50 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 2,
                 value: 0.2,
+                sample_offset: 0,
             }
+        );
+    }
+
+    /// Automation hands one parameter several points inside one block, and
+    /// each is a point of the ramp rather than a newer value replacing an older
+    /// one: every point is drained, in the order of the samples they apply at,
+    /// with the other parameter's point between them. Folding them by parameter
+    /// id — the per-id coalescing UI writes rely on — would hand the plugin the
+    /// ramp's last value at the wrong sample and nothing else.
+    #[test]
+    fn pending_parameter_queue_keeps_every_point_of_a_ramp_in_sample_order() {
+        let queue = PendingParameterQueue::new();
+
+        assert!(queue.enqueue(4, 0.8, 200).is_ok());
+        assert!(queue.enqueue(4, 0.2, 10).is_ok());
+        assert!(queue.enqueue(7, 0.5, 100).is_ok());
+        assert!(queue.enqueue(4, 0.6, 10).is_ok());
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+
+        assert_eq!(
+            drained[..count],
+            [
+                PendingParameterUpdate {
+                    param_id: 4,
+                    value: 0.6,
+                    sample_offset: 10,
+                },
+                PendingParameterUpdate {
+                    param_id: 7,
+                    value: 0.5,
+                    sample_offset: 100,
+                },
+                PendingParameterUpdate {
+                    param_id: 4,
+                    value: 0.8,
+                    sample_offset: 200,
+                },
+            ],
+            "distinct samples stay distinct points, in sample order; two writes at \
+             one sample still fold to the later"
         );
     }
 
@@ -2562,6 +2739,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 7,
                 value: 0.9,
+                sample_offset: 0,
             }
         );
     }
@@ -2595,6 +2773,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 2,
                 value: 0.2,
+                sample_offset: 0,
             }
         );
         assert_eq!(
@@ -2602,6 +2781,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 1,
                 value: 0.1,
+                sample_offset: 0,
             }
         );
     }
@@ -2610,7 +2790,7 @@ mod tests {
     fn pending_parameter_queue_clear_invalidates_accepted_updates() {
         let queue = PendingParameterQueue::new();
 
-        assert!(queue.enqueue(7, 0.75).is_ok());
+        assert!(queue.enqueue(7, 0.75, 0).is_ok());
         assert!(queue.has_pending());
         queue.clear();
 
@@ -2622,7 +2802,7 @@ mod tests {
     #[test]
     fn process_drain_reads_updates_enqueued_for_runtime_delivery() {
         let queue = PendingParameterQueue::new();
-        assert!(queue.enqueue(11, 0.42).is_ok());
+        assert!(queue.enqueue(11, 0.42, 0).is_ok());
 
         let mut scratch = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
         let count = drain_pending_parameters_for_process(&queue, &mut scratch);
@@ -2633,6 +2813,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 11,
                 value: 0.42,
+                sample_offset: 0,
             }
         );
         assert_eq!(

@@ -62,6 +62,7 @@ fn drive(value: f64) -> HostParameterUpdate {
     HostParameterUpdate {
         param_id: DRIVE_PARAM_ID,
         value,
+        sample_offset: 0,
     }
 }
 
@@ -69,6 +70,7 @@ fn refuse() -> HostParameterUpdate {
     HostParameterUpdate {
         param_id: REFUSE_PARAM_ID,
         value: 1.0,
+        sample_offset: 0,
     }
 }
 
@@ -450,6 +452,7 @@ fn malformed() -> HostParameterUpdate {
     HostParameterUpdate {
         param_id: MALFORMED_PARAM_ID,
         value: 1.0,
+        sample_offset: 0,
     }
 }
 
@@ -512,6 +515,7 @@ fn a_refused_blocks_overflow_is_not_counted_as_dropped() {
     let flood = HostParameterUpdate {
         param_id: FLOOD_PARAM_ID,
         value: 1.0,
+        sample_offset: 0,
     };
     let mut captured = Vec::new();
 

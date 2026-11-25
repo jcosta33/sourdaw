@@ -16,7 +16,8 @@
 
 use crate::clap_gui::{GuiFixture, COMMAND_PARAM_ID, GUI};
 use crate::echo::{
-    Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, GAIN_MAX, GAIN_MIN, LATENCY_FRAMES,
+    Echo, GainPoints, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, GAIN_MAX, GAIN_MIN,
+    LATENCY_FRAMES,
 };
 use crate::note_voice::NoteVoice;
 use crate::state::CHUNK_BYTES;
@@ -441,7 +442,8 @@ unsafe extern "C" fn get_extension(
     ptr::null()
 }
 
-/// Apply the block's parameter writes, then render it. Allocation- and
+/// Render the block, applying each parameter write on the sample its event's
+/// `time` names. Allocation- and
 /// lock-free — pointer arithmetic over host-owned buffers only — save for a
 /// `Command` the editor class carries out (see [`crate::clap_gui`]).
 unsafe extern "C" fn process(
@@ -462,27 +464,36 @@ unsafe extern "C" fn process(
         return CLAP_PROCESS_ERROR;
     }
     // SAFETY: `in_events` is valid for the duration of this call.
-    unsafe { apply_parameter_events(instance, process.in_events) };
+    let mut gain_points = unsafe { read_parameter_events(instance, process.in_events) };
     if instance.instrument {
         // SAFETY: the event list and bus tables are valid for this call.
-        unsafe { render_notes(instance, process) };
+        unsafe { render_notes(instance, &mut gain_points, process) };
     } else {
         // SAFETY: the bus tables are valid for the duration of this call.
-        unsafe { render_block(&instance.echo, process) };
+        unsafe { render_block(&instance.echo, &mut gain_points, process) };
     }
+    // A block with no bus to render still ends on its last point.
+    gain_points.apply_all(&instance.echo);
     CLAP_PROCESS_CONTINUE
 }
 
+/// Collect the list's `Gain` points, each at its event's `time`, and carry out
+/// any editor `Command` at once.
+///
 /// # Safety
 /// `in_events`, when non-null, must be a live `clap_input_events`.
-unsafe fn apply_parameter_events(instance: &ClapInstance, in_events: *const clap_input_events) {
+unsafe fn read_parameter_events(
+    instance: &ClapInstance,
+    in_events: *const clap_input_events,
+) -> GainPoints {
+    let mut gain_points = GainPoints::new();
     if in_events.is_null() {
-        return;
+        return gain_points;
     }
     // SAFETY: the caller guarantees the list is live.
     let events = unsafe { &*in_events };
     let (Some(size), Some(get)) = (events.size, events.get) else {
-        return;
+        return gain_points;
     };
     // SAFETY: the list's own callbacks, called on the list they belong to.
     let count = unsafe { size(in_events) };
@@ -504,18 +515,19 @@ unsafe fn apply_parameter_events(instance: &ClapInstance, in_events: *const clap
         // `clap_event_param_value`.
         let event = unsafe { &*(header as *const clap_event_param_value) };
         if event.param_id == GAIN_PARAM_ID {
-            instance.echo.set_gain(event.value);
+            gain_points.push(header_ref.time, event.value);
         } else if event.param_id == COMMAND_PARAM_ID {
             if let Some(gui) = instance.gui.as_ref() {
                 gui.run_command(event.value);
             }
         }
     }
+    gain_points
 }
 
 /// # Safety
 /// The bus tables `process` names must be valid for its `frames_count`.
-unsafe fn render_block(echo: &Echo, process: &clap_process) {
+unsafe fn render_block(echo: &Echo, gain_points: &mut GainPoints, process: &clap_process) {
     if process.audio_outputs.is_null() || process.audio_outputs_count == 0 {
         return;
     }
@@ -547,6 +559,7 @@ unsafe fn render_block(echo: &Echo, process: &clap_process) {
                 *sample = unsafe { *source };
             }
         }
+        gain_points.apply_due(echo, frame as u32);
         let sample_out = echo.next_frame(sample_in);
         for (channel, sample) in sample_out.iter().enumerate() {
             // SAFETY: as above, for the output bus.
@@ -567,7 +580,11 @@ unsafe fn render_block(echo: &Echo, process: &clap_process) {
 /// # Safety
 /// The event list and the bus tables `process` names must be valid for its
 /// `frames_count`.
-unsafe fn render_notes(instance: &ClapInstance, process: &clap_process) {
+unsafe fn render_notes(
+    instance: &ClapInstance,
+    gain_points: &mut GainPoints,
+    process: &clap_process,
+) {
     if process.audio_outputs.is_null() || process.audio_outputs_count == 0 {
         return;
     }
@@ -587,9 +604,9 @@ unsafe fn render_notes(instance: &ClapInstance, process: &clap_process) {
         Some((size, get)) => (unsafe { size(process.in_events) }, Some(get)),
         None => (0, None),
     };
-    let gain = instance.echo.gain() as f32;
     let mut next_event = 0;
     for frame in 0..process.frames_count {
+        gain_points.apply_due(&instance.echo, frame);
         while let Some(get) = get.filter(|_| next_event < count) {
             // SAFETY: as above; `next_event` is below the list's own count.
             let header = unsafe { get(process.in_events, next_event) };
@@ -616,7 +633,7 @@ unsafe fn render_notes(instance: &ClapInstance, process: &clap_process) {
                 _ => {}
             }
         }
-        let level = instance.voice.level(gain);
+        let level = instance.voice.level(instance.echo.gain() as f32);
         for channel in 0..CHANNELS {
             // SAFETY: `channel < CHANNELS <= channel_count`, inside the channel table.
             let entry = unsafe { output.data32.add(channel) };
@@ -823,7 +840,7 @@ unsafe extern "C" fn param_flush(
     // SAFETY: the host passes the plugin it created.
     if let Some(instance) = unsafe { instance_of(plugin) } {
         // SAFETY: the host passes a live event list.
-        unsafe { apply_parameter_events(instance, in_events) };
+        unsafe { read_parameter_events(instance, in_events) }.apply_all(&instance.echo);
     }
 }
 

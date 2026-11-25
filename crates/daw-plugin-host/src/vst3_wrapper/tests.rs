@@ -2252,6 +2252,7 @@ fn a_host_write_outranks_an_editor_gesture_in_the_same_block() {
         &[HostParameterUpdate {
             param_id: GAIN_PARAM,
             value: 0.125,
+            sample_offset: 0,
         }],
     );
 
@@ -4373,6 +4374,7 @@ fn a_render_block_performs_no_heap_allocation() {
     let updates = [HostParameterUpdate {
         param_id: GAIN_PARAM,
         value: 0.5,
+        sample_offset: 0,
     }];
     let notes = [host_note(60, 100, 0, true, 0)];
 
@@ -4401,5 +4403,47 @@ fn a_render_block_performs_no_heap_allocation() {
         0,
         "the render path allocated {} times",
         after - before
+    );
+}
+
+/// Every point the host stages for one parameter is a point the plugin reads,
+/// at its own offset and in order, and a second value for the sample the last
+/// point already names replaces it. An echo of any staged point is the host's
+/// own value, so `carries` matches every one of them and nothing else.
+#[test]
+fn a_parameter_queue_hands_the_plugin_every_staged_point_at_its_offset() {
+    let changes = HostParameterChanges::new();
+    changes.stage(5, 0, 0.1);
+    changes.stage(5, 0, 0.3);
+    changes.stage(5, 10, 0.2);
+    changes.stage(5, 200, 0.8);
+    changes.stage(9, 100, 0.5);
+
+    let read = |index: usize| {
+        let queue = &changes.queues[index];
+        // SAFETY: the list and its queues are this test's own live host objects.
+        let point_count = unsafe { queue.getPointCount() };
+        let points: Vec<(int32, ParamValue)> = (0..point_count)
+            .map(|point| {
+                let (mut offset, mut value) = (-1, -1.0);
+                // SAFETY: as above.
+                let result = unsafe { queue.getPoint(point, &mut offset, &mut value) };
+                assert_eq!(result, kResultOk);
+                (offset, value)
+            })
+            .collect();
+        // SAFETY: as above.
+        (unsafe { queue.getParameterId() }, points)
+    };
+
+    // SAFETY: as above.
+    assert_eq!(unsafe { changes.getParameterCount() }, 2);
+    assert_eq!(read(0), (5, vec![(0, 0.3), (10, 0.2), (200, 0.8)]));
+    assert_eq!(read(1), (9, vec![(100, 0.5)]));
+    assert!(changes.carries(5, 0.2) && changes.carries(5, 0.8) && changes.carries(5, 0.3));
+    assert!(!changes.carries(5, 0.1), "a replaced value is not staged");
+    assert!(
+        !changes.carries(9, 0.2),
+        "a point of another parameter is not an echo"
     );
 }

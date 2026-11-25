@@ -107,17 +107,68 @@ const STATE_HEADER_BYTES: usize = 14;
 // RT-side host objects
 // ---------------------------------------------------------------------------
 
-/// One parameter's value for the coming block.
+/// The most points one parameter's queue holds in one block: every host write
+/// one block can carry — the engine's pending queue is `MAX_PARAMETER_QUEUES`
+/// deep, and all of it may be one parameter's ramp — plus the one editor
+/// gesture staged ahead of them. Sized so nothing the engine admitted is cut
+/// here; the engine's own queues refuse and count anything past that.
+const MAX_QUEUE_POINTS: usize = MAX_PARAMETER_QUEUES + 1;
+
+/// One parameter's points for the coming block, each at the sample offset it
+/// applies at, in non-decreasing offset.
 ///
-/// A single point at sample offset zero, deliberately: the seam delivers the
-/// value a parameter has *reached*, not a curve through the block. Sample
-/// accurate automation is the automation lane's job and is not modelled here, so
-/// pretending to a ramp would be inventing data.
-#[derive(Default)]
+/// Automation hands one parameter several points inside one block, and VST3
+/// carries a sample offset on every point precisely so a host need not split
+/// its process call to deliver them. A point staged at the same offset as the
+/// last one replaces its value: two values for one sample are one value, the
+/// later.
+///
+/// The points are a fixed array allocated with the queue at activation; staging
+/// writes into it in place and never grows it.
 struct HostParamValueQueue {
     param_id: Cell<ParamID>,
-    value: Cell<ParamValue>,
-    filled: Cell<bool>,
+    points: [Cell<(int32, ParamValue)>; MAX_QUEUE_POINTS],
+    count: Cell<usize>,
+}
+
+impl Default for HostParamValueQueue {
+    fn default() -> Self {
+        Self {
+            param_id: Cell::new(0),
+            points: std::array::from_fn(|_| Cell::new((0, 0.0))),
+            count: Cell::new(0),
+        }
+    }
+}
+
+impl HostParamValueQueue {
+    /// Add a point after the last, or replace the last one's value at its own
+    /// offset. Returns the point's index, or `None` when the queue is full.
+    /// RT-safe.
+    fn push(&self, sample_offset: int32, value: ParamValue) -> Option<usize> {
+        let count = self.count.get();
+        if let Some(last) = count.checked_sub(1) {
+            if self.points[last].get().0 == sample_offset {
+                self.points[last].set((sample_offset, value));
+                return Some(last);
+            }
+        }
+        if count == MAX_QUEUE_POINTS {
+            return None;
+        }
+        self.points[count].set((sample_offset, value));
+        self.count.set(count + 1);
+        Some(count)
+    }
+
+    fn points(&self) -> impl Iterator<Item = (int32, ParamValue)> + '_ {
+        self.points[..self.count.get()].iter().map(Cell::get)
+    }
+
+    /// The value the parameter ends the block on.
+    fn last_value(&self) -> Option<ParamValue> {
+        self.points().last().map(|(_, value)| value)
+    }
 }
 
 impl Class for HostParamValueQueue {
@@ -130,11 +181,7 @@ impl IParamValueQueueTrait for HostParamValueQueue {
     }
 
     unsafe fn getPointCount(&self) -> int32 {
-        if self.filled.get() {
-            1
-        } else {
-            0
-        }
+        self.count.get() as int32
     }
 
     unsafe fn getPoint(
@@ -143,29 +190,29 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         sample_offset: *mut int32,
         value: *mut ParamValue,
     ) -> int32 {
-        if index != 0 || !self.filled.get() || sample_offset.is_null() || value.is_null() {
+        let Ok(index) = usize::try_from(index) else {
+            return kInvalidArgument;
+        };
+        if index >= self.count.get() || sample_offset.is_null() || value.is_null() {
             return kInvalidArgument;
         }
+        let (point_offset, point_value) = self.points[index].get();
         // SAFETY: non-null (checked above); `IParamValueQueue::getPoint` gives
         // the plugin's own writable out-parameter, live for this call.
-        unsafe { *sample_offset = 0 };
+        unsafe { *sample_offset = point_offset };
         // SAFETY: non-null (checked above); the plugin's own out-parameter.
-        unsafe { *value = self.value.get() };
+        unsafe { *value = point_value };
         kResultOk
     }
 
-    unsafe fn addPoint(
-        &self,
-        _sample_offset: int32,
-        value: ParamValue,
-        index: *mut int32,
-    ) -> int32 {
-        self.value.set(value);
-        self.filled.set(true);
+    unsafe fn addPoint(&self, sample_offset: int32, value: ParamValue, index: *mut int32) -> int32 {
+        let Some(position) = self.push(sample_offset, value) else {
+            return kResultFalse;
+        };
         if !index.is_null() {
             // SAFETY: non-null (checked above); `addPoint`'s `index` is the
             // plugin's own writable out-parameter, live for this call.
-            unsafe { *index = 0 };
+            unsafe { *index = position as int32 };
         }
         kResultOk
     }
@@ -195,16 +242,17 @@ impl HostParameterChanges {
         self.used.set(0);
     }
 
-    /// Stage one parameter's value for the coming block, replacing any value
-    /// already staged for the same parameter. RT-safe; silently drops writes
-    /// past `MAX_PARAMETER_QUEUES` rather than growing on the audio thread.
-    fn stage(&self, param_id: ParamID, value: ParamValue) {
+    /// Stage one point of a parameter for the coming block, after any already
+    /// staged for it — or over the last one, at its own offset. RT-safe;
+    /// writes past `MAX_PARAMETER_QUEUES` parameters or `MAX_QUEUE_POINTS`
+    /// points are dropped rather than grown on the audio thread, and both
+    /// bounds sit above what the engine's own counted queues admit.
+    fn stage(&self, param_id: ParamID, sample_offset: u32, value: ParamValue) {
         let Some(position) = self.queue_index_for(param_id) else {
             return;
         };
-        let queue = &self.queues[position];
-        queue.value.set(value);
-        queue.filled.set(true);
+        let offset = int32::try_from(sample_offset).unwrap_or(int32::MAX);
+        let _ = self.queues[position].push(offset, value);
     }
 
     /// The queue already holding this parameter, or a freshly claimed one.
@@ -222,10 +270,9 @@ impl HostParameterChanges {
         }
         let queue = &self.queues[used];
         queue.param_id.set(param_id);
-        queue.value.set(0.0);
         // A queue claimed by the plugin through `addParameterData` holds no
         // value until it adds a point; one the host stages is filled at once.
-        queue.filled.set(false);
+        queue.count.set(0);
         self.used.set(used + 1);
         Some(used)
     }
@@ -234,25 +281,29 @@ impl HostParameterChanges {
         self.used.get() == 0
     }
 
-    /// Every value the list holds, as `(parameter, value)`: what the host
-    /// staged for the coming block, or what the plugin reported in an output
-    /// list. A queue the plugin claimed and never added a point to holds none.
-    fn staged(&self) -> impl Iterator<Item = (ParamID, ParamValue)> + '_ {
+    /// The value each parameter in the list ends the block on, as
+    /// `(parameter, value)`: what the plugin reported in an output list, read
+    /// as the state it left the parameter in. A queue the plugin claimed and
+    /// never added a point to holds none.
+    fn settled(&self) -> impl Iterator<Item = (ParamID, ParamValue)> + '_ {
         self.queues[..self.used.get()]
             .iter()
-            .filter(|queue| queue.filled.get())
-            .map(|queue| (queue.param_id.get(), queue.value.get()))
+            .filter_map(|queue| Some((queue.param_id.get(), queue.last_value()?)))
     }
 
-    /// Whether the list carries `value` for `param_id`, at single precision.
-    /// RT-safe: a linear scan of at most `MAX_PARAMETER_QUEUES` entries.
+    /// Whether any point the list holds for `param_id` carries `value`, at
+    /// single precision. RT-safe: a linear scan of the staged points.
     ///
     /// A processor that holds its parameters as `f32` — most do — echoes a
     /// host write rounded to that precision, and the echo is still the host's
-    /// value, not a move of the plugin's own.
+    /// value, not a move of the plugin's own. Any point of a ramp the host
+    /// staged is a value the host wrote, so an echo of any of them is dropped.
     fn carries(&self, param_id: ParamID, value: ParamValue) -> bool {
-        self.staged()
-            .any(|(staged, staged_value)| staged == param_id && staged_value as f32 == value as f32)
+        self.queues[..self.used.get()]
+            .iter()
+            .filter(|queue| queue.param_id.get() == param_id)
+            .flat_map(|queue| queue.points())
+            .any(|(_, staged_value)| staged_value as f32 == value as f32)
     }
 }
 
@@ -2086,7 +2137,8 @@ impl Vst3Wrapper {
             return;
         }
         for update in &self.gesture_scratch[..peeked] {
-            self.parameter_changes.stage(update.param_id, update.value);
+            self.parameter_changes
+                .stage(update.param_id, 0, update.value);
         }
 
         // SAFETY: exclusive control access, the claim every control-path
@@ -2136,7 +2188,7 @@ impl Vst3Wrapper {
     /// handed: unlike a CLAP event, the input list holds the value the host
     /// wrote, so an echo can be told from a clamp.
     fn forward_processor_output(&self) {
-        for (param_id, value) in self.output_parameter_changes.staged() {
+        for (param_id, value) in self.output_parameter_changes.settled() {
             if self.parameter_changes.carries(param_id, value) {
                 continue;
             }
@@ -2159,7 +2211,9 @@ impl Vst3Wrapper {
     /// Queue the engine's writes for a block the plugin is not handed, so they
     /// land on the first block that reaches the processor. They go in as host
     /// writes, which take precedence over a gesture for the same parameter
-    /// exactly as they would have inside the block.
+    /// exactly as they would have inside the block. They are late by then, so
+    /// they land at the head of that block, each parameter on the last value
+    /// its points reached.
     ///
     /// RT-safe: the queue coalesces into preallocated slots without a lock.
     fn hold_host_parameter_updates(&self, parameter_updates: &[HostParameterUpdate]) {
@@ -2193,8 +2247,10 @@ impl Vst3Wrapper {
     }
 
     /// Stage every parameter write the coming block should carry: first the
-    /// edits the plugin's own editor made, then the host's, so a value the app
-    /// just wrote wins over a stale gesture for the same parameter.
+    /// edits the plugin's own editor made, at the block's head, then the
+    /// host's, each at its own sample offset — so a value the app just wrote at
+    /// the head wins over a stale gesture for the same parameter, and an
+    /// automation ramp keeps every point.
     ///
     /// RT-safe: drains into preallocated scratch and writes into preallocated
     /// queues.
@@ -2207,10 +2263,12 @@ impl Vst3Wrapper {
             .state
             .drain_parameter_edits(self.gesture_scratch.as_mut_slice());
         for update in &self.gesture_scratch[..drained] {
-            self.parameter_changes.stage(update.param_id, update.value);
+            self.parameter_changes
+                .stage(update.param_id, 0, update.value);
         }
         for update in parameter_updates {
-            self.parameter_changes.stage(update.param_id, update.value);
+            self.parameter_changes
+                .stage(update.param_id, update.sample_offset, update.value);
         }
     }
 
