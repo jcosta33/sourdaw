@@ -1177,7 +1177,8 @@ type DenseElasticFixture = typeof import('./helpers/elasticDenseProject');
 test('dense project Detect overlaps the named autosave and reopens with exact markers and source PCM', async ({
     page,
 }, info) => {
-    test.setTimeout(240_000);
+    // Serial fixture commits have their own deadline so setup cannot consume the reopen checks' time.
+    test.setTimeout(330_000);
     await setupWorkspace(page, { clearLocalStorage: false });
     await launch_new_project(page);
     const preference = await page.evaluate(async () => {
@@ -1196,22 +1197,27 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     const before = await sourceState(page);
     expect(before).toMatchObject({ sampleRate: RATE, frames: RATE * SECONDS, channels: 2, raw: [], projected: [] });
     expect(before.pcm).toHaveLength(2);
-    const fixture = await page.evaluate(
-        async ({ path, clipId, audioBufferId }) => {
-            const dense: DenseElasticFixture = await import(path);
-            if (!clipId || !audioBufferId) {
-                throw new Error('The stereo source was not imported');
-            }
-            const { projectStore } = await import('/src/modules/Project/stores/index.ts');
-            const { getProjectSnapshotKey } = await import('/src/modules/Project/useCases/index.ts');
-            const seeded = await dense.seedDenseElasticProject(clipId);
-            const project = projectStore.value;
-            if (!project?.dirty) {
-                throw new Error('The dense fixture did not leave a project edit for autosave');
-            }
-            return { ...seeded, clipId, audioBufferId, key: getProjectSnapshotKey(project.createdAt) };
-        },
-        { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId, audioBufferId: before.audioBufferId }
+    const fixture = await test.step(
+        'Seed the dense project through app actions',
+        () =>
+            page.evaluate(
+                async ({ path, clipId, audioBufferId }) => {
+                    const dense: DenseElasticFixture = await import(path);
+                    if (!clipId || !audioBufferId) {
+                        throw new Error('The stereo source was not imported');
+                    }
+                    const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+                    const { getProjectSnapshotKey } = await import('/src/modules/Project/useCases/index.ts');
+                    const seeded = await dense.seedDenseElasticProject(clipId);
+                    const project = projectStore.value;
+                    if (!project?.dirty) {
+                        throw new Error('The dense fixture did not leave a project edit for autosave');
+                    }
+                    return { ...seeded, clipId, audioBufferId, key: getProjectSnapshotKey(project.createdAt) };
+                },
+                { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId, audioBufferId: before.audioBufferId }
+            ),
+        { timeout: 210_000 }
     );
     const readPreserved = (historyHeads?: typeof fixture.historyHeads) =>
         page.evaluate(
