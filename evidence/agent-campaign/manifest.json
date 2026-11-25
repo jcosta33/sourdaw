@@ -270,7 +270,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
-                    "digest": "9245abd116e29fca2fa17fa7a2fe8a8884831bc9de02c7a8a309873cf885ad2b"
+                    "digest": "bc2e2e4549cd8a3adac0b44f5fb2756f81f48d345596815b6f9fff4b2813913e"
                 }
             ]
         },

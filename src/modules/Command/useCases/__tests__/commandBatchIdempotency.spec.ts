@@ -3228,6 +3228,7 @@ describe('command batch idempotency', () => {
                     return {
                         status: 'written',
                         afterCommit: () => Promise.reject(new Error('runtime strip unavailable')),
+                        afterAmbiguousCommit: () => Promise.reject(new Error('runtime strip unavailable')),
                     };
                 },
             }),
@@ -3322,7 +3323,7 @@ describe('command batch idempotency', () => {
                 confirmed: true,
                 serialized: batch.serialized,
                 options: {
-                    get authorizeFirstHandler(): never {
+                    shouldExecute: (): never => {
                         throw new Error('execution option exploded');
                     },
                 },
