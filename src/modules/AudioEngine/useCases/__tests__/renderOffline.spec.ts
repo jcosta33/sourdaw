@@ -151,6 +151,7 @@ describe('renderOffline', () => {
                         muted: false,
                         freezeState: { status: 'unfrozen' },
                         clips: [],
+                        sends: [],
                         devices: [{ id: 'd1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }],
                     },
                 ],

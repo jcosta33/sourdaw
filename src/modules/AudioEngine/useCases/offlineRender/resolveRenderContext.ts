@@ -69,20 +69,24 @@ export type ResolveRenderContextInput = {
     latencySeconds?: number;
 };
 
+function normalizeRenderRequest(input: ResolveRenderContextInput | number): Required<ResolveRenderContextInput> {
+    if (typeof input === 'number') {
+        return { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100, latencySeconds: 0 };
+    }
+    return {
+        durationBeats: input.durationBeats,
+        startBeat: input.startBeat ?? 0,
+        tailSeconds: input.tailSeconds ?? 0,
+        sampleRate: input.sampleRate ?? 44_100,
+        latencySeconds: input.latencySeconds ?? 0,
+    };
+}
+
 export function resolveRenderContext(
     input: ResolveRenderContextInput | number,
     source?: OfflineRenderProjectSource
 ): OfflineRenderContext {
-    const normalized: Required<ResolveRenderContextInput> =
-        typeof input === 'number'
-            ? { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100, latencySeconds: 0 }
-            : {
-                  durationBeats: input.durationBeats,
-                  startBeat: input.startBeat ?? 0,
-                  tailSeconds: input.tailSeconds ?? 0,
-                  sampleRate: input.sampleRate ?? 44_100,
-                  latencySeconds: input.latencySeconds ?? 0,
-              };
+    const normalized = normalizeRenderRequest(input);
 
     const transport = source ? source.transport : transportStore.value;
     const tracks = source ? source.tracks : trackStore.value;
