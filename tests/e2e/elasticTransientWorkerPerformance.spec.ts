@@ -1212,13 +1212,13 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
         },
         { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId }
     );
-    const readPreserved = () =>
+    const readPreserved = (historyHeads?: typeof fixture.historyHeads) =>
         page.evaluate(
             async ({ path, historyHeads, companionIds }) => {
                 const dense: DenseElasticFixture = await import(path);
-                return dense.readDenseElasticProject(historyHeads, companionIds);
+                return dense.readDenseElasticProject(companionIds, historyHeads);
             },
-            { path: DENSE_ELASTIC_FIXTURE_PATH, ...fixture }
+            { path: DENSE_ELASTIC_FIXTURE_PATH, companionIds: fixture.companionIds, historyHeads }
         );
     const readNamedSnapshot = () =>
         page.evaluate(
@@ -1230,7 +1230,7 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
         );
 
     expect(fixture.historyChanges).toBeGreaterThanOrEqual(2048);
-    const seeded = await readPreserved();
+    const seeded = await readPreserved(fixture.historyHeads);
     expect(seeded.historyRetained).toBe(true);
     expect(seeded.preserved).toMatchObject({
         audioTracks: 16,
@@ -1281,7 +1281,7 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
         .poll(async () => (await sourceState(page, false, { includePcmDigest: false })).ready, { timeout: 25_000 })
         .toBe(true);
     expect(await sourceState(page)).toEqual(detected);
-    expect(await readPreserved()).toEqual(seeded);
+    expect(await readPreserved(fixture.historyHeads)).toEqual(seeded);
 
     const namedReopen = await page.evaluate(async (key) => {
         const { loadRecentProject } = await import('/src/modules/Project/useCases/index.ts');

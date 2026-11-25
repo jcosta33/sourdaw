@@ -1,4 +1,4 @@
-import { getChangesMetaSince, getHeads, getMissingDeps, type Heads } from '@automerge/automerge';
+import { getChangesMetaSince, getHeads, type Heads } from '@automerge/automerge';
 
 import { getWarpState, trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction, executeAppActionBatch } from '#/modules/Command/useCases';
@@ -119,13 +119,22 @@ export async function seedDenseElasticProject(targetClipId: string) {
     return { historyHeads, historyChanges, companionIds, targetTrackId: sourceTrack.id };
 }
 
-export function readDenseElasticProject(historyHeads: Heads, companionIds: string[]) {
+function retainsHistory(root: ReturnType<typeof readRoot>, heads: Heads): boolean {
+    const applied = new Set(getChangesMetaSince(root, []).map(({ hash }) => hash));
+    // A shared backend can know changes beyond this root's current causal frontier.
+    for (const { hash } of getChangesMetaSince(root, getHeads(root))) {
+        applied.delete(hash);
+    }
+    return heads.every((hash) => applied.has(hash));
+}
+
+export function readDenseElasticProject(companionIds: string[], historyHeads?: Heads) {
     const root = readRoot();
     const tracks = root.tracks?.tracks ?? [];
     const notes = root.midi?.notesByClipId ?? {};
     const lastMidiTrack = tracks.find((track) => track.id === 'dense-track-31');
     return {
-        historyRetained: getMissingDeps(root, historyHeads).length === 0,
+        historyRetained: historyHeads === undefined ? undefined : retainsHistory(root, historyHeads),
         preserved: {
             audioTracks: tracks.filter((track) => track.kind === 'audio').length,
             midiTracks: tracks.filter((track) => track.kind === 'midi').length,
