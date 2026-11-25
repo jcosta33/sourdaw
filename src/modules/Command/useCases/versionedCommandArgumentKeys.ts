@@ -3538,6 +3538,7 @@ const schemaDefinitions = [
         properties: {
             beats: 0,
             clipId: 1,
+            expectedStartBeat: 0,
         },
         required: ['beats', 'clipId'],
         additionalProperties: false,
@@ -4159,6 +4160,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             clipId: 1,
+            expectedName: 1,
             name: 1,
         },
         required: ['clipId', 'name'],
@@ -7063,6 +7065,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 1,
             clipType: 51,
+            expectedOffset: 0,
             midiRowCoordinates: 864,
             offset: 0,
             rowLiftBeats: 0,
@@ -7196,6 +7199,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             clipId: 1,
+            expectedEndBeat: 0,
             newEndBeat: 0,
         },
         required: ['clipId', 'newEndBeat'],
@@ -7205,6 +7209,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             clipId: 1,
+            expectedStartBeat: 0,
             loopOriginBeat: 361,
             midiOffsetBeats: 0,
             midiRowCoordinates: 864,

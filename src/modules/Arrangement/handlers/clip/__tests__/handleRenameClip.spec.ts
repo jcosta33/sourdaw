@@ -42,7 +42,7 @@ describe('handleRenameClip', () => {
         expect(desc.label).toBe('Rename clip to "New Name"');
         expect(desc.inverseAction).toEqual({
             type: 'renameClip',
-            payload: { clipId: 'c1', name: 'Old Name' },
+            payload: { clipId: 'c1', name: 'Old Name', expectedName: 'New Name' },
         });
     });
 

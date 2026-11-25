@@ -7,6 +7,18 @@ import { clampTrackHeight } from '../useCases/clampTrackHeight';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
 import { clampTrackPan } from '../useCases/setTrackGainPan/clampTrackPan';
 
+import {
+    projectClipColor,
+    projectClipEnd,
+    projectClipFade,
+    projectClipLock,
+    projectClipMute,
+    projectClipName,
+    projectClipNudge,
+    projectClipSlip,
+    projectMidiClipStart,
+} from './projectClipFieldActions';
+
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
 function keepTrack(): void {
@@ -230,14 +242,14 @@ export const trackProjectionByActionType: {
     duplicateClipToNextBar: keepTrack,
     duplicateTrack: keepTrack,
     removeClip: keepTrack,
-    renameClip: keepTrack,
+    renameClip: projectClipName,
     splitClip: keepTrack,
     restoreClipSplitState: keepTrack,
-    trimClipStart: keepTrack,
-    trimClipEnd: keepTrack,
+    trimClipStart: projectMidiClipStart,
+    trimClipEnd: projectClipEnd,
     restoreAudioClipStartTrim: keepTrack,
     restoreAudioClipSlip: keepTrack,
-    slipClipContent: keepTrack,
+    slipClipContent: projectClipSlip,
     drawClip: keepTrack,
     discardDrawnClip: keepTrack,
     restoreDrawnClip: keepTrack,
@@ -331,7 +343,7 @@ export const trackProjectionByActionType: {
     copyClip: keepTrack,
     cutClip: keepTrack,
     pasteClip: keepTrack,
-    setClipFade: keepTrack,
+    setClipFade: projectClipFade,
     importMidiFile: keepTrack,
     normalizeClip: keepTrack,
     relinkClipAudioSources: keepTrack,
@@ -342,12 +354,12 @@ export const trackProjectionByActionType: {
     setCompRegion: keepTrack,
     removeCompRegion: keepTrack,
     restoreCompRegionInterval: keepTrack,
-    nudgeClip: keepTrack,
+    nudgeClip: projectClipNudge,
     crossfadeClips: keepTrack,
     restoreCrossfadeClips: keepTrack,
     setClipGain: projectClipGain,
-    setClipColor: keepTrack,
-    lockClip: keepTrack,
+    setClipColor: projectClipColor,
+    lockClip: projectClipLock,
     consolidateSelection: keepTrack,
     bounceSelection: keepTrack,
     seekPlayhead: keepTrack,
@@ -427,7 +439,7 @@ export const trackProjectionByActionType: {
     audioToMidi: keepTrack,
     commitPitchEdit: keepTrack,
     restoreClipFileId: keepTrack,
-    muteClip: keepTrack,
+    muteClip: projectClipMute,
     clearSolos: keepTrack,
     restoreTrackSoloStates: keepTrack,
     setTrackNotes: keepTrack,

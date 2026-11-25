@@ -172,7 +172,7 @@ export type ArrangementClipAppAction =
     | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'removeClip'; payload: { clipId: string; /** Internal captured replay preference. */ ripple?: boolean } }
-    | { type: 'renameClip'; payload: { clipId: string; name: string } }
+    | { type: 'renameClip'; payload: { clipId: string; name: string; expectedName?: string } }
     | {
           type: 'splitClip';
           payload: {
@@ -246,11 +246,16 @@ export type ArrangementClipAppAction =
                * and replay the re-wrapping law they always did.
                */
               midiOffsetBeats?: number;
+              /**
+               * The clip start a recorded inverse or redo requires before it writes, so a
+               * divergent edit of the start is a conflict. Only recorded replays set it.
+               */
+              expectedStartBeat?: number;
               /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
               midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
-    | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number; expectedEndBeat?: number } }
     | {
           /** Internal exact audio-head replay; never a public trim source override. */
           type: 'restoreAudioClipStartTrim';
@@ -294,6 +299,12 @@ export type ArrangementClipAppAction =
                * restoration (`rowLiftBeats: 0`).
                */
               rowLiftBeats?: number;
+              /**
+               * The stored `midiOffsetBeats` (0 when absent) a recorded inverse or redo
+               * requires before it writes, so a divergent slip is a conflict. Only recorded
+               * replays set it.
+               */
+              expectedOffset?: number;
               /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
               midiRowCoordinates?: MidiRowCoordinateCapture;
           };
@@ -509,7 +520,7 @@ export type ArrangementClipAppAction =
               replacement: ClipGlueActionSnapshot;
           };
       }
-    | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
+    | { type: 'nudgeClip'; payload: { clipId: string; beats: number; expectedStartBeat?: number } }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats?: number } }
     | {
           type: 'restoreCrossfadeClips';

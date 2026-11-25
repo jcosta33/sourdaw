@@ -15,9 +15,11 @@ import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAud
 import { prepareLegacyAudioClipStartTrim } from '../../useCases/clipEditing/prepareLegacyAudioClipStartTrim';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { trimmedStartBeat } from '../projectClipFieldActions';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
+import { readPlannedClip } from './readPlannedClip';
 
 const rowReplay = createMidiRowCoordinateReplay('trimClipStart');
 
@@ -157,6 +159,7 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
         newStartBeat: number;
         loopOriginBeat: number | null;
         midiOffsetBeats?: number;
+        expectedStartBeat?: number;
     } = {
         clipId: clip.id,
         // The inverse records the pre-action anchor exactly (#5198): a
@@ -178,24 +181,34 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
         // through the wrap law.
         inversePayload.midiOffsetBeats = clip.midiOffsetBeats ?? 0;
     }
+    // The writer moves the head only to a start before the clip's end, clamped at beat 0.
+    inversePayload.expectedStartBeat = trimmedStartBeat(clip, alpha.payload.newStartBeat);
     const inverseAction = { type: 'trimClipStart' as const, payload: inversePayload };
+    const redoAction = {
+        type: 'trimClipStart' as const,
+        payload: { ...structuredClone(alpha.payload), expectedStartBeat: clip.startBeat },
+    };
     if (clip.type === 'midi') {
-        return {
-            label,
-            ...rowReplay.describe(alpha, inverseAction, {
-                type: 'trimClipStart',
-                payload: structuredClone(alpha.payload),
-            }),
-        };
+        return { label, ...rowReplay.describe(alpha, inverseAction, redoAction) };
     }
-    return { label, inverseAction };
+    return { label, inverseAction, redoAction };
 }
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     canReportConflict: true,
+    canReapplyAfterDivergence: (alpha) => alpha.payload.expectedStartBeat !== undefined,
+    validate: (alpha, context) =>
+        alpha.payload.expectedStartBeat === undefined ||
+        readPlannedClip(alpha.payload.clipId, context)?.startBeat === alpha.payload.expectedStartBeat,
     validateSessionEntry: (entry) =>
         audioClipStartTrimState.isSessionEntry(entry) && rowReplay.validateSessionEntry(entry),
     execute: (alpha) => {
+        if (
+            alpha.payload.expectedStartBeat !== undefined &&
+            readPlannedClip(alpha.payload.clipId)?.startBeat !== alpha.payload.expectedStartBeat
+        ) {
+            return { status: 'conflict' };
+        }
         if (!rowReplay.canExecute(alpha)) {
             return { status: 'conflict' };
         }

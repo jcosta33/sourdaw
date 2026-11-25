@@ -56,7 +56,7 @@ describe('handleNudgeClip', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'nudgeClip',
-            payload: { clipId: 'c1', beats: -1.5 },
+            payload: { clipId: 'c1', beats: -1.5, expectedStartBeat: 3.5 },
         });
     });
 
@@ -74,7 +74,7 @@ describe('handleNudgeClip', () => {
         // +0.5, not +1, or undo/redo drift the clip's notes off its rectangle.
         expect(desc.inverseAction).toEqual({
             type: 'nudgeClip',
-            payload: { clipId: 'c1', beats: 0.5 },
+            payload: { clipId: 'c1', beats: 0.5, expectedStartBeat: 0 },
         });
     });
 
