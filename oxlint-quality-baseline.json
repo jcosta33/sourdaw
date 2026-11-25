@@ -1792,11 +1792,6 @@
             "count": 2
         }
     },
-    "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Device.spec.ts": {
         "sourdaw-craft/no-long-array-chain": {
             "count": 1

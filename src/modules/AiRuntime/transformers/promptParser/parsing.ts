@@ -108,6 +108,9 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
         selectedClipId: context.selectedClipId ?? undefined,
         selectedClipType: selectedClip?.type,
         trackCount: context.tracks.length,
+        selectedTrackSoloSafe: selectedTrack?.soloSafe,
+        loopEnabled: context.isLooping,
+        metronomeEnabled: context.metronomeEnabled,
     };
 }
 
