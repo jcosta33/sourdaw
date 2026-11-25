@@ -28,6 +28,7 @@ on:
       - scripts/flipElectronFuses.ts
       - scripts/installHarnessPlugin.ts
       - scripts/packagedAppSession.ts
+      - scripts/setupPnpm.ts
       - scripts/smokeDesktopPackage.ts
       - scripts/verifyPackagedNativeArtifacts.ts
       - vite.config.ts

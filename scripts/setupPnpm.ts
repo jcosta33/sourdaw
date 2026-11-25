@@ -15,7 +15,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const registry = 'https://registry.npmjs.org/';
@@ -176,6 +176,18 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string, config: strin
     };
 }
 
+function windowsDownloaderEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const entries = Object.entries(env);
+    const systemRoot = entries.find(([name]) => name.toUpperCase() === 'SYSTEMROOT')?.[1];
+    if (systemRoot === undefined || !win32.isAbsolute(systemRoot)) {
+        throw new Error('pnpm setup requires an absolute Windows SystemRoot');
+    }
+    // The downloader invokes bare tar. Git Bash's GNU tar interprets the drive
+    // colon as a remote archive, while Windows' own bsdtar accepts the path.
+    const withoutPath = Object.fromEntries(entries.filter(([name]) => name.toUpperCase() !== 'PATH'));
+    return { ...withoutPath, PATH: win32.join(systemRoot, 'System32') };
+}
+
 function isNativeEntrypoint(requested: string, platform: NodeJS.Platform, size: number): boolean {
     // Inspect the actual executable, never an npm shim, shell script, or the
     // Node wrapper. Its signed platform tarball was checked by get-pnpm.
@@ -258,9 +270,11 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     const config = mkdtempSync(`${dest}-config-`);
     try {
         const env = isolatedEnvironment(options.env, dest, config);
+        const platform = options.platform ?? process.platform;
+        const downloadEnv = platform === 'win32' ? windowsDownloaderEnvironment(env) : env;
         const run = options.run ?? nativeCommand;
-        const command = (file: string, args: string[], label: string): string => {
-            const result = run(file, args, { cwd: bootstrap, env });
+        const command = (file: string, args: string[], label: string, commandEnv = env): string => {
+            const result = run(file, args, { cwd: bootstrap, env: commandEnv });
             if (result.status !== 0) {
                 throw new Error(`pnpm setup ${label} failed (status ${result.status ?? 'unavailable'})`);
             }
@@ -268,7 +282,7 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
         };
         const nodeDirectory = dirname(options.node);
         let npmEntrypoint: string;
-        if ((options.platform ?? process.platform) === 'win32') {
+        if (platform === 'win32') {
             npmEntrypoint = join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js');
         } else {
             npmEntrypoint = resolve(nodeDirectory, '../lib/node_modules/npm/bin/npm-cli.js');
@@ -278,7 +292,6 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
             [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'],
             'bootstrap installation'
         );
-        const platform = options.platform ?? process.platform;
         const targetPath = join(bin, platform === 'win32' ? 'pnpm.exe' : 'pnpm');
         command(
             options.node,
@@ -292,7 +305,8 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
                 bin,
                 targetPath,
             ],
-            'verified target installation'
+            'verified target installation',
+            downloadEnv
         );
         const target = installedEntrypoint(bin, platform);
         const actual = command(target, ['--version'], 'target version check');
