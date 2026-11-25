@@ -95,7 +95,7 @@ export function auditionFailure(observations: AuditionObservations) {
         return 'held-control-decayed';
     }
     for (const t of observations.trials.slice(1)) {
-        if (t.late.preview > Math.max(floor, t.positive.preview * heldRatio * 0.35)) {
+        if (t.late.preview > t.positive.preview * heldRatio * 0.35) {
             return 'preview-did-not-release';
         }
     }

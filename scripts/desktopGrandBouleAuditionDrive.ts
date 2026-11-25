@@ -18,6 +18,35 @@ const DEVICE = 'BlackHole 2ch';
 function audio(args: string[]): string {
     return execFileSync('SwitchAudioSource', args, { encoding: 'utf8', timeout: 5000 }).trim();
 }
+export type InputSelection = { prior: string | null; changed: boolean };
+type AudioCommand = (args: string[]) => string;
+
+export function admitBlackHoleInput(selection: InputSelection, run: AudioCommand = audio): void {
+    selection.prior = run(['-c', '-t', 'input']);
+    if (selection.prior !== DEVICE) {
+        run(['-t', 'input', '-s', DEVICE]);
+        selection.changed = true;
+    }
+    assert.equal(run(['-c', '-t', 'input']), DEVICE);
+}
+
+export function restoreBlackHoleInput(selection: InputSelection, run: AudioCommand = audio): void {
+    if (!selection.changed || selection.prior === null) {
+        return;
+    }
+    if (run(['-c', '-t', 'input']) !== DEVICE) {
+        return;
+    }
+    run(['-t', 'input', '-s', selection.prior]);
+    selection.changed = false;
+}
+
+export function cardDeviceId(testId: string | null): string {
+    const deviceId = (testId ?? '').match(/^device-card-([a-zA-Z0-9_-]{1,80})$/u)?.[1];
+    assert(deviceId, 'missing generated Grand Boule device identity');
+    return deviceId;
+}
+
 async function until(read: () => Promise<boolean>): Promise<void> {
     const deadline = Date.now() + STEP_TIMEOUT_MS;
     while (!(await read())) {
@@ -41,9 +70,7 @@ async function fixture(page: Page, observations: AuditionObservations): Promise<
         .locator('[data-track-id][aria-selected="true"]');
     observations.trackId = await selected.getAttribute('data-track-id');
     const card = devicesNamed(page.getByRole('complementary', { name: 'Inspector panel', exact: true }), 'Grand Boule');
-    const id = await card.getAttribute('data-testid');
-    assert(id?.startsWith('device-card-'));
-    observations.deviceId = id.slice('device-card-'.length);
+    observations.deviceId = cardDeviceId(await card.getAttribute('data-testid'));
     await editor.getByRole('button', { name: 'Close Grand Boule', exact: true }).press('Enter');
     await editor.waitFor({ state: 'detached' });
     const timeline = page.getByLabel('Timeline editor surface', { exact: true });
@@ -105,7 +132,14 @@ async function fixture(page: Page, observations: AuditionObservations): Promise<
     }
     await text(count, '1 note');
     // Sustained A3 admission below independently checks the edited duration in actual output.
-    await card.getByText('Grand Boule', { exact: true }).click();
+    await page
+        .getByRole('complementary', { name: 'Inspector panel', exact: true })
+        .getByRole('button', { name: 'Back to track', exact: true })
+        .click();
+    await card
+        .and(page.getByTestId(`device-card-${observations.deviceId}`))
+        .getByText('Grand Boule', { exact: true })
+        .click();
     await editor.waitFor({ state: 'visible' });
     await editor.getByRole('button', { name: 'Piano keyboard', exact: true }).click();
     await editor.getByLabel('Grand Boule interactive piano', { exact: true }).waitFor({ state: 'visible' });
@@ -236,24 +270,18 @@ export async function driveDesktopGrandBouleAudition(
     binary: string,
     observations: AuditionObservations
 ): Promise<void> {
-    let prior: string | null = null;
+    const selection: InputSelection = { prior: null, changed: false };
     try {
         assert.equal(audio(['-c', '-t', 'output']), DEVICE);
         observations.output = DEVICE;
         assert(audio(['-a', '-t', 'input']).split('\n').includes(DEVICE));
-        prior = audio(['-c', '-t', 'input']);
-        if (prior !== DEVICE) {
-            audio(['-t', 'input', '-s', DEVICE]);
-        }
-        assert.equal(audio(['-c', '-t', 'input']), DEVICE);
+        admitBlackHoleInput(selection);
         observations.input = DEVICE;
     } catch {
         observations.unavailable = 'exact-blackhole-device-unavailable';
     }
     if (observations.unavailable) {
-        if (prior && prior !== DEVICE) {
-            audio(['-t', 'input', '-s', prior]);
-        }
+        restoreBlackHoleInput(selection);
         return;
     }
     let app: Awaited<ReturnType<typeof launchEditorSession>> | undefined;
@@ -273,6 +301,7 @@ export async function driveDesktopGrandBouleAudition(
             8 * STEP_TIMEOUT_MS
         );
         try {
+            assert.equal(audio(['-c', '-t', 'input']), DEVICE);
             capture = await step('admit BlackHole media capture', () => captureBlackHole(page), STEP_TIMEOUT_MS);
         } catch (error) {
             observations.unavailable =
@@ -304,9 +333,7 @@ export async function driveDesktopGrandBouleAudition(
                     observations.appQuit = true;
                 }
             } finally {
-                if (prior && prior !== DEVICE) {
-                    audio(['-t', 'input', '-s', prior]);
-                }
+                restoreBlackHoleInput(selection);
             }
         }
     }

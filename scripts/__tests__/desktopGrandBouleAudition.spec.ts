@@ -11,6 +11,12 @@ import {
     type AuditionObservations,
     type SignalWindow,
 } from '../desktopGrandBouleAuditionEvidence.ts';
+import {
+    admitBlackHoleInput,
+    restoreBlackHoleInput,
+    cardDeviceId,
+    type InputSelection,
+} from '../desktopGrandBouleAuditionDrive.ts';
 import { RECEIVE_WORKLET } from '../desktopGrandBouleCapture.ts';
 
 function signal(firstFrame = 0, frames = 32768, preview = 0.01, sentinel = 0.02): SignalWindow {
@@ -101,6 +107,19 @@ describe('Grand Boule packaged output evidence', () => {
         o.trials[1]!.scheduled = signal(128, 32768, 0);
         expect(auditionFailure(o)).toBe('clock-or-playback-invalid');
     });
+    it.each([0.0001, 0.00011])(
+        'rejects unchanged release at or near the measured floor with positive C4 %s',
+        (amplitude) => {
+            const observations = complete();
+            observations.quiet!.rms = 0.00001;
+            for (const trial of observations.trials) {
+                trial.scheduled.preview = 0;
+                trial.positive.preview = amplitude;
+                trial.late.preview = trial.kind === 'held' ? amplitude : Math.min(amplitude, 0.0001);
+            }
+            expect(auditionFailure(observations)).toBe('preview-did-not-release');
+        }
+    );
     it('retains unavailable capture as no proof', () => {
         const o = complete();
         o.unavailable = 'permission-or-capture-unavailable';
@@ -184,5 +203,87 @@ describe('actual bounded receive worklet', () => {
         w.processor.port.onmessage({ data: { start: 128, count: 32768 } });
         w.tick();
         expect(w.messages).toEqual([{ error: 'capture-window-stale' }]);
+    });
+});
+
+describe('owned BlackHole default input selection', () => {
+    function commands(initial: string, failSet = false) {
+        let current = initial;
+        const calls: string[][] = [];
+        return {
+            calls,
+            setExternal: (value: string) => {
+                current = value;
+            },
+            read: () => current,
+            run: (args: string[]): string => {
+                calls.push(args);
+                if (args.join(' ') === '-c -t input') {
+                    return current;
+                }
+                if (args.length === 4 && args.slice(0, 3).join(' ') === '-t input -s') {
+                    if (failSet) {
+                        throw new Error('selection failed');
+                    }
+                    current = args[3]!;
+                    return '';
+                }
+                throw new Error('unexpected audio command');
+            },
+        };
+    }
+    it('restores A only after this run selected BlackHole and it remains current', () => {
+        const source = commands('A');
+        const selection: InputSelection = { prior: null, changed: false };
+        admitBlackHoleInput(selection, source.run);
+        restoreBlackHoleInput(selection, source.run);
+        expect(source.read()).toBe('A');
+        expect(source.calls).toEqual([
+            ['-c', '-t', 'input'],
+            ['-t', 'input', '-s', 'BlackHole 2ch'],
+            ['-c', '-t', 'input'],
+            ['-c', '-t', 'input'],
+            ['-t', 'input', '-s', 'A'],
+        ]);
+    });
+    it('preserves external C after A to BlackHole to C', () => {
+        const source = commands('A');
+        const selection: InputSelection = { prior: null, changed: false };
+        admitBlackHoleInput(selection, source.run);
+        source.setExternal('C');
+        restoreBlackHoleInput(selection, source.run);
+        expect(source.read()).toBe('C');
+        expect(source.calls).toEqual([
+            ['-c', '-t', 'input'],
+            ['-t', 'input', '-s', 'BlackHole 2ch'],
+            ['-c', '-t', 'input'],
+            ['-c', '-t', 'input'],
+        ]);
+    });
+    it('does not restore a selection that failed or was already BlackHole', () => {
+        const failed = commands('A', true);
+        const selection: InputSelection = { prior: null, changed: false };
+        expect(() => admitBlackHoleInput(selection, failed.run)).toThrow('selection failed');
+        restoreBlackHoleInput(selection, failed.run);
+        expect(failed.calls).toEqual([
+            ['-c', '-t', 'input'],
+            ['-t', 'input', '-s', 'BlackHole 2ch'],
+        ]);
+        const unchanged = commands('BlackHole 2ch');
+        admitBlackHoleInput(selection, unchanged.run);
+        restoreBlackHoleInput(selection, unchanged.run);
+        expect(unchanged.calls).toEqual([
+            ['-c', '-t', 'input'],
+            ['-c', '-t', 'input'],
+        ]);
+    });
+    it.each([null, 'device-card-', 'device-card-a/b', 'unrelated'])(
+        'rejects absent or invalid inspector identity %s',
+        (id) => {
+            expect(() => cardDeviceId(id)).toThrow('missing generated Grand Boule device identity');
+        }
+    );
+    it('narrows the exact generated inspector identity', () => {
+        expect(cardDeviceId('device-card-owned-123')).toBe('owned-123');
     });
 });
