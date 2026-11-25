@@ -965,6 +965,7 @@ function createGrinderConflictFixture(): DivergedFixture {
                     trackId: capture.trackId,
                     deviceId: capture.deviceId,
                     deviceIds: capture.deviceIds,
+                    ownerIncarnation: capture.ownerIncarnation,
                     presetId: 'gr-rectifier-heavy',
                     before: capture.before.parameterValues,
                     after: capture.after.parameterValues,

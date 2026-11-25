@@ -6,7 +6,12 @@ import { buildRectifierHeavyPlayback } from '../buildRectifierHeavyPlayback';
 import { encodeGrinderPatchCommands } from '../encodeGrinderPatchCommands';
 import { getRectifierHeavyPresetImage } from '../getRectifierHeavyPresetImage';
 
-const target = { trackId: 'track', deviceId: 'grinder', deviceIds: ['grinder', 'sentinel'] };
+const target = {
+    trackId: 'track',
+    deviceId: 'grinder',
+    deviceIds: ['grinder', 'sentinel'],
+    ownerIncarnation: { trackObjectId: 'track-object', deviceObjectId: 'device-object' },
+};
 
 function rectifierAction(
     before: Record<string, number>,

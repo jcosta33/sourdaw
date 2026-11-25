@@ -1,36 +1,127 @@
+import { change, clone, getHeads, getObjectId, load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
+import {
+    defaultTrackState,
+    sanitizeTrackSnapshot,
+    trackStore,
+    type TrackStoreState,
+} from '#/modules/Arrangement/stores';
+import { compileReorderDevicesAction } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
+    reconcileSessionUndoForProject,
     redo,
     registerProductionCommandHandlers,
+    stampSessionUndoWitness,
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureDurableDocumentWitness,
     createCrdtDoc,
     getCrdtDoc,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
     subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { type GrinderFactoryPresetAction } from '../../events/grinderAppActions';
 import { grinderFactoryPresetRuntimePort } from '../../useCases/grinderFactoryPresetRuntimePort';
 import { captureRectifierHeavyPreset } from '../../useCases/grinderParamBridge/captureRectifierHeavyPreset';
 import { selectRectifierHeavyPreset } from '../../useCases/selectRectifierHeavyPreset';
 import { invertGrinderFactoryPresetAction, isGrinderFactoryPresetSessionEntry } from '../grinderFactoryPresetCapture';
+
+type Root = { tracks: TrackStoreState };
+type NotificationEvents = { 'ui.notify': NotifyPayload; 'ui.confirm': ConfirmPayload; 'ui.prompt': PromptPayload };
+const projectId = 'grinder-factory-preset';
+const sessionKey = 'sourdaw-undo-session';
+
+function rawRoot() {
+    const root = getCrdtDoc<Root>('root');
+    if (!root) {
+        throw new Error('Expected the Grinder project root');
+    }
+    return root;
+}
+
+function rawDevice() {
+    const device = rawRoot().tracks.tracks[0]?.devices.find(({ id }) => id === 'amp');
+    if (!device) {
+        throw new Error('Expected the raw Grinder device');
+    }
+    return device;
+}
+
+function installEqualPeerReplacement(): void {
+    const device = rawDevice();
+    const replacement = structuredClone(device);
+    const peer = change(clone(rawRoot()), (doc) => {
+        doc.tracks.tracks[0]!.devices.splice(0, 1, replacement);
+    });
+    replaceCrdtDocInLineage({ id: 'root', doc: peer });
+    trackStore.hydrate();
+    expect(rawDevice()).toEqual(replacement);
+    expect(getObjectId(rawDevice())).not.toBe(getObjectId(device));
+}
+
+function addTwoNeighbors(): void {
+    mutateCrdtDoc<Root>({
+        id: 'root',
+        changeFn: (doc) => {
+            doc.tracks.tracks[0]!.devices.push(
+                { id: 'first', type: 'eq', name: 'First', bypassed: false, parameterValues: {} },
+                { id: 'second', type: 'eq', name: 'Second', bypassed: false, parameterValues: {} }
+            );
+        },
+    });
+    trackStore.hydrate();
+}
+
+function registerHistory(): void {
+    clearHandlerRegistry();
+    registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+    reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+}
+
+async function reopenFromBinaryAndSession(): Promise<void> {
+    flushAutomergeStorageWrites();
+    stampSessionUndoWitness();
+    const bytes = save(rawRoot());
+    const mirror = sessionStorage.getItem(sessionKey);
+    if (mirror === null) {
+        throw new Error('Expected serialized Grinder history');
+    }
+    const transition = runProjectLoadTransaction();
+    expect(await transition.prepare()).toBe(true);
+    expect(transition.activate()).toBe(true);
+    clearUndoHistory();
+    expect(undoHistoryStore.value?.past).toHaveLength(0);
+    expect(undoHistoryStore.value?.future).toHaveLength(0);
+    replaceCrdtDoc({ id: 'root', doc: load<Root>(bytes) });
+    trackStore.hydrate();
+    sessionStorage.setItem(sessionKey, mirror);
+    registerHistory();
+}
 
 function makeAction(): GrinderFactoryPresetAction {
     const captured = captureRectifierHeavyPreset('amp');
@@ -43,6 +134,7 @@ function makeAction(): GrinderFactoryPresetAction {
             trackId: captured.trackId,
             deviceId: captured.deviceId,
             deviceIds: captured.deviceIds,
+            ownerIncarnation: captured.ownerIncarnation,
             presetId: 'gr-rectifier-heavy',
             before: captured.before.parameterValues,
             after: captured.after.parameterValues,
@@ -55,6 +147,7 @@ describe('Grinder Rectifier project command', () => {
     beforeEach(async () => {
         configureAutomergeStoragePort(null);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => {} });
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         const transition = runProjectLoadTransaction();
         expect(await transition.prepare()).toBe(true);
         expect(transition.activate()).toBe(true);
@@ -63,9 +156,9 @@ describe('Grinder Rectifier project command', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         registerProjectSlotProjections();
-        clearHandlerRegistry();
         clearUndoHistory();
-        registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+        sessionStorage.removeItem(sessionKey);
+        registerHistory();
         trackStore.set({
             ...defaultTrackState,
             tracks: sanitizeTrackSnapshot({
@@ -73,7 +166,8 @@ describe('Grinder Rectifier project command', () => {
                     {
                         id: 'track',
                         name: 'Guitar',
-                        kind: 'audio',
+                        // A dormant folder exercises project history without physical Web Audio nodes.
+                        kind: 'folder',
                         devices: [
                             {
                                 id: 'amp',
@@ -100,6 +194,7 @@ describe('Grinder Rectifier project command', () => {
         flushAutomergeStorageWrites();
         removeCrdtDoc('root');
         configureAutomergeStoragePort(null);
+        sessionStorage.removeItem(sessionKey);
     });
 
     it('writes one history entry and restores legacy presence exactly through undo and redo', async () => {
@@ -162,6 +257,140 @@ describe('Grinder Rectifier project command', () => {
         expect(undoHistoryStore.value?.past).toHaveLength(0);
         expect(sync).not.toHaveBeenCalled();
     });
+
+    it('refuses an equal peer replacement between capture and dispatch', async () => {
+        const action = makeAction();
+        installEqualPeerReplacement();
+        const heads = getHeads(rawRoot());
+
+        await expect(executeAppAction(action)).rejects.toThrow();
+
+        expect(getHeads(rawRoot())).toEqual(heads);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(sync).not.toHaveBeenCalled();
+    });
+
+    it.each(['undo', 'redo'] as const)('refuses %s against an equal peer replacement', async (direction) => {
+        await executeAppAction(makeAction());
+        if (direction === 'redo') {
+            await undo();
+        }
+        installEqualPeerReplacement();
+        const heads = getHeads(rawRoot());
+        const history = structuredClone(undoHistoryStore.value);
+        sync.mockClear();
+
+        if (direction === 'undo') {
+            expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: false });
+        } else {
+            await redo({ stepOverConflicts: false });
+        }
+
+        expect(getHeads(rawRoot())).toEqual(heads);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(sync).not.toHaveBeenCalled();
+    });
+
+    it('keeps preset undo and redo across repeated removal Undo and a cold binary reopen', async () => {
+        const originalId = getObjectId(rawDevice());
+        const originalParameters = structuredClone(rawDevice().parameterValues);
+        await executeAppAction(makeAction());
+        const presetParameters = structuredClone(rawDevice().parameterValues);
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: 'amp' } });
+        expect(rawRoot().tracks.tracks[0]?.devices).toEqual([]);
+        await reopenFromBinaryAndSession();
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        const restoredId = getObjectId(rawDevice());
+        expect(restoredId).not.toBe(originalId);
+        expect(rawDevice().parameterValues).toEqual(presetParameters);
+        await reopenFromBinaryAndSession();
+        expect(getObjectId(rawDevice())).toBe(restoredId);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rawDevice().parameterValues).toEqual(originalParameters);
+        await reopenFromBinaryAndSession();
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+
+        await redo();
+        expect(rawDevice().parameterValues).toEqual(presetParameters);
+        await redo();
+        expect(rawRoot().tracks.tracks[0]?.devices).toEqual([]);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(getObjectId(rawDevice())).not.toBe(restoredId);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rawDevice().parameterValues).toEqual(originalParameters);
+    });
+
+    it('refuses an equal peer replacement after undoing a local removal', async () => {
+        await executeAppAction(makeAction());
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: 'amp' } });
+        expect(await undo()).toEqual({ headConsumed: true });
+        installEqualPeerReplacement();
+        const heads = getHeads(rawRoot());
+        const history = structuredClone(undoHistoryStore.value);
+        sync.mockClear();
+
+        await redo({ stepOverConflicts: false });
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: false });
+
+        expect(getHeads(rawRoot())).toEqual(heads);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(sync).not.toHaveBeenCalled();
+    });
+
+    it('does not rebind earlier preset history when Undo restores a different owner', async () => {
+        await executeAppAction(makeAction());
+        installEqualPeerReplacement();
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: 'amp' } });
+        expect(await undo()).toEqual({ headConsumed: true });
+        const heads = getHeads(rawRoot());
+        const history = structuredClone(undoHistoryStore.value);
+        sync.mockClear();
+
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: false });
+
+        expect(getHeads(rawRoot())).toEqual(heads);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(sync).not.toHaveBeenCalled();
+    });
+
+    it.each(['same owner', 'peer replacement'] as const)(
+        'preserves preset history through reorder Undo only for the %s',
+        async (owner) => {
+            addTwoNeighbors();
+            const parametersBefore = structuredClone(rawDevice().parameterValues);
+            await executeAppAction(makeAction());
+            if (owner === 'peer replacement') {
+                installEqualPeerReplacement();
+            }
+            const beforeReorder = getObjectId(rawDevice());
+            const action = compileReorderDevicesAction('track', 'amp', 'second');
+            if (!action) {
+                throw new Error('Expected the production device reorder');
+            }
+
+            await executeAppAction(action);
+            const afterReorder = getObjectId(rawDevice());
+            expect(afterReorder).not.toBe(beforeReorder);
+            expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['first', 'second', 'amp']);
+            expect(await undo()).toEqual({ headConsumed: true });
+            expect(getObjectId(rawDevice())).not.toBe(afterReorder);
+            expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['amp', 'first', 'second']);
+            const heads = getHeads(rawRoot());
+            sync.mockClear();
+
+            if (owner === 'same owner') {
+                expect(await undo()).toEqual({ headConsumed: true });
+                expect(rawDevice().parameterValues).toEqual(parametersBefore);
+                expect(sync).toHaveBeenCalledOnce();
+            } else {
+                expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: false });
+                expect(getHeads(rawRoot())).toEqual(heads);
+                expect(sync).not.toHaveBeenCalled();
+            }
+        }
+    );
 
     it('does not deliver runtime effects to a same-id replacement after commit', async () => {
         const action = makeAction();

@@ -1,3 +1,4 @@
+import { rebindDeviceHistory } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -5,6 +6,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { type Track } from '../../models/Track';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
+import { captureDeviceHistoryCommitValidation } from '../../useCases/device/captureDeviceHistoryCommitValidation';
 import { reorderDevicesInProject } from '../../useCases/device/reorderDevices';
 import {
     getRuntimeDeviceDeltaPostCommitFailure,
@@ -110,6 +112,15 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
 
         const before = structuredClone(resolution.track);
         const after = moveDevice(before, resolution.sourceIndex, action.payload.targetIndex);
+        const commitValidation =
+            context?.actions.length === 1 && context.executionMode !== 'isolated-preview'
+                ? (captureDeviceHistoryCommitValidation({
+                      kind: 'reorder',
+                      before,
+                      after,
+                      rebind: rebindDeviceHistory,
+                  }) ?? undefined)
+                : undefined;
         // The initial dispatch's revision is intentionally consumed once. Its
         // inverse and redo retain exact topology proofs and may run at a later
         // project revision through the same guarded handler.
@@ -117,7 +128,7 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
         reorderDevicesInProject(before.id, after.devices);
 
         if (!shouldCreateLiveTrackStrip(before)) {
-            return { status: 'written' as const };
+            return { status: 'written' as const, commitValidation };
         }
 
         let postCommitFailure: RuntimeDeviceDeltaPostCommitError | undefined;
@@ -146,6 +157,7 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
 
         return {
             status: 'written' as const,
+            commitValidation,
             afterCommit: applyRuntimeEffect,
             afterAmbiguousCommit: applyRuntimeEffect,
         };

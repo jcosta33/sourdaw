@@ -149,6 +149,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('discardCreatedTrack'),
         createInternalReplayContract('discardDuplicatedClip'),
         createInternalReplayContract('discardDrawnClip'),
+        createInternalReplayContract('restoreDevice'),
         createInternalReplayContract('restoreClipMoves'),
         createInternalReplayContract('restoreClip'),
         createInternalReplayContract('restoreClipPlacement'),

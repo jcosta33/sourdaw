@@ -14,6 +14,7 @@ export const internalReplayOwnerValidationByActionType = {
     discardCreatedTrack: 'optional',
     discardDuplicatedClip: 'optional',
     discardDrawnClip: 'optional',
+    restoreDevice: 'optional',
     restoreClipMoves: 'optional',
     restoreClip: 'owner-only',
     restoreClipPlacement: 'required',

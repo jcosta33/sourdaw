@@ -11,70 +11,12 @@ import { projectCapturedDevicePatch } from '../../models/CapturedDevicePatchProj
 import { type DevicePatchState } from '../../models/DevicePatchState';
 import { trackStore } from '../../stores/trackStore';
 
-type Input = {
-    trackId: string;
-    deviceId: string;
-    parameterIds: readonly string[];
+import { readDevicePatchSnapshot } from './readDevicePatchSnapshot';
+
+type Input = Parameters<typeof readDevicePatchSnapshot>[1] & {
     requireCurrentProjection?: boolean;
 };
-type Located = { trackId: string; device: Record<string, unknown> };
-type Snapshot = {
-    value: { track: unknown; owners: unknown[] };
-    track: Record<string, unknown> | null;
-    owners: Located[];
-};
-
-function entry(record: Record<string, unknown>, key: string) {
-    return Object.hasOwn(record, key) ? { present: true, value: record[key] } : { present: false };
-}
-
-function read(document: Readonly<Record<string, unknown>>, input: Input): Snapshot | null {
-    if (!isRecord(document.tracks) || !Array.isArray(document.tracks.tracks)) {
-        return null;
-    }
-    const owners: Located[] = [];
-    const values: unknown[] = [];
-    let selectedTrack: Record<string, unknown> | null = null;
-    let trackValue: unknown = { present: false };
-    for (const track of document.tracks.tracks) {
-        if (!isRecord(track) || typeof track.id !== 'string') {
-            return null;
-        }
-        const devices = Object.hasOwn(track, 'devices') ? track.devices : [];
-        if (!Array.isArray(devices)) {
-            return null;
-        }
-        const deviceIds = devices.map((device: unknown) => (isRecord(device) ? device.id : undefined));
-        if (deviceIds.some((id) => typeof id !== 'string')) {
-            return null;
-        }
-        if (track.id === input.trackId) {
-            if (selectedTrack) {
-                return null;
-            }
-            selectedTrack = track;
-            trackValue = { present: true, deviceIds, frozen: entry(track, 'frozen') };
-        }
-        for (const device of devices) {
-            if (!isRecord(device) || device.id !== input.deviceId) {
-                continue;
-            }
-            if (!isRecord(device.parameterValues)) {
-                return null;
-            }
-            const parameters: Record<string, unknown> = {};
-            for (const key of input.parameterIds) {
-                parameters[key] = entry(device.parameterValues, key);
-            }
-            owners.push({ trackId: track.id, device });
-            values.push({ trackId: track.id, type: device.type, state: entry(device, 'deviceState'), parameters });
-        }
-    }
-    if (owners.length > 1) {
-        return null;
-    }
-    return { value: { track: trackValue, owners: values }, track: selectedTrack, owners };
-}
+type Snapshot = NonNullable<ReturnType<typeof readDevicePatchSnapshot>>;
 
 function matchesOwnerFootprint(current: Snapshot | null, before: Snapshot): boolean {
     return (
@@ -108,7 +50,7 @@ function startWrittenIntentObservation(
     }
     const projected = (): Snapshot | null => {
         const published = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-        return published ? read({ ...published, tracks: trackStore.value }, input) : null;
+        return published ? readDevicePatchSnapshot({ ...published, tracks: trackStore.value }, input) : null;
     };
     let observed = projected();
     let expected: string | null = null;
@@ -151,7 +93,7 @@ function startWrittenIntentObservation(
         beforeCommit: sourceFailure,
         beforeMutation: (document) => (matchesSource(document) ? null : 'Device patch source changed before mutation'),
         validateDocument: (document) => {
-            const next = read(document, input);
+            const next = readDevicePatchSnapshot(document, input);
             if (expected === null || !next || !matchesJsonFingerprint(next.value, expected)) {
                 return 'Device patch did not reach its owned written intent';
             }
@@ -194,7 +136,7 @@ function startWrittenIntentObservation(
 /** Capture published admission before any batch member yields; observe written intent only during execution. */
 export function captureDevicePatchCommitValidation(input: Input) {
     const root = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-    const before = root ? read(root, input) : null;
+    const before = root ? readDevicePatchSnapshot(root, input) : null;
     if (!root || !before) {
         return null;
     }
@@ -202,7 +144,7 @@ export function captureDevicePatchCommitValidation(input: Input) {
     if (input.requireCurrentProjection) {
         // An exact capture planned from a stale projection must not overwrite a
         // newer published owner, even if publication stands still during the write.
-        const projected = read({ ...root, tracks: trackStore.value }, input);
+        const projected = readDevicePatchSnapshot({ ...root, tracks: trackStore.value }, input);
         if (!projected || !matchesJsonFingerprint(projected.value, fingerprint)) {
             return null;
         }
@@ -225,7 +167,7 @@ export function captureDevicePatchCommitValidation(input: Input) {
         );
     }
     const matchesSource = (document: Readonly<Record<string, unknown>>): boolean => {
-        const current = read(document, input);
+        const current = readDevicePatchSnapshot(document, input);
         return current !== null && matchesOwner(current) && matchesJsonFingerprint(current.value, fingerprint);
     };
     return {
@@ -235,7 +177,7 @@ export function captureDevicePatchCommitValidation(input: Input) {
         },
         matchesCommittedParameters: (parameters: Readonly<DevicePatchState['parameterValues']>): boolean => {
             const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-            const snapshot = current ? read(current, input) : null;
+            const snapshot = current ? readDevicePatchSnapshot(current, input) : null;
             return (
                 typeof trackIdentity === 'string' &&
                 typeof deviceIdentity === 'string' &&

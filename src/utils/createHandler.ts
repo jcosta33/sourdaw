@@ -4,6 +4,7 @@ import {
     type HandlerDescribeResult,
     type HandlerExecutionResult,
     type HandlerMaterializationContext,
+    type HandlerDeviceOwnerChange,
     type HandlerSessionActionEntry,
     type HandlerValidationContext,
 } from './handlerContract';
@@ -48,6 +49,10 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
     /** See `ActionHandlerCommon.restoreSessionEntry`. */
     restoreSessionEntry?: (entry: HandlerSessionActionEntry) => void;
+    rebindDeviceOwner?: (
+        action: Extract<AppAction, { type: ActionType }>,
+        owner: HandlerDeviceOwnerChange
+    ) => Extract<AppAction, { type: ActionType }>;
     requiresAbortCompensation?: boolean;
     executionKind?: 'project' | 'runtime';
     batchExecution?: 'singleton';
@@ -103,6 +108,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         isNoop: config.isNoop,
         validateSessionEntry: config.validateSessionEntry,
         restoreSessionEntry: config.restoreSessionEntry,
+        rebindDeviceOwner: config.rebindDeviceOwner,
         requiresAbortCompensation: config.requiresAbortCompensation,
         executionKind: config.executionKind,
         batchExecution,

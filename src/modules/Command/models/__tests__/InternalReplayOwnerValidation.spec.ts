@@ -21,6 +21,7 @@ describe('internalReplayOwnerValidationByActionType', () => {
             'discardDuplicatedClip',
             'discardRecording',
             'restoreClipMoves',
+            'restoreDevice',
             'restoreDrawnClip',
             'restoreGrooveAssignment',
             'restoreTrackHeights',

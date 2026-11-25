@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureDevicePatchCommitValidation } from '#/modules/Arrangement/useCases';
+import { captureDevicePatchCommitValidation, getDevicePatchOwnerIncarnation } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
@@ -21,7 +21,7 @@ export async function selectRectifierHeavyPreset(deviceId: string): Promise<void
         parameterIds: captured.parameterIds,
         requireCurrentProjection: true,
     });
-    if (!authority) {
+    if (!authority || !valuesEqual(getDevicePatchOwnerIncarnation(captured), captured.ownerIncarnation)) {
         notifyUser('Could not load Rectifier Heavy on this Grinder device.', 'warning');
         return;
     }
@@ -31,6 +31,7 @@ export async function selectRectifierHeavyPreset(deviceId: string): Promise<void
             trackId: captured.trackId,
             deviceId,
             deviceIds: captured.deviceIds,
+            ownerIncarnation: captured.ownerIncarnation,
             presetId: 'gr-rectifier-heavy',
             before: captured.before.parameterValues,
             after: captured.after.parameterValues,

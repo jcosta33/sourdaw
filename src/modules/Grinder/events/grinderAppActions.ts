@@ -1,9 +1,12 @@
+import { type DeviceOwnerIncarnation } from '#/utils/handlerContract';
+
 export type GrinderFactoryPresetAction = {
     type: 'setGrinderFactoryPreset';
     payload: {
         trackId: string;
         deviceId: string;
         deviceIds: readonly string[];
+        ownerIncarnation: DeviceOwnerIncarnation;
         presetId: 'gr-rectifier-heavy';
         before: Readonly<Record<string, number | null>>;
         after: Readonly<Record<string, number | null>>;

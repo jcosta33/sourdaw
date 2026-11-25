@@ -2,10 +2,11 @@ import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import {
     applyDevicePatchState,
     captureDevicePatchCommitValidation,
+    getDevicePatchOwnerIncarnation,
     getPlannedDevicePatchState,
 } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type HandlerMaterializationContext } from '#/utils/handlerContract';
+import { type HandlerDeviceOwnerChange, type HandlerMaterializationContext } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type GrinderFactoryPresetAction } from '../events/grinderAppActions';
@@ -33,7 +34,11 @@ function readOwner(payload: Action['payload']) {
         deviceId: payload.deviceId,
         parameterIds: Object.keys(payload.before),
     });
-    return owner && owner.deviceType === 'grinder' && !owner.frozen && valuesEqual(owner.deviceIds, payload.deviceIds)
+    return owner &&
+        owner.deviceType === 'grinder' &&
+        !owner.frozen &&
+        valuesEqual(owner.deviceIds, payload.deviceIds) &&
+        valuesEqual(getDevicePatchOwnerIncarnation(payload), payload.ownerIncarnation)
         ? owner
         : null;
 }
@@ -60,6 +65,22 @@ function isAuthorizedReplay(action: Action): boolean {
     return action.payload.direction !== 'undo' || admittedInverses.has(action);
 }
 
+function rebindDeviceOwner(action: Action, owner: HandlerDeviceOwnerChange): Action {
+    const { payload } = action;
+    if (
+        payload.trackId !== owner.trackId ||
+        payload.deviceId !== owner.deviceId ||
+        !valuesEqual(payload.ownerIncarnation, owner.previous)
+    ) {
+        return action;
+    }
+    const rebound = { ...action, payload: { ...payload, ownerIncarnation: owner.current } };
+    if (replayInverses.has(action)) {
+        replayInverses.add(rebound);
+    }
+    return rebound;
+}
+
 export const handleSetGrinderFactoryPreset = createHandler<'setGrinderFactoryPreset'>({
     materializeCommandArguments: materialize,
     validate: ({ payload }) => validGrinderFactoryPresetCapture(payload) && matchesSource(payload),
@@ -76,7 +97,10 @@ export const handleSetGrinderFactoryPreset = createHandler<'setGrinderFactoryPre
                 parameterIds: Object.keys(action.payload.before),
                 requireCurrentProjection: true,
             });
-            if (admission) {
+            if (
+                admission &&
+                valuesEqual(getDevicePatchOwnerIncarnation(action.payload), action.payload.ownerIncarnation)
+            ) {
                 admissions.set(action, admission);
             }
         }
@@ -149,6 +173,7 @@ export const handleSetGrinderFactoryPreset = createHandler<'setGrinderFactoryPre
         }
     },
     isNoop: ({ payload }) =>
+        payload.direction === undefined &&
         validGrinderFactoryPresetCapture(payload) &&
         valuesEqual(payload.before, payload.after) &&
         matchesSource(payload),
@@ -159,6 +184,7 @@ export const handleSetGrinderFactoryPreset = createHandler<'setGrinderFactoryPre
             replayInverses.add(entry.inverseAction);
         }
     },
+    rebindDeviceOwner,
     batchExecution: 'singleton',
     previewExecution: 'unsupported-external',
     requiresAbortCompensation: false,

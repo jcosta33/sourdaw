@@ -1,6 +1,9 @@
+import { captureDeviceRemovalUndo } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
+import { captureDeviceHistoryCommitValidation } from '../../useCases/device/captureDeviceHistoryCommitValidation';
 import { restoreDevice } from '../../useCases/device/restoreDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
@@ -10,6 +13,10 @@ import {
 } from '../track/discardedPluginStateCarry';
 
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
+const pendingRestorations = new WeakMap<
+    RestoreDeviceAction,
+    NonNullable<ReturnType<typeof captureDeviceRemovalUndo>>
+>();
 
 function restoreDeviceGuardMatches(action: RestoreDeviceAction, context?: HandlerValidationContext): boolean {
     const currentTrack = context
@@ -35,11 +42,26 @@ function restoreDeviceGuardMatches(action: RestoreDeviceAction, context?: Handle
 }
 
 export const handleRestoreDevice = createHandler<'restoreDevice'>({
+    rebindDeviceOwner: (action, owner) => {
+        const { payload } = action;
+        return payload.trackId === owner.trackId &&
+            payload.deviceSnapshot.id === owner.deviceId &&
+            valuesEqual(payload.removedOwner, owner.previous)
+            ? { ...action, payload: { ...payload, removedOwner: owner.current } }
+            : action;
+    },
     canReapplyAfterDivergence: (action) => action.payload.expectedDeviceIds !== undefined,
     // The removal this undoes recorded the plugin state a save captured after the snapshot was taken.
     materializeCommandArguments: (action, context) => {
         if (context?.undoEntryId === undefined) {
             return;
+        }
+        const inverse = context.actions[context.actionIndex];
+        if (inverse?.type === 'restoreDevice' && inverse.payload.removedOwner) {
+            const rebind = captureDeviceRemovalUndo(inverse, context.undoEntryId);
+            if (rebind) {
+                pendingRestorations.set(action, rebind);
+            }
         }
         const [deviceSnapshot] = overlayDiscardedDevicePluginStates(context.undoEntryId, [
             action.payload.deviceSnapshot,
@@ -50,11 +72,22 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
     },
     validate: restoreDeviceGuardMatches,
     execute: (action, context) => {
+        const rebind = pendingRestorations.get(action);
+        pendingRestorations.delete(action);
         const currentTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         const currentDeviceIds = currentTrack?.devices.map((device) => device.id);
         const batchRestoreDevices = action.payload.batchRestoreDevices ?? [];
         if (!restoreDeviceGuardMatches(action)) {
             return { status: 'conflict' };
+        }
+        const { removedOwner } = action.payload;
+        const target = { trackId: action.payload.trackId, deviceId: action.payload.deviceSnapshot.id };
+        const commitValidation =
+            rebind && removedOwner && context?.executionMode !== 'isolated-preview'
+                ? captureDeviceHistoryCommitValidation({ kind: 'restore', target, removed: removedOwner, rebind })
+                : undefined;
+        if (commitValidation === null) {
+            return { status: 'conflict', reason: 'The recorded Grinder restoration owner changed.' };
         }
         const missingEarlierSiblingCount = batchRestoreDevices.filter(
             (candidate) =>
@@ -81,6 +114,7 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
         }
         return {
             status: outcome.outcome,
+            commitValidation,
             afterCommit: forgettingDiscardedPluginStates(context?.undoEntryId, outcome.afterCommit),
             afterAmbiguousCommit: outcome.afterAmbiguousCommit,
         };

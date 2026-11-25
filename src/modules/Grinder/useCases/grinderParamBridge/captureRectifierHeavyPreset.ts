@@ -1,5 +1,5 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { getPlannedDevicePatchState } from '#/modules/Arrangement/useCases';
+import { getDevicePatchOwnerIncarnation, getPlannedDevicePatchState } from '#/modules/Arrangement/useCases';
 
 import { getRectifierHeavyPresetImage } from './getRectifierHeavyPresetImage';
 
@@ -15,10 +15,15 @@ export function captureRectifierHeavyPreset(deviceId: string) {
     if (!owner || owner.deviceType !== 'grinder' || owner.frozen) {
         return null;
     }
+    const ownerIncarnation = getDevicePatchOwnerIncarnation({ trackId: owner.trackId, deviceId });
+    if (!ownerIncarnation) {
+        return null;
+    }
     return {
         trackId: owner.trackId,
         deviceId,
         deviceIds: owner.deviceIds,
+        ownerIncarnation,
         parameterIds,
         patch: image.patch,
         before: owner.state,

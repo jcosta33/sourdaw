@@ -106,6 +106,8 @@ export { macroCoreReads } from './macro/macroCoreReads';
 
 export { undo } from './undo';
 export { readUndoEntryForInverse } from './readUndoEntryForInverse';
+export { captureDeviceRemovalUndo } from './captureDeviceRemovalUndo';
+export { rebindDeviceHistory } from './rebindDeviceHistory';
 export { redo } from './redo';
 export { REDO_NOT_APPLIED } from './redoResult';
 export { revertActionGroup } from './revertActionGroup';

@@ -352,6 +352,7 @@ export { setDeviceState } from './device/setDeviceState';
 export { applyDevicePatchState } from './device/applyDevicePatchState';
 export { getPlannedDevicePatchState } from './device/getPlannedDevicePatchState';
 export { captureDevicePatchCommitValidation } from './device/captureDevicePatchCommitValidation';
+export { getDevicePatchOwnerIncarnation } from './device/getDevicePatchOwnerIncarnation';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';

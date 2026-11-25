@@ -6,18 +6,31 @@ import { getRectifierHeavyPresetImage } from '../useCases/grinderParamBridge/get
 
 type Payload = GrinderFactoryPresetAction['payload'];
 
-const PRESET_FIELDS = new Set(['trackId', 'deviceId', 'deviceIds', 'presetId', 'before', 'after', 'direction']);
+const PRESET_FIELDS = new Set([
+    'trackId',
+    'deviceId',
+    'deviceIds',
+    'ownerIncarnation',
+    'presetId',
+    'before',
+    'after',
+    'direction',
+]);
 
 function hasNonemptyId(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
 function hasExactTarget(value: Record<string, unknown>): boolean {
-    const { trackId, deviceId, deviceIds, presetId } = value;
+    const { trackId, deviceId, deviceIds, ownerIncarnation, presetId } = value;
     return (
         presetId === 'gr-rectifier-heavy' &&
         hasNonemptyId(trackId) &&
         hasNonemptyId(deviceId) &&
+        isRecord(ownerIncarnation) &&
+        Object.keys(ownerIncarnation).length === 2 &&
+        hasNonemptyId(ownerIncarnation.trackObjectId) &&
+        hasNonemptyId(ownerIncarnation.deviceObjectId) &&
         Array.isArray(deviceIds) &&
         deviceIds.every(hasNonemptyId) &&
         new Set(deviceIds).size === deviceIds.length &&

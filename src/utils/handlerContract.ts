@@ -134,6 +134,18 @@ export type HandlerSessionActionEntry = {
     readonly redoAction?: AppAction;
 };
 
+export type DeviceOwnerIncarnation = {
+    trackObjectId: string;
+    deviceObjectId: string;
+};
+
+export type HandlerDeviceOwnerChange = {
+    trackId: string;
+    deviceId: string;
+    previous: DeviceOwnerIncarnation;
+    current: DeviceOwnerIncarnation;
+};
+
 export type HandlerDeferredEffectAttempt =
     | {
           readonly kind: 'work-attempt';
@@ -210,6 +222,8 @@ type ActionHandlerCommon<Action extends AppAction> = {
      * state that lives only in memory and so did not survive serialization.
      */
     restoreSessionEntry?: (entry: HandlerSessionActionEntry) => void;
+    /** Carry this handler's recorded replay forward after a proved local write re-creates its device. */
+    rebindDeviceOwner?: (action: Action, owner: HandlerDeviceOwnerChange) => Action;
     /** False when transaction abort fully rolls back the write and no pre-commit external effect can run. */
     requiresAbortCompensation?: boolean;
     /** Runtime handlers execute outside Automerge and cannot join project-mutation batches. */
