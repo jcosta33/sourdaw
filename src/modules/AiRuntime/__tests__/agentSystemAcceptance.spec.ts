@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import { change, clone, Counter, toJS } from '@automerge/automerge';
+import { parse as parsePersistedValue } from 'superjson';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
@@ -68,8 +69,9 @@ import {
     scoreAgentAcceptanceCase,
 } from '../services/agentAcceptanceScorer';
 import { formatAnswerNumber, quoteSourceData } from '../services/answerSourceFormat';
+import { agentRunStore, sanitizeAgentRunState } from '../stores/agentRunStore';
 import { clearAiHistory } from '../stores/aiActionHistoryStore';
-import { chatStore } from '../stores/chatStore';
+import { chatStore, clearChatMessages } from '../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -3066,6 +3068,34 @@ describe('agent acceptance corpora', () => {
             })
         )
     );
+    it('leaves no thread context or provider-visible reading after a reload keeps only the persisted run state', () =>
+        fixtureLifetime.track(() =>
+            withAdmittedCreativeReading('A small vintage receiver', 'commit', async (batchId) => {
+                const committed = readChatThreadContext()?.lastCommit;
+                if (!committed) {
+                    throw new Error('Expected a committed reading before the reload');
+                }
+                const persisted = localStorage.getItem('sourdaw-agent-runs');
+                expect(persisted).toContain(batchId);
+
+                clearChatMessages();
+                clearPendingActionConfirmations();
+                const reloaded = sanitizeAgentRunState(parsePersistedValue(persisted ?? ''));
+                expect(agentRunStore.trySet(reloaded)).toBe(true);
+                expect(reloaded.runs.some((run) => run.runId === committed.runId)).toBe(true);
+
+                expect(readChatThreadContext()).toBeNull();
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+                const messages = scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                    () => [declineCall({ kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] })],
+                ]);
+                await sendChatMessage('Keep that tone, but make the lick less busy', { mode: 'apply' });
+                expect(messages).toHaveLength(1);
+                for (const carried of ['A small vintage receiver', batchId, committed.confirmationId]) {
+                    expect(messages[0]).not.toContain(carried);
+                }
+            })
+        ));
     it('carries the actual admitted public reading through deletion without granting new target authority', () =>
         fixtureLifetime.track(() => {
             const reading = 'A small vintage receiver';
