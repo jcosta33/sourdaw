@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { engineSampleRateOf } from '#/modules/AudioEngine/useCases';
 import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
 import { refreshExternalPluginTails } from '#/modules/PluginHost/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { trackStore } from '../../../stores/trackStore';
 import { computeTrackHash } from '../../../services/computeTrackHash';
+import { trackStore } from '../../../stores/trackStore';
 import { cancelFreezeTrack } from '../cancelFreezeTrack';
 import { activeFreezeTasks, freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
@@ -18,6 +19,7 @@ vi.mock('../../../services/computeTrackHash', () => ({
     computeTrackHash: vi.fn().mockResolvedValue('mock-hash'),
 }));
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     refreshExternalPluginTails: vi.fn(async () => {}),
@@ -293,6 +295,7 @@ describe('freeze sizes its tail from device tail declarations', () => {
 
             expect(await frozen).toBe(false);
             expect(renderTrackOffline).not.toHaveBeenCalled();
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'error');
         });
     });
 });
