@@ -71,7 +71,12 @@ vi.mock('../readLiveMidiProgramme', () => ({
     // that answered the same notes whatever span it was handed would make a
     // locate indistinguishable from a no-op, and would hand the engine entries
     // behind its own playhead — which it counts late and never delivers.
-    readLiveMidiProgramme: (input: { span: { startSeconds: number; endSeconds: number } }) => ({
+    // A strip the captured map names is moved by that figure, as the real reader moves it
+    // (`readLiveMidiProgramme.spec.ts` owns that law); the writer's part is handing the map over.
+    readLiveMidiProgramme: (input: {
+        span: { startSeconds: number; endSeconds: number };
+        compensationDelaysByStripId?: ReadonlyMap<string, number>;
+    }) => ({
         targets: mocks.targets.map((target) => ({
             target,
             events: mocks.events
@@ -80,7 +85,7 @@ vi.mock('../readLiveMidiProgramme', () => ({
                     return onset >= input.span.startSeconds && onset < input.span.endSeconds;
                 })
                 .map((entry): AudioGraphMidiNoteEvent => ({
-                    time: entry.time,
+                    time: entry.time + (input.compensationDelaysByStripId?.get(target.trackId) ?? 0),
                     note: entry.note,
                     velocity: 100,
                     channel: entry.channel ?? 0,
@@ -352,12 +357,25 @@ beforeEach(() => {
     // read by every arm, and a stale entry from one case would answer the
     // next case's abandoned-target check.
     nativeLiveGraphSession.nativeChainByStripId = new Map();
+    nativeLiveGraphSession.compensationDelaysByStripId = new Map();
 });
 
 describe('the live MIDI writer', () => {
     // One batch, because a clear and the notes that replace it are one
     // visibility: split in two, the clear lands alone and releases a key the
     // rewrite only meant to move.
+    // A latent device inserted mid-roll moves the live figure while the clips keep the one they
+    // were placed with, so every arm, the first and a mid-roll re-arm alike, sends the notes
+    // under the session's captured figure.
+    it('sends the notes under the compensation the session captured, on the opening arm', async () => {
+        mocks.events = lane(3, 1);
+        nativeLiveGraphSession.compensationDelaysByStripId = new Map([[TARGET.trackId, 0.25]]);
+
+        await arm(0);
+
+        expect(scheduledIn(0).map((event) => event.time)).toEqual([1.25, 1.35, 1.45]);
+    });
+
     it('opens a pass by clearing each store whole and filling it to the lookahead', async () => {
         mocks.events = lane(80);
 
