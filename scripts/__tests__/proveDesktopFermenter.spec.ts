@@ -34,6 +34,7 @@ import {
     runEditorWorkspaceProof,
     runEditorFamilyProof,
     runProof,
+    runGrandBouleAuditionProof,
 } from '../proveDesktopFermenter.ts';
 
 const tempDirs: string[] = [];
@@ -690,5 +691,35 @@ describe('packaged editor workspace proof', () => {
         const record = JSON.parse(readFileSync(output, 'utf8'));
         expect(record).toMatchObject({ verdict: 'not-run', scope: 'packaged-premium-editor-workspace' });
         expect(record.observations.stages).toHaveLength(WORKSPACE_STAGES.length);
+    });
+});
+
+describe('bound Grand Boule audition record', () => {
+    it('retains an unavailable capture with the admitted build and source identity', async () => {
+        const { options, env } = fixture();
+        const record = await runGrandBouleAuditionProof(options, env, {
+            hostSupported: true,
+            async drive(_binary, o) {
+                o.unavailable = 'permission-or-capture-unavailable';
+                o.appQuit = true;
+            },
+        });
+        expect(record).toMatchObject({
+            verdict: 'not-run',
+            failureCode: 'capture-unavailable',
+            scope: 'packaged-grand-boule-output-audition',
+            build: { sourceSha: env.GITHUB_SHA, runId: env.GITHUB_RUN_ID, runAttempt: env.GITHUB_RUN_ATTEMPT },
+        });
+    });
+    it('refuses a foreign receipt without invoking the audition', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn();
+        const record = await runGrandBouleAuditionProof(
+            options,
+            { ...env, GITHUB_RUN_ATTEMPT: '3' },
+            { hostSupported: true, drive }
+        );
+        expect(record.failureCode).toBe('build-receipt-run-mismatch');
+        expect(drive).not.toHaveBeenCalled();
     });
 });
