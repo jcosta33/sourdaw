@@ -39,11 +39,14 @@ export class GrinderTimedParameterControl {
             return null;
         }
         const buffer = value.grinderTimedParameters;
-        return typeof SharedArrayBuffer !== 'undefined' &&
-            buffer instanceof SharedArrayBuffer &&
-            buffer.byteLength === BUFFER_BYTES
-            ? new GrinderTimedParameterControl(buffer)
-            : null;
+        if (
+            typeof SharedArrayBuffer === 'undefined' ||
+            !(buffer instanceof SharedArrayBuffer) ||
+            buffer.byteLength !== BUFFER_BYTES
+        ) {
+            return null;
+        }
+        return new GrinderTimedParameterControl(buffer);
     }
 
     reserve(ordinal: number, value: number, frame: number, nextFrame: number): number {

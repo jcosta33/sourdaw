@@ -56,6 +56,10 @@ function materialize(action: Action, context?: HandlerMaterializationContext): v
     }
 }
 
+function isAuthorizedReplay(action: Action): boolean {
+    return action.payload.direction !== 'undo' || admittedInverses.has(action);
+}
+
 export const handleSetGrinderFactoryPreset = createHandler<'setGrinderFactoryPreset'>({
     materializeCommandArguments: materialize,
     validate: ({ payload }) => validGrinderFactoryPresetCapture(payload) && matchesSource(payload),
@@ -64,7 +68,7 @@ export const handleSetGrinderFactoryPreset = createHandler<'setGrinderFactoryPre
         if (
             validGrinderFactoryPresetCapture(action.payload) &&
             matchesSource(action.payload) &&
-            (action.payload.direction !== 'undo' || admittedInverses.has(action))
+            isAuthorizedReplay(action)
         ) {
             const admission = captureDevicePatchCommitValidation({
                 trackId: action.payload.trackId,
@@ -97,7 +101,7 @@ export const handleSetGrinderFactoryPreset = createHandler<'setGrinderFactoryPre
         if (!matchesSource(payload)) {
             return { status: 'conflict', reason: 'Grinder preset source changed.' };
         }
-        if (payload.direction === 'undo' && !admittedInverses.has(action)) {
+        if (!isAuthorizedReplay(action)) {
             return { status: 'conflict', reason: 'Grinder preset inverse was not authorized.' };
         }
         const proof = admission.start();

@@ -605,11 +605,12 @@ class GrinderProcessor extends AudioWorkletProcessor {
     }
 
     private _replyToPreset(address: PresetAddress, result: number | string): void {
-        const outcome =
-            typeof result === 'number'
-                ? { status: 'installed', latency: result }
-                : { status: 'refused', reason: result };
-        this.port.postMessage({ type: GRINDER_PRESET_RESULT, schemaVersion: 1, ...address, ...outcome });
+        const base = { type: GRINDER_PRESET_RESULT, schemaVersion: 1, ...address };
+        if (typeof result === 'number') {
+            this.port.postMessage({ ...base, status: 'installed', latency: result });
+            return;
+        }
+        this.port.postMessage({ ...base, status: 'refused', reason: result });
     }
 
     _applyFallbackControl(parameterId: string, value: number, reportLatency: boolean): void {

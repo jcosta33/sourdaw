@@ -226,16 +226,12 @@ describe('applyModulationToEngine', () => {
         applyModulationToEngine(1);
         const delivered = mocks.updateDeviceParam.mock.calls[0]![3];
         const bases = new Map([['d1', new Map([['cutoff', 900]])]]);
-        applyModulationToEngine(1, undefined, bases, undefined, () => false);
+        applyModulationToEngine(1, undefined, bases, { didWriteAutomation: () => false });
         expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(delivered);
 
-        applyModulationToEngine(
-            1,
-            undefined,
-            bases,
-            undefined,
-            (deviceId, parameterId) => deviceId === 'd1' && parameterId === 'cutoff'
-        );
+        applyModulationToEngine(1, undefined, bases, {
+            didWriteAutomation: (deviceId, parameterId) => deviceId === 'd1' && parameterId === 'cutoff',
+        });
         expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
         expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(900);
     });
@@ -615,7 +611,7 @@ describe('applyModulationToEngine', () => {
             // itself wrote nothing for this param this tick either.
             const readBeats = new Map([['t1', 3.75]]);
 
-            applyModulationToEngine(4.25, undefined, new Map(), readBeats);
+            applyModulationToEngine(4.25, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             const [trackId, deviceId, paramId, value] = mocks.updateDeviceParam.mock.calls[0]!;
@@ -630,7 +626,7 @@ describe('applyModulationToEngine', () => {
             // Playhead 4.6, compensated beat 4.1 — inside [4, 8].
             const readBeats = new Map([['t1', 4.1]]);
 
-            applyModulationToEngine(4.6, undefined, new Map(), readBeats);
+            applyModulationToEngine(4.6, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
@@ -689,7 +685,7 @@ describe('applyModulationToEngine', () => {
             // (#4684), so indexAutomatedBases must resolve the same value.
             const readBeats = new Map([['t1', 4.1]]);
 
-            applyModulationToEngine(5.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(5.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
@@ -729,7 +725,7 @@ describe('applyModulationToEngine', () => {
             // tempo) is still before it (high half).
             const readBeats = new Map([['t1', 1.5]]);
 
-            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(2.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(1000);
@@ -739,7 +735,7 @@ describe('applyModulationToEngine', () => {
             seedSquareLfo();
             const readBeats = new Map([['t1', 2.5]]);
 
-            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(2.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);
@@ -758,7 +754,7 @@ describe('applyModulationToEngine', () => {
             seedSquareLfo();
             const readBeats = new Map([['other-track', 1.5]]);
 
-            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(2.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);

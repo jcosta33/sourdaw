@@ -164,8 +164,8 @@ export class GrinderPresetControl {
                 );
             }
         };
-        ctx.addEventListener?.('statechange', onStateChange);
-        return () => ctx.removeEventListener?.('statechange', onStateChange);
+        ctx.addEventListener('statechange', onStateChange);
+        return () => ctx.removeEventListener('statechange', onStateChange);
     }
 
     async applyPreset(input: RuntimeGrinderPresetInput): Promise<void> {
@@ -204,7 +204,7 @@ export class GrinderPresetControl {
         flushParamPosts();
         const sequence = controlSequence.next;
         if (!Number.isSafeInteger(sequence)) {
-            throw new Error('Grinder preset control sequence exhausted');
+            throw new TypeError('Grinder preset control sequence exhausted');
         }
         const patch = Object.freeze({
             ...result.patch,

@@ -622,7 +622,7 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        expect(vi.mocked(applyModulationToEngine).mock.calls.at(-1)?.[3]).toBe(deviceReadBeatByTrack);
+        expect(vi.mocked(applyModulationToEngine).mock.calls.at(-1)?.[3]?.deviceReadBeats).toBe(deviceReadBeatByTrack);
     });
 
     it('advances a semantic discontinuity epoch on a real scheduler loop wrap', async () => {

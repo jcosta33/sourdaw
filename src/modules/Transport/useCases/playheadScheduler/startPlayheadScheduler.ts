@@ -2059,14 +2059,11 @@ export function startPlayheadScheduler(
         // deviceReadBeatByTrack keeps indexAutomatedBases's clip gate and curve
         // read on the same compensated clock applyAutomation used for its own
         // device-family lanes this tick (#4684).
-        applyModulationToEngine(
-            publishedBeat,
-            schedulerSession.discontinuityEpoch,
-            appliedAutomationBases,
-            deviceReadBeatByTrack,
-            (deviceId, parameterId) =>
-                (appliedAutomationWriteSequences.get(deviceId)?.get(parameterId) ?? 0) > beforeAutomation
-        );
+        applyModulationToEngine(publishedBeat, schedulerSession.discontinuityEpoch, appliedAutomationBases, {
+            deviceReadBeats: deviceReadBeatByTrack,
+            didWriteAutomation: (deviceId, parameterId) =>
+                (appliedAutomationWriteSequences.get(deviceId)?.get(parameterId) ?? 0) > beforeAutomation,
+        });
         scheduleAdjustmentLayers(publishedBeat);
     }
 

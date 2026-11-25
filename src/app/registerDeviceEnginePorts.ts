@@ -17,8 +17,8 @@ import {
     mapFermenterPatchToDspPatch,
 } from '#/modules/Fermenter/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
-import { applyRectifierHeavyRuntime, grinderFactoryPresetRuntimePort } from '#/modules/Grinder/useCases';
 import { readGrinderNeuralModelContent } from '#/modules/Grinder/stores';
+import { applyRectifierHeavyRuntime, grinderFactoryPresetRuntimePort } from '#/modules/Grinder/useCases';
 import { createLevainTemplateDeviceState, getLevainArticulationId } from '#/modules/Levain/useCases';
 import { articulationIdResolvers, velocityCalibration } from '#/modules/MIDI/useCases';
 import {

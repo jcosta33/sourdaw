@@ -83,7 +83,7 @@ describe('createGrinderNode', () => {
     });
 
     function makeCtx(state: 'running' | 'suspended' = 'running') {
-        class FakeAudioContext {
+        class FakeAudioContext extends EventTarget {
             state = state;
             currentTime = 0;
             resume = resume;
@@ -831,7 +831,10 @@ describe('GrinderNode setParam coalescing', () => {
     }
 
     async function makeNode() {
-        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const ctx = Object.assign(new EventTarget(), {
+            currentTime: 0,
+            state: 'running',
+        }) as unknown as BaseAudioContext;
         return createGrinderNode(ctx, undefined, undefined, {
             trackId: 'track-1',
             deviceId: 'grinder-1',

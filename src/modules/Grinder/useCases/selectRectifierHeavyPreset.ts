@@ -5,8 +5,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type GrinderFactoryPresetAction } from '../events/grinderAppActions';
-import { grinderFactoryPresetRuntimePort } from './grinderFactoryPresetRuntimePort';
 
+import { grinderFactoryPresetRuntimePort } from './grinderFactoryPresetRuntimePort';
 import { captureRectifierHeavyPreset } from './grinderParamBridge/captureRectifierHeavyPreset';
 
 export async function selectRectifierHeavyPreset(deviceId: string): Promise<void> {
@@ -36,17 +36,21 @@ export async function selectRectifierHeavyPreset(deviceId: string): Promise<void
             after: captured.after.parameterValues,
         },
     };
-    let observed = false;
+    const dispatch = { materialized: false };
     try {
         await executeUserAppAction(action, {
             shouldExecute: authority.isCurrent,
             shouldCommit: authority.isCurrent,
             skipMacroRecording: true,
             observeMaterializedAction: () => {
-                observed = true;
+                dispatch.materialized = true;
             },
         });
-        if (observed && valuesEqual(action.payload.before, action.payload.after) && authority.isCurrent()) {
+        if (
+            dispatch.materialized &&
+            valuesEqual(action.payload.before, action.payload.after) &&
+            authority.isCurrent()
+        ) {
             grinderFactoryPresetRuntimePort.publish(action.payload);
         }
     } catch (error) {

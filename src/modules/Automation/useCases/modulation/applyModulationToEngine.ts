@@ -268,26 +268,15 @@ export function applyModulationToEngine(
     currentBeat: number,
     discontinuityEpoch?: number,
     appliedAutomationBases?: AppliedAutomationBases,
-    deviceReadBeats?: DeviceReadBeatByTrack,
-    didWriteAutomation?: DidWriteAutomation
+    timing?: Readonly<{ deviceReadBeats?: DeviceReadBeatByTrack; didWriteAutomation?: DidWriteAutomation }>
 ): void {
     visitedModulationValues.clear();
     const state = modulationStore.value;
-    if (!state || state.modulators.length === 0) {
+    if (!state?.modulators.some((modulator) => modulator.enabled && modulator.mappings.length > 0)) {
         appliedModulationValues.clear();
         return;
     }
-    let hasEnabledMapping = false;
-    for (const modulator of state.modulators) {
-        if (modulator.enabled && modulator.mappings.length > 0) {
-            hasEnabledMapping = true;
-            break;
-        }
-    }
-    if (!hasEnabledMapping) {
-        appliedModulationValues.clear();
-        return;
-    }
+    const { deviceReadBeats, didWriteAutomation } = timing ?? {};
 
     // Snap every modulated target on the first tick after a transport
     // discontinuity (seek, loop-wrap, follow-action jump) instead of gliding

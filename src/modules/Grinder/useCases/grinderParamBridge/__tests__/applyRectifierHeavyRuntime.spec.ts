@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { type GrinderFactoryPresetAction } from '../../../events/grinderAppActions';
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
-import { buildRectifierHeavyPlayback } from '../applyRectifierHeavyRuntime';
+import { buildRectifierHeavyPlayback } from '../buildRectifierHeavyPlayback';
 import { encodeGrinderPatchCommands } from '../encodeGrinderPatchCommands';
 import { getRectifierHeavyPresetImage } from '../getRectifierHeavyPresetImage';
 
