@@ -5520,6 +5520,7 @@ const schemaDefinitions = [
             expectedClipLocked: 13,
             expectedTempo: 0,
             expectedTrackFrozen: 13,
+            requiresEditableBaseClip: 43,
             trackId: 1,
         },
         required: ['expectedClipLocked', 'expectedTrackFrozen', 'trackId'],

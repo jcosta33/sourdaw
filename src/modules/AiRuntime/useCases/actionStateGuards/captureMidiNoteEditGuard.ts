@@ -1,52 +1,11 @@
-import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { type EditMidiNotesPayload } from '#/modules/MIDI/events';
 import { midiStore, type MidiNote } from '#/modules/MIDI/stores';
-import { readPianoRollSelection } from '#/modules/MIDI/useCases';
+import { findEditableBaseMidiClip, readPianoRollSelection } from '#/modules/MIDI/useCases';
 import { MIDI_NOTE_EDIT_MAX_OPERATIONS } from '#/utils/midiNoteBatchLimits';
 
 import { type checkMidiNoteEditAuthority } from '../checkMidiNoteEditAuthority';
 
 type Authority = NonNullable<ReturnType<typeof checkMidiNoteEditAuthority>>;
-
-function clipCannotBeEdited(clip: NonNullable<typeof trackStore.value>['tracks'][number]['clips'][number]): boolean {
-    return (
-        clip.type !== 'midi' ||
-        !!clip.locked ||
-        !!clip.loopEnabled ||
-        !!clip.isLinkedInstance ||
-        clip.parentClipId !== undefined
-    );
-}
-
-function findEditableBaseMidiClip({ clipId, trackId }: Authority) {
-    const tracks = trackStore.value?.tracks ?? [];
-    const clips = tracks.flatMap((track) => track.clips.map((clip) => ({ track, clip })));
-    const matches = clips.filter(({ clip }) => clip.id === clipId);
-    const target = matches[0];
-    if (
-        matches.length !== 1 ||
-        !target ||
-        target.track.id !== trackId ||
-        target.track.kind !== 'midi' ||
-        target.track.frozen ||
-        clipCannotBeEdited(target.clip) ||
-        clips.some(({ clip }) => clip.parentClipId === clipId) ||
-        takeLaneStore.value?.lanes.some(
-            (lane) =>
-                lane.trackId === trackId &&
-                lane.takes.some(
-                    (take) =>
-                        take.clipId === clipId ||
-                        (take.midiSource !== undefined &&
-                            take.startBeat < target.clip.endBeat &&
-                            take.endBeat > target.clip.startBeat)
-                )
-        )
-    ) {
-        return null;
-    }
-    return target.clip;
-}
 
 function readSelectedBaseMidiNotes({ clipId, proof }: Authority) {
     const selection = readPianoRollSelection();
@@ -129,7 +88,7 @@ function readCoversEditWindow(windows: Authority['proof']['windows'], startBeat:
 
 /** The query establishes read coverage. Live project owners establish the write scope. */
 export function captureMidiNoteEditGuard(input: Authority): EditMidiNotesPayload['guard'] | null {
-    const clip = findEditableBaseMidiClip(input);
+    const clip = findEditableBaseMidiClip(input.clipId, input.trackId);
     const selection = readSelectedBaseMidiNotes(input);
     if (!clip || !selection) {
         return null;

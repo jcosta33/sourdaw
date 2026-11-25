@@ -22,6 +22,10 @@ export function isRestoreMidiClipNotesReplayArguments(value: unknown): boolean {
         (value.articulationReplayGuard === undefined ||
             (isRecord(value.articulationReplayGuard) &&
                 isMidiNoteSnapshot(value.articulationReplayGuard.expectedSourceNotes))) &&
+        (value.noteTransformReplayGuard === undefined ||
+            (isRecord(value.noteTransformReplayGuard) &&
+                (value.noteTransformReplayGuard.requiresEditableBaseClip === undefined ||
+                    value.noteTransformReplayGuard.requiresEditableBaseClip === true))) &&
         !absentBucketContradictsSnapshot(value, 'notesBucketPresent', 'notes') &&
         !absentBucketContradictsSnapshot(value, 'expectedNotesBucketPresent', 'expectedNotes')
     );

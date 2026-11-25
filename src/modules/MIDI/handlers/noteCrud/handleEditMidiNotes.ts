@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Clip } from '#/modules/Arrangement/stores';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { createHandler } from '#/utils/createHandler';
@@ -7,8 +7,8 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { planGuardedMidiNoteEdits } from '../../services/planGuardedMidiNoteEdits';
 import { midiStore } from '../../stores/midiStore';
+import { findEditableBaseMidiClip } from '../../useCases/midiNoteCrud/findEditableBaseMidiClip';
 import { projectMidiNoteEditPrefix } from '../../useCases/midiNoteTransforms/projectMidiNoteEditPrefix';
-import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 type EditAction = Extract<AppAction, { type: 'editMidiNotes' }>;
 type EditPlan = NonNullable<ReturnType<typeof planGuardedMidiNoteEdits>>;
@@ -27,6 +27,7 @@ function makeReplay(plan: EditPlan, direction: 'undo' | 'redo'): Extract<AppActi
                 trackId: plan.trackId,
                 expectedTrackFrozen: false,
                 expectedClipLocked: false,
+                requiresEditableBaseClip: true,
             },
         },
     };
@@ -41,10 +42,7 @@ function describePlan(plan: EditPlan): string {
     return `Edit MIDI notes (${patched.length} updated, ${removed.length} removed, ${inserted.length} inserted)`;
 }
 
-function editFitsClip(
-    plan: EditPlan,
-    clip: NonNullable<typeof trackStore.value>['tracks'][number]['clips'][number]
-): boolean {
+function editFitsClip(plan: EditPlan, clip: Clip): boolean {
     const loopEnabled = clip.loopEnabled === true;
     const expansion = projectClipLoopExpansion({
         clipDurationBeats: clip.endBeat - clip.startBeat,
@@ -66,21 +64,18 @@ function editFitsClip(
 }
 
 function planAgainstProject(action: EditAction, context?: HandlerValidationContext): EditPlan | null {
-    const target = getWritableMidiClipReplayGuardForBatch(action.payload.clipId);
-    if (!target) {
+    const { clipId, guard } = action.payload;
+    const trackId = guard?.trackId;
+    if (typeof trackId !== 'string') {
         return null;
     }
-    const bucket = projectMidiNoteEditPrefix(action.payload.clipId, target.trackId, context);
+    const clip = findEditableBaseMidiClip(clipId, trackId);
+    if (!clip) {
+        return null;
+    }
+    const bucket = projectMidiNoteEditPrefix(clipId, trackId, context);
     const plan = bucket && planGuardedMidiNoteEdits(action.payload, bucket);
-    if (!plan || plan.trackId !== target.trackId) {
-        return null;
-    }
-    const tracks = trackStore.value?.tracks.filter((candidate) => candidate.id === target.trackId) ?? [];
-    const clip = tracks.length === 1 ? tracks[0]?.clips.find((candidate) => candidate.id === plan.clipId) : undefined;
-    if (!clip || !editFitsClip(plan, clip)) {
-        return null;
-    }
-    return plan;
+    return plan && editFitsClip(plan, clip) ? plan : null;
 }
 
 function isEditMidiNotesSessionEntry(entry: HandlerSessionActionEntry): boolean {

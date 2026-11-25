@@ -5,7 +5,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { defaultTrackState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setArrangementEventBus, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import {
     captureProjectMutationAuthorization,
@@ -306,6 +306,60 @@ describe('selective MIDI command on Automerge project truth', () => {
         await redo();
         expect(clipNotes()).toEqual(edited);
         expect(trackStore.value).toEqual(before);
+    });
+
+    it.each(['undo', 'redo'] as const)('refuses selective %s after a take adopts the base notes', async (direction) => {
+        const edit = editAction([{ type: 'patch', noteId: PHRASE.id, patch: { pitch: 63 } }]);
+        expect(await executeAppActionBatch([edit])).toMatchObject({ status: 'committed' });
+        const edited = [OPENING, { ...PHRASE, pitch: 63 }, FILLER, TAIL];
+        expect(clipNotes()).toEqual(edited);
+        if (direction === 'redo') {
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(clipNotes()).toEqual(MOTIF);
+        }
+
+        const takeLaneState = {
+            lanes: [
+                {
+                    id: 'motif-takes',
+                    trackId: TRACK_ID,
+                    takes: [
+                        {
+                            id: 'motif-take',
+                            clipId: CLIP_ID,
+                            name: 'Take 1',
+                            startBeat: 16,
+                            endBeat: 24,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ takeId: 'motif-take', startBeat: 16, endBeat: 24 }],
+                },
+            ],
+        };
+        takeLaneStore.set(takeLaneState);
+        flushAutomergeStorageWrites();
+
+        const history = structuredClone(undoStore.value);
+        expect(history).toMatchObject(
+            direction === 'undo'
+                ? { past: [expect.any(Object)], future: [] }
+                : { past: [], future: [expect.any(Object)] }
+        );
+        const readDurableTakeLanes = () => getCrdtDoc<{ takeLanes?: typeof takeLaneState }>('root')?.takeLanes;
+        expect(readDurableTakeLanes()).toEqual(takeLaneState);
+
+        if (direction === 'undo') {
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+        } else {
+            await redo();
+        }
+        const expectedNotes = direction === 'undo' ? edited : MOTIF;
+        expect(clipNotes()).toEqual(expectedNotes);
+        expect(midiStore.value?.notesByClipId[CLIP_ID]).toEqual(expectedNotes);
+        expect(readDurableTakeLanes()).toEqual(takeLaneState);
+        expect(takeLaneStore.value).toEqual(takeLaneState);
+        expect(undoStore.value).toEqual(history);
     });
 
     it('takes its exact before-image from ordered add, edit and restore predecessors', async () => {

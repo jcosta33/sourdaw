@@ -1,10 +1,12 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { type MidiAppAction } from '../../events/midiAppActions';
 import { type MidiClipNoteSnapshot } from '../../events/midiClipDataSnapshots';
 import { midiStore } from '../../stores/midiStore';
 import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
+import { findEditableBaseMidiClip } from '../midiNoteCrud/findEditableBaseMidiClip';
 
 export type GetRestoreMidiClipNotesStatusInput = {
     clipId: string;
@@ -21,12 +23,10 @@ export type GetRestoreMidiClipNotesStatusInput = {
         expectedSourceClipLocked: boolean;
         expectedTargetClipLocked: boolean;
     };
-    noteTransformReplayGuard?: {
-        trackId: string;
-        expectedTrackFrozen: boolean;
-        expectedClipLocked: boolean;
-        expectedTempo?: number;
-    };
+    noteTransformReplayGuard?: Extract<
+        MidiAppAction,
+        { type: 'restoreMidiClipNotes' }
+    >['payload']['noteTransformReplayGuard'];
     projectedNotes?: readonly MidiClipNoteSnapshot[];
     projectedNotesBucketPresent?: boolean;
     projectedNoteTransformReplayTarget?: {
@@ -80,6 +80,7 @@ export function getRestoreMidiClipNotesStatus({
             expectedNotes,
             notesBucketPresent,
             expectedNotesBucketPresent,
+            noteTransformReplayGuard,
         })
     ) {
         return 'conflict';
@@ -109,6 +110,12 @@ export function getRestoreMidiClipNotesStatus({
         }
     }
     if (noteTransformReplayGuard) {
+        if (
+            noteTransformReplayGuard.requiresEditableBaseClip &&
+            !findEditableBaseMidiClip(clipId, noteTransformReplayGuard.trackId)
+        ) {
+            return 'conflict';
+        }
         const replayTarget =
             projectedNoteTransformReplayTarget ??
             readLiveNoteTransformReplayTarget(noteTransformReplayGuard.trackId, clipId);

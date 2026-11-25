@@ -184,6 +184,8 @@ export type MidiAppAction =
                   expectedTrackFrozen: boolean;
                   expectedClipLocked: boolean;
                   expectedTempo?: number;
+                  /** Selective edits may only replay while the live clip owns its base notes outright. */
+                  requiresEditableBaseClip?: true;
               };
           };
       }

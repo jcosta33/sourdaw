@@ -126,6 +126,7 @@ export { addMidiNote } from './midiNoteCrud/addMidiNote';
 export { appendMidiNotes } from './midiNoteCrud/appendMidiNotes';
 export { batchAddMidiNotes } from './midiNoteCrud/batchAddMidiNotes';
 export { duplicateClipNotes } from './midiNoteCrud/duplicateClipNotes';
+export { findEditableBaseMidiClip } from './midiNoteCrud/findEditableBaseMidiClip';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 export { isMidiRowCoordinateCapture } from './midiNoteCrud/isMidiRowCoordinateCapture';
 export { getMidiClipNotesSnapshot } from './midiNoteTransforms/getMidiClipNotesSnapshot';
