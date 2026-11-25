@@ -153,6 +153,12 @@ export function keepMeaningfulBranches(flags: { primary: boolean; fallback: bool
     }
 }
 
+export function keepNestedIf(flags: { primary: boolean; fallback: boolean }, update: (id: string) => void) {
+    if (flags.primary) {
+        if (flags.fallback) update('nested');
+    }
+}
+
 export function unavailable(): number | undefined {
     return;
 }
