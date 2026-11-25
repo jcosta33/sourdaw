@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
@@ -81,7 +82,7 @@ describe('cancelPendingChatActions', () => {
             createdRevision: 'revision-1',
         });
         const cleanup = vi.fn(() => {
-            expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+            expect(readPersistedAgentRunText()).toContain('cancelled');
         });
         if (withAsset) {
             agentRunLifecycle.registerTemporaryAsset({
@@ -107,7 +108,7 @@ describe('cancelPendingChatActions', () => {
             })
         );
         mocks.cancelAgentRun.mockImplementation(agentRunCancellation.cancel);
-        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const durableBefore = readPersistedAgentRunText();
         const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
             throw new Error('Cancellation storage unavailable');
         });
@@ -115,12 +116,12 @@ describe('cancelPendingChatActions', () => {
             'Agent run state could not be persisted locally'
         );
         expect(agentRunLifecycle.get('durable-cancel')?.phase).toBe('cancelled');
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(readPersistedAgentRunText()).toBe(durableBefore);
         expect(mocks.settlePendingActionResourceLease).not.toHaveBeenCalled();
         await expect(cancelPendingChatActions({ confirmationId: 'durable-confirmation' })).resolves.toEqual({
             status: 'cancelled',
         });
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+        expect(readPersistedAgentRunText()).toContain('cancelled');
         expect(cleanup).toHaveBeenCalledTimes(withAsset ? 1 : 0);
         expect(
             agentRunLifecycle.get('durable-cancel')?.temporaryAssets.every((asset) => asset.status === 'released')

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { admitAgentRetry } from '../admitAgentRetry';
 import { admitBoundedAgentCorrection } from '../admitBoundedAgentCorrection';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
@@ -168,7 +169,7 @@ describe('agent error and saga contract', () => {
             phase: 'paused',
             errors: [{ code: 'agent.internal', remediation: { compensation: 'manual-repair' } }],
         });
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('"saga"');
+        expect(readPersistedAgentRunText()).toContain('"saga"');
     });
 
     it('does not complete or skip recovery when a receipt still has external saga work', async () => {

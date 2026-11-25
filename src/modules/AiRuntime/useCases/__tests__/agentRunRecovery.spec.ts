@@ -1,6 +1,7 @@
 import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
@@ -297,7 +298,7 @@ describe('agent run recovery', () => {
             ],
         });
 
-        const stored = window.localStorage.getItem('sourdaw-agent-runs');
+        const stored = readPersistedAgentRunText();
         expect(stored).toContain('"schemaVersion":1');
         expect(stored).toContain('run-recovery');
         expect(stored).toContain('webllm:webllm:local-model');
@@ -670,7 +671,7 @@ describe('agent run recovery', () => {
             requiredAt: 130,
         });
 
-        const persistedBytes = window.localStorage.getItem('sourdaw-agent-runs');
+        const persistedBytes = readPersistedAgentRunText();
         expect(persistedBytes).toContain('"pendingEffectContinuations"');
         expect(persistedBytes).toContain('"kind":"external-effect"');
         expect(persistedBytes).toContain('"kind":"runtime-graph"');
@@ -1183,7 +1184,7 @@ describe('agent run recovery', () => {
                 createdRevision: 'heads-current',
             })
         ).not.toThrow();
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('current-build-run');
+        expect(readPersistedAgentRunText()).toContain('current-build-run');
     });
 
     it('leaves hydrated durable section-render recovery manual at startup without command proof', async () => {

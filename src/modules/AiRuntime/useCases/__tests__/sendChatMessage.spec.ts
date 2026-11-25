@@ -10,6 +10,7 @@ import {
     commandTrackDefaultsPort,
 } from '#/modules/Command/useCases';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { DEFAULT_AGENT_RESOURCE_LIMITS, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
@@ -1442,13 +1443,16 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
             admittedRunId = input.streamIdentity?.runId ?? null;
             armedSetItemCount = storageSetItem.mock.calls.length;
-            storageSetItem
-                .mockImplementationOnce((key, value) => {
-                    return writeStorageItem.call(localStorage, key, value);
-                })
-                .mockImplementation(() => {
+            // One agent-run write lands — its run keys and then its index, the commit point — and
+            // every write after it is refused.
+            let committedOnce = false;
+            storageSetItem.mockImplementation((key, value) => {
+                if (committedOnce) {
                     throw storageFailure;
-                });
+                }
+                writeStorageItem.call(localStorage, key, value);
+                committedOnce = key === 'sourdaw-agent-runs:index';
+            });
             return {
                 context: {},
                 result: {
@@ -1999,7 +2003,7 @@ describe('sendChatMessage retained-provider selection', () => {
                 committedWork: receiptLedger,
                 batches: terminalBatch,
             });
-            const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+            const durableRun = JSON.parse(readPersistedAgentRunText() ?? '').json.runs.find(
                 (candidate: { runId: string }) => candidate.runId === run.runId
             );
             expect(durableRun).toMatchObject({
@@ -2021,7 +2025,7 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(run.batches).toContainEqual(
             expect.objectContaining({ batchId: 'batch-graph', status: 'no-op', receiptIdentity: null })
         );
-        const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+        const durableRun = JSON.parse(readPersistedAgentRunText() ?? '').json.runs.find(
             (candidate: { runId: string }) => candidate.runId === run.runId
         );
         expect(durableRun.batches).toContainEqual(
@@ -2392,7 +2396,7 @@ describe('sendChatMessage retained-provider selection', () => {
                     ]),
                 })
             );
-            expect(JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '')).toMatchObject({
+            expect(JSON.parse(readPersistedAgentRunText() ?? '')).toMatchObject({
                 json: {
                     runs: [
                         expect.objectContaining({

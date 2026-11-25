@@ -10,6 +10,7 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { readPersistedAgentRunText } from '../../../__tests__/readPersistedAgentRunText';
 import { readAgentRunState, sanitizeAgentRunState } from '../../../stores/agentRunStore';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../../stores/selectAgentRunPendingEffectRecoveries';
@@ -297,12 +298,12 @@ describe('agentRunExecutionSettlement', () => {
             committedRevision: 'revision-2',
         });
 
-        expect(setItem).toHaveBeenCalledExactlyOnceWith('sourdaw-agent-runs', expect.any(String));
+        expect(setItem.mock.calls.filter(([key]) => key === 'sourdaw-agent-runs:index')).toHaveLength(1);
         setItem.mockRestore();
         expect(readAgentRunState().runs[0]).toMatchObject({
             pendingEffectContinuations: [expect.objectContaining({ batchId: 'batch-1' })],
         });
-        const persisted = window.localStorage.getItem('sourdaw-agent-runs');
+        const persisted = readPersistedAgentRunText();
         if (!persisted) {
             throw new Error('Expected atomic recovery settlement to persist the AgentRun state.');
         }
@@ -359,9 +360,11 @@ describe('agentRunExecutionSettlement', () => {
             committedRevision: 'revision-2',
         });
 
-        expect(setItem).toHaveBeenCalledExactlyOnceWith('sourdaw-agent-runs', expect.any(String));
+        expect(setItem.mock.calls.map(([key]) => key).filter((key) => key.startsWith('sourdaw-agent-runs'))).toEqual([
+            `sourdaw-agent-runs:run:${confirmation.runId}`,
+        ]);
         setItem.mockRestore();
-        const persisted = window.localStorage.getItem('sourdaw-agent-runs');
+        const persisted = readPersistedAgentRunText();
         if (!persisted) {
             throw new Error('Expected ordinary committed recovery settlement to persist the AgentRun state.');
         }

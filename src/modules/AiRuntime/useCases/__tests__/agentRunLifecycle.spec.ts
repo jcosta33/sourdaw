@@ -1,6 +1,7 @@
 import { parse as parsePersistedValue } from 'superjson';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { type AgentRun, type AgentRunPendingEffect } from '../../models/AgentRun';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunStore, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
@@ -205,7 +206,7 @@ describe('agentRunLifecycle', () => {
         });
         expect(agentRunLifecycle.get(runId)).toMatchObject({ phase: 'created' });
 
-        const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
+        const serializedState = readPersistedAgentRunText();
         if (!serializedState) {
             throw new Error('Expected the manual-repair saga state to be durable.');
         }
@@ -438,7 +439,7 @@ describe('agentRunLifecycle', () => {
             })
         ).not.toThrow();
 
-        const unsettled = readAgentRunState();
+        const unsettled = structuredClone(readAgentRunState());
         delete unsettled.runs[0]!.saga.steps[0]!.manualReviewDisposition;
         agentRunStore.set(unsettled);
         expect(() =>
@@ -488,7 +489,7 @@ describe('agentRunLifecycle', () => {
                 completedAt: 4,
             })
         ).not.toThrow();
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain(receiptIdentity);
+        expect(readPersistedAgentRunText()).toContain(receiptIdentity);
     });
 
     it('keeps non-render pending effect recoveries in the generic projection', () => {
@@ -775,7 +776,7 @@ describe('agentRunLifecycle', () => {
                 recordedAt: 5,
             });
 
-            const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
+            const serializedState = readPersistedAgentRunText();
             if (!serializedState) {
                 throw new Error('Expected the manual render repair projection to be durable.');
             }
@@ -871,7 +872,7 @@ describe('agentRunLifecycle', () => {
             })
         ).toBeNull();
 
-        const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
+        const serializedState = readPersistedAgentRunText();
         if (!serializedState) {
             throw new Error('Expected the normalized render recovery to be durable.');
         }

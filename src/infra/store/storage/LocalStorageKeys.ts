@@ -133,8 +133,14 @@ export type LocalStorageKey =
     // Stores AI action history (undo groups, timestamps, prompts)
     | 'sourdaw-ai-history'
 
-    // Stores resumable local AI run metadata, receipts, leases, and cleanup ownership
+    // Stored resumable local AI run metadata, receipts, leases, and cleanup ownership as one value; read once to seed 'sourdaw-agent-runs:index'
     | 'sourdaw-agent-runs'
+
+    // Stores the order of the retained local AI runs, their recovery ledgers, and the key holding each run
+    | 'sourdaw-agent-runs:index'
+
+    // Stores one retained local AI run: its metadata, receipts, leases, and cleanup ownership
+    | `${LocalStoragePartKeyPrefix}${string}`
 
     // Stores user-defined keyboard shortcuts saved before physical-key capture, read once to seed 'sourdaw-shortcut-bindings'
     | 'sourdaw-shortcuts'
@@ -144,3 +150,6 @@ export type LocalStorageKey =
 
     // Stores if the user has dismissed the alpha notice modal
     | 'sourdaw-alpha-notice-dismissed';
+
+/** Prefixes of the keys a partitioned value stores one part under each. */
+export type LocalStoragePartKeyPrefix = 'sourdaw-agent-runs:run:';

@@ -10,6 +10,7 @@ import {
 } from '#/modules/Command/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { selectRetainedSectionRenderManualReviews } from '../selectRetainedSectionRenderManualReviews';
@@ -186,9 +187,7 @@ describe('settleRetainedSectionRenderManualReview', () => {
                     expect.objectContaining({ state: 'reviewed', manualReviewDisposition: disposition }),
                 ])
             );
-            expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain(
-                `"manualReviewDisposition":"${disposition}"`
-            );
+            expect(readPersistedAgentRunText()).toContain(`"manualReviewDisposition":"${disposition}"`);
             expect(mocks.disposeExact).toHaveBeenCalledTimes(disposition === 'discarded' ? 2 : 0);
             expect(mocks.retryRenders).not.toHaveBeenCalled();
             expect(mocks.executeProjectBatch).not.toHaveBeenCalled();
@@ -290,7 +289,7 @@ describe('settleRetainedSectionRenderManualReview', () => {
 
     it('updates only the exact effect step IDs when another external effect shares the work ID', () => {
         const review = createReviewObligation();
-        const state = readAgentRunState();
+        const state = structuredClone(readAgentRunState());
         state.runs[0]!.saga.steps.push({
             ...structuredClone(state.runs[0]!.saga.steps[0]!),
             stepId: 'external:batch-review:unrelated',
@@ -322,7 +321,7 @@ describe('settleRetainedSectionRenderManualReview', () => {
 
     it('removes only the settled batch from manual resume and preserves unrelated recovery work', () => {
         const review = createReviewObligation();
-        const state = readAgentRunState();
+        const state = structuredClone(readAgentRunState());
         state.runs[0]!.manualResume = {
             required: true,
             reason: 'Two retained operations require manual review.',
@@ -491,7 +490,7 @@ describe('settleRetainedSectionRenderManualReview', () => {
         ],
     ])('rejects settlement after the durable %s no longer exactly matches', (_label, mutate) => {
         const review = createReviewObligation();
-        const state = readAgentRunState();
+        const state = structuredClone(readAgentRunState());
         mutate(state);
         agentRunStore.set(state);
 
@@ -550,7 +549,7 @@ describe('settleRetainedSectionRenderManualReview', () => {
         ],
     ])('keeps the durable obligation when there is a %s', (_label, mutate) => {
         const review = createReviewObligation();
-        const state = readAgentRunState();
+        const state = structuredClone(readAgentRunState());
         mutate(state);
         agentRunStore.set(state);
 

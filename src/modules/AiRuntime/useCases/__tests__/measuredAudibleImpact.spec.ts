@@ -9,6 +9,7 @@ import { executeAppAction, parseVersionedCommandBatchEnvelope } from '#/modules/
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { AGENT_RUN_MAX_TEXT_LENGTH, MAX_AUDIBLE_CLAIM_METRICS, MAX_AUDIBLE_PREDICTIONS } from '../../models/AgentRun';
 import {
     type MeasuredMetricDelta,
@@ -296,7 +297,7 @@ function movedFiguresFromApprovalCard(confirmationId: string) {
 
 /** What a reload reads: the JSON the store wrote, not the in-memory state. */
 function reloadRunFromStorage(): ReturnType<typeof sanitizeAgentRunState>['runs'][number] | undefined {
-    const written = localStorage.getItem('sourdaw-agent-runs');
+    const written = readPersistedAgentRunText();
     if (written === null) {
         throw new Error('The run store wrote nothing.');
     }

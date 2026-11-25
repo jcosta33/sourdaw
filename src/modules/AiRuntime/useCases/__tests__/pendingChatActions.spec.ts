@@ -13,6 +13,7 @@ import {
 } from '#/modules/Command/useCases';
 import { captureProjectIdentity, inspectAgentProjectDivergence } from '#/modules/CrdtDocument/useCases';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import {
     clearPendingActionConfirmations,
     commitPendingActionResourceLease,
@@ -618,7 +619,7 @@ describe('pending chat action confirmation', () => {
         expect(agentRunLifecycle.get('confirm-1')?.phase).toBe('waiting-for-approval');
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('proposed');
         const result = await cancelPendingChatActions({ confirmationId: 'confirm-1' });
-        expect(parse(window.localStorage.getItem('sourdaw-agent-runs') ?? 'null')).toMatchObject({
+        expect(parse(readPersistedAgentRunText() ?? 'null')).toMatchObject({
             runs: [expect.objectContaining({ runId: 'confirm-1', phase: 'cancelled' })],
         });
         agentRunLifecycle.clear();

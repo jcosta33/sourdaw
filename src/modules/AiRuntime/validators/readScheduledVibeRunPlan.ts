@@ -1,4 +1,5 @@
 import { digest } from '#/utils/canonicalDigest';
+import { deepFreeze } from '#/utils/deepFreeze';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_ROLE_FAMILIES } from '../models/SemanticCommandList';
@@ -529,16 +530,6 @@ function sameRange(left: VibeRunVerificationRange | null, right: VibeRunVerifica
         left.endBeat === right.endBeat &&
         left.sectionId === right.sectionId
     );
-}
-
-function deepFreeze<Value>(value: Value): Value {
-    if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
-        for (const child of Object.values(value)) {
-            deepFreeze(child);
-        }
-        Object.freeze(value);
-    }
-    return value;
 }
 
 /**
