@@ -5,8 +5,10 @@ import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
 } from '../../../stores/externalPluginActivationStore';
+import { externalPluginParameterStore } from '../../../stores/externalPluginParameterStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { beginProjectSessionPluginRetirement } from '../beginProjectSessionPluginRetirement';
+import { carriedExternalPluginStates } from '../carriedExternalPluginStates';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { externalLatencyReporters } from '../externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from '../externalPluginActivationTasks';
@@ -14,12 +16,14 @@ import { loadedExternalInstances } from '../loadedExternalInstances';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { LIFECYCLE_SETTLEMENT_DEADLINE_MS } from '../serializePluginLifecycle';
 import { unloadPlugin } from '../unloadPlugin';
+import { unloadPluginCarryingLiveState } from '../unloadPluginCarryingLiveState';
 
 import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
 
 const mocks = vi.hoisted(() => ({
     loadPlugin: vi.fn(),
     unloadPlugin: vi.fn<typeof unloadPluginRepoSignature>(),
+    getPluginState: vi.fn<(instanceId: string) => Promise<Uint8Array>>(),
     notifyUser: vi.fn<(message: string, level?: string) => void>(),
 }));
 
@@ -28,6 +32,7 @@ type UnloadReply = Awaited<ReturnType<typeof unloadPluginRepoSignature>>;
 
 vi.mock('../../../repositories/pluginBridge/loadPlugin', () => ({ loadPlugin: mocks.loadPlugin }));
 vi.mock('../../../repositories/pluginBridge/unloadPlugin', () => ({ unloadPlugin: mocks.unloadPlugin }));
+vi.mock('../../../repositories/pluginBridge/getPluginState', () => ({ getPluginState: mocks.getPluginState }));
 vi.mock('../../../repositories/pluginBridge/onPluginLatencyChanged', () => ({
     onPluginLatencyChanged: vi.fn(() => Promise.resolve(() => {})),
 }));
@@ -61,11 +66,54 @@ function hangKeyedUnload(instanceId: string): { releaseBulkUnload: () => void } 
     return { releaseBulkUnload: () => bulkUnload.resolve(EMPTY_UNLOAD_REPLY) };
 }
 
+const LATE_INSTANCE_ID = 'plugin-instance-1';
+
+/** A load reply for `LATE_INSTANCE_ID`; `engine_plugin_id: null` is a load no engine has taken yet. */
+function lateInstanceLoad(enginePluginId: number | null): PluginInstance {
+    return {
+        instance_id: LATE_INSTANCE_ID,
+        plugin_id: 'hung-compressor',
+        name: 'Hung Compressor',
+        parameters: [],
+        is_active: true,
+        latency_samples: 0,
+        latency_ms: 0,
+        tail_samples: 0,
+        engine_plugin_id: enginePluginId,
+    };
+}
+
+/**
+ * Load `LATE_INSTANCE_ID` attached to a running engine, start its carrying
+ * unload with the native call held, and answer the held call by hand. The bulk
+ * unload a fence runs answers at once.
+ */
+async function holdCarryingUnloadOfLoadedInstance(): Promise<{
+    unload: Promise<void>;
+    held: PromiseWithResolvers<UnloadReply>;
+}> {
+    mocks.loadPlugin.mockResolvedValue(lateInstanceLoad(1000));
+    await activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: LATE_INSTANCE_ID });
+    mocks.getPluginState.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const held = Promise.withResolvers<UnloadReply>();
+    onTestFinished(() => {
+        held.resolve(EMPTY_UNLOAD_REPLY);
+    });
+    mocks.unloadPlugin.mockImplementation((requested?: string) =>
+        requested === LATE_INSTANCE_ID ? held.promise : Promise.resolve(EMPTY_UNLOAD_REPLY)
+    );
+    const unload = unloadPluginCarryingLiveState(LATE_INSTANCE_ID);
+    await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(LATE_INSTANCE_ID));
+    return { unload, held };
+}
+
 describe('resetExternalPluginRuntimeForGraphRebuild', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearLoadedExternalPlugins();
+        carriedExternalPluginStates.clear();
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
+        mocks.getPluginState.mockResolvedValue(new Uint8Array());
         mocks.loadPlugin.mockResolvedValue({
             instance_id: 'plugin-instance-1',
             parameters: [],
@@ -428,5 +476,117 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         await reset;
 
         expect(bulkObservedSettledKeyedUnload).toBe(true);
+    });
+
+    describe('a late answer to an unload a fence let go of', () => {
+        async function letGoThroughGraphRebuild(): Promise<void> {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            onTestFinished(() => {
+                vi.useRealTimers();
+            });
+            const reset = resetExternalPluginRuntimeForGraphRebuild();
+            await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+            vi.useRealTimers();
+            await reset;
+        }
+
+        async function reactivate(enginePluginId: number | null): Promise<void> {
+            mocks.loadPlugin.mockResolvedValue(lateInstanceLoad(enginePluginId));
+            await activateExternalPlugin({ pluginId: 'hung-compressor', instanceId: LATE_INSTANCE_ID });
+            expect(mocks.loadPlugin).toHaveBeenCalledTimes(2);
+        }
+
+        function expectReactivatedInstanceKept(activationStatus: unknown): void {
+            expect(loadedExternalInstances.has(LATE_INSTANCE_ID)).toBe(true);
+            expect(externalPluginParameterStore.value?.byInstanceId[LATE_INSTANCE_ID]?.engineAttached).toBe(true);
+            expect(externalPluginActivationStore.value?.byInstanceId[LATE_INSTANCE_ID]).toEqual(activationStatus);
+            // The old generation's read must not wait for the next activation as a carry.
+            expect(carriedExternalPluginStates.has(LATE_INSTANCE_ID)).toBe(false);
+        }
+
+        it('does not forget the instance a graph rebuild reactivated, nor carry the old read onto it', async () => {
+            const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
+            await letGoThroughGraphRebuild();
+            await reactivate(1001);
+            const activationStatus = externalPluginActivationStore.value?.byInstanceId[LATE_INSTANCE_ID];
+            expect(activationStatus).toEqual({ status: 'active' });
+
+            held.resolve({ unloadedInstanceIds: [LATE_INSTANCE_ID], errors: [], reports: [] });
+            await unload;
+
+            expectReactivatedInstanceKept(activationStatus);
+        });
+
+        it('leaves no carry for the next activation when it answers before any reactivation', async () => {
+            const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
+            await letGoThroughGraphRebuild();
+
+            held.resolve({ unloadedInstanceIds: [LATE_INSTANCE_ID], errors: [], reports: [] });
+            await unload;
+
+            expect(carriedExternalPluginStates.has(LATE_INSTANCE_ID)).toBe(false);
+        });
+
+        it('does not restore the old attachment onto the reactivated instance when it rejects', async () => {
+            const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
+            await letGoThroughGraphRebuild();
+            // No engine has taken the reactivated instance yet, so it is loaded detached.
+            await reactivate(null);
+            expect(externalPluginParameterStore.value?.byInstanceId[LATE_INSTANCE_ID]?.engineAttached).toBe(false);
+
+            held.reject(new Error('late native unload failure'));
+            await expect(unload).rejects.toThrow('late native unload failure');
+
+            expect(loadedExternalInstances.has(LATE_INSTANCE_ID)).toBe(true);
+            expect(externalPluginParameterStore.value?.byInstanceId[LATE_INSTANCE_ID]?.engineAttached).toBe(false);
+        });
+
+        it('does not run a keyed unload queued behind the hung one onto the reactivated instance', async () => {
+            const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
+            // Admitted before the fence too (Remove, Undo, Remove), queued on the hung call's turn.
+            const queuedUnload = unloadPlugin(LATE_INSTANCE_ID);
+            await letGoThroughGraphRebuild();
+            await reactivate(1001);
+            const activationStatus = externalPluginActivationStore.value?.byInstanceId[LATE_INSTANCE_ID];
+            mocks.unloadPlugin.mockImplementation((requested?: string) =>
+                Promise.resolve({
+                    unloadedInstanceIds: requested === undefined ? [] : [requested],
+                    errors: [],
+                    reports: [],
+                })
+            );
+
+            held.resolve({ unloadedInstanceIds: [LATE_INSTANCE_ID], errors: [], reports: [] });
+            await unload;
+            await queuedUnload;
+
+            expect(mocks.unloadPlugin.mock.calls.filter(([requested]) => requested === LATE_INSTANCE_ID)).toHaveLength(
+                1
+            );
+            expectReactivatedInstanceKept(activationStatus);
+        });
+
+        it('does not forget the instance a cancelled session retirement reactivated', async () => {
+            const { unload, held } = await holdCarryingUnloadOfLoadedInstance();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            onTestFinished(() => {
+                vi.useRealTimers();
+            });
+            const retirement = await beginProjectSessionPluginRetirement();
+            const retiring = retirement.retire();
+            await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS);
+            vi.useRealTimers();
+            await retiring;
+            // Cancelled: the carries stay for the rebuild that reactivates the instance.
+            retirement.reopen();
+            await reactivate(1001);
+            const activationStatus = externalPluginActivationStore.value?.byInstanceId[LATE_INSTANCE_ID];
+            expect(activationStatus).toEqual({ status: 'active' });
+
+            held.resolve({ unloadedInstanceIds: [LATE_INSTANCE_ID], errors: [], reports: [] });
+            await unload;
+
+            expectReactivatedInstanceKept(activationStatus);
+        });
     });
 });

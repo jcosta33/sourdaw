@@ -55,7 +55,16 @@
  * reports to whatever `registerReleasedStripReportSink` wired up as soon as
  * the bridge reply carries any, ahead of the errors check below: the reports
  * describe native state that already committed, so their being forwarded does
- * not depend on whether some other instance in the same cascade also errored.
+ * not depend on whether some other instance in the same cascade also errored,
+ * nor on whether a rebuild fence let go of the unload before it answered.
+ *
+ * ── A let-go unload's answer reconciles nothing ───────────────────────────
+ *
+ * A rebuild fence that stops waiting for a keyed unload lets go of it, and the
+ * rebuild may activate the same instance id again before the native call
+ * answers. Its answer then describes the old generation, so neither a success
+ * (forgetting the instance) nor a failure (restoring the captured attachment)
+ * is applied to the instance now standing under that id.
  */
 
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
@@ -109,7 +118,10 @@ function attachedInstanceIds(instanceId?: string): ReadonlySet<string> {
  * back. See the header for why the whole captured set is restored rather than
  * the failed leg's share of it.
  */
-export async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
+export async function unloadWithRetractedMirror(
+    instanceId?: string,
+    wasLetGo: () => boolean = () => false
+): Promise<void> {
     const attached = attachedInstanceIds(instanceId);
     if (instanceId === undefined) {
         markEveryExternalPluginParameterSnapshotDetached();
@@ -121,9 +133,14 @@ export async function unloadWithRetractedMirror(instanceId?: string): Promise<vo
         if (unloaded.reports.length > 0) {
             forwardReleasedStripReports(unloaded.reports);
         }
+        if (wasLetGo()) {
+            return;
+        }
         reconcileUnloadResult(unloaded, instanceId);
     } catch (error) {
-        markExternalPluginParameterSnapshotsAttached(attached);
+        if (!wasLetGo()) {
+            markExternalPluginParameterSnapshotsAttached(attached);
+        }
         throw error;
     }
 }

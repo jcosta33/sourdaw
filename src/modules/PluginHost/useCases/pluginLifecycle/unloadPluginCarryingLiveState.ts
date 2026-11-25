@@ -10,12 +10,15 @@ import { unloadWithRetractedMirror } from './unloadWithRetractedMirror';
  * live state to that reactivation. Other teardowns use `unloadPlugin`.
  */
 export function unloadPluginCarryingLiveState(instanceId: string): Promise<void> {
-    return scheduleKeyedUnload(instanceId, async () => {
+    return scheduleKeyedUnload(instanceId, async (wasLetGo) => {
         const reads = await readLiveStatesForTeardown([instanceId], 'inside-lifecycle');
         try {
-            await unloadWithRetractedMirror(instanceId);
+            await unloadWithRetractedMirror(instanceId, wasLetGo);
         } finally {
-            commitCarriedLiveStates(reads, loadedExternalInstances.has(instanceId) ? [] : [instanceId]);
+            // A let-go read is the old generation's; the id may be live again.
+            if (!wasLetGo()) {
+                commitCarriedLiveStates(reads, loadedExternalInstances.has(instanceId) ? [] : [instanceId]);
+            }
         }
     });
 }
