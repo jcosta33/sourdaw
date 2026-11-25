@@ -123,6 +123,7 @@ async function queueSelection(change: (transaction: object) => void): Promise<vo
         release.resolve();
     }
     await snapshot;
+    trackStore.hydrate();
     await selection;
 }
 

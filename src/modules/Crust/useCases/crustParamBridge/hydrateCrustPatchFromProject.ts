@@ -75,7 +75,11 @@ function isStoredTrue(stored: number): boolean {
  * table leaves that field at its current patch value rather than inventing a
  * neighbour — a corrupt record must not be silently reinterpreted.
  */
-function withGlobalFields(patch: CrustPatch, parameterValues: Record<string, number>): CrustPatch {
+function withGlobalFields(
+    patch: CrustPatch,
+    parameterValues: Record<string, number>,
+    restorePresetDefaults: boolean
+): CrustPatch {
     let next = patch;
 
     for (const field of NUMERIC_FIELDS) {
@@ -86,9 +90,10 @@ function withGlobalFields(patch: CrustPatch, parameterValues: Record<string, num
     }
 
     for (const field of BOOLEAN_FIELDS) {
-        const stored = Object.hasOwn(parameterValues, field)
-            ? parameterValues[field]
-            : Number(DEFAULT_CRUST_PATCH[field]);
+        const stored =
+            restorePresetDefaults && !Object.hasOwn(parameterValues, field)
+                ? Number(DEFAULT_CRUST_PATCH[field])
+                : parameterValues[field];
         if (isFiniteNumber(stored) && !Object.is(next[field], isStoredTrue(stored))) {
             next = { ...next, [field]: isStoredTrue(stored) };
         }
@@ -116,12 +121,18 @@ function absentEnumValue(field: EnumField, patch: CrustPatch): string {
     return field === 'scrollSpeed' ? patch.scrollSpeed : DEFAULT_CRUST_PATCH[field];
 }
 
-function withEnumFields(patch: CrustPatch, parameterValues: Record<string, number>): CrustPatch {
+function withEnumFields(
+    patch: CrustPatch,
+    parameterValues: Record<string, number>,
+    restorePresetDefaults: boolean
+): CrustPatch {
     let next = patch;
     for (const field of Object.keys(ENUM_FIELD_NAMES) as EnumField[]) {
         const name = Object.hasOwn(parameterValues, field)
             ? nameAt(ENUM_FIELD_NAMES[field], parameterValues[field])
-            : absentEnumValue(field, next);
+            : restorePresetDefaults || (field === 'algorithm' && Object.hasOwn(parameterValues, 'style'))
+              ? absentEnumValue(field, next)
+              : null;
         if (name !== null && next[field] !== name) {
             next = { ...next, [field]: name };
         }
@@ -181,14 +192,17 @@ export function hydrateCrustPatchFromProject(
     const parameterValues = device.parameterValues ?? {};
 
     const currentPatch = getCrustState(deviceId).patch;
-    let patch = withGlobalFields(currentPatch, parameterValues);
+    // The regular projection can observe a queued enum or switch gesture before its frame writes.
+    // Only committed preset replay restores those missing controls to their engine defaults.
+    const restorePresetDefaults = presetMetadata !== undefined;
+    let patch = withGlobalFields(currentPatch, parameterValues, restorePresetDefaults);
     if (
         presetMetadata &&
         (patch.name !== presetMetadata.name || patch.streamingPreset !== presetMetadata.streamingPreset)
     ) {
         patch = { ...patch, name: presetMetadata.name, streamingPreset: presetMetadata.streamingPreset };
     }
-    patch = withEnumFields(patch, parameterValues);
+    patch = withEnumFields(patch, parameterValues, restorePresetDefaults);
     patch = withStoredOversampling(
         patch,
         Object.hasOwn(parameterValues, CRUST_PARAM_IDS.oversampling)
