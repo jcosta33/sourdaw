@@ -42,6 +42,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         engineSampleRateOf: vi.fn((): number | null => null),
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,
@@ -135,6 +137,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         sanitizeTrackSnapshot: vi.fn(),
+        isFrozenTrackRefusingRecording: actual.isFrozenTrackRefusingRecording,
         activeRecordingRef: { current: [] },
         readMusicalRangeInputs: vi.fn(() => []),
         trackStore: mocks.trackStore,

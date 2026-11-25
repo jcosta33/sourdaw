@@ -159,3 +159,10 @@ arrival frame behind an unrelated note-on`). Running expression immediately inst
     clock, and keep another track's future compensated source: `startPlayheadSchedulerLoopAudioStall.spec.ts`
     must fail if retirement happens only after the MIDI await or cuts that other source. A mocked programme
     call proves eligibility only.
+16. **A format's documented "not implemented" answer is not a refusal (#6592).** The VST3 host accepted only
+    `kResultOk` from `setProcessing`, so every plugin on the SDK `AudioEffect` default, which answers
+    `kNotImplemented`, was bypassed: effects ran dry and instruments were silent. The check entered in #2869,
+    whose review drove only fixtures that answered `kResultOk`. For each lifecycle call a change interprets,
+    take the return the format SDK's own base class gives by default and drive a fixture returning exactly
+    it; the host must treat that answer the way the SDK documents it. Narrowing acceptance to `kResultOk`
+    must fail the processed-block case in `vst3_hosting.rs`.

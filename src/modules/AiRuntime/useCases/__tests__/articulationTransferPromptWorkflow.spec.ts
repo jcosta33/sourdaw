@@ -22,6 +22,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { BUILTIN_DEVICE_TYPES } from '#/utils/builtinDeviceTypes';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -1003,24 +1004,40 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(markerStore.value?.sections.map((section) => section.id)).toContain('section-bridge');
     });
 
-    it('fails closed before confirmation when the target track has no per-note articulation instrument', async () => {
-        const state = trackStore.value!;
-        trackStore.set({
-            ...state,
-            tracks: state.tracks.map((track) => ({
-                ...track,
-                devices: track.devices.map((device) => ({ ...device, type: 'fermenter', name: 'Fermenter' })),
-            })),
-        });
+    it.each(BUILTIN_DEVICE_TYPES.filter((type) => type !== 'levain'))(
+        'fails closed before confirmation when the target track holds only %s, which voices no per-note articulation',
+        async (type) => {
+            const state = trackStore.value!;
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => ({
+                    ...track,
+                    devices: track.devices.map((device) => ({ ...device, type, name: type })),
+                })),
+            });
+            // Articulation-less source notes skip the per-articulation mapping check, so only the
+            // instrument's own answer can refuse the transfer.
+            const midi = midiStore.value!;
+            midiStore.set({
+                ...midi,
+                notesByClipId: {
+                    ...midi.notesByClipId,
+                    'clip-chorus-one': midi.notesByClipId['clip-chorus-one']!.map((note) => {
+                        const { articulation: _articulation, ...legacyNote } = note;
+                        return legacyNote;
+                    }),
+                },
+            });
 
-        await sendChatMessage(PROMPT);
+            await sendChatMessage(PROMPT);
 
-        expect(getConfirmationId()).toBe('');
-        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
-            'legato',
-            'sustain',
-        ]);
-    });
+            expect(getConfirmationId()).toBe('');
+            expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+                'legato',
+                'sustain',
+            ]);
+        }
+    );
 
     it('fails closed before confirmation when a source articulation has no canonical runtime mapping', async () => {
         const state = midiStore.value!;

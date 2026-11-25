@@ -46,6 +46,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
 }));
 
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    isExternalPluginDeviceType: (deviceType: string) => deviceType === 'external-plugin',
+}));
+
 // The save reads the settled-take count with its snapshot; no take is recorded here.
 vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => 0,

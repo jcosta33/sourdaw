@@ -4925,9 +4925,6 @@
     },
     "src/modules/AiRuntime/useCases/reproposePendingChatActions.ts": {
         "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-lines-per-function": {
             "count": 1
         }
     },
@@ -5009,9 +5006,6 @@
         },
         "sourdaw-craft/no-silent-catch": {
             "count": 1
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 2
         }
     },
     "src/modules/AiRuntime/useCases/validateActionPayload.ts": {
@@ -14085,14 +14079,9 @@
     },
     "src/modules/Knead/handlers/pitch/handleCommitPitchEdit.ts": {
         "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        }
-    },
-    "src/modules/Knead/handlers/pitch/handleRestoreClipFileId.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
         }
     },
@@ -16445,17 +16434,6 @@
     "src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParamWithPatch.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 1
-        }
-    },
-    "src/modules/Proof/useCases/proofParamBridge/rehydrateRestoredPatch.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 3
         }
     },
     "src/modules/Proof/useCases/proofParamBridge/setProofParam.ts": {
