@@ -21,6 +21,8 @@ export type CoordinatedTrackList = {
     end: number;
     /** The list's clauses with the list written as its first member alone: "turn the □□□□□ down 3 dB". */
     collapsedMasked: string;
+    /** `collapsedMasked` in the request's own words, character for character. */
+    collapsedText: string;
     /** Each member's track, in list order, or null when any member does not name exactly one track. */
     memberIds: string[] | null;
     /**
@@ -230,7 +232,10 @@ function readListAt(input: {
         if (listHead.both.length > 0 && members.length !== 2) {
             return null;
         }
-        const headWithoutBoth = head.masked.slice(listHead.lead.length + listHead.both.length).trimEnd();
+        const headWithoutBothStart = listHead.lead.length + listHead.both.length;
+        const headWithoutBoth = head.masked.slice(headWithoutBothStart).trimEnd();
+        const headWithoutBothEnd = headWithoutBothStart + headWithoutBoth.length;
+        const tailStart = clause.masked.length - listTail.tail.length;
         const memberIds = resolveMembers({ ...input, members });
         const namedOutsideList = getTracksNamedOutsideList({
             ...input,
@@ -244,6 +249,7 @@ function readListAt(input: {
             start: head.start,
             end: clause.end,
             collapsedMasked: `${listHead.lead}${headWithoutBoth}${listTail.tail}`,
+            collapsedText: `${head.text.slice(0, listHead.lead.length)}${head.text.slice(headWithoutBothStart, headWithoutBothEnd)}${clause.text.slice(tailStart)}`,
             memberIds,
             memberNamedOutsideList: namedOutsideList.some((trackIds) => [...trackIds].some(isMember)),
             everyOtherClauseNamesAnotherTrack: namedOutsideList.every((trackIds) =>

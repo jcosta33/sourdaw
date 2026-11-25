@@ -130,7 +130,6 @@ import {
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
-import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
 import { findTrailingRangePhrase } from './groundingStrategies/findTrailingRangePhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
@@ -148,6 +147,7 @@ import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicit
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
+import { namesOnlyNonTrackObject } from './groundingStrategies/namesOnlyNonTrackObject';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
 import { groundPostScopeAdmission } from './groundingStrategies/postScopeAdmissionStrategy';
@@ -155,6 +155,7 @@ import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTar
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
+import { LEVEL_NOUNS, RATIONALE_BOUNDARY_PATTERN, readsAsLevelClause } from './groundingStrategies/readsAsLevelClause';
 import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
 import { readStatedRangeBeats } from './groundingStrategies/readStatedRangeBeats';
 import { resolveCallRange } from './groundingStrategies/resolveCallRange';
@@ -1278,6 +1279,39 @@ function isLevelContinuationClause(
 }
 
 /**
+ * Whether a continuation adds an object other than a track to a track action's level: "set Drums to
+ * -6 dB, Vocal Take to -3 dB" names the clip Vocal Take, which no fader is.
+ */
+function continuesOntoNonTrackObject(
+    groundingRules: GroundingRules,
+    clause: PromptClause,
+    context: ProjectContext
+): boolean {
+    if (groundingRules.targetRules[0]?.capability !== 'track') {
+        return false;
+    }
+    const reference = /clip□+|□+/u.exec(clause.masked);
+    return (
+        reference !== null &&
+        namesOnlyNonTrackObject(clause.text.slice(reference.index, reference.index + reference[0].length), context)
+    );
+}
+
+/** Whether a track fader clause stating a decibel figure reads in the one level-clause shape. */
+function readsAsTrackLevelClause(
+    actionName: string,
+    clause: PromptClause,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): boolean {
+    const entry = catalog.find((candidate) => candidate.actionType === actionName);
+    if (actionName !== 'setTrackGain' || entry === undefined) {
+        return true;
+    }
+    return readsAsLevelClause({ clause, closesOnRange: false, context, entry });
+}
+
+/**
  * The scope extended over a continuation clause. The continuation's reference joins the source
  * side; the destination stays the one the scope already named.
  */
@@ -1418,24 +1452,36 @@ function getSendSetScope(input: {
     };
 }
 
-/** The head may contain only the action carrier before the first whole target. */
-function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
-    const commandLead = lead
-        .trim()
-        .replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '')
-        .replace(/^please(?:\s+|$)/iu, '');
-    const normalizedLead = normalizePromptText(commandLead);
-    const normalizedIntent = normalizePromptText(intentPhrase);
-    if (intentPhrase.startsWith(REFERENCE_PLACEHOLDER)) {
-        // "Drums and Bass up 2 dB": the phrase opens with its reference, so the list is the whole head.
-        return normalizedLead.length === 0;
-    }
+/** The whole clauses a request may carry beside a referenced level phrase, and nothing else. */
+const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay']);
+
+/**
+ * Whether the list, read with its members as one, is a level clause in the shape a single target's is,
+ * so "lower the volume of the Drums and the Bass by 3 dB" reads as "lower the volume of the Drums by 3 dB".
+ */
+function readsAsCollapsedLevelClause(
+    list: CoordinatedTrackList,
+    input: { actionName: string; catalog: GroundingCatalog; context: ProjectContext }
+): boolean {
+    const entry = input.catalog.find((candidate) => candidate.actionType === input.actionName);
     return (
-        normalizedLead.length > 0 &&
-        (normalizedIntent === normalizedLead ||
-            normalizedIntent.startsWith(`${normalizedLead} `) ||
-            // "set Drums and Bass volume to -6 dB" states its gain intent after the list.
-            (/^(?:set|make)$/u.test(normalizedLead) && /^(?:gain|volume|louder|quieter)$/u.test(normalizedIntent)))
+        entry !== undefined &&
+        readsAsLevelClause({
+            clause: { masked: list.collapsedMasked, text: list.collapsedText },
+            closesOnRange: declaresRange(input.actionName),
+            context: input.context,
+            entry,
+        })
+    );
+}
+
+/**
+ * Whether a member's whole name is a courtesy word: "Okay, Drums up 2 dB" beside a track called Okay
+ * may list Okay or open on courtesy, and nothing in the words says which.
+ */
+function hasCourtesyNamedMember(list: CoordinatedTrackList, prompt: string): boolean {
+    return list.members.some((member) =>
+        STRICT_COURTESY_CLAUSES.has(normalizePromptText(prompt.slice(member.start, member.end)))
     );
 }
 
@@ -1554,13 +1600,18 @@ function getCoordinatedLevelLists(input: {
         const intent = resolveClauseActionIntent(list.collapsedMasked, input.catalog, input.actionName);
         if (
             intent?.actionType !== input.actionName ||
-            !hasCompleteListHead(list.lead, intent.phrase) ||
+            !readsAsCollapsedLevelClause(list, input) ||
             namesLevelOutsideActionFader(input.actionName, clause, input.context)
         ) {
             return [];
         }
         const range = { firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex };
-        if (list.memberIds === null || list.memberNamedOutsideList || !list.everyOtherClauseNamesAnotherTrack) {
+        if (
+            list.memberIds === null ||
+            list.memberNamedOutsideList ||
+            !list.everyOtherClauseNamesAnotherTrack ||
+            hasCourtesyNamedMember(list, input.prompt)
+        ) {
             return [{ ...range, scope: null }];
         }
         if (targetRule.cardinality === 'many') {
@@ -1802,6 +1853,9 @@ function resolveActionPromptScope({
                     takesContinuation = decibelLevelForms.length > 0;
                     continue;
                 }
+                if (!readsAsTrackLevelClause(actionName, clause, catalog, context)) {
+                    continue;
+                }
                 const sendSetScope = getSendSetScope({
                     actionName,
                     clause,
@@ -1829,7 +1883,8 @@ function resolveActionPromptScope({
         if (
             continuesScope &&
             isLevelContinuationClause(clause.masked, decibelLevelForms) &&
-            !namesLevelOutsideActionFader(actionName, clause, context)
+            !namesLevelOutsideActionFader(actionName, clause, context) &&
+            !continuesOntoNonTrackObject(groundingRules, clause, context)
         ) {
             if (previousScope) {
                 matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
@@ -1951,27 +2006,13 @@ function resolveActionPromptScope({
     return compiledGroup ? { ...selectedScope, compilerGroupArguments: compiledGroup.arguments } : selectedScope;
 }
 
-/** The whole clauses a request may carry beside a referenced level phrase, and nothing else. */
-const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay']);
-
 /**
- * Whether a coordinated list is read: it resolves to a scope (it ends on its one figure and names no member
- * outside it) and the batch answers every member it grounds. A list that does not may single a member out
- * or restate the level ("... down 3 dB instead", "... only in the chorus"), which no word list enumerates.
+ * Whether a coordinated list is read: it resolves to a scope of its own, reading in the one level-clause
+ * shape and naming no member outside it. A list that does not may single a member out or restate the
+ * level ("... down 3 dB instead", "... only in the chorus"), which no word list enumerates.
  */
-function isListAnsweredByEveryMember(
-    list: CoordinatedLevelList,
-    calls: readonly ToolCallResult[],
-    actionName: string,
-    targetArgument: string
-): boolean {
-    const memberIds = list.scope?.coordinatedTargets?.memberIds;
-    return (
-        memberIds !== undefined &&
-        memberIds.every((memberId) =>
-            calls.some((call) => call.name === actionName && call.arguments[targetArgument] === memberId)
-        )
-    );
+function resolvesToListScope(list: CoordinatedLevelList): boolean {
+    return list.scope?.coordinatedTargets?.memberIds !== undefined;
 }
 
 /**
@@ -2021,19 +2062,14 @@ function readsOnlyReferencedVcaLevel(input: {
 }
 
 function readsOnlyReferencedLevelClauses(input: {
-    calls: readonly ToolCallResult[];
     catalog: GroundingCatalog;
     context: ProjectContext;
     prompt: string;
 }): boolean {
-    const { calls, catalog, context, prompt } = input;
+    const { catalog, context, prompt } = input;
     const actionName = 'setTrackGain';
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     if (!groundingRules) {
-        return false;
-    }
-    const targetArgument = groundingRules.targetRules[0]?.argument;
-    if (targetArgument === undefined) {
         return false;
     }
     const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
@@ -2049,16 +2085,13 @@ function readsOnlyReferencedLevelClauses(input: {
         maskedPrompt,
         prompt,
     });
-    let continuesReferencedLevel = false;
     return clauses.every((clause, clauseIndex) => {
-        const continuesScope = continuesReferencedLevel;
-        continuesReferencedLevel = false;
         if (
             coordinatedLevelLists.some(
                 (list) =>
                     clauseIndex >= list.firstClauseIndex &&
                     clauseIndex <= list.lastClauseIndex &&
-                    isListAnsweredByEveryMember(list, calls, actionName, targetArgument)
+                    resolvesToListScope(list)
             )
         ) {
             return true;
@@ -2070,12 +2103,9 @@ function readsOnlyReferencedLevelClauses(input: {
             return false;
         }
         const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
-        const continuesLevel =
-            intent === null
-                ? continuesScope && isLevelContinuationClause(clause.masked, decibelLevelForms)
-                : intent.actionType === actionName && intent.referenceSlot !== undefined;
-        continuesReferencedLevel = continuesLevel;
-        return continuesLevel;
+        return intent === null
+            ? isLevelContinuationClause(clause.masked, decibelLevelForms)
+            : intent.actionType === actionName && intent.referenceSlot !== undefined;
     });
 }
 
@@ -3173,7 +3203,7 @@ function getMarkerReferenceNameFromPrompt(promptText: string): string | null {
     if (!beatClause) {
         return null;
     }
-    const rationale = /\s+(?=(?:because\b|since\b|so\b|to\b|for\b|as\b|which\b|when\b|where\b))/iu.exec(tail);
+    const rationale = RATIONALE_BOUNDARY_PATTERN.exec(tail);
     const nameEnd = Math.min(beatClause.index, rationale?.index ?? beatClause.index);
     const unquotedName = tail
         .slice(0, nameEnd)
@@ -3292,7 +3322,7 @@ function getSectionNameFromPrompt(promptText: string): string | null {
     if (/^(?:"|'|“|‘)/u.test(rawName.trim())) {
         return parseExplicitSectionName(rawName);
     }
-    const rationale = /\s+(?=(?:because|since|so|to|for|as|which|when|where)\b)/iu.exec(rawName);
+    const rationale = RATIONALE_BOUNDARY_PATTERN.exec(rawName);
     return parseExplicitSectionName(rawName.slice(0, rationale?.index ?? rawName.length));
 }
 
@@ -3863,7 +3893,7 @@ function validateStringLiteralValue(
         const normalizedAssertedValue = normalizePromptText(assertedValue);
         let aliases: readonly string[] = [];
         if (normalizedAssertedValue === 'gain') {
-            aliases = ['gain', 'volume', 'fader', 'level'];
+            aliases = LEVEL_NOUNS;
         } else if (normalizedAssertedValue === 'pan') {
             aliases = ['pan', 'panning'];
         }
@@ -7549,7 +7579,6 @@ function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput):
     if (
         main.rejections.some((mainRejection) => mainRejection.name === '<batch>') ||
         (!readsOnlyReferencedLevelClauses({
-            calls: input.calls,
             catalog,
             context: input.context,
             prompt: input.prompt,
