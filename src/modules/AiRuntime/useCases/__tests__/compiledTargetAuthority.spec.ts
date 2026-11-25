@@ -2909,6 +2909,28 @@ describe('a name picks its track by the words a user types for it (#5395)', () =
     });
 });
 
+describe('a figure-led word before the words of an indexed name replaces its index (#5395)', () => {
+    const indexed = namedTracksContext(['01 Kick', '02 Snare']);
+    const setKick = trackItem('setTrackGain', indexed.track('01 Kick'), { gain: 0.75 });
+
+    it.each(['set the 2nd kick volume to 75%', 'set 02: kick volume to 75%', 'set (02) kick volume to 75%'])(
+        'refuses a 01 Kick pick for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(prompt, [setKick], [], indexed.context);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+        }
+    );
+
+    it('grounds a 01 Kick pick for "set the kick volume to 75%", whose figure follows the words', () => {
+        const result = compileAndBridge('set the kick volume to 75%', [setKick], [], indexed.context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
+    });
+});
+
 describe('a user-set device name states that device (#5450)', () => {
     const fixItVocals = createTrack({
         id: 'track-fix-it-vocals',

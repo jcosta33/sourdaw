@@ -52,8 +52,11 @@ const ANY_OR_NO_JOINER = '([^\\p{L}\\p{N}]*)';
 /** A word of figures alone, which opens an indexed name such as "01 Kick". */
 const INDEX_WORD = /^\p{N}+$/u;
 
-/** A figure word closing the text, past the space, underscore, dash or full stop after it: "02 " in "mute 02 ". */
-const CLOSING_FIGURE_WORD = /(?<![\p{L}\p{N}])\p{N}+[\p{Zs}\t_.-]*$/u;
+/**
+ * A word opening with a figure that closes the text, past any punctuation or space after it: "02 " in
+ * "mute 02 ", "02: " in "mute 02: ", "2nd " in "mute the 2nd ".
+ */
+const CLOSING_FIGURE_WORD = /(?<![\p{L}\p{N}])\p{N}[\p{L}\p{N}]*[^\p{L}\p{N}]*$/u;
 
 /**
  * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
@@ -381,8 +384,9 @@ function matchNameWords(
 }
 
 /**
- * The ranges stating a name an index word opens ("01 Kick") by the words after it, wherever no figure
- * word comes right before them, so "the kick" states 01 Kick while "02 kick" never does.
+ * The ranges stating a name an index word opens ("01 Kick") by the words after it, wherever no word
+ * opening with a figure comes right before them, so "the kick" states 01 Kick while "02 kick", "02:
+ * kick" and "the 2nd kick" never do.
  */
 function findUnindexedSpans(
     reading: NameReading,
@@ -417,7 +421,7 @@ function findUnindexedSpans(
  * Lead; while beside Bass and Drums tracks "Bass & Drums", "Bass | Drums" and a bulleted list of the
  * two never state Bass Drums, nor beside Bass and Drum Bus tracks does "Bass & Drum Bus" state Bass
  * Drum. A name that an index word opens ("01 Kick") is also stated by its other words, least closely
- * of all, wherever no figure word comes right before them. A range the name as typed covers, both read
+ * of all, wherever no word opening with a figure comes right before them. A range the name as typed covers, both read
  * composed and with every dash as the hyphen, reads as typed and reaches as far as the typed name does,
  * short of the punctuation closing it, wherever the text goes on: "Kick (In)" reads Kick (In) more
  * closely than Kick In, "Hi–Hat" reads Hi-Hat more closely than Hi Hat, and "Lead?" in "mute Lead?!"

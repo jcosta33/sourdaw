@@ -1922,6 +1922,49 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         expect(resolveTrack(prompt, trackIdNamed(project, refused), project)).toMatchObject({ status: 'rejected' });
     });
 
+    it.each(['mute the 2nd kick', 'mute 02: kick', 'mute 02, kick'])(
+        'never resolves "%s" to 01 Kick, whose index another figure-led word replaces',
+        (prompt) => {
+            const project = tracksNamed(['01 Kick', '02 Snare']);
+
+            expect(resolveTrack(prompt, trackIdNamed(project, '01 Kick'), project)).toMatchObject({
+                status: 'rejected',
+            });
+        }
+    );
+
+    it('resolves "bypass the Fix It EQ" to the device the user named Fix It EQ', () => {
+        const project = namedTracksProject([
+            { id: 'track-vocals', name: 'Vocals' },
+            { id: 'track-keys', name: 'Keys' },
+        ]);
+        const [vocals, keys] = project.tracks;
+        const context: ProjectContext = {
+            ...project,
+            tracks: [
+                {
+                    ...vocals!,
+                    deviceCount: 1,
+                    devices: [{ id: 'eq-fix-it', type: 'builtin-eq', name: 'Fix It EQ', bypassed: false }],
+                },
+                {
+                    ...keys!,
+                    deviceCount: 1,
+                    devices: [{ id: 'eq-plain-keys', type: 'builtin-eq', name: 'EQ', bypassed: false }],
+                },
+            ],
+            availableDeviceTypes: [{ id: 'builtin-eq', name: 'EQ' }],
+        };
+        const resolveDevice = (assertedId: string) =>
+            resolveAgentReference({ prompt: 'bypass the Fix It EQ', assertedId, capability: 'device', context });
+
+        expect(resolveDevice('eq-fix-it')).toEqual(resolvedTo('eq-fix-it', 'EQ', 'exact-name'));
+        expect(resolveDevice('eq-plain-keys')).toMatchObject({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
+        });
+    });
+
     describe('a device the user named after a track', () => {
         function deviceNamedVocalsProject(): ProjectContext {
             const project = namedTracksProject([
