@@ -12,7 +12,7 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { slippedMidiOffset } from '../projectClipFieldActions';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
-import { readPlannedClip } from './readPlannedClip';
+import { clipEditedEarlierInBatch, readPlannedClip } from './readPlannedClip';
 
 const rowReplay = createMidiRowCoordinateReplay('slipClipContent');
 
@@ -103,6 +103,10 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
         const label = 'Slip clip content';
         try {
             if (action.payload.clipType === 'audio') {
+                // The capture reads the clip as the store holds it, so an earlier edit of it in the batch makes it stale.
+                if (clipEditedEarlierInBatch(action.payload.clipId, context)) {
+                    return { label, inverseAction: null };
+                }
                 const capture = captureAudioSlip(action);
                 if (!capture) {
                     return { label, inverseAction: null };

@@ -3,6 +3,7 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
 import { type Track } from '../stores/trackStore';
+import { planStartTrim } from '../useCases/clipEditing/planStartTrim';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -87,12 +88,16 @@ export function slippedMidiOffset(payload: ActionOf<'slipClipContent'>['payload'
     });
 }
 
-/** The head a trim of the start leaves: it moves only to a start before the clip's end, clamped at beat 0. */
+/** The head a trim of the start leaves, from the writer's own law. */
 export function trimmedStartBeat(clip: Clip, newStartBeat: number): number {
-    if (Number.isFinite(newStartBeat) && newStartBeat < clip.endBeat) {
-        return Math.max(0, newStartBeat);
+    if (!Number.isFinite(newStartBeat)) {
+        return clip.startBeat;
     }
-    return clip.startBeat;
+    const plan = planStartTrim(clip, newStartBeat, undefined, undefined);
+    if (plan === null || plan === 'refused') {
+        return clip.startBeat;
+    }
+    return plan.clip.startBeat;
 }
 
 /** The distance a nudge moves a clip: a locked clip stays, and the start clamps at beat 0. */
@@ -104,9 +109,19 @@ export function nudgeAppliedBeats(clip: Clip, beats: number): number {
 }
 
 export function projectMidiClipStart(action: ActionOf<'trimClipStart'>, projected: Track): void {
-    const clip = findProjectedClip(projected, action.payload.clipId);
-    // The audio trim re-derives its source window, so only the other kinds project the start.
-    if (clip && clip.type !== 'audio') {
-        clip.startBeat = trimmedStartBeat(clip, action.payload.newStartBeat);
+    const index = projected.clips.findIndex((candidate) => candidate.id === action.payload.clipId);
+    const clip = projected.clips[index];
+    // An audio trim re-derives its source window through captured state, so a plan that reads it is unknown.
+    if (!clip || clip.type === 'audio' || !Number.isFinite(action.payload.newStartBeat)) {
+        return;
+    }
+    const plan = planStartTrim(
+        clip,
+        action.payload.newStartBeat,
+        action.payload.loopOriginBeat,
+        action.payload.midiOffsetBeats
+    );
+    if (plan !== null && plan !== 'refused') {
+        projected.clips[index] = plan.clip;
     }
 }

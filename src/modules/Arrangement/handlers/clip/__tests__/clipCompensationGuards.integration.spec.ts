@@ -69,6 +69,8 @@ type GuardCase = {
     /** A foreign write of the same field, after the action committed. */
     foreignWrite: () => void;
     foreign: unknown;
+    /** A foreign write made while the action is undone, when `foreignWrite` would leave the undone state as it is. */
+    foreignWriteWhileUndone?: () => void;
     /** The expected-state keys the action's recorded inverse carries. */
     expectedKeys: string[];
 };
@@ -138,6 +140,7 @@ const cases: GuardCase[] = [
         before: false,
         after: true,
         foreignWrite: () => muteClip('clip-1', false),
+        foreignWriteWhileUndone: () => muteClip('clip-1', true),
         foreign: false,
         expectedKeys: ['expectedMuted'],
     },
@@ -171,6 +174,7 @@ const cases: GuardCase[] = [
         before: false,
         after: true,
         foreignWrite: () => lockClip('clip-1', false),
+        foreignWriteWhileUndone: () => lockClip('clip-1', true),
         foreign: false,
         expectedKeys: ['expectedLocked'],
     },
@@ -304,6 +308,25 @@ describe('clip edit compensation guards', () => {
             expect(undoStore.value?.future).toHaveLength(0);
         });
 
+        it('refuses the redo and keeps a foreign edit made while undone', async () => {
+            registerHandlers();
+            seedClip(guard.seed);
+            await executeAppActionBatch([guard.action], { source: 'prompt', requireCompensation: true });
+            await undo();
+            (guard.foreignWriteWhileUndone ?? guard.foreignWrite)();
+            const diverged = structuredClone(currentClip());
+            const notificationsBefore = notifications.length;
+
+            await redo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(1);
+            expect(notifications.slice(notificationsBefore)).toEqual([
+                expect.objectContaining({ level: 'warning', message: expect.stringContaining('Cannot redo') }),
+            ]);
+        });
+
         it('stays refused when the recorded inverse carries no expected state', async () => {
             registerHandlers({ type: guard.type, strip: guard.expectedKeys });
             seedClip(guard.seed);
@@ -313,6 +336,100 @@ describe('clip edit compensation guards', () => {
 
             expect(result).toMatchObject({ status: 'rejected', reason: compensationRefusal(guard.type) });
             expect(currentClip()).toEqual(prior);
+        });
+    });
+
+    describe('a clip edited more than once in one batch', () => {
+        const midiSeed: Partial<Clip> = {
+            type: 'midi',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetBeats: 0,
+            midiOffsetBeats: 0,
+        };
+        const nudge = (beats: number): AppAction => ({ type: 'nudgeClip', payload: { clipId: 'clip-1', beats } });
+        const trimStart = (newStartBeat: number): AppAction => ({
+            type: 'trimClipStart',
+            payload: { clipId: 'clip-1', newStartBeat },
+        });
+        const slip = (offset: number): AppAction => ({
+            type: 'slipClipContent',
+            payload: { clipId: 'clip-1', clipType: 'midi', offset },
+        });
+
+        it.each([
+            { name: 'a nudge then a trim of the start', actions: [nudge(2), trimStart(3)], start: 3, offset: 1 },
+            { name: 'two trims of the start', actions: [trimStart(2), trimStart(4)], start: 4, offset: 4 },
+            { name: 'a trim of the start then a slip', actions: [trimStart(2), slip(1)], start: 2, offset: 1 },
+        ])('undoes $name back to the exact prior clip', async ({ actions, start, offset }) => {
+            registerHandlers();
+            seedClip(midiSeed);
+            const prior = structuredClone(currentClip());
+
+            const result = await executeAppActionBatch(actions, {
+                source: 'prompt',
+                requireCompensation: true,
+                groupId: 'clip-sequence',
+                groupLabel: 'Edit one clip twice',
+            });
+
+            expect(result.status).toBe('committed');
+            expect(currentClip()).toMatchObject({ startBeat: start, midiOffsetBeats: offset });
+
+            await undo();
+
+            expect(notifications).toEqual([]);
+            expect(currentClip()).toEqual(prior);
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(actions.length);
+
+            await redo();
+
+            expect(notifications).toEqual([]);
+            expect(currentClip()).toMatchObject({ startBeat: start, midiOffsetBeats: offset });
+            expect(undoStore.value?.future).toHaveLength(0);
+        });
+
+        it('rejects a guarded edit planned after an audio trim of the same clip', async () => {
+            registerHandlers();
+            seedClip({ startBeat: 0, endBeat: 8 });
+            const prior = structuredClone(currentClip());
+
+            const alone = await executeAppActionBatch([trimStart(2)], { source: 'prompt', requireCompensation: true });
+            expect(alone.status).toBe('committed');
+            await undo();
+            expect(currentClip()).toEqual(prior);
+
+            const result = await executeAppActionBatch([trimStart(2), nudge(1)], {
+                source: 'prompt',
+                requireCompensation: true,
+            });
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Action is not compensable inside an atomic batch: nudgeClip',
+            });
+            expect(currentClip()).toEqual(prior);
+        });
+
+        it('rejects a guarded edit planned after an earlier action split the clip', async () => {
+            registerHandlers();
+            seedClip({ startBeat: 0, endBeat: 8 });
+            const priorTracks = structuredClone(trackStore.value?.tracks);
+
+            const result = await executeAppActionBatch(
+                [
+                    { type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } },
+                    { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 3 } },
+                ],
+                { source: 'prompt', requireCompensation: true }
+            );
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Action is not compensable inside an atomic batch: trimClipEnd',
+            });
+            expect(trackStore.value?.tracks).toEqual(priorTracks);
         });
     });
 });

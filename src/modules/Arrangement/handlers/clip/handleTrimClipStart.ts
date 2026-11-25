@@ -19,7 +19,7 @@ import { trimmedStartBeat } from '../projectClipFieldActions';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
-import { readPlannedClip } from './readPlannedClip';
+import { clipEditedEarlierInBatch, readPlannedClip } from './readPlannedClip';
 
 const rowReplay = createMidiRowCoordinateReplay('trimClipStart');
 
@@ -233,11 +233,12 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
             preparedLegacyRedos.set(alpha, null);
         }
         try {
-            const state = getTrackStoreState();
-            const clip = state?.tracks
-                .flatMap((time) => time.clips)
-                .find((context) => context.id === alpha.payload.clipId);
+            const clip = readPlannedClip(alpha.payload.clipId, context);
             if (!clip) {
+                return { label, inverseAction: null };
+            }
+            // The audio capture reads the clip as the store holds it, so an earlier edit of it in the batch makes it stale.
+            if (clip.type === 'audio' && clipEditedEarlierInBatch(clip.id, context)) {
                 return { label, inverseAction: null };
             }
 
