@@ -86,12 +86,9 @@ export async function observedClick(target: Locator, row: WorkspaceObservation, 
                 { timeout: 1000 }
             )
             .catch(() => null);
-        if (witness) {
-            try {
-                Object.assign(entry, await witness.evaluate(({ state }) => state));
-            } catch {
-                // The real click still decides the step.
-            }
+        const initial = await witness?.evaluate(({ state }) => state).catch(() => null);
+        if (initial) {
+            Object.assign(entry, initial);
         }
         try {
             await target.click();
@@ -108,7 +105,9 @@ export async function observedClick(target: Locator, row: WorkspaceObservation, 
                 } catch {
                     entry.received = null;
                 } finally {
-                    await witness.dispose().catch(() => {});
+                    await witness.dispose().catch(() => {
+                        entry.received = null;
+                    });
                 }
             }
         }
