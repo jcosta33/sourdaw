@@ -2934,9 +2934,9 @@ function getNamedReferenceSpans(
 /**
  * The name of the one existing section a section request states, whole, between its section intent
  * and its beat range ("remove the section Chorus Two from beat 16 to beat 32"); null when that text is
- * no section's whole name or a name several sections share. The text is read whole, never searched
- * for a name inside it, so a request naming a section the project lacks never names a shorter one
- * its name contains.
+ * no section's whole name or a name several sections share. The text and each name are normalized
+ * alike and compared whole, never searched for a name inside it, so a request naming a section the
+ * project lacks never names a shorter one its name contains.
  */
 function getWholeSectionReferenceName(
     promptText: string,
@@ -2946,11 +2946,10 @@ function getWholeSectionReferenceName(
     if (slot === null) {
         return null;
     }
-    const statedName = parseExplicitSectionName(slot);
-    if (statedName === null) {
+    const name = normalizePromptText(slot);
+    if (name.length === 0) {
         return null;
     }
-    const name = normalizePromptText(statedName);
     const named = sections.filter((section) => normalizePromptText(section.name) === name);
     return named.length === 1 ? named[0]!.name : null;
 }
@@ -3282,14 +3281,25 @@ function parseExplicitSectionName(value: string): string | null {
     return trimmed.replace(/[,:;.?!]+$/u, '').trim() || null;
 }
 
-/** The text a section request states between its section intent and its beat range, or null. */
+/**
+ * The text a section request states between its beat range and the section intent closest before
+ * it, or null. An earlier clause ("I will add a section later; remove the section Chorus …") states
+ * no part of the name.
+ */
 function getSectionNameSlot(promptText: string): string | null {
-    const intent = /\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/iu.exec(promptText);
     const range = getSectionRangeFromPrompt(promptText);
-    if (!intent || !range || range.startIndex <= intent.index + intent[0].length) {
+    if (!range) {
         return null;
     }
-    return promptText.slice(intent.index + intent[0].length, range.startIndex).trim();
+    const intentEnds = Array.from(
+        promptText.matchAll(/\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/giu),
+        (intent) => intent.index + intent[0].length
+    );
+    const slotStart = intentEnds.findLast((end) => end < range.startIndex);
+    if (slotStart === undefined) {
+        return null;
+    }
+    return promptText.slice(slotStart, range.startIndex).trim();
 }
 
 function getSectionNameFromPrompt(promptText: string): string | null {

@@ -1259,6 +1259,53 @@ describe('section references beside a section whose name the other contains', ()
         expect(groundSectionCall(call, prompt, [CHORUS, VERSE])).toEqual({ actions: [action], rejections: [] });
     });
 
+    // The stated name and every section name are read alike and compared whole: a section named with
+    // "or" or ending in punctuation is still that section, and only the intent closest before the
+    // range opens the name.
+    it.each([
+        {
+            prompt: 'remove the section Call or Response from beat 16 to beat 32',
+            section: { ...CHORUS, id: 'section-call-response', name: 'Call or Response' },
+        },
+        {
+            prompt: 'remove the section Intro! from beat 16 to beat 32',
+            section: { ...CHORUS, id: 'section-intro', name: 'Intro!' },
+        },
+        {
+            prompt: 'I will add a section later; remove the section Chorus from beat 16 to beat 32',
+            section: CHORUS,
+        },
+    ])('grounds "$prompt" as the section it names whole', ({ prompt, section }) => {
+        const call = { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: section.name } };
+
+        expect(groundSectionCall(call, prompt, [section, VERSE])).toEqual({
+            actions: [{ type: 'removeSection', payload: { sectionId: section.id } }],
+            rejections: [],
+        });
+    });
+
+    it.each([
+        {
+            case: 'two sections a request names apart',
+            prompt: 'remove the section Chorus or Verse from beat 16 to beat 32',
+            sections: [CHORUS, VERSE],
+        },
+        {
+            case: 'a name two sections share',
+            prompt: 'remove the section Chorus from beat 16 to beat 32',
+            sections: [CHORUS, { ...CHORUS, id: 'section-chorus-again', startBeat: 48, endBeat: 64 }],
+        },
+    ])('refuses a removal naming $case', ({ prompt, sections }) => {
+        const call = { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } };
+
+        expect(groundSectionCall(call, prompt, sections)).toEqual({
+            actions: [],
+            rejections: [
+                { index: 0, name: 'removeSection', reason: 'Provider value name does not match the user request' },
+            ],
+        });
+    });
+
     // #6264: the digit in "Chorus 2" is part of the section name, never a second decibel figure.
     it.each([
         'Lower send from Lead Vocal to Hall by 3 dB in Chorus 2',
