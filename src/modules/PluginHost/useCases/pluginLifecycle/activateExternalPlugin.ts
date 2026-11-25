@@ -433,6 +433,12 @@ export function activateExternalPlugin({
                 setActivationStatus(instanceId, 'error', reason);
             }
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${reason}`);
+            // A load a rebuild overtook still holds its task and leaves its instance loaded, so it answers
+            // like an overtaken success and keeps the task for the rebuild's read. A load whose task a
+            // teardown or successor took over reports its own failure.
+            if (activationHoldsInstance() && activationEpoch !== externalPluginActivationEpoch.current) {
+                return SUPERSEDED_LOAD;
+            }
             return { status: 'failed', stage: 'load', reason };
         }
 

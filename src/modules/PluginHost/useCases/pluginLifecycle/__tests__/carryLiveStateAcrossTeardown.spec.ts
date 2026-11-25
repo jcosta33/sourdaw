@@ -822,12 +822,32 @@ describe('live plugin state across an app-initiated teardown', () => {
 
                 expect(preservationReason(INSTANCE_ID)).toBe('restore-pending');
             });
+
+            // A rejected load the rebuild overtook is as unreadable as an accepted one: the host may report defaults.
+            it('restores the saved chunk after a load the rebuild overtook rejects', async () => {
+                const load = Promise.withResolvers<PluginInstance>();
+                mocks.loadPlugin.mockReturnValueOnce(load.promise);
+                mocks.getPluginState.mockResolvedValue(LIVE_BYTES);
+
+                const superseded = activate(SAVED_CHUNK);
+                const rebuild = resetExternalPluginRuntimeForGraphRebuild();
+                load.reject(new Error('load refused'));
+                await expect(superseded).resolves.toMatchObject({ reason: expect.stringContaining('superseded') });
+                await rebuild;
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+
+                await expect(activate(SAVED_CHUNK)).resolves.toEqual({ status: 'active' });
+
+                expect(mocks.setPluginState.mock.calls).toEqual([[INSTANCE_ID, SAVED_BYTES]]);
+            });
         });
 
         // The rebuild fence waits on this activation, and a restore issued behind the fence waits on the fence.
         it('settles a rebuild that began between a rejected carry and the project chunk restore', async () => {
             await activateAndEdit(SAVED_CHUNK);
             await unloadPluginCarryingLiveState(INSTANCE_ID);
+            // Only the rebuild's own read is observed below.
+            mocks.getPluginState.mockClear();
             const heldCarriedRestore = Promise.withResolvers<void>();
             mocks.setPluginState.mockReturnValueOnce(heldCarriedRestore.promise);
             // Release the held restore however the case ends, so it cannot leak into later cases.
@@ -838,21 +858,23 @@ describe('live plugin state across an app-initiated teardown', () => {
                 rebuild = resetExternalPluginRuntimeForGraphRebuild();
             });
             vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-            let rebuildSettled = false;
 
             const activation = activate(SAVED_CHUNK);
             try {
                 await vi.waitFor(() => expect(mocks.setPluginState).toHaveBeenCalledOnce());
                 heldCarriedRestore.reject(new Error('carried bytes rejected'));
-                await vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS - 1);
-                void rebuild?.finally(() => {
-                    rebuildSettled = true;
-                });
-                await vi.advanceTimersByTimeAsync(0);
+                await vi.waitFor(() => expect(rebuild).toBeDefined());
+                // The rebuild must end before the fence's own deadline could release it.
+                const winner = await Promise.race([
+                    rebuild?.then(() => 'rebuild'),
+                    vi.advanceTimersByTimeAsync(LIFECYCLE_SETTLEMENT_DEADLINE_MS - 1).then(() => 'deadline'),
+                ]);
 
-                expect(rebuild).toBeDefined();
-                expect(rebuildSettled).toBe(true);
+                expect(winner).toBe('rebuild');
                 expect(mocks.setPluginState).toHaveBeenCalledOnce();
+                // The overtaken activation's task stays, so the rebuild's read preserved the stored chunk
+                // without asking the plugin, whose state may be its defaults.
+                expect(mocks.getPluginState).not.toHaveBeenCalled();
                 expect(externalPluginActivationStore.value?.byInstanceId[INSTANCE_ID]?.message).toBeUndefined();
             } finally {
                 // A rebuild still held at the deadline must end however the case does.
