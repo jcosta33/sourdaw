@@ -1,12 +1,12 @@
 import { getChangesMetaSince, getHeads, type Heads } from '@automerge/automerge';
 
-import { getWarpState, trackStore } from '#/modules/Arrangement/stores';
+import { type getWarpState, trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction, executeAppActionBatch } from '#/modules/Command/useCases';
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { updatePreferences } from '#/modules/Preferences/useCases';
-import { type buildProjectData } from '#/modules/Project/useCases';
+
+import type { midiStore } from '#/modules/MIDI/stores';
 
 const TRACKS_PER_KIND = 16;
 const CLIPS_PER_TRACK = 8;
@@ -78,18 +78,19 @@ export async function seedDenseElasticProject(targetClipId: string) {
         const notes: Action[] = [];
         for (let index = trackIndex === 0 ? 1 : 0; index < CLIPS_PER_TRACK; index++) {
             const clipId = `dense-clip-${trackIndex}-${index}`;
-            clips.push({
-                type: 'addClip',
-                payload: {
-                    id: clipId,
-                    trackId,
-                    name: `Dense phrase ${index + 1}`,
-                    type: audio ? 'audio' : 'midi',
-                    startBeat: index * length,
-                    endBeat: (index + 1) * length,
-                    ...(audio ? { audioBufferId: source.audioBufferId, assetHash: source.assetHash } : {}),
-                },
-            });
+            const payload: Extract<Action, { type: 'addClip' }>['payload'] = {
+                id: clipId,
+                trackId,
+                name: `Dense phrase ${index + 1}`,
+                type: audio ? 'audio' : 'midi',
+                startBeat: index * length,
+                endBeat: (index + 1) * length,
+            };
+            if (audio) {
+                payload.audioBufferId = source.audioBufferId;
+                payload.assetHash = source.assetHash;
+            }
+            clips.push({ type: 'addClip', payload });
             if (!audio) {
                 notes.push({
                     type: 'addNotes',
@@ -157,21 +158,21 @@ function observeNamedAutosave(status: HTMLElement, preference: Pick<Preferences,
     const firstFire = Promise.withResolvers<{ fired: number; pending: boolean }>();
     let scheduled = 0;
     // Restoring the preference synchronously schedules the application's actual interval.
-    window.setInterval = (callback, delay, ...args) => {
-        if (typeof callback !== 'function' || delay !== preference.autoSaveIntervalMs) {
-            return nativeInterval(callback, delay, ...args);
-        }
-        scheduled = performance.now();
-        return nativeInterval(
-            function (this: unknown, ...received: unknown[]) {
+    window.setInterval = new Proxy(nativeInterval, {
+        apply(target, receiver: unknown, args: unknown[]): unknown {
+            const [callback, delay, ...extra] = args;
+            if (typeof callback !== 'function' || delay !== preference.autoSaveIntervalMs) {
+                return Reflect.apply(target, receiver, args);
+            }
+            scheduled = performance.now();
+            function observedCallback(this: unknown, ...received: unknown[]) {
                 const mark = performance.mark('dense-elastic-named-autosave');
                 firstFire.resolve({ fired: mark.startTime, pending: status.textContent === 'Detecting…' });
                 Reflect.apply(callback, this, received);
-            },
-            delay,
-            ...args
-        );
-    };
+            }
+            return Reflect.apply(target, receiver, [observedCallback, delay, ...extra]);
+        },
+    });
     try {
         updatePreferences({ patch: preference });
     } finally {
@@ -265,28 +266,44 @@ export async function detectAcrossNamedAutosave(
     }
 }
 
-type NamedSnapshot = NonNullable<Awaited<ReturnType<typeof buildProjectData>>>['data'];
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export async function readNamedElasticSave(key: string, clipId: string, trackId: string) {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('sourdaw-projects');
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onerror = () => reject(new Error('Could not open the project database', { cause: request.error }));
     });
     try {
         const raw = await new Promise<unknown>((resolve, reject) => {
             const tx = database.transaction('projects', 'readonly');
             const request = tx.objectStore('projects').get(key);
             tx.oncomplete = () => resolve(request.result);
-            tx.onabort = () => reject(tx.error);
+            tx.onabort = () => reject(new Error('Could not read the named project snapshot', { cause: tx.error }));
         });
         if (typeof raw !== 'string') {
             return null;
         }
-        const snapshot = JSON.parse(raw) as NamedSnapshot;
+        const snapshot: unknown = JSON.parse(raw);
+        if (
+            !isRecord(snapshot) ||
+            !isRecord(snapshot.arrangement) ||
+            !Array.isArray(snapshot.arrangement.tracks) ||
+            !Array.isArray(snapshot.warpStates)
+        ) {
+            throw new TypeError('Named project snapshot is missing arrangement tracks or warp states');
+        }
+        const tracks: unknown[] = snapshot.arrangement.tracks;
+        const warpStates: unknown[] = snapshot.warpStates;
+        const track = tracks.find((value): value is Record<string, unknown> => isRecord(value) && value.id === trackId);
+        const warpState = warpStates.find(
+            (value): value is Record<string, unknown> => isRecord(value) && value.clipId === clipId
+        );
         return {
-            markers: snapshot.warpStates?.find((state) => state.clipId === clipId)?.markers,
-            trackName: snapshot.arrangement.tracks.find((track) => track.id === trackId)?.name,
+            markers: warpState?.markers,
+            trackName: track?.name,
         };
     } finally {
         database.close();

@@ -1248,7 +1248,7 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
         async (button, { path, preference }) => {
             const status = button.closest('[data-testid="elastic-editor-panel"]')?.querySelector('[role="status"]');
             if (!(button instanceof HTMLButtonElement) || !(status instanceof HTMLElement)) {
-                throw new Error('The mounted Detect button and its status are required');
+                throw new TypeError('The mounted Detect button and its status are required');
             }
             const dense: DenseElasticFixture = await import(path);
             return dense.detectAcrossNamedAutosave(button, status, preference);
