@@ -28,6 +28,7 @@ import {
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
+import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
 import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSampleLibraryHandlers } from '#/modules/SampleLibrary/useCases';
@@ -77,6 +78,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getLevainHandlers(),
         getToasterHandlers(),
         getGlutenHandlers(),
+        getProofHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
         getRaveHandlers(),

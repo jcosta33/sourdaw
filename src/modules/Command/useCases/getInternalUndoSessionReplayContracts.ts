@@ -50,6 +50,7 @@ function createCapturedDeviceReplayContract(
         | 'setGlutenFactoryPreset'
         | 'setGrandBouleDeviceState'
         | 'setLevainIdentity'
+        | 'setProofPatchSelection'
         | 'setToasterFactoryKit'
 ): SessionActionContract {
     return {
@@ -121,6 +122,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
         createCapturedDeviceReplayContract('setGrandBouleDeviceState'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
+        createCapturedDeviceReplayContract('setProofPatchSelection'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
