@@ -62,6 +62,12 @@ export type LiveMidiProgrammeRead = LiveMidiProgramme & Readonly<{ probabilitySe
  * an exported note twice. The figure is read as the audio programme reads its
  * clips' (`readLiveGraphProgramme`), so a strip's notes and clips keep the
  * offset they have in the mix.
+ *
+ * The span the projection admits against is moved by the same figure
+ * (`spanForStrip`), so a note is admitted by where it sounds. That is the
+ * audio programme's law too: the engine loops the timeline, so a clip shifted
+ * past the loop end is not reached that pass and one shifted into the loop
+ * from before its start is.
  */
 function compensateTargets(
     targets: LiveMidiProgramme['targets'],
@@ -92,6 +98,9 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
         return { ...EMPTY_PROGRAMME, probabilitySeed };
     }
     const hostedStripIds = carriedEngineHostedStripIds(input.carriedStripIds, input.stripTracks);
+    function compensationDelaySeconds(stripId: string): number {
+        return getCompensationDelay(stripId, undefined, hostedStripIds);
+    }
     const projected = projectLiveMidiProgramme({
         stripTracks: input.stripTracks,
         attachedInstanceIds: input.attachedInstanceIds,
@@ -113,12 +122,14 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
         projectChordPitch: createChordPitchProjector?.() ?? null,
         resolveArticulationId,
         span: input.span,
+        spanForStrip: (stripId) => {
+            const delay = compensationDelaySeconds(stripId);
+            return { startSeconds: input.span.startSeconds - delay, endSeconds: input.span.endSeconds - delay };
+        },
     });
     return {
         ...projected,
-        targets: compensateTargets(projected.targets, (stripId) =>
-            getCompensationDelay(stripId, undefined, hostedStripIds)
-        ),
+        targets: compensateTargets(projected.targets, compensationDelaySeconds),
         probabilitySeed,
     };
 }

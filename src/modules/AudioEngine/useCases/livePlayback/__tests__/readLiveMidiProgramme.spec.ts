@@ -7,6 +7,8 @@
  * and adds its own shift, so the live shift has to be applied here, once, after
  * the projection answers. Every case reads the figure through the same
  * `getCompensationDelay` boundary `readLiveGraphProgramme` reads it through.
+ * The projection is a stand-in here; which notes a looping pass admits is
+ * `readLiveMidiProgrammeLoop.spec.ts`, on the real projection.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -121,7 +123,7 @@ describe('readLiveMidiProgramme compensation', () => {
         });
     });
 
-    it('reads the figure through the engine-hosted set the graph programme reads it with', () => {
+    it('reads each strip’s figure with the carried strips as the engine-hosted set', () => {
         read();
 
         const calls = vi.mocked(getCompensationDelay).mock.calls;
@@ -129,6 +131,30 @@ describe('readLiveMidiProgramme compensation', () => {
         for (const [, omitted, hosted] of calls) {
             expect(omitted).toBeUndefined();
             expect(hosted).toEqual(new Set(['delayed', 'aligned']));
+        }
+    });
+
+    // A claim names carried tracks and never a bus, while the engine's own
+    // compensation counts a compensated device on a bus like any other, so the
+    // set has to come through `engineHostedStripIds` rather than the claim alone.
+    it('adds a bus holding an engine-compensated device to the set the figure is read against', () => {
+        const bus = {
+            ...createTrack({ id: 'bus', name: 'bus', kind: 'bus', withoutDefaultDevice: true }),
+            devices: [{ id: 'bus-bacteria', name: 'Bacteria', type: 'bacteria', bypassed: false, parameterValues: {} }],
+        };
+
+        readLiveMidiProgramme({
+            stripTracks: [strip('delayed'), strip('aligned'), bus],
+            attachedInstanceIds: new Set(),
+            carriedStripIds: new Set(['delayed', 'aligned']),
+            sampleRate: SAMPLE_RATE,
+            span: { startSeconds: 0, endSeconds: Number.POSITIVE_INFINITY },
+        });
+
+        const calls = vi.mocked(getCompensationDelay).mock.calls;
+        expect(calls).not.toHaveLength(0);
+        for (const [, , hosted] of calls) {
+            expect(hosted).toEqual(new Set(['delayed', 'aligned', 'bus']));
         }
     });
 });
