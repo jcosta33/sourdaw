@@ -66,6 +66,47 @@ describe('readPlannedClip', () => {
         expect(planned).toBeUndefined();
     });
 
+    it.each<{ name: string; action: AppAction }>([
+        {
+            name: 'a ripple move of another clip',
+            action: {
+                type: 'moveClips',
+                payload: { moves: [{ clipId: 'other', trackId: 'track-1', startBeat: 8 }], ripple: true },
+            },
+        },
+        {
+            name: 'a ripple draw',
+            action: {
+                type: 'drawClip',
+                payload: { trackId: 'track-1', startBeat: 0, endBeat: 2, name: 'Drawn', type: 'midi', ripple: true },
+            },
+        },
+    ])('reads the clip as absent after $name that shifts it without naming it', ({ action }) => {
+        expect(readPlannedClip('c1', context([action]))).toBeUndefined();
+    });
+
+    it('plans the clip where an earlier ripple removal of another clip leaves it', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...createTrack({ id: 'track-1', name: 'T', kind: 'midi', withoutDefaultDevice: true }),
+                    clips: [
+                        ClipDummy.create({ id: 'c0', trackId: 'track-1', type: 'midi', startBeat: 0, endBeat: 4 }),
+                        ClipDummy.create({ id: 'c1', trackId: 'track-1', type: 'midi', startBeat: 4, endBeat: 8 }),
+                    ],
+                },
+            ],
+        });
+
+        const planned = readPlannedClip(
+            'c1',
+            context([{ type: 'removeClip', payload: { clipId: 'c0', ripple: true } }])
+        );
+
+        expect([planned?.startBeat, planned?.endBeat]).toEqual([0, 4]);
+    });
+
     it('reads the clip as absent after an earlier action that rewrites clips without naming them', () => {
         const planned = readPlannedClip('c1', context([{ type: 'deleteTime', payload: { startBeat: 0, endBeat: 2 } }]));
 

@@ -78,6 +78,11 @@ function mentions(value: unknown, clipId: string): boolean {
     return false;
 }
 
+/** Ripple moves and ripple draws shift neighbours their payload does not name, and no projection plans that shift. */
+function shiftsUnnamedClips(action: AppAction): boolean {
+    return (action.type === 'moveClips' || action.type === 'drawClip') && action.payload.ripple;
+}
+
 function projectsClip(action: AppAction, clip: Clip): boolean {
     if (!PROJECTED_CLIP_ACTION_TYPES.has(action.type)) {
         return false;
@@ -95,7 +100,7 @@ function projectsClip(action: AppAction, clip: Clip): boolean {
 /** Whether every earlier action of the batch that touches the clip is one whose result the plan projects. */
 function plansEarlierActions(clip: Clip, context: HandlerValidationContext): boolean {
     return context.actions.slice(0, context.actionIndex).every((action) => {
-        if (CLIP_WIDE_ACTION_TYPES.has(action.type)) {
+        if (CLIP_WIDE_ACTION_TYPES.has(action.type) || shiftsUnnamedClips(action)) {
             return false;
         }
         const touchesTrack = TRACK_CLIP_ACTION_TYPES.has(action.type) && mentions(action.payload, clip.trackId);

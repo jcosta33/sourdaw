@@ -4,6 +4,7 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { type Track } from '../stores/trackStore';
 import { clampClipGain } from '../transformers/clampClipGain';
 import { clampTrackHeight } from '../useCases/clampTrackHeight';
+import { planRippleDelete } from '../useCases/rippleDelete/planRippleDelete';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
 import { clampTrackPan } from '../useCases/setTrackGainPan/clampTrackPan';
 
@@ -27,6 +28,21 @@ function keepTrack(): void {
 
 function projectDiscardedClip(action: ActionOf<'discardDuplicatedClip'>, projected: Track): void {
     projected.clips = projected.clips.filter((clip) => clip.id !== action.payload.clipId);
+}
+
+function projectRemovedClip(action: ActionOf<'removeClip'>, projected: Track): void {
+    const clipId = action.payload.clipId;
+    if (!projected.clips.some((clip) => clip.id === clipId)) {
+        return;
+    }
+    // The removal closes the gap through the same plan the writer applies, so a later clip plans from where the ripple leaves it.
+    const plan = planRippleDelete(
+        { trackId: projected.id, clipIds: [clipId], ripple: action.payload.ripple },
+        { tracks: [projected] }
+    );
+    if (plan) {
+        projected.clips = plan.nextClips;
+    }
 }
 
 function projectTrackGain(action: ActionOf<'setTrackGain'>, projected: Track): void {
@@ -241,7 +257,7 @@ export const trackProjectionByActionType: {
     duplicateClip: keepTrack,
     duplicateClipToNextBar: keepTrack,
     duplicateTrack: keepTrack,
-    removeClip: keepTrack,
+    removeClip: projectRemovedClip,
     renameClip: projectClipName,
     splitClip: keepTrack,
     restoreClipSplitState: keepTrack,

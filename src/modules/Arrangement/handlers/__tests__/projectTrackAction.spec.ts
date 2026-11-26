@@ -47,6 +47,7 @@ describe('projectTrackAction', () => {
                 'lockClip',
                 'muteClip',
                 'nudgeClip',
+                'removeClip',
                 'renameClip',
                 'setClipColor',
                 'setClipFade',
@@ -162,5 +163,44 @@ describe('projectTrackAction', () => {
         ).toBeCloseTo(0.4);
         const untouched = project([{ type: 'selectTrack', payload: { trackId: 't' } }]);
         expect(untouched).toEqual(project([]));
+    });
+
+    describe('removeClip', () => {
+        const withClips: Track = {
+            ...base,
+            clips: [
+                { ...clipAt('a', 0.8), startBeat: 0, endBeat: 4 },
+                { ...clipAt('b', 0.8), startBeat: 4, endBeat: 8 },
+                { ...clipAt('c', 0.8), startBeat: 2, endBeat: 3 },
+            ],
+        };
+
+        function projectRemoval(payload: { clipId: string; ripple?: boolean }): Track {
+            const track = structuredClone(withClips);
+            projectTrackAction(track, { type: 'removeClip', payload });
+            return track;
+        }
+
+        function placements(track: Track): [string, number, number][] {
+            return track.clips.map((clip) => [clip.id, clip.startBeat, clip.endBeat]);
+        }
+
+        it('closes the gap a ripple removal leaves for the clips that start after it', () => {
+            expect(placements(projectRemoval({ clipId: 'a', ripple: true }))).toEqual([
+                ['b', 0, 4],
+                ['c', 2, 3],
+            ]);
+        });
+
+        it('drops the clip and leaves the others where they are without ripple', () => {
+            expect(placements(projectRemoval({ clipId: 'a', ripple: false }))).toEqual([
+                ['b', 4, 8],
+                ['c', 2, 3],
+            ]);
+        });
+
+        it('leaves the track alone when it does not hold the clip', () => {
+            expect(projectRemoval({ clipId: 'absent', ripple: true })).toEqual(withClips);
+        });
     });
 });
