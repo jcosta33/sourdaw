@@ -15,6 +15,8 @@ import { setProofParamWithPatch } from '../setProofParamWithPatch';
 const readTrackState = vi.hoisted(() => vi.fn<() => TrackStoreState | null>(() => null));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    // The mounted integration spec exercises the raw owner; this fixture only has a synthetic track.
+    captureDevicePatchCommitValidation: () => ({ matchesCommittedParameters: () => true }),
     getTrackStoreState: readTrackState,
     persistDevicePatch: vi.fn(),
 }));

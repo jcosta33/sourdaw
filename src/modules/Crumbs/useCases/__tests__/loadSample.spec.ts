@@ -41,6 +41,7 @@ vi.mock('../../repositories/crumbsBridge/getWaveformPeaks', () => ({
 }));
 
 import { crumbsStore, ensureInstance } from '../../stores/crumbsStore';
+import { subscribeToCrumbsSamples } from '../../stores/subscribeToCrumbsSamples';
 import { configureCrumbsSampleProjectAccess } from '../configureCrumbsSampleProjectAccess';
 import { loadSampleFromPath } from '../loadSample';
 
@@ -73,6 +74,21 @@ describe('loadSampleFromPath', () => {
     afterEach(() => {
         disposeAccess();
         crumbsStore.set({});
+    });
+
+    it('publishes each accepted sample once, including same-path replacements but not waveform updates', async () => {
+        const changed = vi.fn();
+        const unsubscribe = subscribeToCrumbsSamples(changed);
+        mocks.loadSample.mockResolvedValue(makeLoadResult());
+        mocks.getWaveformPeaks.mockResolvedValue([0.2]);
+        try {
+            await loadSampleFromPath('inst1', '/sample.wav');
+            expect(changed).toHaveBeenCalledExactlyOnceWith('inst1');
+            await loadSampleFromPath('inst1', '/sample.wav');
+            expect(changed).toHaveBeenCalledTimes(2);
+        } finally {
+            unsubscribe();
+        }
     });
 
     it('orchestrates loading process', async () => {
