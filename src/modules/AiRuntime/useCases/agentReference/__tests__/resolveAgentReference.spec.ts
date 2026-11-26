@@ -2098,7 +2098,7 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         });
     });
 
-    it('reads "mute kick/snare room" as Kick Snare beside Room, since no sibling name opens the words after the slash', () => {
+    it('refuses "mute kick/snare room" as ambiguous between Kick Snare and Room, since no sibling name opens the words after the slash', () => {
         const project = tracksNamed(['Kick Snare', 'Kick', 'Room']);
 
         expect(resolveTrack('mute kick/snare room', trackIdNamed(project, 'Kick Snare'), project)).toMatchObject({
