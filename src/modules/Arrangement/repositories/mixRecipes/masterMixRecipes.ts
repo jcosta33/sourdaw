@@ -114,11 +114,8 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when a limiter earlier in the master chain has already removed the peaks.',
             'Skip when the release cannot recover between beats at this tempo, which produces pumping across the whole mix.',
         ],
-        metrics: [
-            { metric: 'shortTermLoudnessMax', direction: 'increase' },
-            { metric: 'transientDensity', direction: 'hold' },
-        ],
-        source: 'An attack past the transient leaves the drum strike untouched and clamps the body behind it, so the peak structure survives, and on material that stays under the threshold the automatic makeup lifts short-term loudness. Two or three decibels of reduction is the working range on a master; more starts to move the balance between sources.',
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
+        source: 'An attack past the transient leaves the drum strike untouched and clamps the body behind it, so the peak structure survives. Two or three decibels of reduction is the working range on a master; more starts to move the balance between sources.',
     },
     {
         id: 'master-wide',
@@ -324,11 +321,8 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when a mix-bus compressor already applies the same slow envelope.',
             'Skip when one loud element, usually the kick, would drive the detector on its own.',
         ],
-        metrics: [
-            { metric: 'integratedLoudness', direction: 'increase' },
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-        ],
-        source: 'A single slow envelope across the mix narrows the gap between the peaks and the average level, which is what cohesion sounds like, and on material that stays under the threshold the automatic makeup lifts the average level, which is what integrated loudness measures. Keeping reduction to two or three decibels stops the envelope becoming audible as pumping on the whole programme.',
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'A single slow envelope across the mix narrows the gap between the peaks and the average level, which is what cohesion sounds like. Keeping reduction to two or three decibels stops the envelope becoming audible as pumping on the whole programme.',
     },
     {
         id: 'master-lo-fi',

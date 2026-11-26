@@ -61,7 +61,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             { metric: 'spectralCentroid', direction: 'increase' },
             { metric: 'frequencyBandEnergy', band: 'presence', direction: 'increase' },
         ],
-        source: 'Stick and beater attack lives near 4 kHz while cymbal shimmer sits above 8 kHz, and a kit reads bright only when both move. The mid bell stays wide so it lifts the attack region rather than ringing on one drum.',
+        source: 'Stick and beater attack reaches from 4 kHz up into the presence region while cymbal shimmer sits above 8 kHz, and a kit reads bright only when both move. The mid bell sits between 4.5 kHz and 5.5 kHz and stays wide so it lifts the upper attack region rather than ringing on one drum.',
     },
     {
         id: 'drums-tight',
