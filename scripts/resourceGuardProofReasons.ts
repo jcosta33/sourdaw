@@ -6,6 +6,7 @@ const transientProofReasons: readonly RegExp[] = [
     /^lsof-live-pid-missing:/,
     /^lsof-missed-pid-exited:/,
     /^lsof-missed-pid-heir:/,
+    /^lsof-inspected-pid-left:/,
     /^lsof-fields-unusable:descriptor-type-missing$/,
     /^file-census-time-bound$/,
     /^process-users-unavailable$/,

@@ -1,3 +1,4 @@
+import { captureDevicePatchCommitValidation } from '#/modules/Arrangement/useCases';
 import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -48,6 +49,16 @@ function acquireCeilingGesture(deviceId: string, scope: CeilingProjection): Ceil
     }
     const { track, device } = owner;
     const { id: trackId, frozen } = track;
+    // The same visible IDs and ceiling can belong to a new Automerge row.
+    const authority = captureDevicePatchCommitValidation({
+        trackId,
+        deviceId,
+        parameterIds: [],
+        requireCurrentProjection: true,
+    });
+    if (!authority) {
+        return undefined;
+    }
     const deviceIds = track.devices.map(({ id }) => id);
     const baseline = proofLimiterCeilingRecord.read(device.parameterValues);
     const runtime = captureDeviceParameterRuntimeWriteAuthority(trackId, deviceId, CEILING_PARAMETER);
@@ -69,7 +80,8 @@ function acquireCeilingGesture(deviceId: string, scope: CeilingProjection): Ceil
         ownerIsCurrent: () =>
             !gesture.cancelled &&
             proofLimiterCeilingProjection.get(deviceId) === scope &&
-            readExpectedOwner() !== undefined,
+            readExpectedOwner() !== undefined &&
+            authority.matchesCommittedParameters({}),
         isAdmissible: () => {
             const current = readExpectedOwner();
             return (
@@ -89,7 +101,7 @@ function acquireCeilingGesture(deviceId: string, scope: CeilingProjection): Ceil
         if (!Object.is(value, gesture.preview)) {
             return { value };
         }
-        if (gesture.isAdmissible()) {
+        if (gesture.isAdmissible() && gesture.ownerIsCurrent()) {
             return { value, runtimeOwner: runtime.owner };
         }
         const latest = scope.readOwner();
@@ -162,7 +174,7 @@ async function commitCeiling(
                 },
             },
             {
-                shouldExecute: gesture.isAdmissible,
+                shouldExecute: () => gesture.isAdmissible() && gesture.ownerIsCurrent(),
                 shouldCommit: gesture.ownerIsCurrent,
                 deviceParameterRuntimeAuthority: {
                     trackId: gesture.trackId,

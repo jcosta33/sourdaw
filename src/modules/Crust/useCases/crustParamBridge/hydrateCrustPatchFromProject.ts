@@ -9,6 +9,7 @@ import {
 } from '../../models/CrustPatch';
 import { getCrustState, loadCrustPatch } from '../../stores/crustStore';
 
+import { algorithmFromStyle } from './algorithmFromStyle';
 import {
     ALGORITHM_INDEX,
     DITHER_INDEX,
@@ -74,7 +75,11 @@ function isStoredTrue(stored: number): boolean {
  * table leaves that field at its current patch value rather than inventing a
  * neighbour — a corrupt record must not be silently reinterpreted.
  */
-function withGlobalFields(patch: CrustPatch, parameterValues: Record<string, number>): CrustPatch {
+function withGlobalFields(
+    patch: CrustPatch,
+    parameterValues: Record<string, number>,
+    restorePresetDefaults: boolean
+): CrustPatch {
     let next = patch;
 
     for (const field of NUMERIC_FIELDS) {
@@ -85,7 +90,10 @@ function withGlobalFields(patch: CrustPatch, parameterValues: Record<string, num
     }
 
     for (const field of BOOLEAN_FIELDS) {
-        const stored = parameterValues[field];
+        let stored = parameterValues[field];
+        if (restorePresetDefaults && !Object.hasOwn(parameterValues, field)) {
+            stored = Number(DEFAULT_CRUST_PATCH[field]);
+        }
         if (isFiniteNumber(stored) && !Object.is(next[field], isStoredTrue(stored))) {
             next = { ...next, [field]: isStoredTrue(stored) };
         }
@@ -106,10 +114,26 @@ const ENUM_FIELD_NAMES: Readonly<Record<EnumField, readonly string[]>> = {
     scrollSpeed: SCROLL_SPEED_NAMES,
 };
 
-function withEnumFields(patch: CrustPatch, parameterValues: Record<string, number>): CrustPatch {
+function absentEnumValue(field: EnumField, patch: CrustPatch): string {
+    if (field === 'algorithm') {
+        return algorithmFromStyle(patch.style) ?? DEFAULT_CRUST_PATCH.algorithm;
+    }
+    return field === 'scrollSpeed' ? patch.scrollSpeed : DEFAULT_CRUST_PATCH[field];
+}
+
+function withEnumFields(
+    patch: CrustPatch,
+    parameterValues: Record<string, number>,
+    restorePresetDefaults: boolean
+): CrustPatch {
     let next = patch;
     for (const field of Object.keys(ENUM_FIELD_NAMES) as EnumField[]) {
-        const name = nameAt(ENUM_FIELD_NAMES[field], parameterValues[field]);
+        let name: string | null = null;
+        if (Object.hasOwn(parameterValues, field)) {
+            name = nameAt(ENUM_FIELD_NAMES[field], parameterValues[field]);
+        } else if (restorePresetDefaults || (field === 'algorithm' && Object.hasOwn(parameterValues, 'style'))) {
+            name = absentEnumValue(field, next);
+        }
         if (name !== null && next[field] !== name) {
             next = { ...next, [field]: name };
         }
@@ -122,7 +146,7 @@ function withStoredOversampling(patch: CrustPatch, storedOversampling: number | 
         return patch;
     }
     // Oversampling is membership-resolved against the declared factor set, the
-    // same law `loadCrustPatchWithAudio` asks of the Arrangement descriptor: a
+    // same law the preset encoder asks of the Arrangement descriptor: a
     // stored number outside the set leaves the current patch value alone rather
     // than loading the number nobody is playing.
     const declared = asCrustOversampleFactor(storedOversampling as number);
@@ -142,6 +166,22 @@ function withStoredBitDepth(patch: CrustPatch, storedBitDepth: number | undefine
     return patch;
 }
 
+function readCrustDevice(deviceId: string) {
+    return trackStore.value?.tracks
+        .flatMap((track) => track.devices)
+        .find((candidate) => candidate.id === deviceId && candidate.type === 'crust');
+}
+
+function withOwnedPreviews(patch: CrustPatch, ownedPreviews: ReadonlyMap<keyof CrustPatch, number>): CrustPatch {
+    let next = patch;
+    for (const [key, value] of ownedPreviews) {
+        if (typeof DEFAULT_CRUST_PATCH[key] === 'number') {
+            next = { ...next, [key]: value };
+        }
+    }
+    return next;
+}
+
 /**
  * Re-project the device's own store slice from its persisted `parameterValues`
  * (#3673): the store holds defaults until the panel's first write, so a
@@ -152,22 +192,27 @@ function withStoredBitDepth(patch: CrustPatch, storedBitDepth: number | undefine
  */
 export function hydrateCrustPatchFromProject(
     deviceId: string,
-    ownedPreviews: ReadonlyMap<keyof CrustPatch, number> = new Map()
+    ownedPreviews: ReadonlyMap<keyof CrustPatch, number> = new Map(),
+    presetMetadata?: Pick<CrustPatch, 'name' | 'streamingPreset'>
 ): void {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
-        return;
-    }
-
-    const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    const device = readCrustDevice(deviceId);
     if (!device) {
         return;
     }
     const parameterValues = device.parameterValues ?? {};
 
     const currentPatch = getCrustState(deviceId).patch;
-    let patch = withGlobalFields(currentPatch, parameterValues);
-    patch = withEnumFields(patch, parameterValues);
+    // The regular projection can observe a queued enum or switch gesture before its frame writes.
+    // Only committed preset replay restores those missing controls to their engine defaults.
+    const restorePresetDefaults = presetMetadata !== undefined;
+    let patch = withGlobalFields(currentPatch, parameterValues, restorePresetDefaults);
+    if (
+        presetMetadata &&
+        (patch.name !== presetMetadata.name || patch.streamingPreset !== presetMetadata.streamingPreset)
+    ) {
+        patch = { ...patch, name: presetMetadata.name, streamingPreset: presetMetadata.streamingPreset };
+    }
+    patch = withEnumFields(patch, parameterValues, restorePresetDefaults);
     patch = withStoredOversampling(
         patch,
         Object.hasOwn(parameterValues, CRUST_PARAM_IDS.oversampling)
@@ -180,11 +225,7 @@ export function hydrateCrustPatchFromProject(
             ? parameterValues[CRUST_PARAM_IDS.outputBitDepth]
             : DEFAULT_CRUST_PATCH.outputBitDepth
     );
-    for (const [key, value] of ownedPreviews) {
-        if (typeof DEFAULT_CRUST_PATCH[key] === 'number') {
-            patch = { ...patch, [key]: value };
-        }
-    }
+    patch = withOwnedPreviews(patch, ownedPreviews);
     const uiLevel = crustDisclosureLevelFromState(device.deviceState);
     if (patch.uiLevel !== uiLevel) {
         patch = { ...patch, uiLevel };
