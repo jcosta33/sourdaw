@@ -1927,6 +1927,15 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         });
     });
 
+    it('finds no candidate for "mute kick" among 3rd Kick and Vocals, since "3rd" opens with a figure but is no index word', () => {
+        const project = tracksNamed(['3rd Kick', 'Vocals']);
+
+        expect(resolveTrack('mute kick', trackIdNamed(project, '3rd Kick'), project)).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+    });
+
     it.each([
         'mute the 2nd kick',
         'mute 02: kick',
@@ -1977,8 +1986,53 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         expect(resolveTrack(prompt, pickedId, project)).toMatchObject({ status: 'resolved', id: pickedId });
     });
 
-    it.each(['mute the kick, one bar at a time', 'mute 02, kick'])(
-        'resolves "%s" to 01 Kick, since a list comma parts the name from the figure or number word beyond it',
+    it.each([
+        'set kick 2 kHz',
+        'set kick 2 kilohertz',
+        'set kick 200 hz',
+        'set kick 200 hertz',
+        'set kick 120 bpm',
+        'set kick 50 cents',
+        'set kick 2 beats',
+        'set kick 4 bars',
+        'set kick 2 s',
+        'set kick 2 secs',
+        'set kick 10 ms',
+        'set kick 10 milliseconds',
+        'set kick 3 d b',
+        'set kick 3db',
+        'set kick 3 decibels',
+    ])('resolves "%s" to 01 Kick, whose figure carries a unit the shared unit reader spells', (prompt) => {
+        const project = tracksNamed(['01 Kick', '02 Snare']);
+        const kickId = trackIdNamed(project, '01 Kick');
+
+        expect(resolveTrack(prompt, kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
+    });
+
+    it('never resolves "set kick 50%x" to 01 Kick, since a percent sign a letter follows states no percent', () => {
+        const project = tracksNamed(['01 Kick', '02 Snare']);
+
+        expect(resolveTrack('set kick 50%x', trackIdNamed(project, '01 Kick'), project)).toMatchObject({
+            status: 'rejected',
+        });
+    });
+
+    it('resolves "set kick up 2 clicks" to 01 Kick, since only a number sign announces the figure after the word beside the name', () => {
+        const project = tracksNamed(['01 Kick', '02 Snare']);
+        const kickId = trackIdNamed(project, '01 Kick');
+
+        expect(resolveTrack('set kick up 2 clicks', kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
+    });
+
+    it.each([
+        'mute the kick, one bar at a time',
+        'mute 02, kick',
+        'mute track 2. kick',
+        'mute track 2! kick',
+        'mute track 2? kick',
+        'mute track 2; kick',
+    ])(
+        'resolves "%s" to 01 Kick, since a sentence stop or a list comma parts the name from the figure or number word beyond it',
         (prompt) => {
             const project = tracksNamed(['01 Kick', '02 Snare']);
             const kickId = trackIdNamed(project, '01 Kick');
@@ -1987,7 +2041,13 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         }
     );
 
-    it.each(['First mute the kick. Second, solo the snare.', 'Mute track 2, kick and snare'])(
+    it.each([
+        'First mute the kick. Second, solo the snare.',
+        'First mute the kick? Second, solo the snare.',
+        'First mute the kick! Second, solo the snare.',
+        'First mute the kick; second, solo the snare.',
+        'Mute track 2, kick and snare',
+    ])(
         'reads both 01 Kick and 02 Snare in "%s", since a sentence stop or a list comma parts the kick from the position word',
         (prompt) => {
             const project = tracksNamed(['01 Kick', '02 Snare']);
