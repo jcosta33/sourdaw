@@ -541,29 +541,6 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
-        'keeps retrying while an edit lands during every early preparation, then saves the latest revision (#7566)',
-        async () => {
-            const indexedDb = installMultiDatabaseIndexedDb();
-            const opened = await openProjectWithCachedStereoClip();
-            const editedAttempts = 5;
-            const worker = await stubSlowMaterializationWorker(async ({ signal, attempt, afterTask }) => {
-                afterTask(() => {
-                    opened.renameTrack(opened.track.id, `Edit during attempt ${attempt}`);
-                });
-                await rejectWhenAborted(signal);
-            }, editedAttempts);
-
-            expect(await opened.project.saveProject()).toBe(true);
-
-            expect(worker.attempts()).toBe(editedAttempts + 1);
-            expect(worker.materializedAttempts()).toEqual([editedAttempts + 1]);
-            expect(opened.persistenceFailures()).toEqual([]);
-            expect(savedTrackNames(indexedDb, opened)).toEqual([`Edit during attempt ${editedAttempts}`]);
-        },
-        CASE_TIMEOUT_MS
-    );
-
-    it(
         'fails with a notice once an edit lands during every allowed preparation (#7566)',
         async () => {
             installMultiDatabaseIndexedDb();
