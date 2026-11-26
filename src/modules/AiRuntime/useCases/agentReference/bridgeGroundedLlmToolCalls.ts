@@ -1294,11 +1294,12 @@ function isPercentLevelContinuationClause(
     const continuation = /^(\s*(?:(?:the|a|an)\s+)?)(□+)\s+(?:at|to)\s+(?:\d+(?:\.\d+)?|\.\d+)\s*%\s*$/iu.exec(
         clause.masked
     );
-    if (continuation === null) {
+    const [, lead, reference] = continuation ?? [];
+    if (continuation === null || lead === undefined || reference === undefined) {
         return false;
     }
-    const start = continuation.index + continuation[1].length;
-    const end = start + continuation[2].length;
+    const start = continuation.index + lead.length;
+    const end = start + reference.length;
     return getNamedReferenceSpans(clause.text, context.tracks).some((span) => span.start === start && span.end === end);
 }
 

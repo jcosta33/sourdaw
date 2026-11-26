@@ -3039,7 +3039,9 @@ describe('a call reads the figures of the other tracks in its scope only where t
                     id: 'device-mix-vocals-reverb',
                     type: 'builtin-reverb',
                     bypassed: false,
-                    parameters: [{ id: 'mix', name: 'Reverb', type: 'float', value: 0.2, minValue: 0, maxValue: 1 }],
+                    parameters: [
+                        { id: 'mix', name: 'Reverb', type: 'float', value: 0.2, minValue: 0, maxValue: 1, unit: '%' },
+                    ],
                 },
             ],
         });
