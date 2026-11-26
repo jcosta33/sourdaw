@@ -765,7 +765,8 @@ prints it. These never clear
 on their own and a later start cannot reclaim them, so reporting success would leave the directory
 forever. Only a census that could not finish a pass right now, with every diagnostic on the transient list
 in `areTransientProofReasons` (`scripts/resourceGuardProofReasons.ts`: a missed live process, an `lsof`
-catalog that lost a descriptor type, the census time bound, an unavailable `ps` list), after the
+catalog that lost a descriptor type, a process whose inspection was refused and that then exited or
+left the account, the census time bound, an unavailable `ps` list), after the
 tracked tree is proved exited, is retained without failing: the guard keeps the directory, prints
 one warning naming its path and the census reason, returns the command's own status, and records no
 receipt, because the lost proof says nothing about the work and keeping the files is the safe
@@ -804,7 +805,11 @@ File inspection checks same-UID process coverage again after reading files, so a
 during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
 permits one complete replacement inspection of the full fresh process list, within at most two
 observations. On macOS, `lsof` races the processes it reads: a descriptor that closes between field
-reads leaves an otherwise valid catalog missing only its type, and a live same-UID process,
+reads leaves an otherwise valid catalog missing only its type; a same-UID process `lsof` listed
+can refuse inspection once it execs a set-user-ID binary such as the `ps` every concurrent guard
+runs, and a refused process found exited or under another UID right after the catalog is outside
+this census, so the catalog is discarded for a fresh observation without a stable reason, while a
+refused process still same-UID and alive keeps the stable denied-inspection reason; and a live same-UID process,
 whether newborn or already listed, can be absent from a whole-account catalog. Other work on a busy
 host keeps starting such processes, so a fresh whole catalog may never be complete. A missed
 process found gone after the observation's closing process list was taken, whether listed there
@@ -818,9 +823,11 @@ since XNU closes its file table first, but it may have forked before it became a
 observation with one still takes the closing parent list below. An omitted process with another or
 unsampled UID retains storage at once. Every other omitted process, in any sampled state including
 `ps`'s undetermined `?`, is read directly in the same observation with a PID-scoped, same-UID
-`lsof`: a storage path there is a live use; an exit status other than 0 or 1, any diagnostic,
-unusable output or a process that was not requested retains storage at once; a catalog missing
-only a descriptor type, or one that does not list a missed process, leaves it uncovered. A missed
+`lsof`: a storage path there is a live use; an exit status other than 0 or 1, unusable output or
+a process that was not requested retains storage at once; a refused inspection leaves the process
+uncovered, keeping the stable denied-inspection reason unless the refused process exited or left
+the account; a catalog missing only a descriptor type, or one that does not list a missed process,
+leaves it uncovered. A missed
 process read clean, or a skipped zombie, may already have handed storage to a new process, so
 before such an observation can prove release the census takes one closing same-UID process list
 with parents. A process absent from the observation's earlier lists whose parent is a missed

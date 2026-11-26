@@ -190,6 +190,7 @@ mod tests {
     use crate::host::plugin_host_requests::apply_pending_editor_resizes;
     use crate::host::plugin_window::PluginWindowError;
     use crate::host::ui_thread::PostedUiThread;
+    use crate::host::MAX_SKIPPED_EDITOR_DRAIN_VISITS;
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -410,6 +411,62 @@ mod tests {
             retry.logged_lines("inst-1"),
             1,
             "one episode of failures is one line of log"
+        );
+    }
+
+    /// The interval doubles to its ceiling and stays there, the whole run is one
+    /// line however long it lasts, and the first success starts a clean episode.
+    /// Mutations: drop the `min` in `skipped_visits_after` (attempts keep
+    /// doubling past visit 64), log on every failure (`logged_lines` grows),
+    /// or keep the episode after `reached` (the retry waits, and the next run
+    /// is not announced).
+    #[test]
+    fn a_long_refusing_run_backs_off_to_the_ceiling_logs_once_and_resets_on_success() {
+        let _guard = hint_test_support::guard();
+        let window = Arc::new(RefusingWindow::default());
+        let (_engine_plugins, runtime) = instance_with_open_editor(
+            Arc::clone(&window) as Arc<dyn PluginEditorWindow>,
+            |wrapper| {
+                wrapper
+                    .engine_owned_command_fixture_host_state()
+                    .mark_editor_closed(false);
+            },
+        );
+        let runtimes = vec![("inst-1".to_string(), runtime)];
+        let retry = EditorDrainRetry::new("editor window ask");
+        let mut attempted_on = Vec::new();
+
+        for visit in 1..=130 {
+            let before = window.hops.load(Ordering::SeqCst);
+            answer_with_retry(&retry, &runtimes);
+            if window.hops.load(Ordering::SeqCst) > before {
+                attempted_on.push(visit);
+            }
+        }
+
+        assert_eq!(
+            attempted_on,
+            [1, 2, 4, 8, 16, 32, 64, 96, 128],
+            "doubling gaps, then the ceiling of {MAX_SKIPPED_EDITOR_DRAIN_VISITS} skipped visits"
+        );
+        assert_eq!(
+            retry.logged_lines("inst-1"),
+            1,
+            "nine failures are one line of log"
+        );
+
+        retry.reached("inst-1");
+        let before = window.hops.load(Ordering::SeqCst);
+        answer_with_retry(&retry, &runtimes);
+        assert_eq!(
+            window.hops.load(Ordering::SeqCst),
+            before + 1,
+            "after a success the very next visit attempts again"
+        );
+        assert_eq!(
+            retry.logged_lines("inst-1"),
+            1,
+            "the new run of failures is a new episode with its own one line"
         );
     }
 }
