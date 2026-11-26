@@ -1,7 +1,9 @@
 import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 
+import { readPerceptualConstraintIdentity } from './perceptualConstraintIdentity';
+
 /**
- * Every constraint of every reading, once each by invariant and scope with the first clause stating it
+ * Every constraint of every reading, once each by invariant and scope set with the first clause stating it
  * kept, and every unsupported clause once, in the order the readings give them.
  */
 export function unionPerceptualConstraintReadings(
@@ -10,11 +12,8 @@ export function unionPerceptualConstraintReadings(
     const union: PerceptualConstraintReading = { constraints: [], unsupported: [] };
     for (const reading of readings) {
         for (const constraint of reading?.constraints ?? []) {
-            const held = union.constraints.some(
-                (other) =>
-                    other.constraintId === constraint.constraintId &&
-                    JSON.stringify(other.scope) === JSON.stringify(constraint.scope)
-            );
+            const identity = readPerceptualConstraintIdentity(constraint);
+            const held = union.constraints.some((other) => readPerceptualConstraintIdentity(other) === identity);
             if (!held) {
                 union.constraints.push(structuredClone(constraint));
             }

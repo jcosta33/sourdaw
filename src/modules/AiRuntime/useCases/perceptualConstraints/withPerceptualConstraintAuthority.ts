@@ -4,6 +4,7 @@ import { digest } from '#/utils/canonicalDigest';
 import { getCreativeSelectionSnapshot } from '../../models/CreativeInterpretation';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { readTargetSetKey } from '../../transformers/perceptualConstraintIdentity';
 import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from '../metricGoalContractTypes';
 
 import { readPerceptualConstraintGoals } from './readPerceptualConstraintGoals';
@@ -22,7 +23,11 @@ function changesNoSound(operation: string): boolean {
     );
 }
 
-/** What one constraint goal asks for, whichever authority or reading position states it. */
+/**
+ * What one constraint goal asks for, whichever authority or reading position states it: the same
+ * protection over the same targets is one hold whatever its wording, and only a clause no measurement
+ * verifies is told apart by its words.
+ */
 function readHoldKey(goal: MetricGoal): string | null {
     if (goal.source.kind !== 'constraint') {
         return null;
@@ -30,11 +35,11 @@ function readHoldKey(goal: MetricGoal): string | null {
     const { constraintId, clause } = goal.source;
     return JSON.stringify([
         constraintId,
-        clause,
+        constraintId === 'unsupported' ? clause : null,
         goal.relation,
         goal.metricId,
         goal.band,
-        goal.targetIds,
+        readTargetSetKey(goal.targetIds),
         goal.tolerance,
     ]);
 }
