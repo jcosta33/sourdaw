@@ -52,6 +52,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        engineSampleRateOf: vi.fn((): number | null => null),
         acceptsSidechainInput: actual.acceptsSidechainInput,
         getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
@@ -60,6 +61,15 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         commitPitchEdit: vi.fn(),
+        captureOfflineRenderSessionSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        describeSubgraphPrintInput: vi.fn(),
+        readLiveOfflineRenderProjectModels: vi.fn(),
+        readLiveOfflineRenderSessionModels: vi.fn(),
+        selectSubgraphPrintInput: vi.fn(),
+        subgraphPrintInputsMatch: vi.fn(() => true),
+        subscribeSubgraphPrintInputStores: vi.fn(() => () => undefined),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,

@@ -135,6 +135,10 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.apply_pending_editor_resize())
     }
 
+    fn editor_window_with_pending_resize(&self) -> Option<SharedEditorWindow> {
+        delegate!(self, backend => backend.editor_window_with_pending_resize())
+    }
+
     fn set_editor_window(&mut self, window: SharedEditorWindow) {
         delegate!(self, backend => backend.set_editor_window(window))
     }
