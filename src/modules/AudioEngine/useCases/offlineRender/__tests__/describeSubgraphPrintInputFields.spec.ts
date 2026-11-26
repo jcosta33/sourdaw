@@ -195,7 +195,6 @@ const printedLaneEdits: [string, Scene][] = [
     ['a lane maximum changes', withLane({ maxValue: 2 })],
     ['a lane is disabled', withLane({ enabled: false })],
     ['a lane follows another lane', withLane({ linkedLaneId: 'lane-2' })],
-    ['a lane link scale changes', withLane({ linkedLaneId: 'lane-2', linkScale: -1 })],
     ['a lane drives another parameter', withLane({ parameterId: 'device-1:resonance' })],
     ['a lane moves to a clip', withLane({ clipId: 'clip-1' })],
     ['a lane moves to a source track', withLane({ trackId: MEMBER_ID })],
@@ -238,6 +237,15 @@ describe('describeSubgraphPrintInput track and automation lane fields', () => {
     it('does not read a lane on a track outside the subgraph that no follower reads', () => {
         const unrelated: Lane = { ...lane, id: 'unrelated', trackId: OTHER_ID };
         expect(readScene({ ...baseline, lanes: [lane, unrelated] })).toEqual(baselineRead);
+    });
+
+    it('selects and describes another input when only the link scale of an already linked lane changes', () => {
+        const leader: Lane = { ...lane, id: 'leader', trackId: OTHER_ID };
+        const linked: Lane = { ...lane, linkedLaneId: leader.id, linkScale: 1 };
+        const linkedBaseline = readScene({ ...baseline, lanes: [linked, leader] });
+        const inverted = readScene({ ...baseline, lanes: [{ ...linked, linkScale: -1 }, leader] });
+        expect(inverted.description).not.toEqual(linkedBaseline.description);
+        expect(inverted.refs).not.toEqual(linkedBaseline.refs);
     });
 
     describe('leaders of follower lanes', () => {
