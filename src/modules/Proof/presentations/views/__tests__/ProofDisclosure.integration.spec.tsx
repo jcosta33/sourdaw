@@ -9,6 +9,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
     defaultTrackState,
+    resolveEligibleDeviceWriteTarget,
     sanitizeTrackSnapshot,
     trackStore,
     type TrackStoreState,
@@ -1126,6 +1127,49 @@ describe('Proof cumulative disclosure in project truth', () => {
             await barrier;
             unsubscribe();
         }
+    });
+
+    it('refuses a ceiling preview when the eligible owner projection is stale', async () => {
+        seedProofParameters({ lim_ceiling: -1 });
+        await seedSentinel();
+        const history = captureUndoHistory();
+        const readDevice = () => getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.devices[0];
+        render(<ProofPanel deviceId="a" />);
+        mutateCrdtDoc<{ tracks: TrackStoreState }>({
+            id: 'root',
+            changeFn: (doc) => {
+                const device = doc.tracks.tracks[0]?.devices[0];
+                if (!device) {
+                    throw new Error('Missing the Proof device');
+                }
+                device.deviceState = { version: 1, data: { disclosureTier: 'lab' } };
+            },
+        });
+        const published = structuredClone(readDevice());
+        expect(published?.deviceState).toEqual({ version: 1, data: { disclosureTier: 'lab' } });
+        expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toEqual({
+            version: 1,
+            data: { disclosureTier: 'shape' },
+        });
+        expect(resolveEligibleDeviceWriteTarget('a').status).toBe('eligible');
+
+        const ceiling = screen.getByRole('slider', { name: 'Master limiter ceiling' });
+        vi.mocked(captureDeviceParameterRuntimeWriteAuthority).mockClear();
+        audioEngine.updateDeviceParam.mockClear();
+        await act(async () => {
+            beginCeilingDrag(ceiling);
+            fireEvent.pointerMove(ceiling, { pointerId: 1, clientY: 130 });
+            fireEvent.pointerUp(ceiling, { pointerId: 1 });
+            await proofLimiterCeiling.settlement('a')?.done;
+        });
+
+        expect(captureDeviceParameterRuntimeWriteAuthority).not.toHaveBeenCalled();
+        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
+        expect(ceiling).toHaveAttribute('aria-valuenow', '-1');
+        expect(projectParameter('a', 'lim_ceiling')).toBe(-1);
+        expect(readDevice()).toEqual(published);
+        expect(documentParameter('b', 'lim_ceiling')).toBe(-4);
+        expect(captureUndoHistory()).toEqual(history);
     });
 
     it.each(['before release', 'during admission'] as const)(
