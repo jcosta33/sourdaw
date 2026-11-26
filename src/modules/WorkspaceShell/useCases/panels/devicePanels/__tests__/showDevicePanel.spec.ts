@@ -17,6 +17,6 @@ describe('showDevicePanel', () => {
         expect(typeof showDevicePanel).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => (showDevicePanel as (id: string | null) => void)('test-id')).not.toThrow();
+        expect(() => showDevicePanel('test-type', 'test-id')).not.toThrow();
     });
 });

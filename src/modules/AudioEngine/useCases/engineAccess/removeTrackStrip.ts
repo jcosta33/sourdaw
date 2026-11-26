@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -9,6 +11,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * device on the strip leaves the project with it and is announced as removed;
  * a track that stays without a strip uses `deactivateTrackStrip` instead.
  */
-export function removeTrackStrip(trackId: string): void {
-    audioEngine.removeTrackStrip(trackId);
-}
+export const removeTrackStrip = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function removeTrackStrip(trackId: string): void {
+            audioEngine.removeTrackStrip(trackId);
+        }
+);

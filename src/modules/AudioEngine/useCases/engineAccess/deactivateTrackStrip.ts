@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -5,6 +7,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * live strip (a folder whose last Toaster was removed). Its remaining devices
  * stay in the project, so unlike `removeTrackStrip` it announces no removal.
  */
-export function deactivateTrackStrip(trackId: string): void {
-    audioEngine.deactivateTrackStrip(trackId);
-}
+export const deactivateTrackStrip = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function deactivateTrackStrip(trackId: string): void {
+            audioEngine.deactivateTrackStrip(trackId);
+        }
+);

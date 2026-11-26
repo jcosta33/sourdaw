@@ -270,11 +270,12 @@ describe('configured mixing plan with actual measurements', () => {
                             },
                         };
                         expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-                        return { status: 'complete', toolCalls: [call] };
+                        return { status: 'complete', toolCalls: [call], proposal: null };
                     }
                     if (turn === 2) {
                         return {
                             status: 'complete',
+                            proposal: null,
                             toolCalls: [
                                 {
                                     id: 'discovery',
@@ -305,7 +306,7 @@ describe('configured mixing plan with actual measurements', () => {
                             throw new Error('Missing proposal schema');
                         }
                         expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-                        return { status: 'complete', toolCalls: [call] };
+                        return { status: 'complete', toolCalls: [call], proposal: null };
                     }
                     if (turn === 4) {
                         expect(directive).toMatchObject({
@@ -339,7 +340,7 @@ describe('configured mixing plan with actual measurements', () => {
                             throw new Error('Missing measurement schema');
                         }
                         expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-                        return { status: 'complete', toolCalls: [call] };
+                        return { status: 'complete', toolCalls: [call], proposal: null };
                     }
                     throw new Error('Unexpected additional provider turn');
                 }
@@ -574,11 +575,12 @@ describe('configured mixing plan with actual measurements', () => {
                     },
                 };
                 expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-                return { status: 'complete', toolCalls: [call] };
+                return { status: 'complete', toolCalls: [call], proposal: null };
             }
             if (turn === 2) {
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'warm-baseline',
@@ -608,6 +610,7 @@ describe('configured mixing plan with actual measurements', () => {
                 expect(receipt).toMatchObject({ status: 'success' });
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: recipeIds.map((recipeId, index) => ({
                         id: index === 0 ? 'warm-expansion' : 'warm-backing-expansion',
                         name: 'recipe.expand',
@@ -677,6 +680,7 @@ describe('configured mixing plan with actual measurements', () => {
                     }
                     return {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: 'warm-preview',
@@ -694,6 +698,7 @@ describe('configured mixing plan with actual measurements', () => {
                 }
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'warm-preview',
@@ -722,6 +727,7 @@ describe('configured mixing plan with actual measurements', () => {
                 }
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'warm-proposal',

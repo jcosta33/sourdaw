@@ -105,12 +105,14 @@ const context: ProjectContext = {
 const readTurn = {
     status: 'complete' as const,
     toolCalls: [{ id: 'query', name: 'project.query', arguments: { type: 'project-summary' } }],
+    proposal: null,
 };
 function scriptStructuralAnswer() {
     vi.mocked(generateToolPlanningOutcome)
         .mockImplementationOnce(async (_system, _message, tools) => ({
             status: 'complete',
             toolCalls: [answerIntakeFromTools(tools)],
+            proposal: null,
         }))
         .mockResolvedValueOnce(readTurn)
         .mockResolvedValueOnce(
@@ -128,6 +130,7 @@ function answerTurn(argumentsValue: Record<string, unknown>) {
     return {
         status: 'complete' as const,
         toolCalls: [{ id: 'answer-1', name: 'answer.respond', arguments: argumentsValue }],
+        proposal: null,
     };
 }
 

@@ -181,7 +181,7 @@ export function scriptVibeBriefRoute(input: {
         if (turn === undefined) {
             throw new Error(`Expected at most ${String(turns.length)} provider turns`);
         }
-        return { status: 'complete', toolCalls: turn({ userMessage, schemas }) };
+        return { status: 'complete', toolCalls: turn({ userMessage, schemas }), proposal: null };
     });
 }
 

@@ -177,7 +177,7 @@ describe('validateActions', () => {
         // value is absent or empty, so a supplied one is taken verbatim: the reversed
         // buffer is cached under whatever key the model chose — colliding with an
         // existing buffer id — and the freeze guard trusts an identity it did not mint.
-        expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([]);
+        expect(validateActions([action])).toEqual([]);
         expect(mockLogger.warn).toHaveBeenCalledWith(`Command-owned payload fields rejected for action ${action.type}`);
     });
 
@@ -185,7 +185,7 @@ describe('validateActions', () => {
         { type: 'freezeTrack', payload: { trackId: 'track-1' } },
         { type: 'reverseClip', payload: { clipId: 'clip-1' } },
     ] as const)('should keep the initiating $type payload the tool declaration exposes', (action) => {
-        expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([action]);
+        expect(validateActions([action])).toEqual([action]);
     });
 
     // Every field documented in `handlerContract.ts` as "AiRuntime payload validation
@@ -353,13 +353,15 @@ describe('validateActions', () => {
         expect(validateActions(valid)).toEqual(valid);
     });
 
-    it.each([
+    const unavailableVcaActions: RuntimeAction[] = [
         { type: 'createVcaGroup', payload: { name: 'Drums', trackIds: ['missing-track'] } },
         { type: 'assignToVca', payload: { trackId: 'missing-track', vcaGroupId: 'vca-1' } },
         { type: 'assignToVca', payload: { trackId: 'track-1', vcaGroupId: 'missing-vca' } },
         { type: 'removeFromVca', payload: { trackId: 'missing-track' } },
         { type: 'setVcaGain', payload: { vcaGroupId: 'missing-vca', gain: 1 } },
-    ] as const)('should reject unavailable VCA identities for $type', (action) => {
+    ];
+
+    it.each(unavailableVcaActions)('should reject unavailable VCA identities for $type', (action) => {
         expect(validateActions([action])).toEqual([]);
         expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Unavailable target for action'));
     });

@@ -19,8 +19,15 @@ import { playExclusiveAudioBufferPreview } from '../playExclusiveAudioBufferPrev
 registerDeviceEnginePorts();
 
 const fixture = vi.hoisted(() => {
-    const current: { engine: AudioEngine | null; startBackend: NativeStartBackend | null } = {
+    const current: {
+        engine: AudioEngine | null;
+        engineKey: object;
+        importing: boolean;
+        startBackend: NativeStartBackend | null;
+    } = {
         engine: null,
+        engineKey: {},
+        importing: true,
         startBackend: null,
     };
     return current;
@@ -30,13 +37,25 @@ vi.mock('../../repositories/createWebAudioEngine', async (importOriginal) => {
     return {
         ...actual,
         get audioEngine() {
-            if (fixture.engine === null) {
-                throw new Error('The real fixture engine is not installed.');
+            if (fixture.engine !== null) {
+                return fixture.engine;
             }
-            return fixture.engine;
+            // Injected modules capture this export once at import as their DI key.
+            if (fixture.importing) {
+                return fixture.engineKey;
+            }
+            throw new Error('The real fixture engine is not installed.');
         },
     };
 });
+
+function installEngine(engine: AudioEngine): void {
+    fixture.engine = engine;
+}
+
+function uninstallEngine(): void {
+    fixture.engine = null;
+}
 vi.mock('../../repositories/engineTransport/getEngineTransportPosition', () => ({
     getEngineTransportPosition: vi.fn(),
 }));
@@ -88,6 +107,9 @@ vi.mock('../livePlayback/armNativeLiveMidiWriter', () => ({ armNativeLiveMidiWri
 vi.mock('../livePlayback/startNativeEnginePlayheadFeed', () => ({ startNativeEnginePlayheadFeed: vi.fn() }));
 vi.mock('../livePlayback/watchNativeEngineLiveness', () => ({ startNativeEngineLivenessWatch: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+
+// Imports have all evaluated by here, so the import-time key capture is over.
+fixture.importing = false;
 
 const START = {
     positionSeconds: 0,
@@ -173,7 +195,7 @@ function contextFixture() {
     // Same structural context boundary as the existing listening-path model;
     // no hardware readiness is supplied by this cast or asserted by these tests.
     const engine = composeWebAudioEngine(context as unknown as AudioContext).engine;
-    fixture.engine = engine;
+    installEngine(engine);
     const gate = analysers[0]?.connections[0];
     if (gate === undefined) {
         throw new Error('The real constructor must wire its programme gate.');
@@ -248,7 +270,7 @@ describe('exclusive retained buffer listening lifetime', () => {
     afterEach(async () => {
         await driven.engine.dispose();
         await nativeLiveGraphSession.pending;
-        fixture.engine = null;
+        uninstallEngine();
     });
 
     it('closes the real programme gate before suspended-context resume and starts only after resume settles', async () => {

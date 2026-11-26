@@ -209,6 +209,7 @@ describe('actual current-preview comparison approval', () => {
                 }
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             ...base,
@@ -236,6 +237,7 @@ describe('actual current-preview comparison approval', () => {
             if (phase === 1) {
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'mixed-discovery',
@@ -248,6 +250,7 @@ describe('actual current-preview comparison approval', () => {
             if (phase === 3) {
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'mixed-measure',
@@ -259,6 +262,7 @@ describe('actual current-preview comparison approval', () => {
             }
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'mixed-proposal',
@@ -387,11 +391,16 @@ describe('actual current-preview comparison approval', () => {
                     uncertainty: 'none',
                     objectives: [],
                 });
-                return { status: 'complete', toolCalls: calls.map((call) => ({ ...call, id: 'numeric-intake' })) };
+                return {
+                    status: 'complete',
+                    proposal: null,
+                    toolCalls: calls.map((call) => ({ ...call, id: 'numeric-intake' })),
+                };
             }
             if (turns === 2) {
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'numeric-discovery',
@@ -404,6 +413,7 @@ describe('actual current-preview comparison approval', () => {
             if (turns === 3) {
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'numeric-proposal',
@@ -650,7 +660,7 @@ describe('actual current-preview comparison approval', () => {
                     },
                 };
                 expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-                return { status: 'complete', toolCalls: [call] };
+                return { status: 'complete', proposal: null, toolCalls: [call] };
             }
             if (turn === 2) {
                 const calls: ToolCallResult[] = [
@@ -673,7 +683,7 @@ describe('actual current-preview comparison approval', () => {
                         arguments: { category: 'command', names: ['setTrackGain'] },
                     });
                 }
-                return { status: 'complete', toolCalls: calls };
+                return { status: 'complete', proposal: null, toolCalls: calls };
             }
             if (turn === 3) {
                 let argumentsValue: Record<string, unknown> = {
@@ -691,6 +701,7 @@ describe('actual current-preview comparison approval', () => {
                 }
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'comparison-proposal',
@@ -1012,6 +1023,7 @@ describe('actual current-preview comparison approval', () => {
                 if (requests === 1) {
                     return {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: literalMetricIntakeTurn(message, schemas).map((call) => ({
                             ...call,
                             id: 'refinement-intake',
@@ -1021,6 +1033,7 @@ describe('actual current-preview comparison approval', () => {
                 if (requests === 2) {
                     return {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: 'refinement-discovery',
@@ -1033,6 +1046,7 @@ describe('actual current-preview comparison approval', () => {
                 if (requests === 3) {
                     return {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: 'refinement-proposal',
@@ -1583,7 +1597,7 @@ describe('compatible three-kind comparison inside the existing turn ceiling', ()
                         },
                     };
                     expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-                    return { status: 'complete', toolCalls: [call] };
+                    return { status: 'complete', proposal: null, toolCalls: [call] };
                 }
                 if (turn >= 2 && turn <= 4) {
                     let scope: { kind: 'master' } | { kind: 'tracks' | 'buses'; ids: string[] } = {
@@ -1598,6 +1612,7 @@ describe('compatible three-kind comparison inside the existing turn ceiling', ()
                     }
                     return {
                         status: 'complete',
+                        proposal: null,
                         toolCalls: [
                             {
                                 id: `cross-kind-preview-${String(turn)}`,
@@ -1617,6 +1632,7 @@ describe('compatible three-kind comparison inside the existing turn ceiling', ()
                 expect(directive).toMatchObject({ mode: 'required' });
                 return {
                     status: 'complete',
+                    proposal: null,
                     toolCalls: [
                         {
                             id: 'cross-kind-proposal',
@@ -1726,6 +1742,7 @@ async function planLiteralRequest(input: LiteralRequest) {
         if (turns === 1) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: literalMetricIntakeTurn(userMessage, schemas).map((call) => ({
                     ...call,
                     id: `${input.runId}-intake`,
@@ -1735,6 +1752,7 @@ async function planLiteralRequest(input: LiteralRequest) {
         if (turns === 2) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: `${input.runId}-discovery`,
@@ -1747,6 +1765,7 @@ async function planLiteralRequest(input: LiteralRequest) {
         if (turns === 3) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: `${input.runId}-proposal`,
@@ -2410,11 +2429,12 @@ async function planComparison(input: ComparisonRun) {
                 },
             };
             expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
-            return { status: 'complete', toolCalls: [call] };
+            return { status: 'complete', proposal: null, toolCalls: [call] };
         }
         if (turns === 2) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'comparison-preview',
@@ -2448,6 +2468,7 @@ async function planComparison(input: ComparisonRun) {
         if (turns === 3) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'comparison-proposal',

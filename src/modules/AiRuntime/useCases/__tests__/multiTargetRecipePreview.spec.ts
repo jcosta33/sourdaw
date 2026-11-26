@@ -200,11 +200,12 @@ async function planHarshBackingVocals(input: { source: PreviewSource; adopted: s
     vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
         turns += 1;
         if (turns === 1) {
-            return { status: 'complete', toolCalls: [intakeCall(userMessage, schemas)] };
+            return { status: 'complete', proposal: null, toolCalls: [intakeCall(userMessage, schemas)] };
         }
         if (turns === 2) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     { id: 'dark-l', name: 'recipe.expand', arguments: { recipeId: 'vocal-dark', targetId: LEFT } },
                     { id: 'dark-r', name: 'recipe.expand', arguments: { recipeId: 'vocal-dark', targetId: RIGHT } },
@@ -214,6 +215,7 @@ async function planHarshBackingVocals(input: { source: PreviewSource; adopted: s
         if (turns === 3) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'harsh-preview',
@@ -232,6 +234,7 @@ async function planHarshBackingVocals(input: { source: PreviewSource; adopted: s
         if (turns === 4) {
             return {
                 status: 'complete',
+                proposal: null,
                 toolCalls: [
                     {
                         id: 'harsh-proposal',

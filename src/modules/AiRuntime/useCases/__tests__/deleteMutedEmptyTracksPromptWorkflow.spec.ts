@@ -81,7 +81,11 @@ const runtimeMocks = vi.hoisted(() => {
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
-        initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
+        initializeTrackStripFromSnapshot: vi.fn<
+            (
+                ...args: Parameters<typeof initializeTrackStripFromSnapshot>
+            ) => ReturnType<typeof initializeTrackStripFromSnapshot>
+        >(() => ({
             acceptance: 'accepted',
             application: 'applied',
             correlation: { appRevision: 0, projectRevision: 'workflow-test-revision' },

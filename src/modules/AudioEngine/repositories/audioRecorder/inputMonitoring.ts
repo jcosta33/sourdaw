@@ -1,5 +1,7 @@
+import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { type AudioEngine } from '../../models/AudioEngineState';
 import { audioEngine } from '../createWebAudioEngine';
 
 import {
@@ -26,49 +28,56 @@ import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
  * stopping one track's monitoring can never disconnect another. Idempotent per
  * track and key — a track already monitoring this key only re-ensures its edge.
  */
-export async function startInputMonitoring(
-    trackId: string,
-    inputId: string | null = null,
-    isCurrent?: () => boolean | 'retain'
-): Promise<boolean> {
-    if (isCurrent && !isCurrent()) {
-        return false;
-    }
-    if (isCurrent) {
-        inputMonitoringAdmissionChecks.set(trackId, isCurrent);
-    } else {
-        inputMonitoringAdmissionChecks.delete(trackId);
-    }
-    const key = inputId;
-    const previousKey = inputMonitoringSession.trackKeys.get(trackId);
-    try {
-        if (previousKey !== undefined && previousKey !== key) {
-            inputMonitoringSession.trackKeys.delete(trackId);
-            releaseTrackMonitorEdge(trackId, previousKey);
-        }
-        inputMonitoringSession.trackKeys.set(trackId, key);
-        const capture = inputMonitoringSession.captures.get(key);
-        if (capture) {
-            // Also re-ensures an existing owner's edge against HMR strip replacement.
-            if (isCurrent?.() !== 'retain') {
-                connectMonitorEdge(trackId, capture);
+export const startInputMonitoring = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        async function startInputMonitoring(
+            trackId: string,
+            inputId: string | null = null,
+            isCurrent?: () => boolean | 'retain'
+        ): Promise<boolean> {
+            if (isCurrent && !isCurrent()) {
+                return false;
             }
-            return true;
+            if (isCurrent) {
+                inputMonitoringAdmissionChecks.set(trackId, isCurrent);
+            } else {
+                inputMonitoringAdmissionChecks.delete(trackId);
+            }
+            const key = inputId;
+            const previousKey = inputMonitoringSession.trackKeys.get(trackId);
+            try {
+                if (previousKey !== undefined && previousKey !== key) {
+                    inputMonitoringSession.trackKeys.delete(trackId);
+                    releaseTrackMonitorEdge(trackId, previousKey);
+                }
+                inputMonitoringSession.trackKeys.set(trackId, key);
+                const capture = inputMonitoringSession.captures.get(key);
+                if (capture) {
+                    // Also re-ensures an existing owner's edge against HMR strip replacement.
+                    if (isCurrent?.() !== 'retain') {
+                        connectMonitorEdge(audioEngine, trackId, capture);
+                    }
+                    return true;
+                }
+                const request = beginCaptureAcquisition(audioEngine, key);
+                await request.catch(() => null);
+                // The capture settlement connected every owner still interested in this key.
+                return (
+                    inputMonitoringSession.trackKeys.get(trackId) === key && inputMonitoringSession.captures.has(key)
+                );
+            } catch (error) {
+                try {
+                    stopTrackInputMonitoring(trackId);
+                } catch (cleanupError) {
+                    logger.error(
+                        new Error(`Failed to release input monitoring on track ${trackId}`, { cause: cleanupError })
+                    );
+                }
+                logger.error(new Error(`Failed to connect input monitoring on track ${trackId}`, { cause: error }));
+                return false;
+            }
         }
-        const request = beginCaptureAcquisition(key);
-        await request.catch(() => null);
-        // The capture settlement connected every owner still interested in this key.
-        return inputMonitoringSession.trackKeys.get(trackId) === key && inputMonitoringSession.captures.has(key);
-    } catch (error) {
-        try {
-            stopTrackInputMonitoring(trackId);
-        } catch (cleanupError) {
-            logger.error(new Error(`Failed to release input monitoring on track ${trackId}`, { cause: cleanupError }));
-        }
-        logger.error(new Error(`Failed to connect input monitoring on track ${trackId}`, { cause: error }));
-        return false;
-    }
-}
+);
 
 /**
  * Begins one capture request per key and decides its fate at settlement:
@@ -79,7 +88,7 @@ export async function startInputMonitoring(
  * request, so an owner that left or arrived before the grant is decided by the
  * interest that exists then.
  */
-function beginCaptureAcquisition(key: MonitorCaptureKey): Promise<MediaStream> {
+function beginCaptureAcquisition(engine: AudioEngine, key: MonitorCaptureKey): Promise<MediaStream> {
     const existing = inputMonitoringSession.pendingRequests.get(key);
     if (existing) {
         return existing;
@@ -90,7 +99,7 @@ function beginCaptureAcquisition(key: MonitorCaptureKey): Promise<MediaStream> {
         (stream) => {
             const ownsRequest = inputMonitoringSession.pendingRequests.get(key) === request;
             try {
-                settleCaptureGrant(key, request, stream);
+                settleCaptureGrant(engine, key, request, stream);
             } catch (error) {
                 releaseFailedCaptureGrant(key, stream, error, ownsRequest);
             }
@@ -131,7 +140,12 @@ function releaseFailedCaptureGrant(
 }
 
 /** Adopts a granted stream, or releases a superseded one exactly once. */
-function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream>, stream: MediaStream): void {
+function settleCaptureGrant(
+    engine: AudioEngine,
+    key: MonitorCaptureKey,
+    request: Promise<MediaStream>,
+    stream: MediaStream
+): void {
     if (inputMonitoringSession.pendingRequests.get(key) !== request) {
         stopSupersededCaptureStream(stream);
         return;
@@ -152,7 +166,7 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
     }
     const capture: MonitorCapture = {
         monitorStream: stream,
-        monitorSource: audioEngine.context.createMediaStreamSource(stream),
+        monitorSource: engine.context.createMediaStreamSource(stream),
         monitorEdges: new Map(),
     };
     inputMonitoringSession.captures.set(key, capture);
@@ -161,7 +175,7 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
             continue;
         }
         try {
-            connectMonitorEdge(trackId, capture);
+            connectMonitorEdge(engine, trackId, capture);
         } catch (error) {
             inputMonitoringSession.trackKeys.delete(trackId);
             inputMonitoringAdmissionChecks.delete(trackId);
@@ -197,9 +211,9 @@ function refuseCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
     }
 }
 
-function connectMonitorEdge(trackId: string, capture: MonitorCapture): void {
+function connectMonitorEdge(engine: AudioEngine, trackId: string, capture: MonitorCapture): void {
     // Reconnect to the current strip: HMR can replace strips under a live edge.
-    const strip = audioEngine.ensureTrackStrip(trackId);
+    const strip = engine.ensureTrackStrip(trackId);
     const previous = capture.monitorEdges.get(trackId);
     if (previous !== undefined && previous !== strip.gainNode) {
         capture.monitorSource.disconnect(previous);

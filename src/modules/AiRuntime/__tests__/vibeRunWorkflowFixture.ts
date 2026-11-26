@@ -123,7 +123,7 @@ export function scriptPlanningTurns(turns: readonly ScriptedPlanningTurn[]): Pro
         if (turn === undefined) {
             throw new Error(`Expected at most ${String(turns.length)} provider turns`);
         }
-        return { status: 'complete', toolCalls: turn(request) };
+        return { status: 'complete', toolCalls: turn(request), proposal: null };
     });
     return requests;
 }

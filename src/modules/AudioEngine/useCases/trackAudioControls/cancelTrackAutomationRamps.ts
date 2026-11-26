@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -5,6 +7,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * pan, holding each at its current value. Called on transport stop so a ramp
  * scheduled toward a compensated future time cannot land after playback ends.
  */
-export function cancelTrackAutomationRamps(): void {
-    audioEngine.cancelTrackAutomationRamps();
-}
+export const cancelTrackAutomationRamps = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function cancelTrackAutomationRamps(): void {
+            audioEngine.cancelTrackAutomationRamps();
+        }
+);

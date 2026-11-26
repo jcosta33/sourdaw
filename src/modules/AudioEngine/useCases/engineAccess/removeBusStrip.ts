@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
@@ -7,6 +9,9 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * Must be called when a bus track is deleted from project truth — otherwise the
  * BusNode keeps summing and processing in the live graph (a leaked node).
  */
-export function removeBusStrip(busId: string): void {
-    audioEngine.removeBusStrip(busId);
-}
+export const removeBusStrip = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function removeBusStrip(busId: string): void {
+            audioEngine.removeBusStrip(busId);
+        }
+);

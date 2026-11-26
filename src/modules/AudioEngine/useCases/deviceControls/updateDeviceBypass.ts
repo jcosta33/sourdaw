@@ -1,3 +1,5 @@
+import { inject } from '#/infra/di/inject';
+
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { isCrumbsChainDevice } from '../livePlayback/isCrumbsChainDevice';
 import { isDeviceCarriedByNativeSession } from '../livePlayback/isDeviceCarriedByNativeSession';
@@ -37,9 +39,12 @@ function carriesNativeCrumbs(trackId: string, deviceId: string): boolean {
     return type !== null && isCrumbsChainDevice(type) && isDeviceCarriedByNativeSession(trackId, deviceId);
 }
 
-export function updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
-    audioEngine.updateDeviceBypass(trackId, deviceId, bypassed);
-    if (nativeBuiltinWriteTarget(trackId, deviceId) || carriesNativeCrumbs(trackId, deviceId)) {
-        void sendNativeDeviceBypass({ trackId, deviceId, bypassed });
-    }
-}
+export const updateDeviceBypass = inject({ audioEngine })(
+    ({ audioEngine }) =>
+        function updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
+            audioEngine.updateDeviceBypass(trackId, deviceId, bypassed);
+            if (nativeBuiltinWriteTarget(trackId, deviceId) || carriesNativeCrumbs(trackId, deviceId)) {
+                void sendNativeDeviceBypass({ trackId, deviceId, bypassed });
+            }
+        }
+);

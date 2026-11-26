@@ -181,7 +181,7 @@ export function scriptBriefRoute(original: typeof generateToolPlanningOutcome | 
         if (turn === undefined) {
             throw new Error('Unscripted brief turn');
         }
-        return { status: 'complete', toolCalls: turn({ userMessage, schemas }) };
+        return { status: 'complete', toolCalls: turn({ userMessage, schemas }), proposal: null };
     });
 }
 
