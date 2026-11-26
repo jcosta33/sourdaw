@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     levainSweep: vi.fn(),
     crumbsSweep: vi.fn(),
     configureSampleAccess: vi.fn((_capture: (deviceId: string) => number | null) => vi.fn()),
+    initSamplePush: vi.fn(() => vi.fn()),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -24,6 +25,7 @@ vi.mock('#/modules/Crumbs/useCases', () => ({
     reconcileCrumbsDeviceStatesFromProject: mocks.crumbsSweep,
     configureCrumbsSampleProjectAccess: mocks.configureSampleAccess,
 }));
+vi.mock('../initCrumbsSamplePush', () => ({ initCrumbsSamplePush: mocks.initSamplePush }));
 
 import { initDeviceStateReconciliation } from '../initDeviceStateReconciliation';
 
@@ -73,6 +75,17 @@ describe('initDeviceStateReconciliation', () => {
         const dispose = mocks.configureSampleAccess.mock.results.at(-1)?.value;
         if (!dispose) {
             throw new Error('Expected the sample access disposer');
+        }
+        stop?.();
+        stop = undefined;
+        expect(dispose).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers and disposes the live sample subscription', () => {
+        expect(mocks.initSamplePush).toHaveBeenCalledExactlyOnceWith();
+        const dispose = mocks.initSamplePush.mock.results.at(-1)?.value;
+        if (!dispose) {
+            throw new Error('Expected the live sample subscription disposer');
         }
         stop?.();
         stop = undefined;

@@ -436,6 +436,94 @@ describe('resource admission', () => {
         }
     );
 
+    it('admits past a directory named like a reservation, even one older than the stale horizon', async () => {
+        const root = fixtureRoot('directory-named-json');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            const directoryPath = join(reservationsRoot, 'dir.json');
+            mkdirSync(directoryPath, { recursive: true });
+            const keptPath = join(directoryPath, 'kept.txt');
+            writeFileSync(keptPath, 'not ours');
+            const beyond = new Date(Date.now() - staleUnreadableReservationMs - 60_000);
+            utimesSync(directoryPath, beyond, beyond);
+
+            const session = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memoryReserveBytes: 0,
+                availableMemoryBytes: 3 * 1024 ** 3,
+            });
+
+            expect(existsSync(keptPath)).toBe(true);
+            session.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reaps a damaged reservation whose mtime is further in the future than the stale horizon', async () => {
+        const root = fixtureRoot('future-mtime-record');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            const damagedPath = join(reservationsRoot, 'damaged.json');
+            writeFileSync(damagedPath, '{ not json');
+            const dayAhead = new Date(Date.now() + 24 * 60 * 60_000);
+            utimesSync(damagedPath, dayAhead, dayAhead);
+
+            const session = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memoryReserveBytes: 0,
+                availableMemoryBytes: 3 * 1024 ** 3,
+            });
+
+            expect(existsSync(damagedPath)).toBe(false);
+            session.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('counts a live-owner record with malformed trackedProcesses at the largest budget without throwing', async () => {
+        const root = fixtureRoot('live-owner-malformed-tracked');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            const damagedPath = join(reservationsRoot, 'live-damaged.json');
+            const first = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                availableMemoryBytes: 8 * 1024 ** 3,
+            });
+            const ownRecord: object = JSON.parse(readFileSync(first.reservationPath, 'utf8'));
+            first.release();
+            writeFileSync(damagedPath, JSON.stringify({ ...ownRecord, token: 'live-damaged', trackedProcesses: 5 }));
+            const waits: string[] = [];
+            let settled = false;
+            const admission = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memoryReserveBytes: 0,
+                memorySampler: () => 3 * 1024 ** 3,
+                waitIntervalMs: 10,
+                onWait: (message) => waits.push(message),
+            }).then((session) => {
+                settled = true;
+                return session;
+            });
+
+            await vi.waitFor(() => expect(waits).toHaveLength(1));
+            expect(settled).toBe(false);
+            expect(waits[0]).toMatch(/^waiting for validation capacity: need \d+ MiB, 3072 MiB available$/);
+            expect(existsSync(damagedPath)).toBe(true);
+            rmSync(damagedPath);
+            (await admission).release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('stops admission on an unreadable reservation whose owner is dead and past its orphan grace', async () => {
         const root = fixtureRoot('dead-owner-unreadable-table');
         try {

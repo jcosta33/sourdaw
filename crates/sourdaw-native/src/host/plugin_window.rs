@@ -287,6 +287,18 @@ pub trait PluginEditorWindow: Send + Sync {
     /// command that opened it returned, and answering them calls into the
     /// editor, which both formats bind to this thread.
     fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String>;
+
+    /// [`Self::run_on_ui_thread`], giving up with `Err` once `deadline` has
+    /// passed with `work` not yet started; see
+    /// [`UiThread::run_on_ui_thread_within`]. The default waits as long as
+    /// [`Self::run_on_ui_thread`] does.
+    fn run_on_ui_thread_within(
+        &self,
+        work: Box<dyn FnOnce() + Send>,
+        _deadline: std::time::Duration,
+    ) -> Result<(), String> {
+        self.run_on_ui_thread(work)
+    }
 }
 
 /// Apply one editor resize on the UI thread, and return only once it has been

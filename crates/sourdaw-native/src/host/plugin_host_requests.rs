@@ -47,10 +47,11 @@
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
-use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError};
+use crate::host::plugin_editor_asks::{EditorWindowThread, EDITOR_DRAIN_HOP_DEADLINE};
+use crate::host::ui_thread::{UiThread, UiThreadError};
 use crate::host::{
     all_editor_runtimes, all_engine_runtimes, retry_unreached_instance, runtime_for_instance,
-    CommandPlugins,
+    CommandPlugins, EditorDrainRetry,
 };
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
@@ -319,21 +320,52 @@ pub fn apply_pending_editor_resizes(
         "editor resize",
         signal_pending_editor_resize,
     );
-    for (instance_id, runtime) in runtimes {
-        let applied = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
-            Ok::<_, std::convert::Infallible>(plugin.apply_pending_editor_resize())
-        });
-
-        if let Err(error) = &applied {
-            retry_unreached_instance(
-                &runtime,
-                &instance_id,
-                "editor resize",
-                error,
-                signal_pending_editor_resize,
-            );
+    RESIZE_RETRY.forget_absent(&runtimes);
+    for (instance_id, runtime) in &runtimes {
+        if !RESIZE_RETRY.admits(instance_id, signal_pending_editor_resize) {
+            continue;
+        }
+        match apply_instance_resize(runtime) {
+            Ok(()) => RESIZE_RETRY.reached(instance_id),
+            Err(error) => {
+                RESIZE_RETRY.unreached(runtime, instance_id, &error, signal_pending_editor_resize)
+            }
         }
     }
+}
+
+/// The resize drain's retry rule; see [`EditorDrainRetry`].
+static RESIZE_RETRY: EditorDrainRetry = EditorDrainRetry::new("editor resize");
+
+/// Apply one instance's pending resize where its window lives.
+///
+/// Moving the window waits for the window server's answer on the shell's
+/// thread, so the apply is carried there — bounded by the drain's hop budget,
+/// with the audio access seam claimed only once it has landed. A resize the hop
+/// never ran stays recorded for the retry. An instance with a resizer and no
+/// window to carry it to applies it in place; only a test installs one.
+fn apply_instance_resize(
+    runtime: &SharedHostedPlugin,
+) -> Result<(), PluginControlError<UiThreadError>> {
+    let visit = runtime.try_control_visit()?;
+    let window = visit.with_seam(DRAIN_CONTROL_TIMEOUT, |plugin| {
+        Ok::<_, UiThreadError>(plugin.editor_window_with_pending_resize())
+    })?;
+    let Some(window) = window else {
+        return visit
+            .with_seam(DRAIN_CONTROL_TIMEOUT, |plugin| {
+                Ok::<_, UiThreadError>(plugin.apply_pending_editor_resize())
+            })
+            .map(drop);
+    };
+    visit
+        .on_ui_thread_within(
+            &EditorWindowThread(window),
+            EDITOR_DRAIN_HOP_DEADLINE,
+            DRAIN_CONTROL_TIMEOUT,
+            |plugin| plugin.apply_pending_editor_resize(),
+        )
+        .map(drop)
 }
 
 /// Re-enumerate the plugin's parameters and tell the frontend its metadata moved.
@@ -529,9 +561,13 @@ fn restart_component(
         );
         return Ok(());
     };
+    // The restart reactivates the component, which must not run beside
+    // `process`, so it runs under the audio access seam — but the seam is
+    // claimed once the call has landed on the UI thread, not across the wait
+    // for that thread to take it.
     runtime
-        .with_control(CONTROL_TIMEOUT, |plugin| {
-            lend_on_ui_thread(ui, plugin, |plugin| plugin.apply_component_restart())
+        .with_control_on_ui_thread(CONTROL_TIMEOUT, ui, |plugin| {
+            plugin.apply_component_restart()
         })
         .map(|_routed_or_refused| ())
         .map_err(HostRequestError::from)
@@ -749,6 +785,71 @@ mod tests {
                 .map_err(|error| error.to_string())),
             Ok(true),
             "the refused wake ran nothing, so the plugin's ask is still standing"
+        );
+    }
+
+    /// A UI thread that announces each task it is handed and holds it until
+    /// the test lets it run: a shell busy with something else.
+    struct ParkingUiThread {
+        posted: Mutex<std::sync::mpsc::Sender<()>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl UiThread for ParkingUiThread {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), UiThreadError> {
+            let _ = self.posted.lock().expect("posted channel").send(());
+            let _ = self.release.lock().expect("release channel").recv();
+            task.run();
+            Ok(())
+        }
+    }
+
+    /// #7196 on the VST3 restart path. The restart reactivates the component,
+    /// so it runs excluding `process` — but only once it has landed on the UI
+    /// thread. While the shell has not taken it, the plugin's blocks are served.
+    #[test]
+    fn a_component_restart_waiting_for_the_ui_thread_leaves_the_audio_seam_free() {
+        let bundle = InstalledVst3::create("component-restart-parked");
+        let runtime = restart_asking_vst3(&bundle);
+        let (posted, was_posted) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let ui = ParkingUiThread {
+            posted: Mutex::new(posted),
+            release: Mutex::new(released),
+        };
+
+        let (free, restarted) = std::thread::scope(|scope| {
+            let restarting = scope.spawn(|| restart_component(&runtime, "inst-1", Some(&ui)));
+            was_posted
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the restart must be handed to the UI thread");
+            let free = runtime.try_claim_control().is_some();
+            release.send(()).expect("the UI thread is parked");
+            (
+                free,
+                restarting.join().expect("the restart should not panic"),
+            )
+        });
+
+        assert!(
+            free,
+            "the audio thread must be able to claim the plugin while its restart waits for the \
+             UI thread"
+        );
+        assert_eq!(restarted, Ok(()));
+        assert_eq!(
+            runtime.with_control(CONTROL_TIMEOUT, |plugin| plugin
+                .apply_component_restart()
+                .map_err(|error| error.to_string())),
+            Ok(false),
+            "the restart ran once the UI thread took it, so no ask is left standing"
         );
     }
 

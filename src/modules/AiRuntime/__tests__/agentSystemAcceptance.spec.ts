@@ -68,8 +68,9 @@ import {
     scoreAgentAcceptanceCase,
 } from '../services/agentAcceptanceScorer';
 import { formatAnswerNumber, quoteSourceData } from '../services/answerSourceFormat';
+import { agentRunStore } from '../stores/agentRunStore';
 import { clearAiHistory } from '../stores/aiActionHistoryStore';
-import { chatStore } from '../stores/chatStore';
+import { chatStore, clearChatMessages } from '../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -3066,6 +3067,55 @@ describe('agent acceptance corpora', () => {
             })
         )
     );
+    it('leaves no thread context or provider-visible reading after a reload keeps only the persisted run state', () =>
+        fixtureLifetime.track(() =>
+            withAdmittedCreativeReading('A small vintage receiver', 'commit', async (batchId) => {
+                const committed = readChatThreadContext()?.lastCommit;
+                if (!committed) {
+                    throw new Error('Expected a committed reading before the reload');
+                }
+                const persisted = localStorage.getItem('sourdaw-agent-runs');
+                expect(persisted).toContain(batchId);
+
+                clearChatMessages();
+                clearPendingActionConfirmations();
+                // A reload evaluates the store module again over the same persisted bytes.
+                vi.resetModules();
+                const reloadedStores = await import('../stores/agentRunStore');
+                const reloaded = reloadedStores.readAgentRunState();
+                expect(reloaded.runs.some((run) => run.runId === committed.runId)).toBe(true);
+                expect(committed.confirmationId).toBeDefined();
+                expect(agentRunStore.trySet(reloaded)).toBe(true);
+
+                expect(readChatThreadContext()).toBeNull();
+                runtimeMocks.generateWebLlmCompletion.mockReset();
+                const systemPrompts: string[] = [];
+                const prompt = 'Keep that tone, but make the lick less busy';
+                const messages = scriptProviderTurns(
+                    runtimeMocks.generateWebLlmCompletion,
+                    [() => [declineCall({ kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] })]],
+                    systemPrompts
+                );
+                const networkTrap = vi.fn(() => {
+                    throw new Error('The planner must not reach the network');
+                });
+                vi.stubGlobal('fetch', networkTrap);
+                try {
+                    await sendChatMessage(prompt, { mode: 'apply' });
+                } finally {
+                    vi.unstubAllGlobals();
+                }
+                expect(networkTrap).not.toHaveBeenCalled();
+                expect(messages).toHaveLength(1);
+                expect(systemPrompts).toHaveLength(1);
+                expect(messages[0]).toContain(prompt);
+                for (const outbound of [systemPrompts[0], messages[0]]) {
+                    for (const carried of ['A small vintage receiver', batchId, committed.confirmationId]) {
+                        expect(outbound).not.toContain(carried);
+                    }
+                }
+            })
+        ));
     it('carries the actual admitted public reading through deletion without granting new target authority', () =>
         fixtureLifetime.track(() => {
             const reading = 'A small vintage receiver';
