@@ -264,7 +264,72 @@ impl PendingParameterQueue {
             return Ok(());
         }
 
+        if self.fold_into_newest_point(param_id, sample_offset, value_bits, sequence) {
+            return Ok(());
+        }
+
         Err(())
+    }
+
+    /// With no slot free, fold a write into the parameter's newest published
+    /// point — highest effective sample, then highest sequence — so a ramp
+    /// that fills the queue still ends on its newest value instead of losing
+    /// it. The point keeps the later of the two samples, so the parameter's
+    /// points stay in non-decreasing order, the same law a full plugin-side
+    /// value queue follows. A slot another thread holds, or one that no longer
+    /// holds the parameter once claimed, is not waited for: the write is
+    /// refused only when the queue holds no point of the parameter.
+    fn fold_into_newest_point(
+        &self,
+        param_id: u32,
+        sample_offset: u32,
+        value_bits: u64,
+        sequence: u64,
+    ) -> bool {
+        let late_through = self.late_through.load(Ordering::Acquire);
+        let newest = self
+            .slots
+            .iter()
+            .filter(|slot| {
+                slot.state.load(Ordering::Acquire) == PENDING_PARAMETER_READY
+                    && slot.param_id.load(Ordering::Relaxed) == param_id
+            })
+            .max_by_key(|slot| {
+                (
+                    effective_sample_offset(
+                        slot.sample_offset.load(Ordering::Relaxed),
+                        slot.sequence.load(Ordering::Relaxed),
+                        late_through,
+                    ),
+                    slot.sequence.load(Ordering::Relaxed),
+                )
+            });
+        let Some(slot) = newest else {
+            return false;
+        };
+        if !Self::claim_ready(slot) {
+            return false;
+        }
+        if slot.param_id.load(Ordering::Relaxed) != param_id {
+            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+            return false;
+        }
+
+        let held_sequence = slot.sequence.load(Ordering::Relaxed);
+        if held_sequence < sequence {
+            let held_offset = effective_sample_offset(
+                slot.sample_offset.load(Ordering::Relaxed),
+                held_sequence,
+                late_through,
+            );
+            let new_offset = effective_sample_offset(sample_offset, sequence, late_through);
+            slot.value_bits.store(value_bits, Ordering::Relaxed);
+            slot.sample_offset
+                .store(held_offset.max(new_offset), Ordering::Relaxed);
+            slot.sequence.store(sequence, Ordering::Relaxed);
+        }
+        slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+        true
     }
 
     /// Fold a write into the pending value this queue already holds for the
@@ -346,9 +411,17 @@ impl PendingParameterQueue {
         true
     }
 
+    /// Hand every published write to the block being served, then mark late
+    /// whatever this drain did not take. A slot another thread holds mid-claim
+    /// is skipped, and its write was issued before this block ended, so the
+    /// offset it names belongs to a block that no longer exists: left as it is,
+    /// the next block would sort it behind that block's newer points and the
+    /// plugin would end on the older value. Writes issued after the snapshot
+    /// keep their offsets.
     fn drain(&self, out: &mut [PendingParameterUpdate]) -> usize {
         let mut count = 0;
         let mut entries = [PendingParameterDrainEntry::default(); PENDING_PARAMETER_CAPACITY];
+        let issued_before_drain = self.next_sequence.load(Ordering::Acquire).saturating_sub(1);
         let late_through = self.late_through.load(Ordering::Acquire);
 
         for slot in &self.slots {
@@ -392,6 +465,8 @@ impl PendingParameterQueue {
             }
             slot.state.store(PENDING_PARAMETER_EMPTY, Ordering::Release);
         }
+        self.late_through
+            .fetch_max(issued_before_drain, Ordering::Release);
 
         sort_pending_parameter_entries(&mut entries[..count]);
         for (index, entry) in entries[..count].iter().enumerate() {
@@ -520,9 +595,10 @@ impl PendingParameterQueue {
 }
 
 /// Order a drain the way a plugin is owed it: by the sample each write applies
-/// at, and by issue order among writes at one sample, so the later of two
-/// writes to one parameter is the one it ends on. An insertion sort because the
-/// audio thread runs it and it allocates nothing.
+/// at, and by issue order among writes at one sample. Writes to one parameter
+/// at the same sample have already folded to the later one issued, and the
+/// plugin ends on the write with the highest sample. An insertion sort because
+/// the audio thread runs it and it allocates nothing.
 fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
     let key = |entry: &PendingParameterDrainEntry| (entry.update.sample_offset, entry.sequence);
     for index in 1..entries.len() {
@@ -2523,6 +2599,40 @@ mod tests {
         );
     }
 
+    /// A served block's drain takes only published slots; a write whose slot
+    /// another thread holds mid-claim stays queued, and it was issued before
+    /// that block ended, so the next block delivers it at the head, ahead of
+    /// its own newer points, rather than at its old offset behind them.
+    /// Mutation: drop the drain's post-drain advance of `late_through` — the
+    /// next block delivers `[(4, 0.8, 10), (4, 0.2, 200)]` and ends on 0.2.
+    #[test]
+    fn a_write_a_served_drain_skipped_is_late_for_the_next_block() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let queue = &shared.pending_parameters;
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_WRITING, Ordering::Release);
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![Vec::new()],
+            "the held slot is not taken by the served block"
+        );
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 10));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![Vec::new(), vec![(4, 0.2, 0), (4, 0.8, 10)]]
+        );
+    }
+
     /// A late slot holds the head of the next block, so a write for that
     /// block's own sample 200 is a separate point, and one for the head folds
     /// into the late write by sequence.
@@ -2795,6 +2905,47 @@ mod tests {
                     sample_offset: 0,
                 },
             ]
+        );
+    }
+
+    /// A ramp that fills every slot with distinct sample offsets of one
+    /// parameter still ends on its newest point: the full queue folds the
+    /// write into the parameter's latest slot instead of refusing it. A
+    /// parameter the queue holds no slot for stays refused.
+    /// Mutation: return `Err` when no slot is free — the newest point is lost.
+    #[test]
+    fn a_full_queue_folds_a_ramps_newest_point_into_its_last_slot() {
+        let queue = PendingParameterQueue::new();
+        for index in 0..PENDING_PARAMETER_CAPACITY {
+            assert!(
+                queue.enqueue(1, index as f64 / 100.0, index as u32).is_ok(),
+                "point {index}"
+            );
+        }
+
+        assert!(queue.enqueue(1, 0.99, 100).is_ok());
+        assert_eq!(
+            queue.enqueue(2, 0.5, 0),
+            Err(()),
+            "a parameter the full queue holds no slot for is refused"
+        );
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+        assert_eq!(count, PENDING_PARAMETER_CAPACITY);
+        assert_eq!(
+            drained[count - 1],
+            PendingParameterUpdate {
+                param_id: 1,
+                value: 0.99,
+                sample_offset: 100,
+            }
+        );
+        assert!(
+            drained[..count]
+                .windows(2)
+                .all(|pair| pair[0].sample_offset <= pair[1].sample_offset),
+            "the drain stays ordered by sample offset"
         );
     }
 

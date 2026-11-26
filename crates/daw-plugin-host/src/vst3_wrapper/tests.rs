@@ -4504,6 +4504,39 @@ fn a_full_queue_keeps_its_count_and_ends_on_the_newest_value() {
     assert!(points.windows(2).all(|pair| pair[0].0 <= pair[1].0));
 }
 
+/// A plugin may add its points out of offset order; the queue keeps them
+/// sorted, as Steinberg's own does, so the value the block settles on is the
+/// one at the highest offset, not the last one added.
+/// Mutation: append instead of inserting at the sorted position — it settles
+/// on 0.2.
+#[test]
+fn an_output_point_added_below_the_last_offset_is_sorted_into_place() {
+    let output = HostParameterChanges::new();
+    let id: ParamID = 7;
+    let mut index = -1;
+    // SAFETY: the list is this test's own live host object; `id` and `index`
+    // outlive the call.
+    let queue = unsafe { output.addParameterData(&id, &mut index) };
+    assert!(!queue.is_null());
+
+    let mut position = -1;
+    // SAFETY: the queue is the live one `addParameterData` returned.
+    unsafe { output.queues[0].addPoint(300, 0.9, &mut position) };
+    assert_eq!(position, 0);
+    // SAFETY: as above.
+    unsafe { output.queues[0].addPoint(100, 0.2, &mut position) };
+    assert_eq!(
+        position, 0,
+        "the earlier point lands ahead of the later one"
+    );
+
+    assert_eq!(
+        read_queue_points(&output.queues[0]),
+        vec![(100, 0.2), (300, 0.9)]
+    );
+    assert_eq!(output.settled().collect::<Vec<_>>(), vec![(7, 0.9)]);
+}
+
 /// A plugin reporting one parameter at more offsets than the queue holds is
 /// settled on the last value it reported, as before the queue was bounded.
 #[test]

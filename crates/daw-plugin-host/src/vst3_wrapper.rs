@@ -153,18 +153,20 @@ impl Default for HostParamValueQueue {
 }
 
 impl HostParamValueQueue {
-    /// Add a point after the last, or replace the last one's value at its own
-    /// offset. A full queue keeps its bound and still ends on the newest value:
-    /// the point replaces the last one, at the later of the two offsets so the
-    /// points stay in non-decreasing offset. Returns the index the point landed
-    /// at. RT-safe.
+    /// Insert a point at its sorted position by offset, as Steinberg's own
+    /// queue does, or replace the value of the point already at that offset. A
+    /// full queue keeps its bound and still ends on the newest value: the point
+    /// replaces the last one, at the later of the two offsets so the points
+    /// stay in non-decreasing offset. Returns the index the point landed at.
+    /// RT-safe.
     fn push(&self, sample_offset: int32, value: ParamValue) -> usize {
         let count = self.count.get();
-        if let Some(last) = count.checked_sub(1) {
-            if self.points[last].get().0 == sample_offset {
-                self.points[last].set((sample_offset, value));
-                return last;
-            }
+        let position = (0..count)
+            .find(|&index| self.points[index].get().0 >= sample_offset)
+            .unwrap_or(count);
+        if position < count && self.points[position].get().0 == sample_offset {
+            self.points[position].set((sample_offset, value));
+            return position;
         }
         if count == MAX_QUEUE_POINTS {
             let last = MAX_QUEUE_POINTS - 1;
@@ -172,9 +174,12 @@ impl HostParamValueQueue {
             self.points[last].set((sample_offset.max(held_offset), value));
             return last;
         }
-        self.points[count].set((sample_offset, value));
+        for index in (position..count).rev() {
+            self.points[index + 1].set(self.points[index].get());
+        }
+        self.points[position].set((sample_offset, value));
         self.count.set(count + 1);
-        count
+        position
     }
 
     fn points(&self) -> impl Iterator<Item = (int32, ParamValue)> + '_ {

@@ -4493,6 +4493,46 @@ mod tests {
         );
     }
 
+    /// Merging a full block of parameter values and notes into one time-ordered
+    /// list fills the order scratch to its bound, and it was reserved when the
+    /// wrapper was built: the block allocates nothing. Measured with the
+    /// crate's per-thread counting allocator over the first `process` call.
+    /// Mutation: build the wrapper with a zero-capacity `event_order_scratch`
+    /// — the merge allocates on the audio thread.
+    #[test]
+    fn a_full_merged_block_performs_no_heap_allocation() {
+        let _guard = event_read_test_guard();
+        let mut wrapper = event_reading_wrapper();
+        let notes = full_block_of_notes();
+        let updates: Vec<HostParameterUpdate> = (0..MAX_PARAMETER_EVENTS as u32)
+            .map(|param_id| HostParameterUpdate {
+                param_id: 1_000 + param_id,
+                value: 0.5,
+                sample_offset: (param_id * 3) % 256,
+            })
+            .collect();
+        // The stub's own log grows with the events it reads; reserving it here
+        // keeps that growth out of the count without a warm-up block, which
+        // would also grow the order scratch and hide an unreserved one.
+        read_events().reserve(MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK);
+
+        let before = crate::allocation_counter::allocation_count();
+        process_events(&mut wrapper, &notes, &updates);
+        let after = crate::allocation_counter::allocation_count();
+
+        assert_eq!(
+            read_events().len(),
+            MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK,
+            "the measured block was not the full one"
+        );
+        assert_eq!(
+            after - before,
+            0,
+            "the merged block allocated {} times",
+            after - before
+        );
+    }
+
     // ── Latency query + change notification (PH-4) ──────────────────────
 
     use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
