@@ -50,6 +50,29 @@ function read(renderTracks: Track[]) {
     return { description: describeSubgraphPrintInput(input, (content) => content), refs: input.refs };
 }
 
+const folder: Track = { ...createTrack({ id: 'track-folder', name: 'Folder', kind: 'folder' }), outputId: TOASTER_ID };
+const folderChildOne: Track = {
+    ...createTrack({ id: 'track-folder-child-1', name: 'Child 1', kind: 'midi' }),
+    parentId: folder.id,
+};
+const folderChildTwo: Track = {
+    ...createTrack({ id: 'track-folder-child-2', name: 'Child 2', kind: 'midi' }),
+    parentId: folder.id,
+};
+const bypassedToaster: Track = {
+    ...createTrack({ id: 'track-bypassed-toaster', name: 'Bypassed', kind: 'folder' }),
+    outputId: TOASTER_ID,
+    devices: [{ ...toasterDevice, id: 'device-bypassed-toaster', bypassed: true }],
+};
+const bypassedChildOne: Track = {
+    ...createTrack({ id: 'track-bypassed-child-1', name: 'Child 1', kind: 'midi' }),
+    parentId: bypassedToaster.id,
+};
+const bypassedChildTwo: Track = {
+    ...createTrack({ id: 'track-bypassed-child-2', name: 'Child 2', kind: 'midi' }),
+    parentId: bypassedToaster.id,
+};
+
 const baseline = read([toaster, padOne, padTwo, sourceOne, sourceTwo]);
 
 describe('describeSubgraphPrintInput Toaster pad order', () => {
@@ -62,5 +85,17 @@ describe('describeSubgraphPrintInput Toaster pad order', () => {
     it('selects and describes the same input when two tracks that are no pad children swap places', () => {
         const swapped = read([toaster, padOne, padTwo, sourceTwo, sourceOne]);
         expect(swapped).toEqual(baseline);
+    });
+
+    it('selects and describes the same input when the children of a folder that is no Toaster swap places', () => {
+        const before = read([toaster, folder, folderChildOne, folderChildTwo]);
+        const after = read([toaster, folder, folderChildTwo, folderChildOne]);
+        expect(after).toEqual(before);
+    });
+
+    it('selects and describes the same input when the children of a bypassed Toaster swap places', () => {
+        const before = read([toaster, bypassedToaster, bypassedChildOne, bypassedChildTwo]);
+        const after = read([toaster, bypassedToaster, bypassedChildTwo, bypassedChildOne]);
+        expect(after).toEqual(before);
     });
 });

@@ -23,11 +23,14 @@ function addLeaderIds(lanes: readonly AutomationLane[], ids: Set<string>, target
     const byId = new Map(lanes.map((lane) => [lane.id, lane]));
     for (const id of [...ids]) {
         const follower = byId.get(id);
+        if (!follower) {
+            continue;
+        }
         const seen = new Set([id]);
-        let leaderId = follower?.linkedLaneId;
+        let leaderId = follower.linkedLaneId;
         while (leaderId !== undefined && !seen.has(leaderId)) {
             const leader = byId.get(leaderId);
-            if (!leader || (follower?.trackId === targetTrackId && drivesTrackMixer(leader, targetTrackId))) {
+            if (!leader || (follower.trackId === targetTrackId && drivesTrackMixer(leader, targetTrackId))) {
                 break;
             }
             seen.add(leaderId);
