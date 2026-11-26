@@ -124,6 +124,44 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
     }
 }
 
+/** Ends the request when its adopted proposal was stopped or refused while measured; true when nothing is to be persisted. */
+function settleUnpersistedAdoptedMeasurement(input: {
+    runId: string;
+    batchId: string;
+    targetIds: string[];
+    assistantMessageId: string;
+    measurement: Awaited<ReturnType<typeof measureAdoptedRecipeProposal>>;
+}): boolean {
+    const { runId, batchId, targetIds, assistantMessageId, measurement } = input;
+    if (measurement.status === 'stopped') {
+        updateChatMessage(assistantMessageId, {
+            pendingActionConfirmationStatus: 'cancelled',
+            content: 'Cancelled preparation of the proposal.',
+        });
+        return true;
+    }
+    if (measurement.status === 'refused') {
+        // A plan-bound refusal is no budget being hit: the batch fails and the run records a conflict, as a refused scheduled batch does.
+        agentRunLifecycle.updateBatchStatus({ runId, batchId, status: 'failed' });
+        tryRecordTerminalFailure({
+            runId,
+            error: normalizeAgentFailure({
+                category: 'conflict',
+                source: 'command-execution',
+                related: { targetIds },
+                knownDomain: true,
+            }),
+            terminal: true,
+        });
+        updateChatMessage(assistantMessageId, {
+            content: `Command not executed: ${measurement.reason}`,
+            error: measurement.reason,
+        });
+        return true;
+    }
+    return false;
+}
+
 function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissionResult {
     const runId = `agent-run-${crypto.randomUUID()}`;
     const created = agentRunLifecycle.create({
@@ -758,11 +796,16 @@ async function dispatchPromptPlan(input: {
                           compiled: compiledActionExecution,
                           state: adoptedState,
                       });
-            if (measurement?.status === 'stopped') {
-                updateChatMessage(assistantMessageId, {
-                    pendingActionConfirmationStatus: 'cancelled',
-                    content: 'Cancelled preparation of the proposal.',
-                });
+            if (
+                measurement !== null &&
+                settleUnpersistedAdoptedMeasurement({
+                    runId: admission.runId,
+                    batchId: parsedCommandBatch.envelope.batchId,
+                    targetIds: confirmationDescription.affectedIds,
+                    assistantMessageId,
+                    measurement,
+                })
+            ) {
                 return undefined;
             }
             const measured = measurement?.status === 'measured' ? measurement : null;
