@@ -19,6 +19,7 @@ export async function loadPlugin(pluginId: string, instanceId: string): Promise<
             latency_samples: 0,
             latency_ms: 0,
             tail_samples: 0,
+            tail_sequence: 0,
             engine_plugin_id: null,
         };
     }

@@ -15,13 +15,14 @@
 //! per-bus storage the negotiated layout sizes — and refilled in place.
 //! `process` takes no lock, allocates nothing, and performs no I/O.
 
+use crate::output_notes::{OutputNoteQueue, OUTPUT_NOTE_CAPACITY};
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
-    PluginHostRequestNotifier, ProcessMode, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
-    MAX_MIDI_EVENTS_PER_BLOCK,
+    signal_pending_process_refusal, signal_pending_service_change, AudioPlugin,
+    EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
+    LatencyChangeNotifier, PluginError, PluginHostRequestNotifier, ProcessMode, ProcessingGate,
+    ServiceChange, DEFAULT_EDITOR_CONTENT_SCALE, MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -33,6 +34,7 @@ use crate::vst3_editor::{
 };
 use crate::vst3_host::{
     read_string128, MessageTarget, Vst3HostContext, Vst3HostState, COMPONENT_RESTART_FLAGS,
+    MAX_PARAMETER_GESTURES,
 };
 use crate::vst3_module::{ModuleError, Vst3Module};
 use crate::vst3_scanner::{category_from_vst3_sub_categories, split_sub_categories};
@@ -105,17 +107,90 @@ const STATE_HEADER_BYTES: usize = 14;
 // RT-side host objects
 // ---------------------------------------------------------------------------
 
-/// One parameter's value for the coming block.
+/// The most points one parameter's queue holds in one block. The value is
+/// `MAX_PARAMETER_QUEUES + 1`: 64, one point per slot of the queue table, plus
+/// one. It must stay at least `sourdaw-native`'s `PENDING_PARAMETER_CAPACITY`
+/// (64) plus one editor gesture, so no point of one parameter's ramp the engine
+/// admitted is cut here. No cross-crate check ties the two; they are kept equal
+/// by hand.
 ///
-/// A single point at sample offset zero, deliberately: the seam delivers the
-/// value a parameter has *reached*, not a curve through the block. Sample
-/// accurate automation is the automation lane's job and is not modelled here, so
-/// pretending to a ramp would be inventing data.
-#[derive(Default)]
+/// The bound on distinct parameters is different: gestures and host writes
+/// share the `MAX_PARAMETER_QUEUES` queue table, so parameters past it are
+/// dropped (#7194).
+///
+/// A queue at its bound never refuses: a further point replaces the last, so the
+/// queue still ends on the newest value. That is the law for host staging and
+/// for a plugin's output list alike, and `addPoint` answers `kResultOk` because
+/// the value was recorded as the one the parameter ends the block on; only the
+/// plugin's intermediate points are lost, and a block's final value is what
+/// `settled` and the echo check read.
+const MAX_QUEUE_POINTS: usize = MAX_PARAMETER_QUEUES + 1;
+
+/// One parameter's points for the coming block, each at the sample offset it
+/// applies at, in non-decreasing offset.
+///
+/// Automation hands one parameter several points inside one block, and VST3
+/// carries a sample offset on every point precisely so a host need not split
+/// its process call to deliver them. A point staged at an offset the queue
+/// already holds replaces that point's value: two values for one sample are one
+/// value, the later.
+///
+/// The points are a fixed array allocated with the queue at activation; staging
+/// writes into it in place and never grows it.
 struct HostParamValueQueue {
     param_id: Cell<ParamID>,
-    value: Cell<ParamValue>,
-    filled: Cell<bool>,
+    points: [Cell<(int32, ParamValue)>; MAX_QUEUE_POINTS],
+    count: Cell<usize>,
+}
+
+impl Default for HostParamValueQueue {
+    fn default() -> Self {
+        Self {
+            param_id: Cell::new(0),
+            points: std::array::from_fn(|_| Cell::new((0, 0.0))),
+            count: Cell::new(0),
+        }
+    }
+}
+
+impl HostParamValueQueue {
+    /// Insert a point at its sorted position by offset, as Steinberg's own
+    /// queue does, or replace the value of the point already at that offset. A
+    /// full queue keeps its bound and still ends on the newest value: the point
+    /// replaces the last one, at the later of the two offsets so the points
+    /// stay in non-decreasing offset. Returns the index the point landed at.
+    /// RT-safe.
+    fn push(&self, sample_offset: int32, value: ParamValue) -> usize {
+        let count = self.count.get();
+        if count == MAX_QUEUE_POINTS {
+            let last = MAX_QUEUE_POINTS - 1;
+            let held_offset = self.points[last].get().0;
+            self.points[last].set((sample_offset.max(held_offset), value));
+            return last;
+        }
+        let position = (0..count)
+            .find(|&index| self.points[index].get().0 >= sample_offset)
+            .unwrap_or(count);
+        if position < count && self.points[position].get().0 == sample_offset {
+            self.points[position].set((sample_offset, value));
+            return position;
+        }
+        for index in (position..count).rev() {
+            self.points[index + 1].set(self.points[index].get());
+        }
+        self.points[position].set((sample_offset, value));
+        self.count.set(count + 1);
+        position
+    }
+
+    fn points(&self) -> impl Iterator<Item = (int32, ParamValue)> + '_ {
+        self.points[..self.count.get()].iter().map(Cell::get)
+    }
+
+    /// The value the parameter ends the block on.
+    fn last_value(&self) -> Option<ParamValue> {
+        self.points().last().map(|(_, value)| value)
+    }
 }
 
 impl Class for HostParamValueQueue {
@@ -128,11 +203,7 @@ impl IParamValueQueueTrait for HostParamValueQueue {
     }
 
     unsafe fn getPointCount(&self) -> int32 {
-        if self.filled.get() {
-            1
-        } else {
-            0
-        }
+        self.count.get() as int32
     }
 
     unsafe fn getPoint(
@@ -141,29 +212,27 @@ impl IParamValueQueueTrait for HostParamValueQueue {
         sample_offset: *mut int32,
         value: *mut ParamValue,
     ) -> int32 {
-        if index != 0 || !self.filled.get() || sample_offset.is_null() || value.is_null() {
+        let Ok(index) = usize::try_from(index) else {
+            return kInvalidArgument;
+        };
+        if index >= self.count.get() || sample_offset.is_null() || value.is_null() {
             return kInvalidArgument;
         }
+        let (point_offset, point_value) = self.points[index].get();
         // SAFETY: non-null (checked above); `IParamValueQueue::getPoint` gives
         // the plugin's own writable out-parameter, live for this call.
-        unsafe { *sample_offset = 0 };
+        unsafe { *sample_offset = point_offset };
         // SAFETY: non-null (checked above); the plugin's own out-parameter.
-        unsafe { *value = self.value.get() };
+        unsafe { *value = point_value };
         kResultOk
     }
 
-    unsafe fn addPoint(
-        &self,
-        _sample_offset: int32,
-        value: ParamValue,
-        index: *mut int32,
-    ) -> int32 {
-        self.value.set(value);
-        self.filled.set(true);
+    unsafe fn addPoint(&self, sample_offset: int32, value: ParamValue, index: *mut int32) -> int32 {
+        let position = self.push(sample_offset, value);
         if !index.is_null() {
             // SAFETY: non-null (checked above); `addPoint`'s `index` is the
             // plugin's own writable out-parameter, live for this call.
-            unsafe { *index = 0 };
+            unsafe { *index = position as int32 };
         }
         kResultOk
     }
@@ -193,14 +262,17 @@ impl HostParameterChanges {
         self.used.set(0);
     }
 
-    /// Stage one parameter's value for the coming block, replacing any value
-    /// already staged for the same parameter. RT-safe; silently drops writes
-    /// past `MAX_PARAMETER_QUEUES` rather than growing on the audio thread.
-    fn stage(&self, param_id: ParamID, value: ParamValue) {
+    /// Stage one point of a parameter for the coming block, after any already
+    /// staged for it — or over the last one, at its own offset. RT-safe;
+    /// a parameter past `MAX_PARAMETER_QUEUES` is dropped rather than grown on
+    /// the audio thread, and a full queue ends on the newest value (see
+    /// `MAX_QUEUE_POINTS`).
+    fn stage(&self, param_id: ParamID, sample_offset: u32, value: ParamValue) {
         let Some(position) = self.queue_index_for(param_id) else {
             return;
         };
-        self.queues[position].value.set(value);
+        let offset = int32::try_from(sample_offset).unwrap_or(int32::MAX);
+        self.queues[position].push(offset, value);
     }
 
     /// The queue already holding this parameter, or a freshly claimed one.
@@ -218,14 +290,42 @@ impl HostParameterChanges {
         }
         let queue = &self.queues[used];
         queue.param_id.set(param_id);
-        queue.value.set(0.0);
-        queue.filled.set(true);
+        // A queue claimed by the plugin through `addParameterData` holds no
+        // value until it adds a point; one the host stages is filled at once.
+        queue.count.set(0);
         self.used.set(used + 1);
         Some(used)
     }
 
     fn is_empty(&self) -> bool {
         self.used.get() == 0
+    }
+
+    /// The value each parameter in the list ends the block on, as
+    /// `(parameter, value)`: what the plugin reported in an output list, read
+    /// as the state it left the parameter in. A queue the plugin claimed and
+    /// never added a point to holds none.
+    fn settled(&self) -> impl Iterator<Item = (ParamID, ParamValue)> + '_ {
+        self.queues[..self.used.get()]
+            .iter()
+            .filter_map(|queue| Some((queue.param_id.get(), queue.last_value()?)))
+    }
+
+    /// Whether the value the list ends `param_id` on is `value`, at single
+    /// precision. RT-safe: a scan of the staged queues' last points.
+    ///
+    /// A processor that holds its parameters as `f32` — most do — echoes a
+    /// host write rounded to that precision, and the echo is still the host's
+    /// value, not a move of the plugin's own. What the processor reports is the
+    /// state it settled in, so only the value the host's points end on can be
+    /// repeated back: an earlier point of a ramp equal to the report is a
+    /// coincidence, and the report may be the plugin clamping the later ones.
+    fn carries(&self, param_id: ParamID, value: ParamValue) -> bool {
+        self.queues[..self.used.get()]
+            .iter()
+            .filter(|queue| queue.param_id.get() == param_id)
+            .filter_map(|queue| queue.last_value())
+            .any(|staged_value| staged_value as f32 == value as f32)
     }
 }
 
@@ -350,6 +450,162 @@ impl IEventListTrait for HostEventList {
         // Output events are absorbed: the seam has nowhere to route a plugin's
         // generated MIDI yet, and accepting it silently would claim otherwise.
         kInvalidArgument
+    }
+}
+
+/// The `outputEvents` list one block hands the plugin.
+///
+/// Write-only from the plugin's side. The notes it adds are held here, in
+/// storage preallocated at construction, until the processor answers: a call it
+/// refuses produced no output the host stands behind, so its notes are
+/// discarded, and only a successful call's are handed to the instance's
+/// wait-free [`OutputNoteQueue`], together with the count of notes staging had
+/// no room for. Nothing here allocates.
+struct HostOutputEventList {
+    notes: Arc<OutputNoteQueue>,
+    staged: Box<[Cell<HostMidiEvent>]>,
+    staged_count: Cell<usize>,
+    overflowed: Cell<u32>,
+    /// Frames in the current call's block; an idle flush has none.
+    block_frames: Cell<usize>,
+}
+
+impl HostOutputEventList {
+    fn new(notes: Arc<OutputNoteQueue>) -> Self {
+        Self {
+            notes,
+            staged: (0..OUTPUT_NOTE_CAPACITY)
+                .map(|_| Cell::new(HostMidiEvent::default()))
+                .collect(),
+            staged_count: Cell::new(0),
+            overflowed: Cell::new(0),
+            block_frames: Cell::new(0),
+        }
+    }
+
+    /// Start a call over a block of `frames`, dropping whatever an earlier
+    /// call left uncommitted. **RT-safe.**
+    fn begin(&self, frames: usize) {
+        self.staged_count.set(0);
+        self.overflowed.set(0);
+        self.block_frames.set(frames);
+    }
+
+    /// Hand this call's notes to the queue, in the order the plugin wrote
+    /// them, and count the ones staging could not hold. **RT-safe.** A note
+    /// the queue has no room for is counted there.
+    fn commit(&self) {
+        for note in &self.staged[..self.staged_count.get()] {
+            self.notes.push(note.get());
+        }
+        self.notes.count_dropped(self.overflowed.get());
+        self.begin(0);
+    }
+}
+
+impl Class for HostOutputEventList {
+    type Interfaces = (IEventList,);
+}
+
+impl IEventListTrait for HostOutputEventList {
+    unsafe fn getEventCount(&self) -> int32 {
+        0
+    }
+
+    unsafe fn getEvent(&self, _index: int32, _e: *mut Event) -> int32 {
+        kInvalidArgument
+    }
+
+    /// Capture a note the plugin produced. Any other event type is accepted
+    /// and not kept: the seam carries notes, and refusing the rest would tell
+    /// the plugin its output failed. A malformed note is refused and not
+    /// kept. A note staging has no room for is refused, and counted as dropped
+    /// if the call succeeds.
+    unsafe fn addEvent(&self, e: *mut Event) -> int32 {
+        if e.is_null() {
+            return kInvalidArgument;
+        }
+        // SAFETY: non-null (checked above); `addEvent`'s `e` points at the
+        // plugin's event, live for this call.
+        let event = unsafe { &*e };
+        let note = match output_event(event, self.block_frames.get()) {
+            OutputEvent::Note(note) => note,
+            OutputEvent::Malformed => return kInvalidArgument,
+            OutputEvent::Other => return kResultOk,
+        };
+        let count = self.staged_count.get();
+        let Some(slot) = self.staged.get(count) else {
+            self.overflowed.set(self.overflowed.get().saturating_add(1));
+            return kResultFalse;
+        };
+        slot.set(note);
+        self.staged_count.set(count + 1);
+        kResultOk
+    }
+}
+
+/// What one output event is to the note capture.
+enum OutputEvent {
+    Note(HostMidiEvent),
+    /// A note the host cannot stand behind: its pitch is not a MIDI note, its
+    /// velocity is not finite, or its offset lies outside the call's block.
+    Malformed,
+    /// Any event type other than a note.
+    Other,
+}
+
+/// Read one output event of a call over a block of `block_frames`.
+///
+/// An idle flush has no frames, so its only valid offset is 0.
+fn output_event(event: &Event, block_frames: usize) -> OutputEvent {
+    let (pitch, velocity, channel, is_note_on) = if event.r#type == EventTypes_::kNoteOnEvent as u16
+    {
+        // SAFETY: the type tag names the `noteOn` arm of the payload union.
+        let on = unsafe { event.__field0.noteOn };
+        (on.pitch, on.velocity, on.channel, true)
+    } else if event.r#type == EventTypes_::kNoteOffEvent as u16 {
+        // SAFETY: the type tag names the `noteOff` arm of the payload union.
+        let off = unsafe { event.__field0.noteOff };
+        (off.pitch, off.velocity, off.channel, false)
+    } else {
+        return OutputEvent::Other;
+    };
+    let Some(note) = u8::try_from(pitch).ok().filter(|note| *note <= 127) else {
+        return OutputEvent::Malformed;
+    };
+    let Some(frame_offset) = offset_within(event.sampleOffset, block_frames) else {
+        return OutputEvent::Malformed;
+    };
+    if !velocity.is_finite() {
+        return OutputEvent::Malformed;
+    }
+    OutputEvent::Note(HostMidiEvent {
+        note,
+        velocity: midi_velocity(velocity, is_note_on),
+        channel,
+        is_note_on,
+        frame_offset,
+    })
+}
+
+/// `offset` as a frame of a block of `block_frames`, or `None` when it falls
+/// outside it. A block of no frames admits offset 0 alone.
+fn offset_within(offset: int32, block_frames: usize) -> Option<u32> {
+    let frame = u32::try_from(offset).ok()?;
+    (usize::try_from(frame).ok()? < block_frames.max(1)).then_some(frame)
+}
+
+/// A normalised VST3 velocity as a MIDI velocity, the inverse of
+/// [`note_event`]'s `velocity / 127`.
+///
+/// A note-on keeps a velocity of at least 1: MIDI reads a velocity-0 note-on
+/// as a release, so a quiet note-on must not round to one.
+fn midi_velocity(velocity: f32, is_note_on: bool) -> u8 {
+    let midi = (velocity.clamp(0.0, 1.0) * 127.0).round() as u8;
+    if is_note_on {
+        midi.max(1)
+    } else {
+        midi
     }
 }
 
@@ -1236,6 +1492,15 @@ pub struct Vst3Wrapper {
     output_scratch: Box<[[f32; MAX_BUFFER]; CHANNELS]>,
     parameter_changes: ComWrapper<HostParameterChanges>,
     event_list: ComWrapper<HostEventList>,
+    /// The `outputParameterChanges` list: what the processor reports back.
+    output_parameter_changes: ComWrapper<HostParameterChanges>,
+    output_events: ComWrapper<HostOutputEventList>,
+    /// The notes the plugin produced, for the control path to drain.
+    output_notes: Arc<OutputNoteQueue>,
+    /// The plugin's read-only parameters — meters and readouts — in ascending
+    /// order, read on the control path whenever the list may have changed so a
+    /// block can tell a readout from a value without asking the controller.
+    read_only_parameters: Vec<ParamID>,
     process_context: Box<ProcessContext>,
     has_transport: bool,
     /// Scratch the audio thread drains editor gestures into, so draining costs
@@ -1275,6 +1540,9 @@ pub struct Vst3Wrapper {
     layout_refusal: Option<String>,
     /// Whether that refusal has already been reported.
     layout_refusal_reported: bool,
+    /// The out-of-service reason this wrapper last answered `take_service_change`
+    /// with, so a state it already published is not published again.
+    published_out_of_service: Option<String>,
     /// Whether the factory calls this class an instrument. Copied off the
     /// instance at activation so the audio thread reads a plain bool.
     is_instrument: bool,
@@ -1338,6 +1606,11 @@ impl Vst3Wrapper {
         sample_rate: f64,
         mode: ProcessMode,
     ) -> Result<Self, Vst3Error> {
+        let output_notes = Arc::new(OutputNoteQueue::default());
+        let read_only_parameters = instance
+            .controller()
+            .map(read_only_parameter_ids)
+            .unwrap_or_default();
         let mut wrapper = Self {
             editor: None,
             processor: None,
@@ -1356,6 +1629,10 @@ impl Vst3Wrapper {
             output_scratch: Box::new([[0.0; MAX_BUFFER]; CHANNELS]),
             parameter_changes: ComWrapper::new(HostParameterChanges::new()),
             event_list: ComWrapper::new(HostEventList::new()),
+            output_parameter_changes: ComWrapper::new(HostParameterChanges::new()),
+            output_events: ComWrapper::new(HostOutputEventList::new(Arc::clone(&output_notes))),
+            output_notes,
+            read_only_parameters,
             process_context: Box::new(empty_process_context(sample_rate)),
             has_transport: false,
             gesture_scratch: Box::new([HostParameterUpdate::default(); MAX_PARAMETER_QUEUES]),
@@ -1369,6 +1646,7 @@ impl Vst3Wrapper {
             reported_restart_flags: 0,
             layout_refusal: None,
             layout_refusal_reported: false,
+            published_out_of_service: None,
         };
         wrapper.activate()?;
         Ok(wrapper)
@@ -1463,6 +1741,12 @@ impl Vst3Wrapper {
             maxSamplesPerBlock: MAX_BUFFER as int32,
             sampleRate: self.sample_rate,
         }
+    }
+
+    /// Whether the plugin has flagged a latency change not yet polled. Reads
+    /// the host's flag only; the plugin is not called.
+    pub fn has_pending_latency_change(&self) -> bool {
+        self.instance.host.state.is_latency_dirty()
     }
 
     /// The per-instance host state the plugin's callbacks write into.
@@ -1786,11 +2070,19 @@ impl Vst3Wrapper {
             self.layout_refusal_reported = false;
             // The control path's failure reporter is what prints it.
             signal_pending_process_refusal();
+            signal_pending_service_change();
             return Err(reason);
         }
-        self.layout_refusal = None;
+        if self.layout_refusal.take().is_some() {
+            signal_pending_service_change();
+        }
 
         if flags & RestartFlags_::kReloadComponent != 0 {
+            self.read_only_parameters = self
+                .instance
+                .controller()
+                .map(read_only_parameter_ids)
+                .unwrap_or_default();
             self.instance.host.state.request_parameters_rescan();
         }
         Ok(())
@@ -1828,15 +2120,47 @@ impl Vst3Wrapper {
         if self.layout_refusal_reported {
             return None;
         }
+        let report = self.layout_refusal_line()?;
+        self.layout_refusal_reported = true;
+        Some(report)
+    }
+
+    /// The line naming the layout the host refused and what happens to the
+    /// slot's blocks, while a refusal stands.
+    fn layout_refusal_line(&self) -> Option<String> {
         let reason = self.layout_refusal.as_ref()?;
-        let handling = if self.fails_silent() {
+        Some(format!("{reason}; {}", self.unserved_block_handling()))
+    }
+
+    /// What a slot out of service does with its blocks.
+    fn unserved_block_handling(&self) -> &'static str {
+        if self.fails_silent() {
             "its blocks are silenced"
         } else {
             "its blocks pass through unprocessed"
-        };
-        let report = format!("{reason}; {handling}");
-        self.layout_refusal_reported = true;
-        Some(report)
+        }
+    }
+
+    /// The reason this slot is out of service now, or `None` while it is
+    /// served. A refused layout outranks a refused start.
+    fn out_of_service_reason(&self) -> Option<String> {
+        if let Some(line) = self.layout_refusal_line() {
+            return Some(line);
+        }
+        // The latch never resets, so a refused start is current only while the
+        // host still wants processing and the plugin is not in it; a requested
+        // stop is not a refusal.
+        let refused_now = self.processing_start_refused
+            && self.processing.wants_processing()
+            && !self.processing.is_processing();
+        // The refused-start path hands the engine's input back for every
+        // plugin, instrument or not (`pass_through`).
+        refused_now.then(|| {
+            format!(
+                "'{}' refused to start processing; its blocks pass through unprocessed",
+                self.instance.name()
+            )
+        })
     }
 
     /// Hand the plugin the parameter writes waiting for it, with no audio, while
@@ -1874,7 +2198,8 @@ impl Vst3Wrapper {
             return;
         }
         for update in &self.gesture_scratch[..peeked] {
-            self.parameter_changes.stage(update.param_id, update.value);
+            self.parameter_changes
+                .stage(update.param_id, 0, update.value);
         }
 
         // SAFETY: exclusive control access, the claim every control-path
@@ -1885,9 +2210,13 @@ impl Vst3Wrapper {
             return;
         }
 
+        self.output_parameter_changes.reset();
+        self.output_events.begin(0);
         let mut data = flush_process_data(
             self.process_mode,
             borrowed_ptr::<_, IParameterChanges>(&self.parameter_changes),
+            borrowed_ptr::<_, IParameterChanges>(&self.output_parameter_changes),
+            borrowed_ptr::<_, IEventList>(&self.output_events),
         );
         // SAFETY: exclusive control access inside the processing state just
         // entered; `data` names no audio bus, and its parameter list is this
@@ -1897,6 +2226,8 @@ impl Vst3Wrapper {
         unsafe { processor.setProcessing(0) };
 
         if flushed {
+            self.forward_processor_output();
+            self.output_events.commit();
             self.instance
                 .host
                 .state
@@ -1905,10 +2236,45 @@ impl Vst3Wrapper {
         self.parameter_changes.reset();
     }
 
+    /// Carry what the processor reported in this call's
+    /// `outputParameterChanges` to the controller and the host's observers.
+    /// **RT-safe**: the audio thread runs it after every block.
+    ///
+    /// The value the host handed the processor for a parameter in this same
+    /// call, reported back unchanged, is the processor repeating what it was
+    /// told — automation played back, a knob the user is turning in the
+    /// editor, a host write — and is dropped: forwarded, it would come back as
+    /// a plugin-made edit and mark the project dirty on every automation point
+    /// played. Any other value passes, including a correction of the one it was
+    /// handed: unlike a CLAP event, the input list holds the value the host
+    /// wrote, so an echo can be told from a clamp.
+    fn forward_processor_output(&self) {
+        for (param_id, value) in self.output_parameter_changes.settled() {
+            if self.parameter_changes.carries(param_id, value) {
+                continue;
+            }
+            let observed = self.read_only_parameters.binary_search(&param_id).is_err();
+            self.instance
+                .host
+                .state
+                .record_processor_output(param_id, value, observed);
+        }
+        self.output_parameter_changes.reset();
+    }
+
+    /// The notes this instance's plugin produced, for the control path to
+    /// drain. Routing them is not this backend's concern; each keeps the frame
+    /// offset the plugin gave it inside its block.
+    pub fn output_note_queue(&self) -> Arc<OutputNoteQueue> {
+        Arc::clone(&self.output_notes)
+    }
+
     /// Queue the engine's writes for a block the plugin is not handed, so they
     /// land on the first block that reaches the processor. They go in as host
     /// writes, which take precedence over a gesture for the same parameter
-    /// exactly as they would have inside the block.
+    /// exactly as they would have inside the block. They are late by then, so
+    /// they land at the head of that block, each parameter on the last value
+    /// its points reached.
     ///
     /// RT-safe: the queue coalesces into preallocated slots without a lock.
     fn hold_host_parameter_updates(&self, parameter_updates: &[HostParameterUpdate]) {
@@ -1942,8 +2308,10 @@ impl Vst3Wrapper {
     }
 
     /// Stage every parameter write the coming block should carry: first the
-    /// edits the plugin's own editor made, then the host's, so a value the app
-    /// just wrote wins over a stale gesture for the same parameter.
+    /// edits the plugin's own editor made, at the block's head, then the
+    /// host's, each at its own sample offset — so a value the app just wrote at
+    /// the head wins over a stale gesture for the same parameter, and an
+    /// automation ramp keeps every point.
     ///
     /// RT-safe: drains into preallocated scratch and writes into preallocated
     /// queues.
@@ -1956,10 +2324,12 @@ impl Vst3Wrapper {
             .state
             .drain_parameter_edits(self.gesture_scratch.as_mut_slice());
         for update in &self.gesture_scratch[..drained] {
-            self.parameter_changes.stage(update.param_id, update.value);
+            self.parameter_changes
+                .stage(update.param_id, 0, update.value);
         }
         for update in parameter_updates {
-            self.parameter_changes.stage(update.param_id, update.value);
+            self.parameter_changes
+                .stage(update.param_id, update.sample_offset, update.value);
         }
     }
 
@@ -2007,8 +2377,9 @@ impl Vst3Wrapper {
         self.sync_processing_state();
 
         if !self.processing.is_processing() {
-            if self.processing.wants_processing() {
+            if self.processing.wants_processing() && !self.processing_start_refused {
                 self.processing_start_refused = true;
+                signal_pending_service_change();
             }
             self.hold_host_parameter_updates(parameter_updates);
             Self::pass_through(inputs, outputs, num_samples);
@@ -2068,6 +2439,8 @@ impl Vst3Wrapper {
             )
         };
 
+        self.output_parameter_changes.reset();
+        self.output_events.begin(samples);
         let refused = {
             let mut data = ProcessData {
                 processMode: self.process_mode,
@@ -2082,13 +2455,15 @@ impl Vst3Wrapper {
                 } else {
                     borrowed_ptr::<_, IParameterChanges>(&self.parameter_changes)
                 },
-                outputParameterChanges: ptr::null_mut(),
+                outputParameterChanges: borrowed_ptr::<_, IParameterChanges>(
+                    &self.output_parameter_changes,
+                ),
                 inputEvents: if self.event_list.is_empty() {
                     ptr::null_mut()
                 } else {
                     borrowed_ptr::<_, IEventList>(&self.event_list)
                 },
-                outputEvents: ptr::null_mut(),
+                outputEvents: borrowed_ptr::<_, IEventList>(&self.output_events),
                 // A null context tells the plugin the host has no timeline, so
                 // it is only replaced once that stops being true.
                 processContext: if self.has_transport {
@@ -2104,6 +2479,11 @@ impl Vst3Wrapper {
             // pointer in `data` addresses storage that outlives this call.
             unsafe { processor.process(&mut data) != kResultOk }
         };
+
+        if !refused {
+            self.forward_processor_output();
+            self.output_events.commit();
+        }
 
         if refused {
             // The output scratch holds nothing the plugin stands behind, so it
@@ -2337,6 +2717,31 @@ impl AudioPlugin for Vst3Wrapper {
         self.instance.host.state.take_state_dirty()
     }
 
+    /// Hand the controller what the processor reported since the last visit.
+    ///
+    /// VST3 keeps the processor and the controller apart, so a meter or a
+    /// value the processor's own modulation moved reaches the editor only
+    /// through the host; this is the control-path half of
+    /// [`Vst3HostState::record_processor_output`], answered on the same hint
+    /// and the same drain tick a CLAP flush request is.
+    fn flush_parameters_off_audio_thread(&mut self) -> bool {
+        let Some(controller) = self.instance.controller() else {
+            return false;
+        };
+        let mut updates = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
+        let drained = self
+            .instance
+            .host
+            .state
+            .drain_controller_updates(&mut updates);
+        for update in &updates[..drained] {
+            // SAFETY: control path, under the caller's exclusive access; the
+            // controller is live and the id is one the processor reported.
+            unsafe { controller.setParamNormalized(update.param_id, update.value) };
+        }
+        drained > 0
+    }
+
     fn take_parameters_rescan(&mut self) -> bool {
         self.instance.host.state.take_parameters_rescan()
     }
@@ -2389,6 +2794,10 @@ impl HostedPluginRuntime for Vst3Wrapper {
         if entered_processing(unsafe { processor.setProcessing(1) }) {
             self.processing.mark_started();
             self.processing_start_refusals = 0;
+            if self.processing_start_refused {
+                // A refused start has now succeeded: the slot is served again.
+                signal_pending_service_change();
+            }
             return;
         }
         self.processing_start_refusals += 1;
@@ -2519,6 +2928,13 @@ impl HostedPluginRuntime for Vst3Wrapper {
     fn has_passed_a_block_unprocessed(&self) -> bool {
         self.processing_start_refused || self.layout_refusal.is_some()
     }
+
+    fn take_service_change(&mut self) -> Option<ServiceChange> {
+        let current = self.out_of_service_reason();
+        let change = ServiceChange::between(&self.published_out_of_service, &current)?;
+        self.published_out_of_service = current;
+        Some(change)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2531,6 +2947,28 @@ fn bundle_name(bundle_path: &Path) -> &str {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("VST3 Plugin")
+}
+
+/// The ids of every parameter the controller marks read-only, hidden or not,
+/// in ascending order: the readouts a processor reports and nobody edits.
+fn read_only_parameter_ids(controller: &ComPtr<IEditController>) -> Vec<ParamID> {
+    // SAFETY: live, initialised controller.
+    let count = unsafe { controller.getParameterCount() };
+    let mut ids: Vec<ParamID> = (0..count)
+        .filter_map(|index| {
+            // SAFETY: `ParameterInfo` is a plain C struct of integers, floats and
+            // UTF-16 arrays, for which all-zero bytes are a valid value.
+            let mut info: ParameterInfo = unsafe { std::mem::zeroed() };
+            // SAFETY: live, initialised controller; `info` is a local the plugin
+            // writes for the call's duration only.
+            if unsafe { controller.getParameterInfo(index, &mut info) } != kResultOk {
+                return None;
+            }
+            (info.flags & ParameterFlags_::kIsReadOnly != 0).then_some(info.id)
+        })
+        .collect();
+    ids.sort_unstable();
+    ids
 }
 
 /// Read a controller's parameter list in the seam's vocabulary.
@@ -2722,11 +3160,16 @@ fn entered_processing(result: tresult) -> bool {
     result == kResultOk || result == kNotImplemented
 }
 
-/// The `ProcessData` of a parameter flush: no audio buses, no events, and the
-/// one parameter list. VST3 defines a `process` call with `numInputs` and
+/// The `ProcessData` of a parameter flush: no audio buses and no input events,
+/// the host's parameter list in and the output lists the processor answers on. VST3 defines a `process` call with `numInputs` and
 /// `numOutputs` zeroed as the host's way to deliver parameter changes without
 /// audio.
-fn flush_process_data(process_mode: int32, parameters: *mut IParameterChanges) -> ProcessData {
+fn flush_process_data(
+    process_mode: int32,
+    parameters: *mut IParameterChanges,
+    output_parameters: *mut IParameterChanges,
+    output_events: *mut IEventList,
+) -> ProcessData {
     ProcessData {
         processMode: process_mode,
         symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
@@ -2736,9 +3179,9 @@ fn flush_process_data(process_mode: int32, parameters: *mut IParameterChanges) -
         inputs: ptr::null_mut(),
         outputs: ptr::null_mut(),
         inputParameterChanges: parameters,
-        outputParameterChanges: ptr::null_mut(),
+        outputParameterChanges: output_parameters,
         inputEvents: ptr::null_mut(),
-        outputEvents: ptr::null_mut(),
+        outputEvents: output_events,
         processContext: ptr::null_mut(),
     }
 }

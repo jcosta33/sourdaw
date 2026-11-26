@@ -47,8 +47,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-// Non-spread listing of clampDeviceParameterValue, getAllTracks, and quantiseDeviceParameterValue — normalizeGrandBoulePersistedParamValue imports the first and third for micPosition commits; resolveGrandBouleEngine imports getAllTracks for the engine readiness tile.
+// The panel fixture supplies parameter laws and engine lookup without a live project transaction.
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    captureDevicePatchCommitValidation: () => null,
     clampDeviceParameterValue: ({ value }: { value: number }) => value,
     getAllTracks: () => [],
     quantiseDeviceParameterValue: ({ value }: { value: number }) => value,

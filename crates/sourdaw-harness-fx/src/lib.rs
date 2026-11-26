@@ -4,8 +4,10 @@
 //!
 //! Per channel the effect is `y[n] = g * (x[n - L] + 0.5 * x[n - L - E])`: `L`
 //! is the latency it reports, `E` the tail it declares, and `g` its one
-//! parameter, `Gain`. Its state chunk also records the process mode the host
-//! gave the instance (see [`state`]).
+//! parameter, `Gain`. Every `Gain` point applies from the sample its format's
+//! event offset names, so where a host delivered each point inside a block is
+//! read straight off the printed samples. Its state chunk also records the
+//! process mode the host gave the instance (see [`state`]).
 //!
 //! Its instrument classes (CLAP and VST3) sound the notes they are sent: while a
 //! note is held every output sample is `Gain * velocity`, from the sample its
@@ -25,6 +27,7 @@ mod clap_run_loop;
 mod echo;
 mod note_voice;
 pub mod state;
+mod vst3_emitter;
 mod vst3_front;
 mod vst3_probe;
 
@@ -34,6 +37,12 @@ pub use clap_front::{
 };
 pub use clap_gui::{GuiCommand, COMMAND_PARAM_ID};
 pub use echo::{ECHO_FRAMES, FAILING_PROCESS_CALL, GAIN_DEFAULT, LATENCY_FRAMES};
+pub use vst3_emitter::{
+    held_as_f32, DRIVE_CEILING, DRIVE_MARKER_PITCH, DRIVE_PARAM_ID, EMITTED_DELAY_FRAMES,
+    EMITTED_TRANSPOSE, EMPTY_CLAIM_PARAM_ID, FLOOD_NOTES, FLOOD_PARAM_ID, MALFORMED_PARAM_ID,
+    METER_PARAM_ID, MODULATED_PARAM_ID, REFUSED_REPORT, REFUSE_PARAM_ID, VST3_EMITTER_CLASS_ID,
+    WELL_FORMED_PITCH,
+};
 pub use vst3_front::{
     VST3_CLASS_ID, VST3_INSTRUMENT_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID,
     VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID, VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID,

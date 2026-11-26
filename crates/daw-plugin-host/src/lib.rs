@@ -20,6 +20,7 @@ pub mod clap_wrapper;
 /// The format-neutral pump every open editor's run loop is serviced from.
 #[cfg(unix)]
 pub mod editor_run_loop;
+pub mod output_notes;
 pub mod parameter_events;
 pub mod params;
 pub mod runtime;
@@ -56,10 +57,11 @@ pub use params::PluginParameter;
 pub use runtime::HostedRuntime;
 pub use scanner::{PluginFormat, ScanResult, ScannedDescriptor, ScannedPlugin};
 pub use traits::{
-    signal_pending_process_refusal, take_pending_process_refusal_signal, AudioPlugin, EditorClosed,
-    EditorVisibility, EditorWindowAsks, EditorWindowHost, EditorWindowResizer, HostMidiEvent,
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
-    PluginHostRequest, PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
-    DEFAULT_EDITOR_CONTENT_SCALE,
+    signal_pending_process_refusal, signal_pending_service_change,
+    take_pending_process_refusal_signal, take_pending_service_change_signal, AudioPlugin,
+    EditorClosed, EditorVisibility, EditorWindowAsks, EditorWindowHost, EditorWindowResizer,
+    HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
+    PluginError, PluginHostRequest, PluginHostRequestNotifier, ProcessMode, ProcessingGate,
+    ServiceChange, SharedEditorWindow, DEFAULT_EDITOR_CONTENT_SCALE,
 };
 pub use vst3_wrapper::Vst3Wrapper;

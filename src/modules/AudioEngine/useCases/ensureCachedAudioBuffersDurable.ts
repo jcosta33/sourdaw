@@ -1,3 +1,4 @@
+import { readAudioBufferDurabilityInWorker } from '../repositories/readAudioBufferDurabilityInWorker';
 import { audioBufferCache } from '../stores/audioBufferCache';
 
 import type { ProjectAudioStorageLockScope } from '#/infra/storage/withProjectAudioStorageLock';
@@ -21,7 +22,11 @@ export type CachedAudioBuffersDurabilityResult =
 /** Hold the exact required PCM sources durable while one project snapshot commits. */
 export function ensureCachedAudioBuffersDurable(
     requiredAudioBufferIds: readonly string[],
-    scope?: ProjectAudioStorageLockScope
+    scope?: ProjectAudioStorageLockScope,
+    { preferWorkerRead = false }: { preferWorkerRead?: boolean } = {}
 ): Promise<CachedAudioBuffersDurabilityResult> {
+    if (preferWorkerRead) {
+        return audioBufferCache.ensureDurable(requiredAudioBufferIds, scope, readAudioBufferDurabilityInWorker);
+    }
     return audioBufferCache.ensureDurable(requiredAudioBufferIds, scope);
 }
