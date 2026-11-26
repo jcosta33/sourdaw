@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
@@ -10,11 +14,6 @@ import { consumeCommandApprovalBinding } from '../consumeCommandApprovalBinding'
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
 import { issueCommandApprovalBinding } from '../issueCommandApprovalBinding';
-
-import {
-    registerInMemoryCommandBatchIdempotency,
-    resetUnwiredProjectCommandBatchLedger,
-} from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 

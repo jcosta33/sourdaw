@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { COMMAND_BATCH_IDEMPOTENCY_REGISTRAR } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
+
 const key = { projectId: 'project-1', idempotencyKey: 'key-1', contentHash: 'hash-1' };
 const lookup = vi.fn(() => Promise.resolve({ status: 'missing' as const }));
 const repository = {

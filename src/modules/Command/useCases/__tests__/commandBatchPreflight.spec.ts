@@ -5,6 +5,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
+import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
@@ -14,7 +15,6 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { prepareCommandBatchPreflight } from '../prepareCommandBatchPreflight';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
-import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 function applyTransactionalMutation(
     document: Record<string, unknown>,

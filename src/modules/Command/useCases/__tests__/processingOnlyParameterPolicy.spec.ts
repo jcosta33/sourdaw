@@ -29,6 +29,10 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry } from '../../stores';
 import { undoStore } from '../../stores/undoStore';
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
@@ -51,10 +55,6 @@ import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandE
 import { undo } from '../undo';
 
 import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
-import {
-    registerInMemoryCommandBatchIdempotency,
-    resetUnwiredProjectCommandBatchLedger,
-} from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 const zeroLatencyContext = { baseLatency: 0, outputLatency: 0 } as AudioContext;
 

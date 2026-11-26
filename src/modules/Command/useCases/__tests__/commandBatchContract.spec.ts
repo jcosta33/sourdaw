@@ -5,6 +5,10 @@ import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../../models/VersionedCommandBatchEnvelope';
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
@@ -16,10 +20,6 @@ import { serializeVersionedCommandBatchEnvelope } from '../serializeVersionedCom
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
-import {
-    registerInMemoryCommandBatchIdempotency,
-    resetUnwiredProjectCommandBatchLedger,
-} from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 /**
  * The linear amplitude a fixture action states. Level commands accept decibel

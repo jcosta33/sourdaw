@@ -15,6 +15,7 @@ import {
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { createEmptyTree } from '../../models/UndoTree';
+import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
@@ -27,7 +28,6 @@ import { parseStoredVerifiedBatchReceipt } from '../parseStoredVerifiedBatchRece
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
-import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 type SetTrackPanAction = Extract<AppAction, { type: 'setTrackPan' }>;

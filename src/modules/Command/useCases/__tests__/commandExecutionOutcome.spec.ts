@@ -17,6 +17,7 @@ import {
 import { type ActionHandler, type AppAction, type HandlerAfterCommit } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandBatchPreviewPort } from '../commandBatchPreviewPort';
 import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
@@ -31,7 +32,6 @@ import { type previewVersionedCommandBatchEnvelope } from '../previewVersionedCo
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
 import { executeApprovedVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
-import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
