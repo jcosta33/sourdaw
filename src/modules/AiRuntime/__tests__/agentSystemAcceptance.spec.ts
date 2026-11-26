@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import { change, clone, Counter, toJS } from '@automerge/automerge';
-import { parse as parsePersistedValue } from 'superjson';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
@@ -69,7 +68,7 @@ import {
     scoreAgentAcceptanceCase,
 } from '../services/agentAcceptanceScorer';
 import { formatAnswerNumber, quoteSourceData } from '../services/answerSourceFormat';
-import { agentRunStore, sanitizeAgentRunState } from '../stores/agentRunStore';
+import { agentRunStore } from '../stores/agentRunStore';
 import { clearAiHistory } from '../stores/aiActionHistoryStore';
 import { chatStore, clearChatMessages } from '../stores/chatStore';
 import {
@@ -3080,9 +3079,13 @@ describe('agent acceptance corpora', () => {
 
                 clearChatMessages();
                 clearPendingActionConfirmations();
-                const reloaded = sanitizeAgentRunState(parsePersistedValue(persisted ?? ''));
-                expect(agentRunStore.trySet(reloaded)).toBe(true);
+                // A reload evaluates the store module again over the same persisted bytes.
+                vi.resetModules();
+                const reloadedStores = await import('../stores/agentRunStore');
+                const reloaded = reloadedStores.readAgentRunState();
                 expect(reloaded.runs.some((run) => run.runId === committed.runId)).toBe(true);
+                expect(committed.confirmationId).toBeDefined();
+                expect(agentRunStore.trySet(reloaded)).toBe(true);
 
                 expect(readChatThreadContext()).toBeNull();
                 runtimeMocks.generateWebLlmCompletion.mockReset();
@@ -3093,17 +3096,16 @@ describe('agent acceptance corpora', () => {
                     [() => [declineCall({ kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] })]],
                     systemPrompts
                 );
-                vi.stubGlobal(
-                    'fetch',
-                    vi.fn(() => {
-                        throw new Error('The planner must not reach the network');
-                    })
-                );
+                const networkTrap = vi.fn(() => {
+                    throw new Error('The planner must not reach the network');
+                });
+                vi.stubGlobal('fetch', networkTrap);
                 try {
                     await sendChatMessage(prompt, { mode: 'apply' });
                 } finally {
                     vi.unstubAllGlobals();
                 }
+                expect(networkTrap).not.toHaveBeenCalled();
                 expect(messages).toHaveLength(1);
                 expect(systemPrompts).toHaveLength(1);
                 expect(messages[0]).toContain(prompt);
