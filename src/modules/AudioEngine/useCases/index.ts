@@ -24,6 +24,7 @@ export { rearmCommittedTrackInputMonitoring } from './audioRecorder/rearmCommitt
 export { configureInputMonitoringProjectAccess } from './configureInputMonitoringProjectAccess';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
+export { acceptsSidechainInput } from './deviceCapabilities/acceptsSidechainInput';
 export { capturesNativeCalibration } from './deviceCapabilities/capturesNativeCalibration';
 export { classifyNoteReceivingDevice } from './deviceCapabilities/classifyNoteReceivingDevice';
 export { DRUM_KIT_DEFAULT_LEVEL_DB } from './deviceCapabilities/drumKitDefaultLevelDb';
@@ -31,6 +32,7 @@ export { isBuiltinSynthDevice } from './deviceCapabilities/isBuiltinSynthDevice'
 export { isBypassedNoteReceiver } from './deviceCapabilities/isBypassedNoteReceiver';
 export { findMidiTransformDevice } from './deviceCapabilities/findMidiTransformDevice';
 export { findPadOutputHost } from './deviceCapabilities/findPadOutputHost';
+export { getSidechainTargetCapability } from './deviceCapabilities/getSidechainTargetCapability';
 export { hasPadOutputHost } from './deviceCapabilities/hasPadOutputHost';
 export { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
 export { hostsStoredControllers } from './deviceCapabilities/hostsStoredControllers';
@@ -208,6 +210,7 @@ export { isRenderBusyError } from './offlineRender/isRenderBusyError';
 export { checkCancel } from './offlineRender/checkCancel';
 export { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
+export { engineSampleRateOf } from './offlineRender/engineSampleRateOf';
 export { getDeviceChainTailSeconds } from './offlineRender/getDeviceChainTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';

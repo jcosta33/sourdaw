@@ -269,7 +269,10 @@ vi.mock('#/modules/Knead/useCases', async () => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        engineSampleRateOf: vi.fn((): number | null => null),
+        acceptsSidechainInput: actual.acceptsSidechainInput,
         findPadOutputHost: actual.findPadOutputHost,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         hostsStoredControllers: actual.hostsStoredControllers,
         readStoredControllerDefault: actual.readStoredControllerDefault,
         resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
@@ -277,6 +280,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         hostsPadOutputs: actual.hostsPadOutputs,
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
+        commitPitchEdit: vi.fn(),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,
@@ -424,7 +428,6 @@ vi.mock('#/modules/Routing/useCases', () => ({
     ensureBusStrip: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
     getSidechainRoutesForTrack: vi.fn(),
-    getSidechainTargetCapability: vi.fn(),
     hydrateSidechainRoutes: vi.fn(),
     removeSend: vi.fn(),
     removeSidechainRoute: vi.fn(),
@@ -438,6 +441,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
+        refreshExternalPluginTails: vi.fn(async () => {}),
         isFaustModule: actual.isFaustModule,
         compileFaustDSP: actual.compileFaustDSP,
         createFaustNode: actual.createFaustNode,

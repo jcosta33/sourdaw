@@ -1,9 +1,57 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { readPluginTails } from '../../repositories/pluginBridge/readPluginTails';
-import { issueExternalPluginTailRead, publishExternalPluginTailRead } from '../../stores/externalPluginTailStore';
+import {
+    issueExternalPluginTailRead,
+    publishExternalPluginTailRead,
+    settleExternalPluginTailRead,
+} from '../../stores/externalPluginTailStore';
 
 import { loadedExternalInstances } from './loadedExternalInstances';
+import { holdTailDuringLoad } from './tailRevisionsDuringLoad';
+
+/**
+ * How long the one retry waits for an instance the host could not reach. The
+ * host refuses only while another control call holds the instance, which is
+ * normally a block's length or a parameter write, and this is sized to outlast
+ * that without making an export visibly wait.
+ */
+const BUSY_INSTANCE_RETRY_DELAY_MS = 40;
+
+function pause(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, milliseconds);
+    });
+}
+
+/** One read of the named instances, published by the rules below. Returns the ids the host answered, or `null` when it did not answer in time. */
+async function readAndPublish(instanceIds: readonly string[]): Promise<Set<string> | null> {
+    const issued = issueExternalPluginTailRead(instanceIds);
+    const answered = new Set<string>();
+    try {
+        const result = await readPluginTails(instanceIds);
+        if (result.kind === 'timed-out') {
+            return null;
+        }
+        for (const { instance_id: instanceId, tail_samples: tailSamples, sequence } of result.readings) {
+            const issue = issued.get(instanceId);
+            if (!issue) {
+                continue;
+            }
+            answered.add(instanceId);
+            const figure = { tailSamples, sequence };
+            const outcome = publishExternalPluginTailRead(instanceId, issue, figure);
+            // Loading: the answer is current but the seed has not landed, and the
+            // seed would write the figure the plugin reported before this one.
+            if (outcome === 'unseeded' && loadedExternalInstances.has(instanceId)) {
+                holdTailDuringLoad(instanceId, figure);
+            }
+        }
+    } finally {
+        settleExternalPluginTailRead(issued);
+    }
+    return answered;
+}
 
 /**
  * Re-read every loaded external plugin instance's tail from the native host and
@@ -14,12 +62,16 @@ import { loadedExternalInstances } from './loadedExternalInstances';
  * its load-time figure. A caller that is about to size something from the tail
  * — an export — asks here first.
  *
- * An answer lands only if nothing has written that instance's tail since the read
- * was issued (an unload and any reload under the same id, or a
- * `plugin-tail-changed` revision), and no refresh issued after this one has
- * already published for it. Refreshes are ordered by when they were issued, not
- * by which answers first, and one answer never invalidates another. An instance
- * the host could not read keeps the figure it had.
+ * Every answer carries the host's sequence, the order it takes this read and each
+ * `plugin-tail-changed` event in, so an answer lands unless a figure the host
+ * read later has landed, and never because of the order messages arrived in. An
+ * answer is also dropped when a seed, an unload (and any reload under the same
+ * id) or a graph rebuild touched the instance since the read was issued. An
+ * answer for an instance still loading is held, and the load's seed applies it.
+ *
+ * An instance the host could not read because its control path was busy is read
+ * once more after a short pause; one still unread keeps the figure it had. A
+ * host that does not answer within the read's deadline is not asked again.
  *
  * Never throws: a refused read leaves every stored tail as it was, because a
  * stale tail is a better answer than none.
@@ -30,13 +82,19 @@ export async function refreshExternalPluginTails(): Promise<void> {
     }
     try {
         const instanceIds = [...loadedExternalInstances];
-        const issued = issueExternalPluginTailRead(instanceIds);
-        const readings = await readPluginTails(instanceIds);
-        for (const { instance_id: instanceId, tail_samples: tailSamples } of readings) {
-            const issue = issued.get(instanceId);
-            if (issue) {
-                publishExternalPluginTailRead(instanceId, issue, tailSamples);
-            }
+        const answered = await readAndPublish(instanceIds);
+        // A host that did not answer in time would only be given the same wait again.
+        if (answered === null) {
+            return;
+        }
+        const unread = instanceIds.filter((instanceId) => !answered.has(instanceId));
+        if (unread.length === 0) {
+            return;
+        }
+        await pause(BUSY_INSTANCE_RETRY_DELAY_MS);
+        const stillLoaded = unread.filter((instanceId) => loadedExternalInstances.has(instanceId));
+        if (stillLoaded.length > 0) {
+            await readAndPublish(stillLoaded);
         }
     } catch (error) {
         logger.warn(`Failed to re-read external plugin tails: ${String(error)}`);

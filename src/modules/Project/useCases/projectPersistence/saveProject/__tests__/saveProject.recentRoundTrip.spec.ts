@@ -130,11 +130,15 @@ vi.mock('#/modules/Transport/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        engineSampleRateOf: vi.fn((): number | null => null),
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
+        commitPitchEdit: vi.fn(),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,
@@ -252,6 +256,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/stores', () => ({
+    engineRtDiagnosticsStore: { value: null, subscribe: () => () => {} },
     audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
 }));
 vi.mock('../../helpers/hydrateArrangementStoreFromProjectData', () => ({

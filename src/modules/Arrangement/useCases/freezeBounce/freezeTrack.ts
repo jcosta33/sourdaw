@@ -1,6 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
-import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import { engineRtDiagnosticsStore } from '#/modules/AudioEngine/stores';
+import {
+    cacheAudioBuffer,
+    engineSampleRateOf,
+    getCompensationDelay,
+    getDeviceChainTailSeconds,
+} from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
@@ -8,11 +14,14 @@ import {
     captureProjectRootIdentity,
     projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
+import { refreshExternalPluginTails } from '#/modules/PluginHost/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type Track } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
 import { getTrackEligibility } from '../../stores/trackEligibility';
@@ -20,7 +29,7 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { assertFreezeMidiUnchanged } from './assertFreezeMidiUnchanged';
-import { assertFreezeSourceUnchanged } from './assertFreezeSourceUnchanged';
+import { assertFreezeSourceUnchangedUnlessRecording } from './assertFreezeSourceUnchangedUnlessRecording';
 import { assertRenderReadsHashedTrack } from './assertRenderReadsHashedTrack';
 import { confirmFreezeSourceBeforeRender } from './confirmFreezeSourceBeforeRender';
 import { detectSilentBake } from './detectSilentBake';
@@ -30,6 +39,7 @@ import { captureFreezeMidi } from './freezeMidiSnapshot';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
+import { refuseFreezeCommit } from './refuseFreezeCommit';
 import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreCancelledFreeze } from './restoreCancelledFreeze';
@@ -78,6 +88,35 @@ function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortControl
     }
 }
 
+/**
+ * How far past the content a take has to ring. This used to be a substring
+ * test on the device type that no descriptor fed, so it could not see the Dutch
+ * Oven or Bacteria and shrank with tempo because beats are not seconds.
+ *
+ * A hosted plugin's tail moves with its preset, and a VST3 plugin never says
+ * so, so ask each loaded instance now, as an export does, and size from what it
+ * answers. Null when the freeze was cancelled or superseded during the refresh.
+ */
+async function readFreezeTailSeconds(track: Track, task: FreezeTaskIdentity): Promise<number | null> {
+    await refreshExternalPluginTails();
+    if (!isCurrentFreezeTask(task)) {
+        return null;
+    }
+    return getDeviceChainTailSeconds({
+        devices: track.devices,
+        automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
+        tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
+            .tailSamplesByInstanceId,
+        engineSampleRate: engineSampleRateOf(engineRtDiagnosticsStore.value),
+    }).seconds;
+}
+
+function captureLiveFreezeState(trackId: string): ReturnType<typeof captureFreezeStateSnapshot> | null {
+    const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    return liveTrack ? captureFreezeStateSnapshot(liveTrack) : null;
+}
+
 export async function freezeTrack(trackId: string, freezeIdOverride?: string): Promise<boolean> {
     const state = trackStore.value;
     const project = projectStore.value;
@@ -118,11 +157,17 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         ...time,
         freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
     }));
-    const pendingTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-    const pendingFreeze = pendingTrack ? captureFreezeStateSnapshot(pendingTrack) : null;
+    const pendingFreeze = captureLiveFreezeState(trackId);
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
+        // How far past the content this take has to ring, read from the same device tail
+        // declarations the export path evaluates; see `readFreezeTailSeconds`. Its refresh awaits
+        // the host, so it runs before the source check below, never between that check and the render.
+        const tailSeconds = await readFreezeTailSeconds(track, taskIdentity);
+        if (tailSeconds === null) {
+            return false;
+        }
         // Re-hashes the live source: the render reads it, not `track`. The check that follows is
         // synchronous and the MIDI capture and render call come straight after it, so no edit can
         // land between the last live read and the render's own.
@@ -133,18 +178,6 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         assertRenderReadsHashedTrack(hashedTrack);
 
         const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
-
-        // How far past the content this take has to ring, read from the same
-        // device tail declarations the export path evaluates. This used to be a
-        // substring test on the device type — 8 beats for an id containing
-        // "reverb" or "delay", 4 for anything else — which no descriptor fed, so
-        // it could not see the Dutch Oven or Bacteria at all, and which shrank
-        // with tempo because beats are not seconds.
-        const tailSeconds = getDeviceChainTailSeconds({
-            devices: track.devices,
-            automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
-            tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
-        }).seconds;
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         // Read synchronously before the render call: the render reads the MIDI store when it starts,
@@ -207,12 +240,12 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             throw new Error(silentBake.message);
         }
 
-        await assertFreezeSourceUnchanged(trackId, hash);
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        await assertFreezeSourceUnchangedUnlessRecording(trackId, hash, () => isCurrentFreezeTask(taskIdentity));
+        // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
+        if (refuseFreezeCommit(trackId, () => isCurrentFreezeTask(taskIdentity))) {
             return false;
         }
 
-        // Synchronous from here to the commit write: no await can let a note land in between.
         assertFreezeMidiUnchanged(renderedMidi);
 
         const renderedAt = Date.now();

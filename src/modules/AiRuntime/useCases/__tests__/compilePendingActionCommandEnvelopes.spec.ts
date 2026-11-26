@@ -16,7 +16,6 @@ import {
     executeVersionedCommandBatchEnvelope,
     issueCommandApprovalBinding,
     parseVersionedCommandEnvelope,
-    resetCommandBatchIdempotency,
 } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
@@ -271,9 +270,7 @@ describe('compilePendingActionCommandEnvelopes', () => {
                 { startBeat: 5, endBeat: 8, takeId: 'take-a' },
             ]);
         } finally {
-            commandBatchPreflightPort.setProvider(null);
             commandProjectRevisionPort.setProvider(null);
-            resetCommandBatchIdempotency();
             localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
             vi.unstubAllGlobals();
             clearHandlerRegistry();

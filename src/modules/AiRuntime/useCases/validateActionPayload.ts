@@ -83,17 +83,6 @@ function isPositiveNumber(value: unknown): value is number {
 function isNonNegativeNumber(value: unknown): value is number {
     return isNumber(value) && value >= 0;
 }
-function isValidLoopRegion(value: unknown): boolean {
-    return (
-        isObj(value) &&
-        hasExactKeys(value, ['loopStart', 'loopEnd', 'isLooping']) &&
-        isNonNegativeNumber(value.loopStart) &&
-        isNonNegativeNumber(value.loopEnd) &&
-        value.loopEnd >= value.loopStart &&
-        typeof value.isLooping === 'boolean' &&
-        (!value.isLooping || value.loopEnd > value.loopStart)
-    );
-}
 function isOptional<Value>(value: unknown, check: (value: unknown) => value is Value): value is Value | undefined {
     return value === undefined || check(value);
 }
@@ -485,7 +474,6 @@ const validators = {
         isOptional(param.expectedValue, isNumber) &&
         isOptional(param.expectedValuePresent, (value): value is boolean => typeof value === 'boolean') &&
         isOptional(param.expectedTrackFrozen, (value): value is boolean => typeof value === 'boolean'),
-    loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)
     // `tempoChangeId` is internal undo/redo routing: it pins a tempo write to one
@@ -544,11 +532,6 @@ const validators = {
         isNonNegativeNumber(param.startBeat) &&
         isPositiveNumber(param.endBeat) &&
         param.endBeat > param.startBeat,
-    restoreLoopRegion: (param): param is PayloadOf<'restoreLoopRegion'> =>
-        isObj(param) &&
-        hasExactKeys(param, ['expected', 'replacement']) &&
-        isValidLoopRegion(param.expected) &&
-        isValidLoopRegion(param.replacement),
 
     // Automation
     addAutomationLane: (param): param is PayloadOf<'addAutomationLane'> =>
@@ -645,12 +628,6 @@ const validators = {
         hasExactKeys(param, ['laneId', 'enabled']) &&
         isNonEmptyString(param.laneId) &&
         typeof param.enabled === 'boolean',
-    removeAutomationPoint: (param): param is PayloadOf<'removeAutomationPoint'> =>
-        isObj(param) &&
-        hasExactKeys(param, ['laneId', 'pointIndex']) &&
-        isNonEmptyString(param.laneId) &&
-        isNonNegativeNumber(param.pointIndex) &&
-        Number.isInteger(param.pointIndex),
 
     // Sidechain routing
     addSidechainRoute: (param): param is PayloadOf<'addSidechainRoute'> =>
@@ -750,12 +727,6 @@ const validators = {
         isObj(param) && isNumber(param.atBeat) && isNumber(param.durationBeats),
 
     // Imports / exports / project lifecycle
-    // importAudioFile / importMidiFile carry no payload (`payload?: undefined`):
-    // the file is chosen via a native picker in the handler, so there is no
-    // LLM-controlled field to validate. Marked 'unchecked' rather than running
-    // a guard that rejects every legitimate (undefined) payload.
-    importAudioFile: 'unchecked',
-    importMidiFile: 'unchecked',
     exportProject: (param): param is PayloadOf<'exportProject'> => isObj(param) && isOptional(param.format, isString),
     exportMidi: (param): param is PayloadOf<'exportMidi'> => isObj(param) && isString(param.clipId),
     exportDawProject: 'unchecked',
@@ -780,8 +751,6 @@ const validators = {
     togglePlayback: 'unchecked',
     stopPlayback: hasNoPayload,
     toggleRecording: 'unchecked',
-    toggleLoop: 'unchecked',
-    toggleMetronome: 'unchecked',
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
     setPunchIn: hasValidPunchInBeat,
@@ -832,7 +801,6 @@ const validators = {
         hasExactKeys(param, ['trackId', 'soloSafe']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.soloSafe === 'boolean',
-    toggleSoloSafe: 'unchecked',
     armTrack: (param): param is PayloadOf<'armTrack'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'armed']) &&
@@ -873,7 +841,6 @@ const validators = {
         isNonEmptyString(param.outputId) &&
         param.trackId !== param.outputId &&
         isOptionalOwn(param, 'expectedOutputId', isNonEmptyString),
-    setTrackInput: 'unchecked',
     setTrackNotes: 'unchecked',
     hideTrack: (param): param is PayloadOf<'hideTrack'> =>
         isObj(param) &&
@@ -888,7 +855,6 @@ const validators = {
         typeof param.folded === 'boolean',
     groupTracks: 'unchecked',
     ungroupTracks: 'unchecked',
-    removeAllTracks: 'unchecked',
     clearSolos: hasNoPayload,
 
     // Yeast rack — the `expected*` payload fields are internal replay guards,
@@ -951,9 +917,6 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isNonNegativeNumber(param.fadeInBeats) &&
         isNonNegativeNumber(param.fadeOutBeats),
-    copyClip: 'unchecked',
-    cutClip: 'unchecked',
-    pasteClip: 'unchecked',
     setClipGain: (param): param is PayloadOf<'setClipGain'> =>
         isObj(param) &&
         hasOnlyKeys(param, ['clipId', 'gain', 'gainDb', 'deltaDb']) &&
@@ -1222,11 +1185,8 @@ const validators = {
         hasExactKeys(param, ['laneId', 'gridSize']) &&
         isNonEmptyString(param.laneId) &&
         isInRange(param.gridSize, Number.MIN_VALUE, 64),
-    // Internal inverse-only actions (emitted by handlers' describe(), never by the AI).
-    restoreAutomationLanePoints: 'unchecked',
 
     // Preset / template
-    loadPreset: 'unchecked',
     savePreset: 'unchecked',
     loadTrackTemplate: 'unchecked',
     saveTrackTemplate: 'unchecked',
@@ -1236,38 +1196,18 @@ const validators = {
     generateDrumPattern: 'unchecked',
     generateMelody: 'unchecked',
     generateChordProgression: 'unchecked',
-    generateBassline: 'unchecked',
-    generateFill: 'unchecked',
-    generateAllTransitions: 'unchecked',
-    variationMidi: 'unchecked',
-    completeMidi: 'unchecked',
 
     // Analysis
     analyzeMix: 'unchecked',
-    autoFixMix: 'unchecked',
     getLatencyReport: 'unchecked',
     enableMpe: 'unchecked',
     disableMpe: 'unchecked',
     scanPlugins: 'unchecked',
-    audioToMidi: 'unchecked',
     detectTempo: 'unchecked',
     detectKey: 'unchecked',
-    detectTransients: 'unchecked',
-    detectSongStructure: 'unchecked',
     consolidateAllTracks: 'unchecked',
-    compareToReference: 'unchecked',
-    getMentorTips: 'unchecked',
-    searchSamples: 'unchecked',
-    autoOrganizeProject: 'unchecked',
 
     // Scratch pad
-    captureScratchPad: (param): param is PayloadOf<'captureScratchPad'> =>
-        hasNoPayload(param) ||
-        (isObj(param) &&
-            hasOnlyKeys(param, ['sectionIds']) &&
-            isOptionalOwn(param, 'sectionIds', isUniqueNonEmptyStringArray)),
-    commitScratchPad: 'unchecked',
-    clearScratchPad: 'unchecked',
     toggleScratchPad: 'unchecked',
 
     // Chord track
@@ -1277,7 +1217,6 @@ const validators = {
     toggleChordTrack: 'unchecked',
 
     // MIDI routing + output
-    clearAllMidiMappings: 'unchecked',
     setMidiOutput: 'unchecked',
     clearMidiOutput: 'unchecked',
     connectPush: 'unchecked',
@@ -1285,7 +1224,6 @@ const validators = {
     setControlSurface: 'unchecked',
 
     // CV / VCA
-    addCvOutput: 'unchecked',
     createVcaGroup: (param): param is PayloadOf<'createVcaGroup'> =>
         isObj(param) &&
         hasExactKeys(param, ['name', 'trackIds']) &&
@@ -1334,17 +1272,7 @@ const validators = {
     createPatternInstance: 'unchecked',
     detachPatternInstance: 'unchecked',
 
-    // Version control
-    createProjectVersion: 'unchecked',
-    restoreProjectVersion: 'unchecked',
-    createVersionBranch: 'unchecked',
-    restoreTrack: 'unchecked',
-    restoreClip: 'unchecked',
-
-    // Warp + pitch
-    enableWarping: 'unchecked',
-    setWarpAlgorithm: 'unchecked',
-    setWarpPitchShift: 'unchecked',
+    // Warp
     // A provider names the edit; the plan is application-materialized and never accepted from it.
     quantizeTransients: (param): param is PayloadOf<'quantizeTransients'> =>
         isObj(param) &&
@@ -1389,10 +1317,6 @@ const validators = {
     nextSetlistItem: 'unchecked',
     previousSetlistItem: 'unchecked',
     triggerScene: 'unchecked',
-
-    // RAVE
-    loadRaveModel: 'unchecked',
-    setRaveBlend: 'unchecked',
 
     // Control room
     switchMonitor: 'unchecked',

@@ -6,6 +6,7 @@ import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modul
 import { notRunningEngineRtDiagnostics } from '../../../models/EngineRtDiagnostics';
 import { MAX_AUTO_TAIL_SECONDS } from '../../../services/estimateRenderTailSeconds';
 import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../../../stores/engineRtDiagnosticsStore';
+import { engineSampleRateOf } from '../engineSampleRateOf';
 import { getAutoDetectedTailSeconds } from '../getAutoDetectedTailSeconds';
 import { UNENDING_PLUGIN_TAIL_SAMPLES } from '../hostedPluginTail';
 
@@ -53,7 +54,13 @@ function instanceReportsTail(instanceId: string, tailSamples: number): void {
 }
 
 function detect(devices: Track['devices']) {
-    return getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true, tracks: [hostedTrack(devices)] });
+    return getAutoDetectedTailSeconds({
+        tailForDeviceType,
+        hostedTailSamplesByInstanceId: externalPluginTailStore.value?.tailSamplesByInstanceId ?? {},
+        engineSampleRate: engineSampleRateOf(engineRtDiagnosticsStore.value),
+        honorMuted: true,
+        tracks: [hostedTrack(devices)],
+    });
 }
 
 describe('the export tail of a hosted plugin', () => {
@@ -110,6 +117,36 @@ describe('the export tail of a hosted plugin', () => {
         instanceReportsTail('other-instance', 480_000);
 
         expect(detect([hostedReverb]).seconds).toBe(0);
+    });
+
+    it('reads the snapshot it is handed and never the live store', () => {
+        engineRunningAt(48_000);
+        instanceReportsTail('inst-1', 480_000);
+
+        const detected = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: 48_000,
+            honorMuted: true,
+            tracks: [hostedTrack([hostedReverb])],
+        });
+
+        expect(detected.seconds).toBe(0);
+    });
+
+    it('reads the engine rate it is handed and never the live diagnostics', () => {
+        engineRunningAt(48_000);
+        instanceReportsTail('inst-1', 48_000);
+
+        const detected = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: { 'inst-1': 48_000 },
+            engineSampleRate: null,
+            honorMuted: true,
+            tracks: [hostedTrack([hostedReverb])],
+        });
+
+        expect(detected.seconds).toBe(MAX_AUTO_TAIL_SECONDS);
     });
 
     it('reserves nothing for a bypassed hosted device', () => {

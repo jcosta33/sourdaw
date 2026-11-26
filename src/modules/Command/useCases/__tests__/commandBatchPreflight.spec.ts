@@ -7,6 +7,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
+import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -47,7 +48,6 @@ describe('command batch preflight', () => {
     afterEach(() => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
-        commandBatchPreflightPort.setProvider(null);
         commandDeviceVersionsPort.setDeviceTypeResolver(null);
         commandDeviceVersionsPort.setResolver(null);
         commandProjectRevisionPort.setProvider(null);
@@ -703,6 +703,12 @@ describe('command batch preflight', () => {
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
+        commandProjectDivergencePort.setProvider(({ targetIds }) => ({
+            kind: 'ambiguous-same-object',
+            mayReapply: false,
+            repairCandidates: [],
+            targetIds,
+        }));
         commandBatchPreflightPort.setProvider(() => ({
             audioGraphValid: true,
             availableAssetHashes: [],
@@ -1049,55 +1055,6 @@ describe('command batch preflight', () => {
             reason: 'Command batch exceeds the serialized payload limit',
             actions: [],
         });
-        expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('rejects before dispatch when authoritative preflight state is unavailable', async () => {
-        const execute = vi.fn(() => ({ status: 'written' as const }));
-        registerHandlerMap({
-            setTrackGain: {
-                execute,
-                describe: () => ({
-                    label: 'Set gain',
-                    inverseAction: {
-                        type: 'setTrackGain',
-                        payload: { trackId: 'track-vocal', gain: 1, expectedGain: 0.8 },
-                    },
-                }),
-                undoable: true,
-            },
-        });
-        commandProjectRevisionPort.setProvider(() => 'revision-1');
-        const command = createExecutionCommandEnvelope({
-            action: {
-                type: 'setTrackGain',
-                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
-            },
-            expectedEffect: 'Set vocal gain',
-            normalizedProjectRevision: 'revision-1',
-        });
-        const compiled = compileVersionedCommandBatchEnvelope({
-            runId: 'run-preflight',
-            batchId: 'batch-preflight',
-            projectId: 'project-1',
-            baseRevision: 'revision-1',
-            intent: 'Set vocal gain',
-            commands: [JSON.stringify(command.envelope)],
-        });
-
-        const result = await executeVersionedCommandBatchEnvelope({
-            authority: compiled.authority,
-            confirmed: true,
-            serialized: compiled.serialized,
-        });
-
-        const { execution, receipt } = splitBatchReceipt(result);
-        expect(execution).toEqual({
-            status: 'rejected',
-            reason: 'Command batch preflight state is unavailable',
-            actions: [],
-        });
-        expectNonAppliedReceipt(receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
     });
 });

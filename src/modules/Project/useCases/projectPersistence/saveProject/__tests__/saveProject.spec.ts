@@ -46,6 +46,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
 }));
 
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    isExternalPluginDeviceType: (deviceType: string) => deviceType === 'external-plugin',
+}));
+
 // The save reads the settled-take count with its snapshot; no take is recorded here.
 vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => 0,
@@ -378,7 +382,7 @@ describe('saveProject', () => {
             )
         );
         expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
-        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith([]);
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith([], undefined, { preferWorkerRead: true });
 
         mocks.projectStoreValue.value = { ...makeProject(), createdAt: 1700000000001 };
         held.resolve();

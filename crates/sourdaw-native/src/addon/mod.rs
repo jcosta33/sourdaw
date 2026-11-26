@@ -205,6 +205,7 @@ impl SourdawNative {
         crate::host::plugin_parameter_events::start(
             events,
             Arc::clone(&singletons.app_state.engine_plugins),
+            Arc::clone(&singletons.app_state.plugins),
         );
 
         Ok(Self {
@@ -298,7 +299,8 @@ impl SourdawNative {
             windows.as_ref(),
             &self.singletons.app_state,
             &*self.singletons.events,
-        );
+        )
+        .await;
     }
 
     /// Run the process-exit cascade: cancel every offline render and wait for

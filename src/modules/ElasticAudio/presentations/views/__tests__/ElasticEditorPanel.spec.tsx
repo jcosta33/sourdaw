@@ -9,13 +9,22 @@ type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trac
 const mocks = vi.hoisted(() => {
     const waveformPeaks = new Map<string, Float32Array>();
     const trackStoreValue: {
-        tracks: { id: string; clips: { id: string; type: string; audioBufferId: string | undefined }[] }[];
+        tracks: {
+            id: string;
+            clips: {
+                id: string;
+                type: string;
+                audioBufferId: string | undefined;
+                startBeat: number;
+                endBeat: number;
+            }[];
+        }[];
         selectedTrackId: string;
     } = {
         tracks: [
             {
                 id: 't1',
-                clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }],
+                clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1', startBeat: 0, endBeat: 8 }],
             },
         ],
         selectedTrackId: 't1',
@@ -192,6 +201,7 @@ vi.mock('../../../stores/elasticAudio', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
+    engineRtDiagnosticsStore: { value: null, subscribe: () => () => {} },
     audioBufferCache: {
         getWaveformPeaks: (...args: unknown[]) => mocks.getWaveformPeaks(...args),
     },
@@ -256,7 +266,9 @@ describe('ElasticEditorPanel', () => {
         mocks.background = '#151515';
         preferencesStore.trySet(defaultPreferences);
         mocks.trackStoreValue = {
-            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }] }],
+            tracks: [
+                { id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1', startBeat: 0, endBeat: 8 }] },
+            ],
             selectedTrackId: 't1',
         };
         mocks.timelineEditingValue = { snapValue: 0.25 };
@@ -575,6 +587,80 @@ describe('ElasticEditorPanel', () => {
             expect(drawing.line).toHaveBeenCalledWith(8245, 0);
         });
 
+        it('keeps the canvas size when markers are added to a clip longer than the default extent', () => {
+            const clip = mocks.trackStoreValue.tracks[0]?.clips[0];
+            const state = mocks.warpStates.get('c1');
+            if (!clip || !state) {
+                throw new Error('Missing fixture clip or warp state');
+            }
+            clip.endBeat = 240;
+            state.markers = [];
+            const view = render(<ElasticEditorPanel />);
+            flushFrame();
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const widthBeforeDetect = canvas.width;
+            expect(widthBeforeDetect).toBe((240 + 8) * 40);
+
+            state.markers = [{ id: 'late', originalBeat: 200, warpedBeat: 200, origin: 'transient-auto' }];
+            publishEquivalentSnapshot();
+            view.rerender(<ElasticEditorPanel />);
+            flushFrame();
+
+            expect(canvas.width).toBe(widthBeforeDetect);
+        });
+
+        it('keeps the backing store within the canvas limits for a long clip at a high pixel ratio', () => {
+            const clip = mocks.trackStoreValue.tracks[0]?.clips[0];
+            if (!clip) {
+                throw new Error('Missing fixture clip');
+            }
+            clip.endBeat = 1000;
+            vi.stubGlobal('devicePixelRatio', 2);
+            const drawing = observeDrawing();
+            render(<ElasticEditorPanel />);
+            flushFrame();
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const cssWidth = (1000 + 8) * 40;
+
+            expect(canvas.width).toBeGreaterThan(0);
+            expect(canvas.width).toBeLessThanOrEqual(65535);
+            expect(canvas.height).toBeLessThanOrEqual(65535);
+            expect(canvas.width * canvas.height).toBeLessThanOrEqual(268435456);
+            expect(canvas.style.width).toBe(`${cssWidth}px`);
+            expect(drawing.fill).toHaveBeenCalledWith(0, 0, cssWidth, 120);
+        });
+
+        it('keeps the backing store within the canvas area limit in a tall pane', () => {
+            const clip = mocks.trackStoreValue.tracks[0]?.clips[0];
+            if (!clip) {
+                throw new Error('Missing fixture clip');
+            }
+            clip.endBeat = 800;
+            vi.stubGlobal('devicePixelRatio', 2);
+            const drawing = observeDrawing();
+            const view = render(<ElasticEditorPanel />);
+            flushFrame();
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const container = canvas.parentElement;
+            if (!container) {
+                throw new Error('Missing waveform container');
+            }
+            // Each side stays under the per-side limit at the full pixel ratio (64,640 x 4,600),
+            // while their product passes the area limit, so only the area bound can hold it.
+            Object.defineProperty(container, 'clientHeight', { configurable: true, value: 2300 });
+            publishEquivalentSnapshot();
+            view.rerender(<ElasticEditorPanel />);
+            flushFrame();
+            const cssWidth = (800 + 8) * 40;
+
+            expect(canvas.width).toBeGreaterThan(0);
+            expect(canvas.height).toBeGreaterThan(0);
+            expect(canvas.width * canvas.height).toBeLessThanOrEqual(268435456);
+            expect(canvas.style.width).toBe(`${cssWidth}px`);
+            expect(canvas.style.height).toBe('2300px');
+            expect(drawing.fill).toHaveBeenLastCalledWith(0, 0, cssWidth, 2300);
+        });
+
         it.each(['width', 'height', 'context reset', 'context restored'])(
             'restores pixels after an external %s even when visual inputs are unchanged',
             (reset) => {
@@ -635,7 +721,13 @@ describe('ElasticEditorPanel', () => {
 
     it.each(['missing', 'midi'])('does not fall through an explicitly opened %s target to selected audio', (id) => {
         if (id === 'midi') {
-            mocks.trackStoreValue.tracks[0]?.clips.push({ id, type: 'midi', audioBufferId: undefined });
+            mocks.trackStoreValue.tracks[0]?.clips.push({
+                id,
+                type: 'midi',
+                audioBufferId: undefined,
+                startBeat: 0,
+                endBeat: 8,
+            });
         }
         mocks.elasticStoreValue.openClipId = id;
         render(<ElasticEditorPanel />);
@@ -749,7 +841,13 @@ describe('ElasticEditorPanel', () => {
 
     it('uses the saved sensitivity for the first Detect on a newly opened clip', () => {
         preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
-        mocks.trackStoreValue.tracks[0]?.clips.push({ id: 'c2', type: 'audio', audioBufferId: 'buf-2' });
+        mocks.trackStoreValue.tracks[0]?.clips.push({
+            id: 'c2',
+            type: 'audio',
+            audioBufferId: 'buf-2',
+            startBeat: 0,
+            endBeat: 8,
+        });
         mocks.elasticStoreValue.openClipId = 'c2';
 
         render(<ElasticEditorPanel />);
@@ -935,7 +1033,12 @@ describe('ElasticEditorPanel', () => {
 
     it('shows an empty state when the selected clip is not audio', () => {
         mocks.trackStoreValue = {
-            tracks: [{ id: 't1', clips: [{ id: 'cmidi', type: 'midi', audioBufferId: undefined }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [{ id: 'cmidi', type: 'midi', audioBufferId: undefined, startBeat: 0, endBeat: 8 }],
+                },
+            ],
             selectedTrackId: 't1',
         };
         mocks.timelineEditingValue = { snapValue: 0.25 };

@@ -54,7 +54,6 @@ describe('versioned command contract', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(null);
-        commandProjectDivergencePort.setProvider(null);
         commandDeviceVersionsPort.setDeviceTypeResolver(null);
         commandDeviceVersionsPort.setResolver(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
@@ -787,6 +786,12 @@ describe('versioned command contract', () => {
     it('rejects a stale batch even when its caller repeats the stale revision', async () => {
         const observed: boolean[] = [];
         commandProjectRevisionPort.setProvider(() => 'revision-live');
+        commandProjectDivergencePort.setProvider(({ targetIds }) => ({
+            kind: 'ambiguous-same-object',
+            mayReapply: false,
+            repairCandidates: [],
+            targetIds,
+        }));
         registerHandlerMap({
             setPlayback: {
                 describe: () => ({ label: 'Start playback' }),
@@ -817,7 +822,7 @@ describe('versioned command contract', () => {
 
         expect(result).toMatchObject({
             status: 'conflicted',
-            reason: 'Command batch base revision does not match current project state',
+            reason: 'Command batch project divergence is ambiguous-same-object',
         });
         expect(observed).toEqual([]);
     });
@@ -1175,15 +1180,5 @@ describe('versioned command contract', () => {
             divergence: { kind: 'ambiguous-same-object', mayReapply: false },
         });
         expect(execute).not.toHaveBeenCalled();
-
-        commandProjectDivergencePort.setProvider(null);
-        const unclassifiedResult = await executeVersionedCommandBatch({
-            commands: [serializeVersionedCommandEnvelope(command.envelope)],
-        });
-        expect(unclassifiedResult).toMatchObject({
-            status: 'conflicted',
-            reason: 'Command batch base revision does not match current project state',
-        });
-        expect(unclassifiedResult).not.toHaveProperty('divergence');
     });
 });

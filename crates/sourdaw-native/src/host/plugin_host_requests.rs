@@ -38,17 +38,20 @@
 //! the restart it asks for is carried back to the UI thread from here, because
 //! every lifecycle call in it is one the format makes there.
 //!
-//! It serves engine-owned instances only, which is where the wake is installed.
-//! An instance the native engine never took records a state change nothing
-//! reads, and its `request_resize` is refused outright rather than accepted and
-//! dropped. That mode processes no audio at all — it is what a session runs in
-//! when the engine failed to start — so an edit made in it has no take to be
-//! saved with.
+//! This watcher serves engine-owned instances only, which is where the wake is
+//! installed. An instance the native engine never took records a state change
+//! nothing reads. That mode processes no audio at all — it is what a session
+//! runs in when the engine failed to start — so an edit made in it has no take
+//! to be saved with. Its editor asks are another matter: the editor drain visits
+//! the command-owned store too, so its resize, show and hide are answered.
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
 use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError};
-use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
+use crate::host::{
+    all_editor_runtimes, all_engine_runtimes, retry_unreached_instance, runtime_for_instance,
+    CommandPlugins,
+};
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
     signal_pending_editor_resize, signal_pending_latency_requery,
@@ -197,8 +200,6 @@ fn queue_request(queued: QueuedRequest) {
 enum HostRequestError {
     /// The control path refused the visit.
     Refused(PluginControlRefusal),
-    /// No shell UI thread is registered to carry a component restart.
-    NoUiThread,
     /// The UI thread hop for a component restart did not run.
     UiThread(UiThreadError),
 }
@@ -207,9 +208,6 @@ impl std::fmt::Display for HostRequestError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Refused(refusal) => refusal.fmt(formatter),
-            Self::NoUiThread => {
-                formatter.write_str("no UI thread is registered to carry a component restart")
-            }
             Self::UiThread(error) => error.fmt(formatter),
         }
     }
@@ -294,7 +292,8 @@ pub fn state_dirty_payload(
 /// Called from the parameter-event drain's tick, once it has taken the hint the
 /// recording side raised. The hint names no instance — it cannot, because
 /// `gui.request_resize` is `[thread-safe]` and may be raised from the audio
-/// thread — so this visits every engine-owned instance and lets each backend
+/// thread — so this visits every instance an editor can be open on, dormant
+/// ones included, and lets each backend
 /// answer for itself: [`AudioPlugin::apply_pending_editor_resize`] takes the
 /// newest recorded size and moves the host window, and an instance with nothing
 /// recorded applies nothing.
@@ -310,8 +309,17 @@ pub fn state_dirty_payload(
 /// control raises the hint again for the next tick; that retry is unbounded
 /// while the instance lives, which is the flush and tail legs' rule, and costs
 /// nothing once the ask is applied because taking the slot cleared it.
-pub fn apply_pending_editor_resizes(engine_plugins: &EnginePlugins) {
-    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "editor resize") {
+pub fn apply_pending_editor_resizes(
+    engine_plugins: &EnginePlugins,
+    command_plugins: &CommandPlugins,
+) {
+    let runtimes = all_editor_runtimes(
+        engine_plugins,
+        command_plugins,
+        "editor resize",
+        signal_pending_editor_resize,
+    );
+    for (instance_id, runtime) in runtimes {
         let applied = runtime.try_with_control(DRAIN_CONTROL_TIMEOUT, |plugin| {
             Ok::<_, std::convert::Infallible>(plugin.apply_pending_editor_resize())
         });
@@ -484,15 +492,16 @@ fn report_state_change(
 /// editor commands use.
 static UI_THREAD: RwLock<Option<Arc<dyn UiThread>>> = RwLock::new(None);
 
-/// Name the thread component restarts are carried to. The shell's window host
-/// is that thread; registering a later one replaces the first.
+/// Name the thread a plugin's restarts are carried to: a bus or reload restart
+/// here, and a latency restart in `host/latency_watcher.rs`. The shell's window
+/// host is that thread; registering a later one replaces the first.
 pub fn use_ui_thread(ui: Arc<dyn UiThread>) {
     *UI_THREAD
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ui);
 }
 
-fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
+pub(crate) fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
     UI_THREAD
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -504,12 +513,21 @@ fn registered_ui_thread() -> Option<Arc<dyn UiThread>> {
 /// A layout the host cannot route is not a failed follow-up: the instance
 /// latches the refusal, reports it and passes its blocks dry, and asking again
 /// would refuse the same layout. Only not reaching the plugin is retried.
+///
+/// With no UI thread registered the restart is refused and reported, and not
+/// retried: no later attempt has a thread to run it on either. The plugin's flag
+/// stays standing, so its next ask is carried once a thread is registered.
 fn restart_component(
     runtime: &SharedHostedPlugin,
+    instance_id: &str,
     ui: Option<&dyn UiThread>,
 ) -> Result<(), HostRequestError> {
     let Some(ui) = ui else {
-        return Err(HostRequestError::NoUiThread);
+        eprintln!(
+            "[Plugin] instance {instance_id} asked for a component restart, but no UI thread is \
+             registered to run it on; it is not carried until the plugin asks again"
+        );
+        return Ok(());
     };
     runtime
         .with_control(CONTROL_TIMEOUT, |plugin| {
@@ -614,7 +632,7 @@ fn carry_request(
                 .map_err(HostRequestError::from)
         }
         PluginHostRequest::ComponentRestart => {
-            restart_component(runtime, registered_ui_thread().as_deref())
+            restart_component(runtime, instance_id, registered_ui_thread().as_deref())
         }
     }
 }
@@ -654,7 +672,7 @@ mod tests {
         let runtime = SharedHostedPlugin::new(wrapper.into());
         let ui = CountingUiThread::default();
 
-        assert_eq!(restart_component(&runtime, Some(&ui)), Ok(()));
+        assert_eq!(restart_component(&runtime, "inst-1", Some(&ui)), Ok(()));
 
         assert_eq!(
             ui.lent.load(std::sync::atomic::Ordering::SeqCst),
@@ -704,10 +722,14 @@ mod tests {
         );
     }
 
+    /// The refused wake runs nothing, so the plugin's ask is still standing for
+    /// the next one; a restart run on the calling thread would have consumed it.
     #[test]
-    fn a_component_restart_wake_with_no_ui_thread_registered_is_retried() {
+    fn a_component_restart_wake_with_no_ui_thread_registered_is_refused_not_parked() {
         let _registered = registered_ui_thread_guard(None);
-        let (engine_plugins, runtime) = rescan_fixture(vec![], false);
+        let bundle = InstalledVst3::create("component-restart-no-ui");
+        let runtime = restart_asking_vst3(&bundle);
+        let engine_plugins: EnginePlugins = Arc::new(Mutex::new(HashMap::new()));
         let events = RecordingEventSink::default();
 
         let again = serve_queued_request(
@@ -718,31 +740,125 @@ mod tests {
             || runtime.ensure_public_control_allowed().is_ok(),
         );
         assert_eq!(
-            again,
-            Some(("inst-1".to_string(), PluginHostRequest::ComponentRestart, 1)),
-            "the wake is queued again for when a UI thread is registered"
+            again, None,
+            "an ask no thread can carry is reported once, not queued to spin"
+        );
+        assert_eq!(
+            runtime.with_control(CONTROL_TIMEOUT, |plugin| plugin
+                .apply_component_restart()
+                .map_err(|error| error.to_string())),
+            Ok(true),
+            "the refused wake ran nothing, so the plugin's ask is still standing"
         );
     }
+
+    /// The harness's reconfiguring VST3 class, which has widened its output and
+    /// asked for a `kIoChanged` restart the host has not yet carried out.
+    fn restart_asking_vst3(bundle: &InstalledVst3) -> SharedHostedPlugin {
+        let descriptor_id = daw_plugin_host::vst3_class_id::format_class_id(
+            &sourdaw_harness_fx::VST3_RECONFIGURING_CLASS_ID,
+        );
+        let mut wrapper = daw_plugin_host::Vst3Wrapper::new(&bundle.path, &descriptor_id, 48_000.0)
+            .expect("the reconfiguring VST3 class loads");
+        wrapper.set_parameter(sourdaw_harness_fx::WIDEN_OUTPUT_PARAM_ID, 1.0);
+        SharedHostedPlugin::new(wrapper.into())
+    }
+
+    /// The harness cdylib this test binary's build produced, installed as a
+    /// `.vst3` bundle in a fresh temp directory torn down on drop.
+    struct InstalledVst3 {
+        root: std::path::PathBuf,
+        path: std::path::PathBuf,
+    }
+
+    impl InstalledVst3 {
+        fn create(test_name: &str) -> Self {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default();
+            let root = std::env::temp_dir().join(format!(
+                "sourdaw-requests-{test_name}-{}-{unique}",
+                std::process::id()
+            ));
+            let path = root.join("HarnessFx.vst3");
+            let module = vst3_module_path(&path);
+            std::fs::create_dir_all(module.parent().expect("the module path has a parent"))
+                .expect("the bundle directories are created");
+            std::fs::copy(built_harness_cdylib(), &module)
+                .expect("the harness cdylib copies into the bundle");
+            if cfg!(target_os = "macos") {
+                std::fs::write(path.join("Contents").join("Info.plist"), HARNESS_INFO_PLIST)
+                    .expect("the bundle's Info.plist is written");
+            }
+            Self { root, path }
+        }
+    }
+
+    impl Drop for InstalledVst3 {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn built_harness_cdylib() -> std::path::PathBuf {
+        let file_name = if cfg!(target_os = "macos") {
+            "libsourdaw_harness_fx.dylib"
+        } else if cfg!(target_os = "windows") {
+            "sourdaw_harness_fx.dll"
+        } else {
+            "libsourdaw_harness_fx.so"
+        };
+        let test_binary = std::env::current_exe().expect("the test binary path resolves");
+        let deps_dir = test_binary
+            .parent()
+            .expect("the test binary lives in a deps directory");
+        let in_deps = deps_dir.join(file_name);
+        if in_deps.exists() {
+            return in_deps;
+        }
+        deps_dir
+            .parent()
+            .expect("the deps directory lives in a profile directory")
+            .join(file_name)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn vst3_module_path(bundle: &std::path::Path) -> std::path::PathBuf {
+        daw_plugin_host::vst3_module::macos_executable_path(bundle).expect("a macOS bundle layout")
+    }
+
+    #[cfg(target_os = "windows")]
+    fn vst3_module_path(bundle: &std::path::Path) -> std::path::PathBuf {
+        daw_plugin_host::vst3_module::windows_module_paths(bundle, std::env::consts::ARCH)
+            .expect("a Windows bundle layout")
+            .remove(0)
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn vst3_module_path(bundle: &std::path::Path) -> std::path::PathBuf {
+        daw_plugin_host::vst3_module::linux_module_path(bundle, std::env::consts::ARCH)
+            .expect("a Linux bundle layout")
+            .expect("the VST3 layout names this architecture")
+    }
+
+    const HARNESS_INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>HarnessFx</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.sourdaw.harness-fx</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+</dict>
+</plist>
+"#;
 
     fn timed_out() -> PluginControlRefusal {
         PluginControlRefusal::TimedOut {
             plugin: "fixture".to_string(),
         }
-    }
-
-    #[test]
-    fn a_missing_ui_thread_refuses_a_restart_with_its_historical_text() {
-        let wrapper =
-            ClapWrapper::new_engine_owned_command_fixture("Restart Fixture", vec![], false);
-        let runtime = SharedHostedPlugin::new(wrapper.into());
-
-        let refused = restart_component(&runtime, None);
-
-        assert_eq!(refused, Err(HostRequestError::NoUiThread));
-        assert_eq!(
-            refused.unwrap_err().to_string(),
-            "no UI thread is registered to carry a component restart"
-        );
     }
 
     #[test]

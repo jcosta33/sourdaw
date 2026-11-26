@@ -199,10 +199,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when the arrangement depends on the bass swelling and receding between sections.',
             'Skip on a source already level-ridden at the recording stage.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'rms', direction: 'increase' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'A bass sounds close when every note arrives at the same level, so a low ratio with a long release does the work rather than any spatial device. Easing the string noise above 4 kHz removes the sense of distance that bright attack detail gives.',
     },
     {
@@ -342,10 +339,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when a release shorter than the lowest note period would modulate that note.',
             'Skip when the part is already a constant-level synth bass with nothing to settle.',
         ],
-        metrics: [
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'crestFactor', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
         source: 'A bass glues to a track by holding a constant floor under it, which needs a release long enough to span several notes rather than to track each one. A release shorter than one cycle of the lowest note would modulate that note as distortion instead.',
     },
     {

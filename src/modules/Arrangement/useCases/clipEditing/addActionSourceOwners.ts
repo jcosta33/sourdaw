@@ -261,6 +261,7 @@ const addActionSourceOwnersByActionType: {
     setToasterFactoryKit: addNoOwners,
     setBacteriaFactoryPatch: addNoOwners,
     setGlutenFactoryPreset: addNoOwners,
+    setProofPatchSelection: addNoOwners,
     createBus: addNoOwners,
     createFolder: addNoOwners,
     setSend: addNoOwners,

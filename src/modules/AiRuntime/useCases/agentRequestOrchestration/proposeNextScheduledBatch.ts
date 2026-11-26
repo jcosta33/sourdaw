@@ -15,9 +15,11 @@ import { type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { appendChatMessage, removeChatMessage, updateChatMessage } from '../../stores/chatStore';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
+import { type AgentRunPlanBoundRefusal } from '../../validators/readAgentRunPlanBoundRefusal';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { describeAgentRunPlanBoundRefusal } from '../describeAgentRunPlanBoundRefusal';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { getProjectContext } from '../getProjectContext';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
@@ -197,6 +199,24 @@ function groundBulkSetSlice(
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
 
 /**
+ * A preview whose receipts the run's plan cannot keep fails its batch as a failed preview does: the
+ * message keeps no progress line, and the run refuses the batch in a message of its own.
+ */
+function refuseUnkeptPreviewEvidence(input: {
+    run: AgentRun;
+    schedule: AgentRunBatchSchedule;
+    position: number;
+    assistantMessageId: string;
+    liveRun: AgentRun;
+    batchId: string;
+    refusal: AgentRunPlanBoundRefusal;
+}): ScheduledBatchOutcome {
+    settleStoppedBatchPreparation(input.assistantMessageId, input.position, input.schedule.total, input.liveRun);
+    agentRunLifecycle.updateBatchStatus({ runId: input.run.runId, batchId: input.batchId, status: 'failed' });
+    return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(input.refusal) };
+}
+
+/**
  * A vibe-run batch always waits for approval with a measured preview: the preview renders the live
  * project and the batch for every recipe step, under the run's own render budget, before the card
  * appears, and the approval is rebound to that proof so Confirm admits exactly what was measured. A
@@ -266,10 +286,13 @@ async function proposeMeasuredVibeBatch(input: {
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState ?? undefined, proof.receipts, {
+    const refusal = recordBatchPreviewEvidence(liveRun, grounded.revision, approval.metricGoalState, proof.receipts, {
         commandBatch,
         envelope: parsedCommandBatch.envelope,
     });
+    if (refusal !== null) {
+        return refuseUnkeptPreviewEvidence({ ...input, liveRun, batchId, refusal });
+    }
     persistPromptActionConfirmation({
         runId: run.runId,
         prompt: run.request,

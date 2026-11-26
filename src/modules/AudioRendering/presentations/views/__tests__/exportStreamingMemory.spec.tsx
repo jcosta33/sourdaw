@@ -577,11 +577,14 @@ vi.mock('#/modules/Automation/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        acceptsSidechainInput: actual.acceptsSidechainInput,
+        getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
         hasPadOutputHost: actual.hasPadOutputHost,
         hostsPadOutputs: actual.hostsPadOutputs,
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
+        commitPitchEdit: vi.fn(),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,
@@ -629,6 +632,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         },
         getAudioContext: mocks.getAudioContext,
         getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
+        engineSampleRateOf: vi.fn(() => null),
         isExportActive: mocks.isExportActive,
         renderOffline: mocks.renderOffline,
         restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,

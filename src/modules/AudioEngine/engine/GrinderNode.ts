@@ -8,6 +8,7 @@ import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/aud
 import { logger } from '#/infra/logger/appLogger';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
+import { GRINDER_LIVE_PARAMETER_IDS, isGrinderRuntimeParameter } from '../models/GrinderRuntimeControl';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import { compileRuntimeGrinderNeuralPatch } from '../services/compileRuntimeGrinderNeuralPatch';
@@ -138,6 +139,32 @@ function matchesOfflineSetupReady(
     return true;
 }
 
+function createGrinderFallbackControlTarget({
+    target,
+    offline,
+}: {
+    target: RuntimeDeviceControlTarget | undefined;
+    offline: boolean;
+}) {
+    if (!target) {
+        return undefined;
+    }
+    const capturedParameterIds = Object.freeze([
+        ...new Set([...target.parameterIds.filter(isGrinderRuntimeParameter), 'bypass']),
+    ]);
+    let parameterIds = capturedParameterIds;
+    if (!offline) {
+        parameterIds = Object.freeze([...new Set([...capturedParameterIds, ...GRINDER_LIVE_PARAMETER_IDS])]);
+    }
+    return Object.freeze({
+        trackId: target.trackId,
+        deviceId: target.deviceId,
+        deviceType: target.deviceType,
+        capturedParameterIds,
+        parameterIds,
+    });
+}
+
 export function isGrinderDevice(deviceType: string): boolean {
     return deviceType === 'grinder';
 }
@@ -206,14 +233,7 @@ export async function createGrinderNode(
     const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
     const canCoalesce = !offline && typeof requestAnimationFrame === 'function';
     const workletGeneration = allocateWorkletControlGeneration();
-    const fallbackControlTarget = controlTarget
-        ? Object.freeze({
-              trackId: controlTarget.trackId,
-              deviceId: controlTarget.deviceId,
-              deviceType: controlTarget.deviceType,
-              parameterIds: Object.freeze([...new Set([...controlTarget.parameterIds, 'bypass'])]),
-          })
-        : undefined;
+    const fallbackControlTarget = createGrinderFallbackControlTarget({ target: controlTarget, offline });
     let nextControlSequence = 1;
     let setupHandshake: ReturnType<typeof createReadyHandshake> | null = null;
     let setupSequence = 0;
@@ -289,6 +309,12 @@ export async function createGrinderNode(
 
     const queueParamPost = (name: string, value: number, sampleFrame?: number): void => {
         const scheduling = toControlScheduling(sampleFrame);
+        if (!fallbackControlTarget || !fallbackControlTarget.parameterIds.includes(name)) {
+            return;
+        }
+        if (scheduling.targetFrame !== null && !fallbackControlTarget.capturedParameterIds.includes(name)) {
+            return;
+        }
         const pending = Object.freeze({ value, ...scheduling });
         if (scheduling.targetFrame !== null) {
             // Scheduled fallback controls apply on the render thread. Their latency
@@ -300,9 +326,9 @@ export async function createGrinderNode(
             postFallbackControl(name, pending);
             return;
         }
-        if (!canCoalesce) {
-            // An offline render can finish before the window's next frame.
-            // Post now so setup never depends on UI animation scheduling.
+        if (!canCoalesce || !fallbackControlTarget.capturedParameterIds.includes(name)) {
+            // Offline setup cannot wait for an animation frame. Newly admitted live
+            // controls post now so they cannot cross a later structured neural patch.
             postFallbackControl(name, pending);
             return;
         }
@@ -410,7 +436,8 @@ export async function createGrinderNode(
                     trackId: fallbackControlTarget.trackId,
                     deviceId: fallbackControlTarget.deviceId,
                     deviceType: fallbackControlTarget.deviceType,
-                    parameterIds: fallbackControlTarget.parameterIds,
+                    parameterIds: fallbackControlTarget.capturedParameterIds,
+                    allowUncapturedImmediate: !offline,
                 }),
                 correlation: Object.freeze({ workletGeneration }),
             })
@@ -421,7 +448,7 @@ export async function createGrinderNode(
     const result: GrinderNodeResult = {
         workletNode: node,
         setParam(name: string, value: number, sampleFrame?: number) {
-            if (Number.isFinite(value)) {
+            if (Number.isFinite(value) && isGrinderRuntimeParameter(name)) {
                 const param = node.parameters.get(name);
                 if (param) {
                     // Immediate UI writes smooth from now; scheduled writes use

@@ -1,5 +1,3 @@
-import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
-
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 
@@ -8,6 +6,7 @@ import { findDeviceTarget } from './llmActionStrategies/bridgeArgumentGuards';
 type ActionOf<Type extends RuntimeActionType> = Extract<RuntimeAction, { type: Type }>;
 type AddSidechainRuntimeAction = ActionOf<'addSidechainRoute'>;
 type SidechainPlan = {
+    acceptsSidechainInput: (deviceType: string) => boolean;
     allSidechainAdds: readonly AddSidechainRuntimeAction[];
     context: ProjectContext;
     plannedSidechainAdds: readonly AddSidechainRuntimeAction[];
@@ -26,7 +25,7 @@ function neverInvalidates(): boolean {
 
 function addDeviceInvalidatesSidechain(action: ActionOf<'addDevice'>, plan: SidechainPlan): boolean {
     return (
-        getSidechainTargetCapability(action.payload.deviceType) !== null &&
+        plan.acceptsSidechainInput(action.payload.deviceType) &&
         plan.allSidechainAdds.some(
             (sidechainAction) => sidechainAction.payload.targetTrackId === action.payload.trackId
         )
@@ -45,7 +44,7 @@ function removeDeviceInvalidatesSidechain(action: ActionOf<'removeDevice'>, plan
     const target = findDeviceTarget(plan.context, action.payload.deviceId);
     return (
         target !== undefined &&
-        getSidechainTargetCapability(target.device.type) !== null &&
+        plan.acceptsSidechainInput(target.device.type) &&
         plan.plannedSidechainAdds.some((sidechainAction) => sidechainAction.payload.targetTrackId === target.track.id)
     );
 }
@@ -54,14 +53,12 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     importStemSet: neverInvalidates,
     addTrack: neverInvalidates,
     removeTrack: removeTrackInvalidatesSidechain,
-    removeAllTracks: neverInvalidates,
     renameTrack: neverInvalidates,
     selectTrack: neverInvalidates,
     muteTrack: neverInvalidates,
     soloTrack: neverInvalidates,
     selectTake: neverInvalidates,
     setSoloSafe: neverInvalidates,
-    toggleSoloSafe: neverInvalidates,
     armTrack: neverInvalidates,
     freezeTrack: neverInvalidates,
     unfreezeTrack: neverInvalidates,
@@ -80,13 +77,10 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     stopPlayback: neverInvalidates,
     toggleRecording: neverInvalidates,
     setMasterGain: neverInvalidates,
-    toggleLoop: neverInvalidates,
-    toggleMetronome: neverInvalidates,
     setMetronomeVolume: neverInvalidates,
     setLoopRegion: neverInvalidates,
     setLoopEnabled: neverInvalidates,
     setMetronomeEnabled: neverInvalidates,
-    restoreLoopRegion: neverInvalidates,
     addClip: neverInvalidates,
     drawClip: neverInvalidates,
     duplicateClipAt: neverInvalidates,
@@ -99,9 +93,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     trimClipStart: neverInvalidates,
     trimClipEnd: neverInvalidates,
     setClipFade: neverInvalidates,
-    copyClip: neverInvalidates,
-    cutClip: neverInvalidates,
-    pasteClip: neverInvalidates,
     addDevice: addDeviceInvalidatesSidechain,
     bypassDevice: neverInvalidates,
     removeDevice: removeDeviceInvalidatesSidechain,
@@ -144,7 +135,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     scaleVelocities: neverInvalidates,
     scaleAllVelocities: neverInvalidates,
     setAllVelocities: neverInvalidates,
-    importMidiFile: neverInvalidates,
     normalizeClip: neverInvalidates,
     reverseClip: neverInvalidates,
     glueClips: neverInvalidates,
@@ -170,7 +160,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     setTrackOutput: neverInvalidates,
     addSend: neverInvalidates,
     removeSend: neverInvalidates,
-    removeAutomationPoint: neverInvalidates,
     setAutomationMode: neverInvalidates,
     hideTrack: neverInvalidates,
     disableTrack: neverInvalidates,
@@ -181,7 +170,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     exportProject: neverInvalidates,
     saveProject: neverInvalidates,
     newProject: neverInvalidates,
-    importAudioFile: neverInvalidates,
     exportMidi: neverInvalidates,
     foldTrack: neverInvalidates,
     groupTracks: neverInvalidates,
@@ -192,7 +180,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     reverseAutomation: neverInvalidates,
     thinAutomation: neverInvalidates,
     quantizeAutomation: neverInvalidates,
-    loadPreset: neverInvalidates,
     savePreset: neverInvalidates,
     generateDrumPattern: neverInvalidates,
     generateMelody: neverInvalidates,
@@ -205,7 +192,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     setClipStretchRatio: neverInvalidates,
     fitClipToBeats: neverInvalidates,
     analyzeMix: neverInvalidates,
-    autoFixMix: neverInvalidates,
     enableMpe: neverInvalidates,
     disableMpe: neverInvalidates,
     getLatencyReport: neverInvalidates,
@@ -213,12 +199,9 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     joinCollabSession: neverInvalidates,
     leaveCollabSession: neverInvalidates,
     scanPlugins: neverInvalidates,
-    loadExternalPlugin: neverInvalidates,
-    audioToMidi: neverInvalidates,
     muteClip: neverInvalidates,
     clearSolos: neverInvalidates,
     setTrackNotes: neverInvalidates,
-    setTrackInput: neverInvalidates,
     zoomTracksVertical: neverInvalidates,
     deleteTime: neverInvalidates,
     insertTime: neverInvalidates,
@@ -236,41 +219,23 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     renameTrackAlternative: neverInvalidates,
     deleteTrackAlternative: neverInvalidates,
     addChordEvent: neverInvalidates,
-    addCvOutput: neverInvalidates,
     addNotes: neverInvalidates,
     addYeastProcessor: neverInvalidates,
     assignToVca: neverInvalidates,
-    autoOrganizeProject: neverInvalidates,
-    captureScratchPad: neverInvalidates,
-    clearAllMidiMappings: neverInvalidates,
     clearChordTrack: neverInvalidates,
     clearMidiOutput: neverInvalidates,
-    clearScratchPad: neverInvalidates,
-    commitScratchPad: neverInvalidates,
-    compareToReference: neverInvalidates,
-    completeMidi: neverInvalidates,
     connectPush: neverInvalidates,
     createAdjustmentLayer: neverInvalidates,
     addAdjustmentRegion: neverInvalidates,
     createCompGroup: neverInvalidates,
     createPatternInstance: neverInvalidates,
-    createProjectVersion: neverInvalidates,
     createVcaGroup: neverInvalidates,
-    createVersionBranch: neverInvalidates,
     deleteMacro: neverInvalidates,
     deleteTrackTemplate: neverInvalidates,
     detachPatternInstance: neverInvalidates,
-    detectSongStructure: neverInvalidates,
-    detectTransients: neverInvalidates,
     disconnectPush: neverInvalidates,
-    enableWarping: neverInvalidates,
     exportDawProject: neverInvalidates,
-    generateAllTransitions: neverInvalidates,
-    generateBassline: neverInvalidates,
-    generateFill: neverInvalidates,
-    getMentorTips: neverInvalidates,
     labelUndoBranch: neverInvalidates,
-    loadRaveModel: neverInvalidates,
     loadTrackTemplate: neverInvalidates,
     nextSetlistItem: neverInvalidates,
     playMacro: neverInvalidates,
@@ -281,18 +246,10 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     removeFromVca: neverInvalidates,
     removeYeastProcessor: neverInvalidates,
     reorderYeastProcessor: neverInvalidates,
-    restoreAutomationLanePoints: neverInvalidates,
-    restoreClip: neverInvalidates,
-    restoreProjectVersion: neverInvalidates,
-    restoreTrack: neverInvalidates,
     saveTrackTemplate: neverInvalidates,
-    searchSamples: neverInvalidates,
     setControlSurface: neverInvalidates,
     setMidiOutput: neverInvalidates,
-    setRaveBlend: neverInvalidates,
     setVcaGain: neverInvalidates,
-    setWarpAlgorithm: neverInvalidates,
-    setWarpPitchShift: neverInvalidates,
     setYeastArpPattern: neverInvalidates,
     setYeastProcessorBypass: neverInvalidates,
     setYeastProcessorParam: neverInvalidates,
@@ -309,7 +266,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     toggleUndoTree: neverInvalidates,
     triggerScene: neverInvalidates,
     undo: neverInvalidates,
-    variationMidi: neverInvalidates,
 };
 
 function lookupSidechainInvalidation<Type extends RuntimeActionType>(
@@ -324,7 +280,8 @@ function lookupSidechainInvalidation<Type extends RuntimeActionType>(
 
 export function hasInvalidatingSidechainLifecycleMutation(
     actions: readonly RuntimeAction[],
-    context: ProjectContext
+    context: ProjectContext,
+    acceptsSidechainInput: (deviceType: string) => boolean
 ): boolean {
     const allSidechainAdds = actions.filter(isAddSidechainRuntimeAction);
     const plannedSidechainAdds: AddSidechainRuntimeAction[] = [];
@@ -334,7 +291,14 @@ export function hasInvalidatingSidechainLifecycleMutation(
             plannedSidechainAdds.push(action);
             continue;
         }
-        if (lookupSidechainInvalidation(action, { allSidechainAdds, context, plannedSidechainAdds })) {
+        if (
+            lookupSidechainInvalidation(action, {
+                acceptsSidechainInput,
+                allSidechainAdds,
+                context,
+                plannedSidechainAdds,
+            })
+        ) {
             return true;
         }
     }
