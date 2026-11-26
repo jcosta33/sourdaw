@@ -79,7 +79,7 @@ describe('a batch run with its idempotency ports unregistered', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
-    it('refuses to execute the same approved batch twice and names the registrar when no repository is registered', async () => {
+    it('rejects every run of an approved batch before execution, naming the registrar, when no repository is registered', async () => {
         commandBatchExecutionAuthorityPort.setProvider(() => true);
         const batch = compileBatch();
         const input = { authority: batch.authority, confirmed: true, serialized: batch.serialized };

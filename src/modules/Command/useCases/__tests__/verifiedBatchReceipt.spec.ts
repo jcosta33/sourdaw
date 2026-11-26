@@ -153,6 +153,17 @@ function compileBatch(
     });
 }
 
+// The committed batch writes its two track edits and the project's own idempotency ledger record, nothing else.
+function expectCommittedProjectDocument(projectDocument: Record<string, unknown>): void {
+    expect(projectDocument).toEqual({
+        trackGain: { value: 0.8 },
+        trackPan: { value: -0.2 },
+        commandBatchIdempotency: {
+            records: [expect.objectContaining({ projectId: 'project-receipt', serializedReceipt: expect.any(String) })],
+        },
+    });
+}
+
 function receiptFrom(result: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>) {
     expect(result).toHaveProperty('receipt');
     if (!('receipt' in result)) {
@@ -401,7 +412,7 @@ describe('verified batch receipt', () => {
 
         expect(result.status).toBe('committed');
         expect(mutationCount).toBe(PROJECT_COMMIT_AND_JOURNAL_MUTATIONS);
-        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
+        expectCommittedProjectDocument(projectDocument);
         expect(receiptFrom(result)).toMatchObject({
             schemaVersion: 2,
             contentHash,
@@ -962,7 +973,7 @@ describe('verified batch receipt', () => {
 
         expect(result.status).toBe('committed-with-warning');
         expect(mutationCount).toBe(PROJECT_COMMIT_AND_JOURNAL_MUTATIONS);
-        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
+        expectCommittedProjectDocument(projectDocument);
         expect(receiptFrom(result)).toMatchObject({
             outcome: 'committed-with-warning',
             atomicity: 'atomic',
@@ -1109,7 +1120,7 @@ describe('verified batch receipt', () => {
 
         expect(result.status).toBe('committed');
         expect(mutationCount).toBe(PROJECT_COMMIT_AND_JOURNAL_MUTATIONS);
-        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
+        expectCommittedProjectDocument(projectDocument);
         expect(gainStorage.get()).toEqual({ value: 0.8 });
         expect(panStorage.get()).toEqual({ value: -0.2 });
         expect(undoHistoryStore.value?.past.slice(historyCountBefore)).toMatchObject([
