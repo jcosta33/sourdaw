@@ -107,10 +107,15 @@ describe('chord-track and velocity commands refuse invalid arguments on the batc
     it.each([
         { label: 'minVelocity above maxVelocity', minVelocity: 100, maxVelocity: 50 },
         { label: 'a default maxVelocity below minVelocity', minVelocity: 1, maxVelocity: 0 },
-    ])('refuses scaleVelocities with $label and leaves the notes unchanged', async ({ minVelocity, maxVelocity }) => {
+        { label: 'a minVelocity of 0', minVelocity: 0, maxVelocity: 100 },
+        { label: 'a maxVelocity above 127', minVelocity: 1, maxVelocity: 500 },
+        { label: 'a fractional minVelocity', minVelocity: 10.5, maxVelocity: 100 },
+        { label: 'a curve outside the published names', minVelocity: 1, maxVelocity: 127, curve: 'zigzag' },
+    ])('refuses scaleVelocities with $label and leaves the notes unchanged', async (input) => {
+        const { minVelocity, maxVelocity, curve = 'linear' } = input;
         const action: AppAction = {
             type: 'scaleVelocities',
-            payload: { clipId: 'clip-midi', curve: 'linear', minVelocity, maxVelocity },
+            payload: { clipId: 'clip-midi', curve, minVelocity, maxVelocity },
         };
         expectSchemaAdmits(action);
 

@@ -1,7 +1,9 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { MAX_MIDI_DATA_7BIT, MIN_AUDIBLE_VELOCITY } from '#/utils/midiData';
 
 import { type MidiNote } from '../../models/MidiNote';
+import { isVelocityCurveName } from '../../models/VelocityCurve';
 import { mapMidiVelocitiesByCurve } from '../../transformers/mapMidiVelocitiesByCurve';
 import { scaleVelocities } from '../../useCases/midiNoteTransforms/scaleVelocities';
 import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
@@ -16,8 +18,18 @@ function transformNotes(action: ScaleVelocitiesAction, notes: readonly MidiNote[
     return mapMidiVelocitiesByCurve({ notes, curve, minVelocity, maxVelocity });
 }
 
+function isVelocityBound(value: number): boolean {
+    return Number.isInteger(value) && value >= MIN_AUDIBLE_VELOCITY && value <= MAX_MIDI_DATA_7BIT;
+}
+
 function findVelocityRangeRefusal(action: ScaleVelocitiesAction): string | null {
-    const { minVelocity = 1, maxVelocity = 127 } = action.payload;
+    const { curve, minVelocity = MIN_AUDIBLE_VELOCITY, maxVelocity = MAX_MIDI_DATA_7BIT } = action.payload;
+    if (!isVelocityCurveName(curve)) {
+        return `Velocity curve "${curve}" is not a known curve`;
+    }
+    if (!isVelocityBound(minVelocity) || !isVelocityBound(maxVelocity)) {
+        return `minVelocity and maxVelocity must be integers from ${MIN_AUDIBLE_VELOCITY} through ${MAX_MIDI_DATA_7BIT}`;
+    }
     return minVelocity > maxVelocity ? `minVelocity ${minVelocity} must not exceed maxVelocity ${maxVelocity}` : null;
 }
 
