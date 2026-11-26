@@ -571,6 +571,52 @@ describe('TrackDevicesSection', () => {
         expect(screen.getByLabelText('Open editor for Dormant CLAP')).toBeInTheDocument();
     });
 
+    it('shows the reason an out-of-service plugin is degraded on its slot, beside a failed editor open, and keeps the editor control', () => {
+        const reason = 'Out CLAP is out of service: it refused to start processing.';
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Out CLAP', format: 'clap', has_custom_ui: true }],
+        });
+        mockGuiState.mockReturnValue({
+            byInstanceId: { 'out-instance': { isOpen: false, error: 'Plugin GUI is already open' } },
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'out-instance': { status: 'active', message: reason } },
+        });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'out-instance', 'Out CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.getByTestId('device-degraded-external-slot')).toHaveTextContent(reason);
+        // The editor failure keeps the hover title; the reason is not hidden by it.
+        expect(screen.getByTestId('choice-card')).toHaveAttribute('title', 'Plugin GUI is already open');
+        expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Open editor for Out CLAP')).toBeEnabled();
+    });
+
+    it('shows no degraded line on a healthy or failed slot', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Plain CLAP', format: 'clap' }],
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'plain-instance': { status: 'active' } },
+        });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'plain-instance', 'Plain CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.queryByTestId('device-degraded-external-slot')).not.toBeInTheDocument();
+    });
+
     it('leaves a healthy device without a degradation tooltip', () => {
         render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
         const cards = screen.getAllByTestId('choice-card');
