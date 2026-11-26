@@ -961,11 +961,18 @@ describe('configured mixing plan with actual measurements', () => {
                 expect(undoHistoryStore.value).toEqual(settledBeforeResume.undo);
                 return;
             }
-            expect(await refreshing).toMatchObject({ status: 'rejected' });
+            const refused = await refreshing;
             expect(getPendingActionConfirmation(confirmationId)?.supersededBy).toBeNull();
             expect(trackStore.value).toEqual(settledBeforeResume.tracks);
             expect(undoHistoryStore.value).toEqual(settledBeforeResume.undo);
-            expect(chatStore.value?.messages).toEqual(settledBeforeResume.messages);
+            // The refusal leaves the chat as it was beside one line stating why.
+            if (refused.status !== 'rejected' || settledBeforeResume.messages === undefined) {
+                throw new Error('Expected a refused re-preview and the chat as it settled.');
+            }
+            expect(chatStore.value?.messages).toEqual([
+                ...settledBeforeResume.messages,
+                expect.objectContaining({ role: 'assistant', content: `Re-preview refused: ${refused.reason}` }),
+            ]);
             expect(turns).toHaveLength(5);
             return;
         }

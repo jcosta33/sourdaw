@@ -1178,7 +1178,9 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     page,
 }, info) => {
     // Serial fixture commits have their own deadline so setup cannot consume the reopen checks' time.
-    test.setTimeout(330_000);
+    // Locally the 2048 serial retained edits took 86.7 s (42.4 ms mean) of a 115.9 s seed; CI exceeded 210 s.
+    // The dense-elastic-seed-timing attachment records these figures per run.
+    test.setTimeout(540_000);
     await setupWorkspace(page, { clearLocalStorage: false });
     await launch_new_project(page);
     const preference = await page.evaluate(async () => {
@@ -1217,8 +1219,12 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
                 },
                 { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId, audioBufferId: before.audioBufferId }
             ),
-        { timeout: 210_000 }
+        { timeout: 420_000 }
     );
+    await info.attach('dense-elastic-seed-timing', {
+        body: JSON.stringify(fixture.timing),
+        contentType: 'application/json',
+    });
     const readPreserved = (historyHeads?: typeof fixture.historyHeads) =>
         page.evaluate(
             async ({ path, historyHeads, companionIds }) => {
@@ -1251,6 +1257,17 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     expect(await readNamedSnapshot()).toBeNull();
 
     const panel = await openElasticPanel(page);
+    // A toast disappears on its own, so record every one that mounts instead of looking at the end.
+    await page.evaluate(() => {
+        const shown: string[] = [];
+        Reflect.set(window, 'notificationToastTexts', shown);
+        const record = (): void => {
+            for (const toast of document.querySelectorAll('[data-testid="notification-toast"]')) {
+                shown.push(toast.textContent);
+            }
+        };
+        new MutationObserver(record).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
     const overlap = await panel.getByTestId('elastic-detect-button').evaluate(
         async (button, { path, preference }) => {
             const status = button.closest('[data-testid="elastic-editor-panel"]')?.querySelector('[role="status"]');
@@ -1281,6 +1298,11 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
         trackName: 'History edit 2047',
     });
     expect(await page.evaluate(() => performance.getEntriesByName('dense-elastic-named-autosave').length)).toBe(1);
+    const failedSaveNotices = await page.evaluate(() => {
+        const shown: unknown = Reflect.get(window, 'notificationToastTexts');
+        return Array.isArray(shown) ? shown.filter((text) => String(text).includes('Save failed')) : ['no recorder'];
+    });
+    expect(failedSaveNotices).toEqual([]);
 
     await page.reload();
     await wait_for_workspace_ready(page);

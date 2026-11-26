@@ -400,6 +400,12 @@ impl HostCallbackState {
         let _ = self.take_editor_window_asks();
     }
 
+    /// Whether the plugin asked for an editor size no one has applied yet.
+    /// Reads without clearing.
+    pub fn has_pending_editor_resize(&self) -> bool {
+        self.pending_editor_resize.load(Ordering::Acquire) != 0
+    }
+
     /// Whether the plugin has asked anything of its editor window that no one
     /// has taken yet. Reads without clearing.
     pub fn has_pending_editor_window_asks(&self) -> bool {

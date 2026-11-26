@@ -110,6 +110,11 @@ export function isDrumDevice(deviceType: string): boolean {
     return noteInputKindOfBuiltin(deviceType) === 'drum';
 }
 
+/** True for the Toaster drum machine, which takes notes by pad rather than through a kit scheduler. */
+export function isToasterDevice(deviceType: string): boolean {
+    return noteInputKindOfBuiltin(deviceType) === 'toaster';
+}
+
 /**
  * True for the built-in synthesizer family, which is voiced directly by
  * `scheduleNoteOffline` / `scheduleNote` from `getSynthParamsFromDevices` and

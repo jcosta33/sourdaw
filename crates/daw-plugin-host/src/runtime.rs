@@ -16,7 +16,7 @@ use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, EditorWindowAsks, EditorWindowResizer, HostMidiEvent, HostParameterUpdate,
     HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginError,
-    PluginHostRequestNotifier, ProcessingGate, SharedEditorWindow,
+    PluginHostRequestNotifier, ProcessingGate, ServiceChange, SharedEditorWindow,
 };
 use crate::vst3_wrapper::Vst3Wrapper;
 use std::ffi::c_void;
@@ -133,6 +133,10 @@ impl AudioPlugin for HostedRuntime {
 
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         delegate!(self, backend => backend.apply_pending_editor_resize())
+    }
+
+    fn editor_window_with_pending_resize(&self) -> Option<SharedEditorWindow> {
+        delegate!(self, backend => backend.editor_window_with_pending_resize())
     }
 
     fn set_editor_window(&mut self, window: SharedEditorWindow) {
@@ -272,6 +276,10 @@ impl HostedPluginRuntime for HostedRuntime {
 
     fn has_passed_a_block_unprocessed(&self) -> bool {
         delegate!(self, backend => backend.has_passed_a_block_unprocessed())
+    }
+
+    fn take_service_change(&mut self) -> Option<ServiceChange> {
+        delegate!(self, backend => backend.take_service_change())
     }
 }
 

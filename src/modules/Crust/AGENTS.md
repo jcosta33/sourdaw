@@ -4,7 +4,7 @@ Mastering limiter, saturator, and multiband dynamic peak controller (brickwall l
 
 ## Public Contract Surface
 
-Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. The only public use case is `resetCrustForProject`, the project-switch reset the composition root registers with Project's lifecycle; the parameter bridge, presets and metering controls under `useCases/` are internal.
+Public surface: `events/index.ts`, `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. The composition root registers `getCrustHandlers` with Command and `resetCrustForProject` with Project's lifecycle. Other parameter bridge, preset and metering use cases are internal.
 
 ## Key Subsystems
 
@@ -14,6 +14,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/ind
 
 ## Invariants & Traps
 
+- Factory presets commit through `setCrustFactoryPreset` as one history entry. Undo restores the exact sparse numeric footprint on the original device, and committed runtime replay sends style before algorithm so an explicit algorithm wins. Disclosure lives in the existing device state chunk and the preset display name is session state.
 - Oversampling factor is strictly limited to `[1, 2, 4, 8, 16, 32]`; `asCrustOversampleFactor` narrows values without silent fallbacks. The Arrangement descriptor (`PluginDescriptors/CrustDescriptor.ts`) declares the same legal set, guarded by `CrustPatch.spec.ts`.
 - Real-time gain reduction and true-peak telemetry update store state directly without triggering expensive component tree re-renders.
 - Audio DSP in `crates/daw-dsp/src/crust/` executes with zero allocations and zero locks on the render thread.
