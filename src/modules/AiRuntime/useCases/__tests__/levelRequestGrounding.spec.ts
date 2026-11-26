@@ -1432,6 +1432,12 @@ describe('a track level clause grounds only when nothing but its figure follows 
         ['set Drums volume to peak at -6 dB', { gainDb: -6 }],
         ['put Drums threshold at -6 dB', { gainDb: -6 }],
         ['set Drums to -6 dB of gain reduction', { gainDb: -6 }],
+        ['turn Drums up 2 dB for the send', { deltaDb: 2 }],
+        ['turn Drums up 2 dB when the chorus hits', { deltaDb: 2 }],
+        ['turn Drums up 2 dB for two bars', { deltaDb: 2 }],
+        ['turn Drums up 2 dB because the send needs it', { deltaDb: 2 }],
+        ['turn Drums up 2 dB because it only lasts two bars', { deltaDb: 2 }],
+        ['raise Drums by 2 dB while keeping the level below 3 dB', { deltaDb: 2 }],
     ])('puts no fader level on Drums for "%s"', (prompt, value) => {
         const result = bridgeDrums(prompt, value);
 
@@ -1442,6 +1448,24 @@ describe('a track level clause grounds only when nothing but its figure follows 
         ['turn Drums up 2 dB', { deltaDb: 2 }],
         ['set Drums to -6 dB', { gainDb: -6 }],
         ['set Drums volume to -6 dB', { gainDb: -6 }],
+        ['change the Drums volume to -6 dB', { gainDb: -6 }],
+        ['increase the Drums volume to -6 dB', { gainDb: -6 }],
+        ['adjust the volume of the Drums to -6 dB', { gainDb: -6 }],
+        ['turn Drums up slightly by 2 dB', { deltaDb: 2 }],
+        ['lower the volume on the Drums by 2 dB', { deltaDb: -2 }],
+        ['turn Drums up just 2 dB', { deltaDb: 2 }],
+        ['turn Drums up about 2 dB', { deltaDb: 2 }],
+        ['turn Drums up another 2 dB', { deltaDb: 2 }],
+        ['turn Drums up a bit by 2 dB', { deltaDb: 2 }],
+        ['turn Drums up 2 dB or so', { deltaDb: 2 }],
+        ['turn Drums up 2 dB again', { deltaDb: 2 }],
+        ['turn Drums up 2 dB too', { deltaDb: 2 }],
+        ['turn Drums up 2 dB as well', { deltaDb: 2 }],
+        ['turn Drums up 2 dB thanks', { deltaDb: 2 }],
+        ['raise Drums by 2 dB instead', { deltaDb: 2 }],
+        ['raise Drums by 1 dB while keeping true peak below -1 dBTP', { deltaDb: 1 }],
+        ['turn Drums down 3 dB because Drums is too loud', { deltaDb: -3 }],
+        ['turn Drums down 3 dB so it sits behind the vocal', { deltaDb: -3 }],
     ])('still grounds "%s"', (prompt, value) => {
         const result = bridgeDrums(prompt, value);
 

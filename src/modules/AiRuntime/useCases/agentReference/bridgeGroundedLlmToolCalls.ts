@@ -155,12 +155,13 @@ import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTar
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
-import { LEVEL_NOUNS, RATIONALE_BOUNDARY_PATTERN, readsAsLevelClause } from './groundingStrategies/readsAsLevelClause';
+import { LEVEL_NOUNS, readsAsLevelClause } from './groundingStrategies/readsAsLevelClause';
 import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
 import { readStatedRangeBeats } from './groundingStrategies/readStatedRangeBeats';
 import { resolveCallRange } from './groundingStrategies/resolveCallRange';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
+import { STRICT_COURTESY_CLAUSES } from './groundingStrategies/strictCourtesyClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { withoutReferencedLevelPhrases } from './groundingStrategies/withoutReferencedLevelPhrases';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
@@ -1483,9 +1484,6 @@ function getSendSetScope(input: {
         sendSet: true,
     };
 }
-
-/** The whole clauses a request may carry beside a referenced level phrase, and nothing else. */
-const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay']);
 
 /**
  * Whether the list, read with its members as one, is a level clause in the shape a single target's is,
@@ -3215,6 +3213,9 @@ function getMarkerNameFromPrompt(promptText: string): string | null {
         .trim();
     return unquotedName || null;
 }
+
+/** Where a stated reason opens after a marker or section name, so the reason is never read as part of the name. */
+const RATIONALE_BOUNDARY_PATTERN = /\s+(?=(?:because|since|so|to|for|as|which|when|where)\b)/iu;
 
 function getMarkerReferenceNameFromPrompt(promptText: string): string | null {
     const intent =
