@@ -806,6 +806,16 @@ describe('ExternalPluginParameterList', () => {
             }
         });
 
+        it('describes an automated read-only parameter as both automated and read-only', () => {
+            seed([parameter({ id: 7, name: 'Decay', value: 0.25, isReadOnly: true })]);
+            automationStore.set({ lanes: [automationLane(device.id, 7)] });
+            render(<ExternalPluginParameterList device={device} />);
+
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveAccessibleDescription(
+                expect.stringMatching(/^(?=.*\bAutomated\b)(?=.*\bRead-only\b)/)
+            );
+        });
+
         it('moves an automated row with the delivered value without announcing each step', () => {
             seedAutomated();
             setPlaying(true);
