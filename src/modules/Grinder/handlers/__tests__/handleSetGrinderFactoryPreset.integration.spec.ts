@@ -199,6 +199,8 @@ describe('Grinder Rectifier project command', () => {
 
     it('writes one history entry and restores legacy presence exactly through undo and redo', async () => {
         const action = makeAction();
+        const selected = structuredClone(action.payload);
+        const undone = { ...selected, direction: 'undo' };
         const before = JSON.stringify(getCrdtDoc('root'));
         const snapshots: unknown[] = [];
         let rootChanges = 0;
@@ -215,7 +217,7 @@ describe('Grinder Rectifier project command', () => {
             expect(undoHistoryStore.value?.past).toHaveLength(1);
             const after = JSON.stringify(getCrdtDoc('root'));
             expect(after).not.toBe(before);
-            expect(sync).toHaveBeenCalledOnce();
+            expect(sync.mock.calls).toStrictEqual([[selected]]);
             expect(rootChanges).toBe(1);
             expect(snapshots.length).toBeGreaterThan(0);
             const original = action.payload.before;
@@ -233,10 +235,10 @@ describe('Grinder Rectifier project command', () => {
             ).toBe(true);
             await undo();
             expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
-            expect(sync).toHaveBeenCalledTimes(2);
+            expect(sync.mock.calls).toStrictEqual([[selected], [undone]]);
             await redo();
             expect(JSON.stringify(getCrdtDoc('root'))).toBe(after);
-            expect(sync).toHaveBeenCalledTimes(3);
+            expect(sync.mock.calls).toStrictEqual([[selected], [undone], [selected]]);
         } finally {
             unsubscribe();
             unsubscribeRoot();
