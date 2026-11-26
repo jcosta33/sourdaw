@@ -199,6 +199,7 @@ import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
 import { initCrumbsModePush } from './initCrumbsModePush';
+import { initCrumbsSamplePush } from './initCrumbsSamplePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
 import { initLevainDeviceStateProjectAccess } from './initLevainDeviceStateProjectAccess';
@@ -522,7 +523,7 @@ function configureDeviceRuntimeSink(): void {
         // reaches the same use case through the `builtin-crumbs` row of
         // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two
         // registries from configuring two differently loaded engines.
-        prepareCrumbsDevice: ({ deviceId, port, signal }) => prepareCrumbsEngine({ deviceId, port, signal }),
+        prepareCrumbsDevice: (input) => prepareCrumbsEngine(input),
         setFermenterTelemetry: (deviceId, telemetry) => {
             setFermenterTelemetry(deviceId, telemetry.peakL, telemetry.peakR, telemetry.scopeBuffer);
         },
@@ -621,6 +622,7 @@ function startDeviceStateSubscribers(): void {
     // is already carrying what the document held; the route's history and its
     // barrel-cycle home live on `initCrumbsModePush`.
     initCrumbsModePush(eventBus);
+    initCrumbsSamplePush();
     // The native Crumbs instance follows the device's presence on the project, not
     // the panel's mount: the mapper splices a Crumbs device onto its strip by the
     // instance the engine holds, so a sampler whose window is shut would otherwise

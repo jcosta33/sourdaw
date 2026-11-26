@@ -682,13 +682,51 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                let preparation: Promise<DeviceContentLoadOutcome> | undefined;
+                let preparationAbort: AbortController | undefined;
+                let disposed = false;
+                let pendingRefresh = false;
+                const prepare = (sampleOnly: boolean): Promise<DeviceContentLoadOutcome> => {
+                    preparationAbort?.abort();
+                    preparationAbort = new AbortController();
+                    const preparationSignal = signal
+                        ? AbortSignal.any([signal, preparationAbort.signal])
+                        : preparationAbort.signal;
+                    preparation = getAudioDeviceRuntimeSink()
+                        .prepareCrumbsDevice({
+                            deviceId,
+                            port: result.workletNode.port,
+                            signal: preparationSignal,
+                            ...(sampleOnly ? { sampleOnly: true } : {}),
+                        })
+                        .catch((error: unknown) => {
+                            logger.warn(`[WebAudioEngine] ${deviceType} sample preparation failed: ${String(error)}`);
+                            return 'failed';
+                        });
+                    return preparation;
+                };
+                const refreshSample = (): void => {
+                    if (disposed || signal?.aborted) {
+                        return;
+                    }
+                    if (!preparation) {
+                        pendingRefresh = true;
+                        return;
+                    }
+                    prepare(true);
+                };
+                const destroy = (): void => {
+                    disposed = true;
+                    preparationAbort?.abort();
+                    result.destroy();
+                };
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    dispose: result.destroy,
+                    dispose: destroy,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -696,7 +734,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                     crumbsControls: {
                         ready: true,
@@ -706,8 +744,9 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setMode: result.setMode,
+                        refreshSample,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                 };
                 const accepted = onLoaded(loadedNode);
@@ -726,11 +765,15 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 // same use case the offline chain awaits, so the two registries
                 // cannot configure two different engines.
                 try {
-                    const outcome = await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
-                        deviceId,
-                        port: result.workletNode.port,
-                        signal,
-                    });
+                    let current = prepare(false);
+                    if (pendingRefresh) {
+                        current = prepare(true);
+                    }
+                    let outcome = await current;
+                    while (preparation && current !== preparation) {
+                        current = preparation;
+                        outcome = await current;
+                    }
                     onContentLoadSettled?.(outcome);
                 } catch (error) {
                     onContentLoadSettled?.('failed');

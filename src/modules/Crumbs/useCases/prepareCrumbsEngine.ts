@@ -93,6 +93,8 @@ export type PrepareCrumbsEngineInput = {
     /** Aborts the read/decode on export cancellation or deadline. */
     signal?: AbortSignal;
     captured?: ReturnType<typeof captureCrumbsEngine>;
+    /** Refresh sample content without replaying an older mode. */
+    sampleOnly?: boolean;
 };
 
 /**
@@ -137,6 +139,7 @@ export async function prepareCrumbsEngine({
     port,
     signal,
     captured,
+    sampleOnly = false,
 }: PrepareCrumbsEngineInput): Promise<PrepareCrumbsEngineOutcome> {
     const state = captured === undefined ? captureCrumbsEngine({ deviceId }) : captured;
     if (!state) {
@@ -145,7 +148,9 @@ export async function prepareCrumbsEngine({
 
     // Mode first: it is cheap, needs no I/O, and the engine reads it when a
     // note arrives rather than when it is set.
-    port.postMessage({ type: 'mode', mode: state.mode });
+    if (!sampleOnly) {
+        port.postMessage({ type: 'mode', mode: state.mode });
+    }
 
     const filePath = state.filePath;
     if (!filePath) {
