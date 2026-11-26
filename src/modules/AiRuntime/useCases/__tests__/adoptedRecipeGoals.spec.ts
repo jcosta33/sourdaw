@@ -179,7 +179,7 @@ function paddingReceipt(index: number): ApplicationToolReceipt {
 }
 
 /** Fills to its receipt bound the plan of the run whose adopted proposal is being measured. */
-function fillMeasuringRunPlanReceipts(): void {
+function fillMeasuringRunPlanReceipts(): string {
     const runId = chatStore.value?.messages.find((message) => message.stoppableRunId !== undefined)?.stoppableRunId;
     const run = runId === undefined ? undefined : agentRunLifecycle.get(runId);
     if (runId === undefined || run?.plan === null || run?.plan === undefined) {
@@ -198,6 +198,7 @@ function fillMeasuringRunPlanReceipts(): void {
         grants: run.grants,
         budgets: run.budgets,
     });
+    return runId;
 }
 
 function onlyCard() {
@@ -371,8 +372,9 @@ describe("an adopted recipe proposal is verified against the recipe's own expect
     });
 
     it('refuses the request with the plan-bound reason, persisting no card, when the plan cannot hold the preview', async () => {
+        let measuredRunId = '';
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
-            fillMeasuringRunPlanReceipts();
+            measuredRunId = fillMeasuringRunPlanReceipts();
             return renderTrack(input);
         });
 
@@ -386,6 +388,10 @@ describe("an adopted recipe proposal is verified against the recipe's own expect
             error: reason,
         });
         expect(messages.filter((message) => message.stoppableRunId !== undefined)).toEqual([]);
+        const run = agentRunLifecycle.get(measuredRunId);
+        expect(run?.phase).toBe('failed');
+        expect(run?.errors.map((error) => error.category)).toEqual(['conflict']);
+        expect(run?.batches.map((batch) => batch.status)).toEqual(['failed']);
     });
 
     it("freezes the same goals when the last commit's recipe is repeated on another track", async () => {

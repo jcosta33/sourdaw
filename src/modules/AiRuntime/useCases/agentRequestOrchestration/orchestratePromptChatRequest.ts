@@ -125,11 +125,14 @@ function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.rec
 }
 
 /** Ends the request when its adopted proposal was stopped or refused while measured; true when nothing is to be persisted. */
-function settleUnpersistedAdoptedMeasurement(
-    runId: string,
-    assistantMessageId: string,
-    measurement: Awaited<ReturnType<typeof measureAdoptedRecipeProposal>>
-): boolean {
+function settleUnpersistedAdoptedMeasurement(input: {
+    runId: string;
+    batchId: string;
+    targetIds: string[];
+    assistantMessageId: string;
+    measurement: Awaited<ReturnType<typeof measureAdoptedRecipeProposal>>;
+}): boolean {
+    const { runId, batchId, targetIds, assistantMessageId, measurement } = input;
     if (measurement.status === 'stopped') {
         updateChatMessage(assistantMessageId, {
             pendingActionConfirmationStatus: 'cancelled',
@@ -138,9 +141,16 @@ function settleUnpersistedAdoptedMeasurement(
         return true;
     }
     if (measurement.status === 'refused') {
+        // A plan-bound refusal is no budget being hit: the batch fails and the run records a conflict, as a refused scheduled batch does.
+        agentRunLifecycle.updateBatchStatus({ runId, batchId, status: 'failed' });
         tryRecordTerminalFailure({
             runId,
-            error: normalizeAgentFailure({ category: 'budget', source: 'provider-planning', knownDomain: true }),
+            error: normalizeAgentFailure({
+                category: 'conflict',
+                source: 'command-execution',
+                related: { targetIds },
+                knownDomain: true,
+            }),
             terminal: true,
         });
         updateChatMessage(assistantMessageId, {
@@ -788,7 +798,13 @@ async function dispatchPromptPlan(input: {
                       });
             if (
                 measurement !== null &&
-                settleUnpersistedAdoptedMeasurement(admission.runId, assistantMessageId, measurement)
+                settleUnpersistedAdoptedMeasurement({
+                    runId: admission.runId,
+                    batchId: parsedCommandBatch.envelope.batchId,
+                    targetIds: confirmationDescription.affectedIds,
+                    assistantMessageId,
+                    measurement,
+                })
             ) {
                 return undefined;
             }
