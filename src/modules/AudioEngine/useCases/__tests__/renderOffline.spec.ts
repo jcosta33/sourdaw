@@ -122,6 +122,13 @@ vi.mock('../offlineRender/renderWithTimeout', () => ({
     renderWithTimeout: offlineRenderMocks.renderWithTimeout,
 }));
 
+// The rendered buffer here is a stand-in object, which no head can be cropped
+// from; the printed compensation head has its own spec
+// (`renderOfflineCompensationHead.spec.ts`).
+vi.mock('../offlineRender/webCompensationHeadFrames', () => ({
+    webCompensationHeadFrames: () => 0,
+}));
+
 vi.mock('../offlineRender/scheduleTrackClips', () => ({
     scheduleTrackClips: offlineRenderMocks.scheduleTrackClips,
 }));
@@ -151,6 +158,7 @@ describe('renderOffline', () => {
                         muted: false,
                         freezeState: { status: 'unfrozen' },
                         clips: [],
+                        sends: [],
                         devices: [{ id: 'd1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }],
                     },
                 ],

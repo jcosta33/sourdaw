@@ -13,7 +13,7 @@
 
 use super::*;
 use crate::block_on_test;
-use crate::commands::graph::render_graph_offline_with;
+use crate::commands::graph::{render_graph_offline_with, OfflineRenderHead};
 use crate::commands::plugins::{
     create_hosted_runtime, read_plugin_state_chunk, VettedRegistryEntry,
 };
@@ -597,11 +597,32 @@ fn render_frames(
     seams: &OfflinePluginSeams,
     render_id: Option<&str>,
 ) -> Result<Vec<f32>, String> {
+    render_frames_from(
+        batch,
+        frames,
+        OfflineRenderHead::EngineFrameZero,
+        state,
+        ui,
+        seams,
+        render_id,
+    )
+}
+
+fn render_frames_from(
+    batch: Value,
+    frames: u32,
+    head: OfflineRenderHead,
+    state: &AppState,
+    ui: &dyn UiThread,
+    seams: &OfflinePluginSeams,
+    render_id: Option<&str>,
+) -> Result<Vec<f32>, String> {
     block_on_test(render_graph_offline_with(
         batch,
         frames,
         EXPORT_RATE,
         render_id.map(str::to_string),
+        head,
         ui,
         state,
         seams,
@@ -837,6 +858,59 @@ fn a_dry_track_lands_aligned_with_the_offline_instances_latency_in(format: Forma
         "the dry impulse lands the plugin's latency late"
     );
     assert_frames_equal(&print, &expected);
+}
+
+/// An export prints the compensation from the head: the engine renders the
+/// depth it holds the master to, the hosted instance's own latency, ahead of
+/// the requested frames and drops it, so the dry track keeps its timeline
+/// frame, the latent strip arrives on it too, and the print keeps its length.
+fn a_trimmed_print_starts_on_the_masters_timeline_frame_zero_in(format: Format) {
+    let fx = InstalledFx::create(&format!("pdc-head-{format:?}"));
+    let (state, _live) = state_with_live_fx(&fx, format);
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+    let dry_track = vec![
+        strip("t2", json!([])),
+        clip("t2", "impulse", DRY_IMPULSE_FRAME, 4),
+    ];
+    let mut both = impulse_track(json!([fx_device()]));
+    both.extend(dry_track.clone());
+
+    let dry_alone =
+        render(batch(dry_track), &state, &ui, &seams, None).expect("the dry track renders");
+    let untrimmed = render(batch(both.clone()), &state, &ui, &seams, None).expect("renders");
+    let trimmed = render_frames_from(
+        batch(both),
+        FRAMES as u32,
+        OfflineRenderHead::MasterCompensationTrimmed,
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .expect("the trimmed print renders");
+
+    assert_eq!(
+        trimmed.len(),
+        FRAMES,
+        "the print keeps the frames it was asked for"
+    );
+    assert_eq!(
+        trimmed[DRY_IMPULSE_FRAME], dry_alone[DRY_IMPULSE_FRAME],
+        "the dry impulse is back on its own timeline frame"
+    );
+    let untrimmed_tail = FRAMES - LATENCY_FRAMES;
+    assert_frames_equal(&trimmed[..untrimmed_tail], &untrimmed[LATENCY_FRAMES..]);
+}
+
+#[test]
+fn a_trimmed_clap_print_starts_on_the_masters_timeline_frame_zero() {
+    a_trimmed_print_starts_on_the_masters_timeline_frame_zero_in(Format::Clap);
+}
+
+#[test]
+fn a_trimmed_vst3_print_starts_on_the_masters_timeline_frame_zero() {
+    a_trimmed_print_starts_on_the_masters_timeline_frame_zero_in(Format::Vst3);
 }
 
 #[test]
@@ -1611,6 +1685,7 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
             LONG_RENDER_FRAMES,
             EXPORT_RATE,
             Some("render-1".to_string()),
+            OfflineRenderHead::EngineFrameZero,
             &ui,
             state,
             &seams,
@@ -2468,6 +2543,7 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
             1_024,
             sample_rate,
             None,
+            OfflineRenderHead::EngineFrameZero,
             &ui,
             &state,
             &seams,
@@ -2699,6 +2775,7 @@ fn the_quit_step_cancels_an_offline_render_in_flight_and_returns_within_its_budg
                 LONG_RENDER_FRAMES,
                 EXPORT_RATE,
                 Some("export-at-quit".to_string()),
+                OfflineRenderHead::EngineFrameZero,
                 &ui,
                 &state,
                 &seams,

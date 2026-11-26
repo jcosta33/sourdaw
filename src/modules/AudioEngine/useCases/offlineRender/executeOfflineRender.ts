@@ -70,10 +70,17 @@ export async function executeOfflineRender(
         const cancellationSignal = combineSignals(scopeSignal, abortSignal);
         const input = capture();
         const { sampleRate, historyFrameCount, outputFrameCount } = input;
-        const plan = resolveOfflineMixPlan(input, callbacks.onWarning);
+        // A musician's export is the file they hear, so it prints the latency
+        // compensation every strip is held by from the head and keeps its
+        // length (#7312). An agent render keeps the base span it measures.
+        const plan = resolveOfflineMixPlan(input, callbacks.onWarning, {
+            printsCompensationHead: holder === 'musician-export',
+        });
         // The native render stops mid-flight on the same signal instrument
         // setup does, so an export's Cancel reaches a render already running.
-        let buffer = await tryNativeOfflineRender(input, plan, { ...callbacks, abortSignal: cancellationSignal });
+        const native = await tryNativeOfflineRender(input, plan, { ...callbacks, abortSignal: cancellationSignal });
+        let buffer = native?.buffer;
+        const compensationHeadFrameCount = native?.compensationHeadFrameCount ?? plan.compensationHeadFrameCount;
         if (!buffer) {
             const offlineCtx = new OfflineAudioContext(2, plan.frameCount, sampleRate);
             // Device construction and every track share this context’s frame scheduler.
@@ -102,13 +109,13 @@ export async function executeOfflineRender(
             buffer = await scheduleOfflineMix({ input, plan, graph, offlineCtx, masterGain, scheduleFrame, callbacks });
         }
         callbacks.onProgress?.(1);
+        // The printed head is rendered after the history and before the window, so both leave together.
+        const window = { buffer, historyFrameCount: historyFrameCount + compensationHeadFrameCount, outputFrameCount };
         if (options.onRendered) {
-            await options.onRendered(
-                cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount, borrowed: true })
-            );
+            await options.onRendered(cropHistoryFromRenderedBuffer({ ...window, borrowed: true }));
             return buffer;
         }
-        return cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount });
+        return cropHistoryFromRenderedBuffer(window);
     } catch (error) {
         // A render a musician's export stopped reports why, unless its caller stopped it first.
         if (holder !== 'musician-export' && preemption.signal.aborted && callerSignal?.aborted !== true) {

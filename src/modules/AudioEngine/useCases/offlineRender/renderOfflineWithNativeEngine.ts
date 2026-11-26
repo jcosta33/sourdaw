@@ -107,6 +107,7 @@ import { automationWriteCommand } from './automationWriteCommand';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
 import { deviceParameterOverlapReason } from './deviceParameterOverlapReason';
+import { nativeEngineHostedStripIds } from './nativeEngineHostedStripIds';
 import { nativeOfflineDeviceEntries } from './nativeOfflineDeviceEntries';
 import { type NativeOfflineHostedRuntime } from './nativeOfflineHostedDevice';
 import { nativeOfflineInstrumentSink } from './nativeOfflineInstrumentSink';
@@ -168,6 +169,11 @@ export type NativeOfflineRenderInput = Readonly<{
      * read live.
      */
     hostedPluginRuntime?: NativeOfflineHostedRuntime;
+    /**
+     * Have the engine render the depth it holds the master to (read from its
+     * graph, hosted plugin latency included) ahead of `frameCount` and drop it.
+     */
+    printsCompensationHead?: boolean;
 }>;
 
 export type NativeOfflineRenderResult =
@@ -283,11 +289,7 @@ export async function renderOfflineWithNativeEngine(
 
     const busIds = new Set(renderableTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const trackIds = new Set(renderableTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
-    // This engine hosts every strip in the render — buses among them, since a
-    // bus deepens every route through it — so every strip's own
-    // engine-compensated devices are the engine's to hold back rather than
-    // this projection's to count.
-    const engineHostedStripIds: ReadonlySet<string> = new Set(renderableTracks.map((track) => track.id));
+    const engineHostedStripIds = nativeEngineHostedStripIds(renderableTracks);
 
     // The same lanes and the same declared law the web render reads, bound to
     // the built-in half the live writer stamps under.
@@ -569,9 +571,11 @@ export async function renderOfflineWithNativeEngine(
         checkCancel(abortSignal);
         onProgress?.(0.5);
 
-        const { left, right } = await backend.render(frameCount, { abortSignal }).catch((error: unknown) => {
-            throw nativeRenderFailure(error, abortSignal);
-        });
+        const { left, right } = await backend
+            .render(frameCount, { abortSignal, printsCompensationHead: input.printsCompensationHead ?? false })
+            .catch((error: unknown) => {
+                throw nativeRenderFailure(error, abortSignal);
+            });
         checkCancel(abortSignal);
         // The master level is the web path's `masterGain` node, applied here
         // in the one place the native render's output crosses back.

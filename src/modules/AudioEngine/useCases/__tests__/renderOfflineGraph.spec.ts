@@ -204,6 +204,12 @@ vi.mock('../offlineRender/schedulePendingSuspends', async (importOriginal) => {
 vi.mock('../offlineRender/renderWithTimeout', () => ({
     renderWithTimeout: mocks.renderWithTimeout,
 }));
+// The rendered buffer here is a stand-in object, which no head can be cropped
+// from; the printed compensation head has its own spec
+// (`renderOfflineCompensationHead.spec.ts`).
+vi.mock('../offlineRender/webCompensationHeadFrames', () => ({
+    webCompensationHeadFrames: () => 0,
+}));
 
 function makeParam() {
     return {

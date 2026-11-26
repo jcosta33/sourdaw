@@ -1,7 +1,7 @@
 import { deriveVcaMultiplier } from '#/modules/Arrangement/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
-import { clampRenderFrameCount } from '../../repositories/clampRenderFrameCount';
+import { clampRenderFrameCount, MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
 
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
@@ -9,16 +9,65 @@ import { resolveOfflineMixAudibility } from './resolveOfflineMixAudibility';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolvePrintReachability } from './resolvePrintReachability';
 import { type OfflineRenderOptions } from './types';
+import { webCompensationHeadFrames } from './webCompensationHeadFrames';
+
+type OfflineMixPlanOptions = {
+    /**
+     * Render the latency compensation the master arrives late by ahead of the
+     * requested window, so the caller trims it from the head instead of losing
+     * the window's end. A musician's export prints this way; an agent
+     * measurement keeps its base span.
+     */
+    printsCompensationHead?: boolean;
+};
+
+function resolveBaseSpan(
+    captured: ReturnType<typeof captureOfflineRenderInput>,
+    onWarning?: OfflineRenderOptions['onWarning']
+) {
+    const { sampleRate } = captured;
+    const { durationSeconds } = captured.renderContext;
+    // Clamp frame count to browser-safe maximum to avoid context creation error.
+    const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
+    return { frameCount, durationSeconds, compensationHeadFrameCount: 0 };
+}
+
+/**
+ * The frames a render holds, the seconds its schedulers fill, and the frames
+ * the Web Audio render holds ahead of the requested window for the
+ * compensation it prints. A printed head is counted exactly, history and head
+ * and window, so the crop that drops the head can never overrun the render.
+ */
+function resolveRenderSpan(
+    captured: ReturnType<typeof captureOfflineRenderInput>,
+    printsCompensationHead: boolean,
+    onWarning?: OfflineRenderOptions['onWarning']
+) {
+    if (!printsCompensationHead) {
+        return resolveBaseSpan(captured, onWarning);
+    }
+    const { sampleRate, historyFrameCount, outputFrameCount } = captured;
+    const compensationHeadFrameCount = webCompensationHeadFrames(captured.scheduling.latency, sampleRate);
+    if (compensationHeadFrameCount === 0) {
+        return resolveBaseSpan(captured, onWarning);
+    }
+    const frameCount = historyFrameCount + compensationHeadFrameCount + outputFrameCount;
+    if (frameCount > MAX_OFFLINE_FRAMES) {
+        throw new Error('The export exceeds the renderer frame limit once its latency compensation is included');
+    }
+    return { frameCount, durationSeconds: frameCount / sampleRate, compensationHeadFrameCount };
+}
 
 /** Decide the full-mix topology once, before choosing either renderer. */
 export function resolveOfflineMixPlan(
     input: ReturnType<typeof captureOfflineRenderInput>,
-    onWarning?: OfflineRenderOptions['onWarning']
+    onWarning?: OfflineRenderOptions['onWarning'],
+    { printsCompensationHead = false }: OfflineMixPlanOptions = {}
 ) {
-    const { sampleRate, renderContext } = input;
+    const { durationSeconds, ...span } = resolveRenderSpan(input, printsCompensationHead, onWarning);
+    const renderContext = { ...input.renderContext, durationSeconds };
     const {
         transport,
-        durationSeconds,
         projectMidiEvents,
         selectMidiEventProbability,
         projectPpqEndpoints,
@@ -35,8 +84,6 @@ export function resolveOfflineMixPlan(
         throw new Error('Offline musical projection is not configured');
     }
 
-    // Clamp frame count to browser-safe maximum to avoid context creation error.
-    const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
     // Use the project's master gain level (stored as 0-100) rather than a hardcoded value.
     // The ceiling is the fader's own headroom (`FADER_MAX_GAIN`), not unity —
     // matching what `createWebAudioEngine.setMasterGain` clamps live playback to.
@@ -94,7 +141,8 @@ export function resolveOfflineMixPlan(
     );
 
     return {
-        frameCount,
+        ...span,
+        printsCompensationHead,
         masterGainValue,
         allRenderableTracks,
         sourceTracks,

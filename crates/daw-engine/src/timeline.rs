@@ -1801,6 +1801,10 @@ pub struct TimelineGraph {
     /// contributor into it, and the track lays its own clips over that sum
     /// before its chain runs.
     track_summing_depth: Vec<usize>,
+    /// The latency every route into the master sum is held to, as the latest
+    /// compensation pass aimed it: how many frames late the master prints
+    /// timeline frame zero.
+    master_summing_depth: usize,
     diagnostics: TimelineRtDiagnostics,
 }
 
@@ -1826,6 +1830,7 @@ impl TimelineGraph {
             bus_arrival: vec![0; MAX_TIMELINE_BUSES],
             bus_summing_depth: vec![0; MAX_TIMELINE_BUSES],
             track_summing_depth: vec![0; MAX_TIMELINE_TRACKS],
+            master_summing_depth: 0,
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -1856,12 +1861,22 @@ impl TimelineGraph {
             bus_arrival: Vec::new(),
             bus_summing_depth: Vec::new(),
             track_summing_depth: Vec::new(),
+            master_summing_depth: 0,
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
 
     pub const fn diagnostics(&self) -> TimelineRtDiagnosticsSnapshot {
         self.diagnostics.snapshot()
+    }
+
+    /// How many frames late the master prints timeline frame zero: the depth
+    /// the latest compensation pass held every route into the master sum to.
+    /// Unlike [`TimelineRtDiagnosticsSnapshot::pdc_max_arrival_frames`] it is
+    /// the master's own depth, never a deeper summing point whose output
+    /// reaches no master.
+    pub const fn master_summing_depth(&self) -> usize {
+        self.master_summing_depth
     }
 
     /// Count a refused change to a device parameter, whose queue lives on the
@@ -2589,6 +2604,7 @@ impl TimelineGraph {
             bus_arrival,
             bus_summing_depth,
             track_summing_depth,
+            master_summing_depth,
             diagnostics,
             ..
         } = self;
@@ -2712,6 +2728,7 @@ impl TimelineGraph {
             clamped += usize::from(buses[index].output_delay.set_delay(hold));
         }
 
+        *master_summing_depth = master_depth;
         diagnostics.state_pdc_clamped_routes(clamped);
         diagnostics.state_pdc_max_arrival(
             bus_summing_depth[..bus_count]
