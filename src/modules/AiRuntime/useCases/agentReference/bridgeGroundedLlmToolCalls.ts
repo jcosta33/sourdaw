@@ -1308,7 +1308,7 @@ function continuesLevelChange(
  */
 function mergeLevelContinuation(
     scope: PromptClauseScope,
-    continuation: { end: number },
+    continuation: { start: number; end: number },
     prompt: string,
     maskedPrompt: string
 ): PromptClauseScope {
@@ -1316,8 +1316,10 @@ function mergeLevelContinuation(
         destination: getTargetPromptScope(scope, 'destination'),
         source: getTargetPromptScope(scope, 'source'),
     };
+    const earlierContinuationStarts = scope.continuationStarts ?? [];
     return {
         ...scope,
+        continuationStarts: [...earlierContinuationStarts, continuation.start - scope.start],
         end: continuation.end,
         masked: maskedPrompt.slice(scope.start, continuation.end),
         referenceSlots: (scope.referenceSlots ?? 1) + 1,
@@ -3041,9 +3043,40 @@ function getReferenceBoundDecibelFigures(
 }
 
 /**
- * The scope a call's values are read from: where the scope names several tracks and every figure in
- * it binds to one of them, the figures bound to other tracks are blanked, so in "set Vocals volume to
- * 75%, Drums to 60%" the Drums call reads 60% and never the 75% the request gives Vocals.
+ * The figures a scope gives the call's own track. In a scope that took in continuation clauses each
+ * clause states its own track's figures, wherever they stand in it ("set the volume to 75% on Vocals,
+ * Drums to 60%"), so the anchor reads the figures of the one clause naming it; otherwise a figure
+ * binds to the nearest track named before it.
+ */
+function getAnchorNumbers<Figure extends { index: number }>(
+    actionScope: ActionPromptScope,
+    anchored: { anchorId: string; references: readonly PromptReferenceSpan[] },
+    numbers: readonly Figure[]
+): readonly Figure[] {
+    if (actionScope.continuationStarts === undefined) {
+        return (
+            bindDecibelFiguresToReferences(actionScope.text, anchored.references, numbers).get(anchored.anchorId) ?? []
+        );
+    }
+    const starts = [0, ...actionScope.continuationStarts];
+    const clauses = starts.map((start, index) => ({ start, end: starts[index + 1] ?? actionScope.text.length }));
+    const anchorClauses = clauses.filter((clause) =>
+        anchored.references.some(
+            (reference) =>
+                reference.id === anchored.anchorId && reference.start >= clause.start && reference.end <= clause.end
+        )
+    );
+    const anchorClause = anchorClauses[0];
+    if (anchorClauses.length !== 1 || anchorClause === undefined) {
+        return [];
+    }
+    return numbers.filter((number) => number.index >= anchorClause.start && number.index < anchorClause.end);
+}
+
+/**
+ * The scope a call's values are read from: where the scope names several tracks and gives the call's
+ * own track a figure, the figures it gives the others are blanked, so in "set Vocals volume to 75%,
+ * Drums to 60%" the Drums call reads 60% and never the 75% the request gives Vocals.
  */
 function getAnchorValueScope(
     actionScope: ActionPromptScope,
@@ -3056,10 +3089,8 @@ function getAnchorValueScope(
         return actionScope;
     }
     const numbers = findPromptNumbers(actionScope.masked);
-    const bound = bindDecibelFiguresToReferences(actionScope.text, anchored.references, numbers);
-    const anchorNumbers = bound.get(anchored.anchorId) ?? [];
-    const boundNumbers = new Set([...bound.values()].flat());
-    if (numbers.some((number) => !boundNumbers.has(number))) {
+    const anchorNumbers = getAnchorNumbers(actionScope, anchored, numbers);
+    if (anchorNumbers.length === 0) {
         return actionScope;
     }
     const otherNumbers = numbers.filter((number) => !anchorNumbers.includes(number));

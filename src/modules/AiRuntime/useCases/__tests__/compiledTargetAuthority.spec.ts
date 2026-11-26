@@ -2969,6 +2969,17 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
         expect(result.rejections).not.toEqual([]);
     });
 
+    // Each clause states its own track's level, though Vocals' stands before its name.
+    it('grounds both tracks for "set the volume to 75% on Vocals, Drums to 60%"', () => {
+        const result = compileMix('set the volume to 75% on Vocals, Drums to 60%', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('setTrackGain', mixDrums, { gain: 0.6 }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixDrums.id]);
+    });
+
     it('refuses Drums at 60% for "set Vocals volume to -6 dB, Drums to 60%", which continues no percent level', () => {
         const result = compileMix('set Vocals volume to -6 dB, Drums to 60%', [
             trackItem('setTrackGain', mixVocals, { gainDb: -6 }),
