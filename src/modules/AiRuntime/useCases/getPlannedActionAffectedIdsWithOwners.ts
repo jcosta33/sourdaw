@@ -14,7 +14,7 @@ import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
  */
 export function getPlannedActionAffectedIdsWithOwners(action: AppAction, context: ProjectContext): string[] {
     const affectedIds = new Set<string>(getPlannedActionAffectedIds(action));
-    const payload: Readonly<Record<string, unknown>> = 'payload' in action ? action.payload : {};
+    const payload: Readonly<Record<string, unknown>> = ('payload' in action ? action.payload : undefined) ?? {};
     for (const target of proposalCommandShape.targetObjects(action.type, payload)) {
         for (const ownerId of findTargetOwnerTrackIds(target.capability, target.id, context)) {
             affectedIds.add(ownerId);
