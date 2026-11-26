@@ -13,8 +13,9 @@ import type { ProjectData } from '../../../../models/ProjectData';
 
 const CREATED_AT = 1_700_000_000_000;
 const CASE_TIMEOUT_MS = 30_000;
-/** Longer than vi.waitFor's default 1000 ms, the window a loaded runner can spend preparing before the lock. */
-const SLOW_PRELOCK_PREPARATION_MS = 1_500;
+const STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
+/** The window the retired polling wait allowed (vi.waitFor's default timeout). */
+const RETIRED_POLL_WINDOW_MS = 1_000;
 const REFUSAL_PREFIX = '[saveProject] Project or audio changed during snapshot persistence';
 
 type IndexedDbFixture = ReturnType<typeof installMultiDatabaseIndexedDb>;
@@ -141,18 +142,38 @@ async function openProjectWithCachedStereoClip() {
 
 type OpenedProject = Awaited<ReturnType<typeof openProjectWithCachedStereoClip>>;
 
+/** Resolves once the save asks for the storage lock; fails by name when the save ends without asking. */
+async function awaitStorageLockRequest(lockRequested: Promise<void>, saving: Promise<boolean>): Promise<void> {
+    const outcome = await Promise.race([
+        lockRequested.then(() => 'requested' as const),
+        saving.then(
+            () => 'settled' as const,
+            () => 'settled' as const
+        ),
+    ]);
+    if (outcome === 'settled') {
+        throw new Error(`the save settled without requesting the ${STORAGE_LOCK_NAME} lock`);
+    }
+}
+
+/** Holds the project audio storage lock, then starts a save that has not yet reached its own lock request. */
+function startSaveBeforeItsLockRequest(opened: OpenedProject): {
+    release: () => void;
+    saving: Promise<boolean>;
+    lockRequested: Promise<void>;
+} {
+    const gate = Promise.withResolvers<void>();
+    void opened.withProjectAudioStorageLock(() => gate.promise);
+    const lockRequested = lockManager.nextRequest(STORAGE_LOCK_NAME);
+    return { release: gate.resolve, saving: opened.project.saveProject(), lockRequested };
+}
+
 /** Holds the project audio storage lock, so a save that starts now stops inside its preflight. */
 async function startSaveHeldInPreflight(
     opened: OpenedProject
 ): Promise<{ release: () => void; saving: Promise<boolean> }> {
-    let release = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    void opened.withProjectAudioStorageLock(() => gate);
-    const lockRequested = lockManager.nextRequest();
-    const saving = opened.project.saveProject();
-    await lockRequested;
+    const { release, saving, lockRequested } = startSaveBeforeItsLockRequest(opened);
+    await awaitStorageLockRequest(lockRequested, saving);
     return { release, saving };
 }
 
@@ -370,9 +391,9 @@ describe('saveProject snapshot continuation', () => {
             const opened = await openProjectWithCachedStereoClip();
             await vi.waitFor(() => expect(indexedDb.pendingAudioWriteSettlements()).toBe(1));
 
-            const lockRequested = lockManager.nextRequest();
+            const lockRequested = lockManager.nextRequest(STORAGE_LOCK_NAME);
             const saving = opened.project.saveProject();
-            await lockRequested;
+            await awaitStorageLockRequest(lockRequested, saving);
             expect(indexedDb.pendingAudioWriteSettlements()).toBe(1);
             indexedDb.resumeAudioWriteSettlements();
             while (indexedDb.pendingAudioWriteSettlements() > 0) {
@@ -387,22 +408,29 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
-        'holds the save in its preflight even when the work before its lock request outlasts one second',
+        'requests the storage lock only after a held preparation is released, however long the hold lasts',
         async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
-
             const preparation = holdNextNativePreparation();
-            const releasePreparation = setTimeout(preparation.release, SLOW_PRELOCK_PREPARATION_MS);
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
             try {
-                const save = await startSaveHeldInPreflight(opened);
-                expect(lockManager.requestedNames.at(-1)).toBe('sourdaw:project-audio-storage');
+                const save = startSaveBeforeItsLockRequest(opened);
+                await preparation.requested;
+                const requestsWhileHeld = lockManager.requestedNames.length;
+                await vi.advanceTimersByTimeAsync(RETIRED_POLL_WINDOW_MS * 2);
+                expect(lockManager.requestedNames).toHaveLength(requestsWhileHeld);
+                // The save's later yields wait on real timers; fake time only spans the held window.
+                vi.useRealTimers();
+
+                preparation.release();
+                await awaitStorageLockRequest(save.lockRequested, save.saving);
                 save.release();
 
                 expect(await save.saving).toBe(true);
             } finally {
-                clearTimeout(releasePreparation);
                 preparation.release();
+                vi.useRealTimers();
             }
             expect(opened.persistenceFailures()).toEqual([]);
         },

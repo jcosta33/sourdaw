@@ -22,12 +22,13 @@ export function createControlledLockManager(): ControlledLockManager {
     };
 
     const notifyRequested = (name: string): void => {
-        for (let index = requestWaiters.length - 1; index >= 0; index -= 1) {
-            const waiter = requestWaiters[index]!;
+        const waiting = requestWaiters.splice(0);
+        for (const waiter of waiting) {
             if (waiter.name === undefined || waiter.name === name) {
-                requestWaiters.splice(index, 1);
                 waiter.resolve();
+                continue;
             }
+            requestWaiters.push(waiter);
         }
     };
 
