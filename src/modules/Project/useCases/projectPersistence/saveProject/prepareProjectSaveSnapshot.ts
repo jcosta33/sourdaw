@@ -9,6 +9,7 @@ import {
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     settlePendingProjectWritesAndCaptureRevision,
+    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
@@ -29,16 +30,12 @@ import {
     type SavePreparationIntent,
 } from './savePreparationAuthority';
 
+function snapshotStores() {
+    return [trackStore, automationStore, midiStore, tempoMapStore, timeSignatureMapStore, markerStore, takeLaneStore];
+}
+
 function snapshotSources(): readonly unknown[] {
-    return [
-        trackStore.value,
-        automationStore.value,
-        midiStore.value,
-        tempoMapStore.value,
-        timeSignatureMapStore.value,
-        markerStore.value,
-        takeLaneStore.value,
-    ];
+    return snapshotStores().map((store) => store.value);
 }
 
 function canonicalValue(value: unknown): unknown {
@@ -135,6 +132,43 @@ function planArrangement(
     return plan;
 }
 
+/**
+ * Abort the returned signal once a change has made this Save's inputs stale. A Worker round trip over a
+ * dense project takes seconds, and the Save only discovers a concurrent edit when it returns, so the retry
+ * would otherwise start that much later (#7500).
+ *
+ * CRDT change notifications fire in the turn a commit publishes, so they cover every CRDT-backed input,
+ * including stores this module does not know about, such as Detect's warp states. The project store also
+ * holds keys that are not CRDT-backed (dirty, loading, identity), so it is watched directly. Changes to the
+ * load-failure and repair-state stores are left to the check after the request; they end the Save without
+ * a retry anyway. A notification does not mean an edit, so each is judged by the Save's own currency check.
+ */
+function abortWhenSaveInputsGoStale(
+    signal: AbortSignal,
+    assertPreparationCurrent: () => void
+): { signal: AbortSignal; stop: () => void } {
+    const controller = new AbortController();
+    function abortIfStale(): void {
+        if (controller.signal.aborted) {
+            return;
+        }
+        try {
+            assertPreparationCurrent();
+        } catch {
+            controller.abort(new ProjectSavePreparationStaleError());
+        }
+    }
+    const unsubscribers = [subscribeToCrdtChanges(abortIfStale), projectStore.subscribe(abortIfStale)];
+    return {
+        signal: AbortSignal.any([signal, controller.signal]),
+        stop: () => {
+            for (const unsubscribe of unsubscribers) {
+                unsubscribe();
+            }
+        },
+    };
+}
+
 async function materializeArrangement(
     plan: ArrangementPlan,
     signal: AbortSignal,
@@ -143,12 +177,15 @@ async function materializeArrangement(
     plan.clone();
     const request = plan.requestMaterialization;
     if (request) {
+        const watched = abortWhenSaveInputsGoStale(signal, assertPreparationCurrent);
         try {
-            await request(signal);
+            await request(watched.signal);
         } catch (error) {
             // Reclassify a superseded plan even when Worker admission refuses it first.
             assertPreparationCurrent();
             throw error;
+        } finally {
+            watched.stop();
         }
     }
     // Roots with explicit native authors intentionally materialize locally to preserve authorship.
