@@ -1310,6 +1310,19 @@ describe('section references beside a section whose name the other contains', ()
         });
     });
 
+    // A section whose name normalizes to nothing is no name a request can state whole.
+    it('refuses a removal of a section whose name normalizes to nothing', () => {
+        const bang = { ...CHORUS, id: 'section-bang', name: '!!!' };
+        const call = { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: '!!!' } };
+
+        expect(groundSectionCall(call, 'remove the section !!! from beat 16 to beat 32', [bang, VERSE])).toEqual({
+            actions: [],
+            rejections: [
+                { index: 0, name: 'removeSection', reason: 'Provider value name does not match the user request' },
+            ],
+        });
+    });
+
     // #6264: the digit in "Chorus 2" is part of the section name, never a second decibel figure.
     it.each([
         'Lower send from Lead Vocal to Hall by 3 dB in Chorus 2',
