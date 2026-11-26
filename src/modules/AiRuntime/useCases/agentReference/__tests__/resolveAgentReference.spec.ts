@@ -1921,9 +1921,9 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
     it.each([
         'mute the 2nd kick',
         'mute 02: kick',
-        'mute 02, kick',
         'mute the second kick',
         'mute track2 kick',
+        'mute track 2 kick',
         'mute kick 2',
         'mute kick two',
         'mute kick number 2',
@@ -1967,6 +1967,30 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
 
         expect(resolveTrack(prompt, pickedId, project)).toMatchObject({ status: 'resolved', id: pickedId });
     });
+
+    it.each(['mute the kick, one bar at a time', 'mute 02, kick'])(
+        'resolves "%s" to 01 Kick, since a list comma parts the name from the figure or number word beyond it',
+        (prompt) => {
+            const project = tracksNamed(['01 Kick', '02 Snare']);
+            const kickId = trackIdNamed(project, '01 Kick');
+
+            expect(resolveTrack(prompt, kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
+        }
+    );
+
+    it.each(['First mute the kick. Second, solo the snare.', 'Mute track 2, kick and snare'])(
+        'reads both 01 Kick and 02 Snare in "%s", since a sentence stop or a list comma parts the kick from the position word',
+        (prompt) => {
+            const project = tracksNamed(['01 Kick', '02 Snare']);
+            const kickId = trackIdNamed(project, '01 Kick');
+
+            expect(resolveTrack(prompt, kickId, project)).toMatchObject({
+                status: 'rejected',
+                reason: 'ambiguous-target',
+                candidateIds: [kickId, trackIdNamed(project, '02 Snare')],
+            });
+        }
+    );
 
     it('resolves "bypass the Fix It EQ" to the device the user named Fix It EQ', () => {
         const project = namedTracksProject([

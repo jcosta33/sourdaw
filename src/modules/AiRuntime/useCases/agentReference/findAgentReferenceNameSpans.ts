@@ -57,11 +57,20 @@ const ANY_OR_NO_JOINER = '([^\\p{L}\\p{N}]*)';
  */
 const ADJACENT_WORD_WINDOW = 64;
 
-/** The word closing the text, past any punctuation or space after it. */
-const WORD_BEFORE = /([\p{L}\p{N}]+)[^\p{L}\p{N}]*$/u;
-
 /** The word opening the text past any punctuation or space before it, and what follows that word. */
 const WORD_AFTER = /^[^\p{L}\p{N}]*([\p{L}\p{N}]+)(.*)$/su;
+
+/**
+ * The word closing the text past any space or punctuation after it, short of a sentence stop or a
+ * list comma, which part a name from the word beyond them ("track 2, kick").
+ */
+const NEIGHBOUR_BEFORE = /([\p{L}\p{N}]+)[^\p{L}\p{N}.!?;,]*$/u;
+
+/**
+ * The word opening the text past any space or punctuation before it, short of a sentence stop or a
+ * list comma ("kick. Second", "kick, one bar"), and what follows that word.
+ */
+const NEIGHBOUR_AFTER = /^[^\p{L}\p{N}.!?;,]*([\p{L}\p{N}]+)(.*)$/su;
 
 /** A figure's digits and any decimal part: "50", "1.5". */
 const FIGURE = /^\p{N}+(?:\.\p{N}+)?/u;
@@ -438,16 +447,17 @@ function readsAsPosition(word: string, rest: string): boolean {
 }
 
 /**
- * Whether the word right before or right after the folded range, across any punctuation or space,
- * reads as a position or a number, which then states which of several indexed names is meant.
+ * Whether the word right before or right after the folded range, across any space or punctuation
+ * short of a sentence stop or a list comma, reads as a position or a number, which then states which
+ * of several indexed names is meant.
  */
 function isBesidePosition(folded: string, start: number, end: number): boolean {
-    const before = WORD_BEFORE.exec(folded.slice(Math.max(0, start - ADJACENT_WORD_WINDOW), start));
+    const before = NEIGHBOUR_BEFORE.exec(folded.slice(Math.max(0, start - ADJACENT_WORD_WINDOW), start));
     const wordBefore = before?.[1] ?? '';
     if (before !== null && readsAsPosition(wordBefore, before[0].slice(wordBefore.length))) {
         return true;
     }
-    const after = WORD_AFTER.exec(folded.slice(end, end + ADJACENT_WORD_WINDOW));
+    const after = NEIGHBOUR_AFTER.exec(folded.slice(end, end + ADJACENT_WORD_WINDOW));
     return after !== null && readsAsPosition(after[1] ?? '', after[2] ?? '');
 }
 
