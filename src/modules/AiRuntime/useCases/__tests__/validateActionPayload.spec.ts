@@ -1030,6 +1030,21 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         );
     });
 
+    it('refuses a scaleVelocities range whose minimum exceeds its maximum and admits equal or lone bounds', () => {
+        const guard = PAYLOAD_VALIDATORS.scaleVelocities;
+        if (guard === 'unchecked') {
+            throw new Error('Expected a real payload guard for scaleVelocities');
+        }
+        const base = { clipId: 'clip-1', curve: 'linear' };
+
+        expect(guard({ ...base, minVelocity: 100, maxVelocity: 50 })).toBe(false);
+        expect(guard({ ...base, minVelocity: 128 })).toBe(false);
+        expect(guard({ ...base, maxVelocity: 0 })).toBe(false);
+        expect(guard({ ...base, minVelocity: 64, maxVelocity: 64 })).toBe(true);
+        expect(guard({ ...base, minVelocity: 100 })).toBe(true);
+        expect(guard({ ...base, maxVelocity: 50 })).toBe(true);
+    });
+
     it('admits a track height and a zoom delta at the edges of their ranges', () => {
         const height = PAYLOAD_VALIDATORS.setTrackHeight;
         const zoom = PAYLOAD_VALIDATORS.zoomTracksVertical;

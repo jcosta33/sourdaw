@@ -209,6 +209,38 @@ describe('midiStrategy', () => {
         ).toEqual({ type: 'setAllVelocities', payload: { clipId: 'clip-midi-a', velocity: 100 } });
     });
 
+    describe('scaleVelocities range', () => {
+        function bridgeScale(extra: Record<string, unknown>) {
+            return bridgeMidiToolCall({
+                call: { name: 'scaleVelocities', arguments: { clipId: 'clip-midi-a', curve: 'linear', ...extra } },
+                context: projectContext,
+                index: 11,
+            });
+        }
+
+        it('refuses a minimum above the maximum and names both values', () => {
+            expect(bridgeScale({ minVelocity: 100, maxVelocity: 50 })).toMatchObject({
+                name: 'scaleVelocities',
+                reason: expect.stringContaining('minVelocity 100 must not exceed maxVelocity 50'),
+            });
+        });
+
+        it('still refuses a minimum of 128', () => {
+            const result = bridgeScale({ minVelocity: 128 });
+
+            expect(result).toMatchObject({ name: 'scaleVelocities' });
+            expect(result).not.toHaveProperty('type');
+        });
+
+        it('admits equal bounds and a lone bound against the other default', () => {
+            expect(bridgeScale({ minVelocity: 64, maxVelocity: 64 })).toEqual({
+                type: 'scaleVelocities',
+                payload: { clipId: 'clip-midi-a', curve: 'linear', minVelocity: 64, maxVelocity: 64 },
+            });
+            expect(bridgeScale({ minVelocity: 100 })).toMatchObject({ type: 'scaleVelocities' });
+        });
+    });
+
     it('addNotes validates against the anchored loop window of a trimmed looped clip', () => {
         // A clip looped at 0 (region media [0, 4)) and start-trimmed to 3:
         // the trim advanced the offset to 3, so the scheduler's window in

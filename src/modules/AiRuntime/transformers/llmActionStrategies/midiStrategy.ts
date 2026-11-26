@@ -474,6 +474,14 @@ const midiStrategyDefinitions = [
                     'Expected an unlocked non-empty MIDI clip, a known velocity curve, and integer minVelocity and maxVelocity from 1 through 127 when given'
                 );
             }
+            const { minVelocity = 1, maxVelocity = 127 } = payload;
+            if (minVelocity > maxVelocity) {
+                return rejection(
+                    index,
+                    call.name,
+                    `minVelocity ${minVelocity} must not exceed maxVelocity ${maxVelocity}`
+                );
+            }
             return { type: 'scaleVelocities', payload };
         },
     },

@@ -1171,7 +1171,8 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isVelocityCurve(param.curve) &&
         isOptionalOwn(param, 'minVelocity', isMidiVelocity) &&
-        isOptionalOwn(param, 'maxVelocity', isMidiVelocity),
+        isOptionalOwn(param, 'maxVelocity', isMidiVelocity) &&
+        (param.minVelocity ?? 1) <= (param.maxVelocity ?? 127),
     addNotes: (param): param is PayloadOf<'addNotes'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'notes']) &&
