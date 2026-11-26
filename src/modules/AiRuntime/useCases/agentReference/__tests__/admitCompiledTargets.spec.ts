@@ -170,6 +170,7 @@ const vocals = createTrack('track-vocals', 'Vocals');
 const keys = createTrack('track-keys', 'Keys');
 const drums = createTrack('track-drums', 'Drums');
 const mix = createProjectContext([vocals, keys, drums]);
+const band = createProjectContext([createTrack('track-bass', 'Bass'), keys, drums]);
 
 function roleTrack(id: string, name: string, role: string, devices: ProjectContextTrack['devices'] = []) {
     return createTrack(id, name, {
@@ -323,6 +324,68 @@ describe('a compiled pick reads the request less the other instructions that nam
             expect(
                 admitPick('set the pad to 60% and mute Keys', 'set the pad to 60%', (instruction) =>
                     pickTerms(padFragment, ['track-synth-pad'], instruction, padMix)
+                )
+            ).toEqual(ADMITTED);
+        });
+    });
+
+    describe('a back-reference reads only the nearest earlier instruction naming tracks', () => {
+        it('refuses Keys for "pan them left, then mute Keys", whose "them" has nothing before it', () => {
+            expect(
+                admitPick('pan them left, then mute Keys', 'pan them left', (instruction) =>
+                    pickTerms(trackNamed('Keys'), ['track-keys'], instruction)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
+        it('admits Vocals for "Mute Vocals, then set the tempo to 120, then pan them left"', () => {
+            const prompt = 'Mute Vocals, then set the tempo to 120, then pan them left';
+
+            expect(
+                admitPick(prompt, 'pan them left', (instruction) =>
+                    pickTerms(trackNamed('Vocals'), ['track-vocals'], instruction)
+                )
+            ).toEqual(ADMITTED);
+        });
+
+        it('admits Bass for a list line that holds a later clause, read back to as one instruction', () => {
+            const prompt = 'Mute these tracks:\nBass, then solo Keys\npan them left';
+
+            expect(
+                admitPick(prompt, 'pan them left', (instruction) =>
+                    pickTerms(trackNamed('Bass'), ['track-bass'], instruction, band)
+                )
+            ).toEqual(ADMITTED);
+        });
+    });
+
+    describe('a colon list runs to the first line giving an instruction', () => {
+        it('refuses Keys for a turn-down whose list holds the line "mute Keys" before more names', () => {
+            const prompt = 'Turn down these tracks by 3 dB:\nBass\nmute Keys\nDrums';
+
+            expect(
+                admitPick(prompt, 'Turn down these tracks by 3 dB', (instruction) =>
+                    pickTerms(trackNamed('Keys'), ['track-keys'], instruction, band)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
+        it("refuses Keys for a turn-down after another instruction's list that names Keys", () => {
+            const prompt = 'Mute these tracks:\nKeys\nDrums\nturn down Bass by 3 dB';
+
+            expect(
+                admitPick(prompt, 'turn down Bass by 3 dB', (instruction) =>
+                    pickTerms(trackNamed('Keys'), ['track-keys'], instruction, band)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
+        it('admits Bass for "Turn these down by 3 dB, then mute Keys" over lines no colon introduces', () => {
+            const prompt = 'Turn these down by 3 dB, then mute Keys\nBass\nDrums';
+
+            expect(
+                admitPick(prompt, 'Turn these down by 3 dB', (instruction) =>
+                    pickTerms(trackNamed('Bass'), ['track-bass'], instruction, band)
                 )
             ).toEqual(ADMITTED);
         });
