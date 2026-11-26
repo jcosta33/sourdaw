@@ -3025,6 +3025,25 @@ describe('a name a literal id reads over lists no selection reference beside it'
         expect(targetsOf(result)).toEqual([lead.id]);
         expect(result.rejections).toEqual([{ index: 1, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK }]);
     });
+
+    it('refuses the selected track for "set it and keys volume to 50%" where keys is both the id and the name of one track', () => {
+        const keysTrack = createTrack({ id: 'keys', name: 'Keys' });
+        const selected = createTrack({ id: 'track-selected', name: 'Vocals' });
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [keysTrack, selected, master],
+            selectedTrackId: selected.id,
+        };
+        const result = compileAndBridge(
+            'set it and keys volume to 50%',
+            [trackItem('setTrackGain', keysTrack, { gain: 0.5 }), trackItem('setTrackGain', selected, { gain: 0.5 })],
+            [],
+            context
+        );
+
+        expect(targetsOf(result)).toEqual([keysTrack.id]);
+        expect(result.rejections).toEqual([{ index: 1, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK }]);
+    });
 });
 
 describe('a user-set device name states that device (#5450)', () => {
