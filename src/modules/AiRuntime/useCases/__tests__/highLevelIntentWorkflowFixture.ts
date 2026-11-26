@@ -246,9 +246,14 @@ export type ScriptedTurn = (userMessage: string, providerView?: string | readonl
  * can read the application receipts the previous one produced instead of assuming what they said.
  * A turn past the end of the script is a script defect, not a provider behaviour: it throws.
  */
-export function scriptProviderTurns(completion: ProviderCompletionMock, turns: readonly ScriptedTurn[]): string[] {
+export function scriptProviderTurns(
+    completion: ProviderCompletionMock,
+    turns: readonly ScriptedTurn[],
+    seenSystemPrompts: string[] = []
+): string[] {
     const seenMessages: string[] = [];
     completion.mockImplementation((systemPrompt, userMessage) => {
+        seenSystemPrompts.push(systemPrompt);
         seenMessages.push(userMessage);
         const turn = turns[seenMessages.length - 1];
         if (!turn) {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { engineSampleRateOf } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, engineSampleRateOf } from '#/modules/AudioEngine/useCases';
 import { defaultExternalPluginTailState, externalPluginTailStore } from '#/modules/PluginHost/stores';
 import { refreshExternalPluginTails } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -8,15 +8,15 @@ import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores/trackStore';
 import { cancelFreezeTrack } from '../cancelFreezeTrack';
+import { digestFreezePrintInput } from '../digestFreezePrintInput';
 import { activeFreezeTasks, freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({ updateTrack: vi.fn() }));
-vi.mock('../../../services/computeTrackHash', () => ({
-    computeTrackHash: vi.fn().mockResolvedValue('mock-hash'),
+vi.mock('../digestFreezePrintInput', () => ({
+    digestFreezePrintInput: vi.fn().mockReturnValue('mock-hash'),
 }));
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -249,7 +249,7 @@ describe('freeze sizes its tail from device tail declarations', () => {
         afterEach(() => {
             externalPluginTailStore.set(defaultExternalPluginTailState);
             vi.mocked(engineSampleRateOf).mockReturnValue(null);
-            vi.mocked(computeTrackHash).mockResolvedValue('mock-hash');
+            vi.mocked(digestFreezePrintInput).mockReturnValue('mock-hash');
         });
 
         it('starts no render until the refresh settles, then sizes the tail from the figure it wrote', async () => {
@@ -283,18 +283,18 @@ describe('freeze sizes its tail from device tail declarations', () => {
             expect(renderTrackOffline).not.toHaveBeenCalled();
         });
 
-        it('renders nothing when the track is edited while the refresh is pending', async () => {
+        it('commits nothing when the track is edited while the refresh is pending', async () => {
             seedHostedReverbTrack();
             const release = holdRefresh();
 
             const frozen = freezeTrack('t1');
             await vi.waitFor(() => expect(refreshExternalPluginTails).toHaveBeenCalled());
 
-            vi.mocked(computeTrackHash).mockResolvedValue('edited-hash');
+            vi.mocked(digestFreezePrintInput).mockReturnValue('edited-hash');
             release();
 
             expect(await frozen).toBe(false);
-            expect(renderTrackOffline).not.toHaveBeenCalled();
+            expect(cacheAudioBuffer).not.toHaveBeenCalled();
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'error');
         });
     });

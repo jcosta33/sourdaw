@@ -27,7 +27,6 @@ import {
 } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore, type Track } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { addClip, getArrangementHandlers, setArrangementEventBus } from '../../index';
@@ -43,19 +42,11 @@ registerSupportingServicePorts();
 // freeze can be cancelled, superseded or finished at a chosen point.
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-vi.mock('../../../services/computeTrackHash', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../../services/computeTrackHash')>();
-    return { computeTrackHash: vi.fn(original.computeTrackHash) };
-});
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: vi.fn(),
     clearReportedLatency: vi.fn(),
 }));
-
-const { computeTrackHash: realComputeTrackHash } = await vi.importActual<
-    typeof import('../../../services/computeTrackHash')
->('../../../services/computeTrackHash');
 
 const TRACK_ID = 'track-1';
 
@@ -190,7 +181,6 @@ function makeTakeStale(): void {
 const STALE_TAKE = { frozen: true, frozenBufferId: 'old-take', status: 'stale' };
 
 beforeEach(() => {
-    vi.mocked(computeTrackHash).mockImplementation(realComputeTrackHash);
     vi.mocked(renderTrackOffline).mockReset();
     vi.mocked(notifyUser).mockReset();
     vi.mocked(cacheAudioBuffer).mockClear();
@@ -224,29 +214,6 @@ afterEach(() => {
 });
 
 describe('cancelling a freeze', () => {
-    it('settles a freeze cancelled while its digest is pending', async () => {
-        const entered = Promise.withResolvers<void>();
-        const digest = Promise.withResolvers<void>();
-        vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-            entered.resolve();
-            await digest.promise;
-            return realComputeTrackHash(clips, devices);
-        });
-        const exited = executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } }).then(
-            () => undefined,
-            (error: unknown) => error
-        );
-        await entered.promise;
-        expect(shown().status).toBe('freezing');
-
-        cancelFreezeTrack(TRACK_ID);
-        digest.resolve();
-        await exited;
-
-        expect(shown()).toEqual(UNFROZEN);
-        expect(renderTrackOffline).not.toHaveBeenCalled();
-    });
-
     it.each<RenderExit>(['resolves', 'rejects'])('settles a freeze cancelled in its render that %s', async (how) => {
         const freeze = startFreeze();
         await freeze.inRender;
