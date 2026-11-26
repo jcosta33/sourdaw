@@ -13,7 +13,7 @@
 
 use super::*;
 use crate::block_on_test;
-use crate::commands::graph::{render_graph_offline_with, OfflineRenderHead};
+use crate::commands::graph::{render_graph_offline_with, OfflineRenderHead, OfflineRenderRequest};
 use crate::commands::plugins::{
     create_hosted_runtime, read_plugin_state_chunk, VettedRegistryEntry,
 };
@@ -619,10 +619,12 @@ fn render_frames_from(
 ) -> Result<Vec<f32>, String> {
     block_on_test(render_graph_offline_with(
         batch,
-        frames,
-        EXPORT_RATE,
+        OfflineRenderRequest {
+            frames,
+            sample_rate: EXPORT_RATE,
+            head,
+        },
         render_id.map(str::to_string),
-        head,
         ui,
         state,
         seams,
@@ -1682,10 +1684,12 @@ fn a_cancel_mid_render_stops_the_render_of(format: Format) {
     let long_render = |state: &AppState| {
         block_on_test(render_graph_offline_with(
             batch(impulse_track(json!([fx_device()]))),
-            LONG_RENDER_FRAMES,
-            EXPORT_RATE,
+            OfflineRenderRequest {
+                frames: LONG_RENDER_FRAMES,
+                sample_rate: EXPORT_RATE,
+                head: OfflineRenderHead::EngineFrameZero,
+            },
             Some("render-1".to_string()),
-            OfflineRenderHead::EngineFrameZero,
             &ui,
             state,
             &seams,
@@ -2540,10 +2544,12 @@ fn the_export_sample_rate_is_bounded_before_anything_is_built() {
     let render_at = |devices: Value, sample_rate: f64| {
         block_on_test(render_graph_offline_with(
             batch(impulse_track(devices)),
-            1_024,
-            sample_rate,
+            OfflineRenderRequest {
+                frames: 1_024,
+                sample_rate,
+                head: OfflineRenderHead::EngineFrameZero,
+            },
             None,
-            OfflineRenderHead::EngineFrameZero,
             &ui,
             &state,
             &seams,
@@ -2772,10 +2778,12 @@ fn the_quit_step_cancels_an_offline_render_in_flight_and_returns_within_its_budg
         let rendering = scope.spawn(|| {
             block_on_test(render_graph_offline_with(
                 batch(impulse_track(json!([fx_device()]))),
-                LONG_RENDER_FRAMES,
-                EXPORT_RATE,
+                OfflineRenderRequest {
+                    frames: LONG_RENDER_FRAMES,
+                    sample_rate: EXPORT_RATE,
+                    head: OfflineRenderHead::EngineFrameZero,
+                },
                 Some("export-at-quit".to_string()),
-                OfflineRenderHead::EngineFrameZero,
                 &ui,
                 &state,
                 &seams,

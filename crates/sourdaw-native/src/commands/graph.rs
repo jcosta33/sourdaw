@@ -6845,10 +6845,12 @@ pub async fn render_graph_offline(
 ) -> Result<Vec<u8>, String> {
     render_graph_offline_with(
         batch,
-        frames,
-        sample_rate,
+        OfflineRenderRequest {
+            frames,
+            sample_rate,
+            head: OfflineRenderHead::from_request(prints_compensation_head),
+        },
         render_id,
-        OfflineRenderHead::from_request(prints_compensation_head),
         ui,
         state,
         &OfflinePluginSeams::production(),
@@ -6857,17 +6859,29 @@ pub async fn render_graph_offline(
     .map_err(|refusal| refusal.to_string())
 }
 
+/// What one offline render prints: how many frames, at which rate, and from
+/// which engine frame the answer starts.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OfflineRenderRequest {
+    pub(crate) frames: u32,
+    pub(crate) sample_rate: f64,
+    pub(crate) head: OfflineRenderHead,
+}
+
 /// [`render_graph_offline`] over chosen plugin seams.
 pub(crate) async fn render_graph_offline_with(
     batch: Value,
-    frames: u32,
-    sample_rate: f64,
+    request: OfflineRenderRequest,
     render_id: Option<String>,
-    head: OfflineRenderHead,
     ui: &dyn UiThread,
     state: &AppState,
     seams: &OfflinePluginSeams,
 ) -> Result<Vec<u8>, GraphRefusal> {
+    let OfflineRenderRequest {
+        frames,
+        sample_rate,
+        head,
+    } = request;
     let batch = parse_batch(batch)?;
     if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
         return Err(GraphRefusal::OfflineSampleRateOutOfRange { sample_rate });
