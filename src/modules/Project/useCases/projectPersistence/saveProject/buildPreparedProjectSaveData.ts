@@ -20,7 +20,7 @@ type SaveAuthority = {
 };
 
 const SAVE_PREPARATION_TIMEOUT_MS = 30_000;
-const MAX_SAVE_PREPARATION_ATTEMPTS = 3;
+const MAX_SAVE_PREPARATION_ATTEMPTS = 8;
 
 function readCurrentProject(authority: SaveAuthority, signal: AbortSignal) {
     signal.throwIfAborted();

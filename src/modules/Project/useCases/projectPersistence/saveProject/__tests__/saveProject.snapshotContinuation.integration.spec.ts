@@ -170,11 +170,14 @@ function rejectWhenAborted(signal: AbortSignal): Promise<never> {
 }
 
 /**
- * Scripts the Worker round trip of the first save preparation and records every attempt: how many
+ * Scripts the Worker round trip of the first `scriptedAttempts` save preparations and records every attempt: how many
  * preparations were planned, which Worker requests were made, and which attempts materialized.
  * Later attempts keep the fixture's own local materialization, so a retry can complete.
  */
-async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequest) => Promise<void>) {
+async function stubSlowMaterializationWorker(
+    behaviour: (request: SlowWorkerRequest & { attempt: number }) => Promise<void>,
+    scriptedAttempts = 1
+) {
     const arrangementStoreModule = await import('../../../../stores/arrangementStore');
     const prepare = arrangementStoreModule.prepareArrangementStoreState;
     const signals: AbortSignal[] = [];
@@ -191,7 +194,7 @@ async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequ
             materializedAttempts.push(attempt);
             plan.materialize();
         };
-        if (attempt > 1) {
+        if (attempt > scriptedAttempts) {
             // Observe the retry without copying the plan, which would evaluate its Worker request.
             const materializeRetry = plan.materialize.bind(plan);
             vi.spyOn(plan, 'materialize').mockImplementation(() => {
@@ -205,6 +208,7 @@ async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequ
             requestMaterialization: (signal: AbortSignal) => {
                 signals.push(signal);
                 return behaviour({
+                    attempt,
                     signal,
                     afterTask: (callback) => {
                         setTimeout(callback, 0);
@@ -532,6 +536,49 @@ describe('saveProject snapshot continuation', () => {
             expect(worker.materializedAttempts()).toEqual([2]);
             expect(opened.persistenceFailures()).toEqual([]);
             expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited while the Worker materialized']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'keeps retrying while an edit lands during every early preparation, then saves the latest revision (#7566)',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const editedAttempts = 5;
+            const worker = await stubSlowMaterializationWorker(async ({ signal, attempt, afterTask }) => {
+                afterTask(() => {
+                    opened.renameTrack(opened.track.id, `Edit during attempt ${attempt}`);
+                });
+                await rejectWhenAborted(signal);
+            }, editedAttempts);
+
+            expect(await opened.project.saveProject()).toBe(true);
+
+            expect(worker.attempts()).toBe(editedAttempts + 1);
+            expect(worker.materializedAttempts()).toEqual([editedAttempts + 1]);
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(savedTrackNames(indexedDb, opened)).toEqual([`Edit during attempt ${editedAttempts}`]);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'fails with a notice once an edit lands during every allowed preparation (#7566)',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, attempt, afterTask }) => {
+                afterTask(() => {
+                    opened.renameTrack(opened.track.id, `Edit during attempt ${attempt}`);
+                });
+                await rejectWhenAborted(signal);
+            }, 100);
+
+            expect(await opened.project.saveProject()).toBe(false);
+
+            expect(worker.materializedAttempts()).toEqual([]);
+            expect(opened.persistenceFailures()).toEqual(['Project kept changing during Save preparation']);
         },
         CASE_TIMEOUT_MS
     );
