@@ -1364,7 +1364,7 @@ export const executableAppActionDescriptors = [
         actionType: 'scaleVelocities',
         risk: 'broad-reversible',
         description:
-            'Remap the velocity of every note in one MIDI clip through a named curve, so the softest note lands on minVelocity and the loudest on maxVelocity.',
+            "Remap the velocity of every note in one MIDI clip through a named curve that reshapes the clip's softest-to-loudest span within minVelocity..maxVelocity: linear, exponential, logarithmic and s-curve span the whole range, compress narrows the span toward the middle of it, and expand widens it toward both ends.",
         intentPhrases: ['scale velocity curve', 'apply velocity curve', 'remap midi velocities', 'compress velocities'],
         targetRules: editableMidiClipTargetRules,
         valueRules: [
@@ -1378,13 +1378,13 @@ export const executableAppActionDescriptors = [
                     type: 'integer',
                     minimum: 1,
                     maximum: 127,
-                    description: 'Velocity the softest note maps to, from 1 through 127; defaults to 1',
+                    description: 'Lower bound of the output velocity range, from 1 through 127; defaults to 1',
                 },
                 maxVelocity: {
                     type: 'integer',
                     minimum: 1,
                     maximum: 127,
-                    description: 'Velocity the loudest note maps to, from 1 through 127; defaults to 127',
+                    description: 'Upper bound of the output velocity range, from 1 through 127; defaults to 127',
                 },
             },
             required: ['clipId', 'curve'],
