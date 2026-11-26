@@ -126,7 +126,23 @@ export function readPlannedClip(clipId: string, context?: HandlerValidationConte
     return getPlannedTrackState(context, live.trackId)?.clips.find((candidate) => candidate.id === clipId);
 }
 
-/** Whether an earlier action of the batch names the clip, so a capture of the live clip would be stale. */
-export function clipEditedEarlierInBatch(clipId: string, context?: HandlerValidationContext): boolean {
-    return context?.actions.slice(0, context.actionIndex).some((action) => mentions(action.payload, clipId)) ?? false;
+/** The actions that move the fields an audio trim or slip capture guards: the head, the end and the source window. */
+const AUDIO_SOURCE_ACTION_TYPES: ReadonlySet<AppAction['type']> = new Set<AppAction['type']>([
+    'nudgeClip',
+    'trimClipStart',
+    'trimClipEnd',
+    'slipClipContent',
+]);
+
+/**
+ * Whether an earlier action of the batch moved the clip's audio source fields. An audio trim or slip
+ * captures and later requires those fields exactly; a rename, mute, colour or fade leaves them alone, so
+ * the capture of the planned clip still holds, but a move leaves the plan unproven.
+ */
+export function audioSourceEditedEarlierInBatch(clipId: string, context?: HandlerValidationContext): boolean {
+    return (
+        context?.actions
+            .slice(0, context.actionIndex)
+            .some((action) => AUDIO_SOURCE_ACTION_TYPES.has(action.type) && mentions(action.payload, clipId)) ?? false
+    );
 }

@@ -19,7 +19,7 @@ import { trimmedStartBeat } from '../projectClipFieldActions';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
-import { clipEditedEarlierInBatch, readPlannedClip } from './readPlannedClip';
+import { audioSourceEditedEarlierInBatch, readPlannedClip } from './readPlannedClip';
 
 const rowReplay = createMidiRowCoordinateReplay('trimClipStart');
 
@@ -237,8 +237,8 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
             if (!clip) {
                 return { label, inverseAction: null };
             }
-            // The audio capture reads the clip as the store holds it, so an earlier edit of it in the batch makes it stale.
-            if (clip.type === 'audio' && clipEditedEarlierInBatch(clip.id, context)) {
+            // The capture is of the planned clip, which an earlier rename or mute leaves exact but a move does not.
+            if (clip.type === 'audio' && audioSourceEditedEarlierInBatch(clip.id, context)) {
                 return { label, inverseAction: null };
             }
 

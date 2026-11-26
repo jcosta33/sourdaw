@@ -755,6 +755,57 @@ describe('clip edit compensation guards', () => {
             expect(currentClip()).toEqual(prior);
         });
 
+        it.each([
+            {
+                name: 'an audio trim of the start',
+                action: trimStart(2),
+                moved: { startBeat: 2, audioOffsetBeats: 2 },
+            },
+            {
+                name: 'an audio slip',
+                action: {
+                    type: 'slipClipContent',
+                    payload: { clipId: 'clip-1', clipType: 'audio', offset: 1 },
+                } satisfies AppAction,
+                moved: {},
+            },
+        ])(
+            'compensates $name planned after a rename of the same audio clip, so undo restores the trim then the name',
+            async ({ action, moved }) => {
+                registerHandlers();
+                seedClip({ startBeat: 0, endBeat: 8, name: 'A' });
+                const prior = structuredClone(currentClip());
+                const rename: AppAction = { type: 'renameClip', payload: { clipId: 'clip-1', name: 'Hook' } };
+
+                const result = await executeAppActionBatch([rename, action], {
+                    source: 'prompt',
+                    requireCompensation: true,
+                });
+
+                expect(result.status).toBe('committed');
+                expect(currentClip()).toMatchObject({ name: 'Hook', ...moved });
+                expect(currentClip()).not.toEqual({ ...prior, name: 'Hook' });
+                const edited = structuredClone(currentClip());
+
+                await undo();
+
+                expect(notifications).toEqual([]);
+                expect(currentClip()).toEqual({ ...prior, name: 'Hook' });
+
+                await undo();
+
+                expect(notifications).toEqual([]);
+                expect(currentClip()).toEqual(prior);
+                expect(undoStore.value?.past).toHaveLength(0);
+
+                await redo();
+                await redo();
+
+                expect(notifications).toEqual([]);
+                expect(currentClip()).toEqual(edited);
+            }
+        );
+
         it('rejects a guarded edit planned after an earlier action split the clip', async () => {
             registerHandlers();
             seedClip({ startBeat: 0, endBeat: 8 });

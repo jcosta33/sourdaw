@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type Clip } from '../../models/Track';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { audioClipSlipOwner } from '../../useCases/clipEditing/audioClipSlipOwner';
 import { audioClipSlipState, type AudioClipSlipCapture } from '../../useCases/clipEditing/audioClipSlipState';
@@ -12,20 +13,23 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { slippedMidiOffset } from '../projectClipFieldActions';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
-import { clipEditedEarlierInBatch, readPlannedClip } from './readPlannedClip';
+import { audioSourceEditedEarlierInBatch, readPlannedClip } from './readPlannedClip';
 
 const rowReplay = createMidiRowCoordinateReplay('slipClipContent');
 
 type SlipAction = Extract<AppAction, { type: 'slipClipContent' }>;
 const preparedAudioSlips = new WeakMap<object, AudioClipSlipCapture>();
 
-function captureAudioSlip(action: SlipAction): AudioClipSlipCapture | null {
+function liveClip(clipId: string): Clip | undefined {
+    return getTrackStoreState()
+        ?.tracks.flatMap((track) => track.clips)
+        .find((row) => row.id === clipId);
+}
+
+function captureAudioSlip(action: SlipAction, clip: Clip | undefined): AudioClipSlipCapture | null {
     if (action.payload.clipType !== 'audio' || Object.hasOwn(action.payload, 'rowLiftBeats')) {
         return null;
     }
-    const clip = getTrackStoreState()
-        ?.tracks.flatMap((track) => track.clips)
-        .find((row) => row.id === action.payload.clipId);
     if (!clip) {
         return null;
     }
@@ -64,7 +68,7 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
             return { status: 'conflict' };
         }
         if (action.payload.clipType === 'audio') {
-            const capture = preparedAudioSlips.get(action) ?? captureAudioSlip(action);
+            const capture = preparedAudioSlips.get(action) ?? captureAudioSlip(action, liveClip(action.payload.clipId));
             if (!capture || !audioClipSlipOwner.matches(capture.before, capture.clock)) {
                 return { status: 'conflict' };
             }
@@ -103,11 +107,11 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
         const label = 'Slip clip content';
         try {
             if (action.payload.clipType === 'audio') {
-                // The capture reads the clip as the store holds it, so an earlier edit of it in the batch makes it stale.
-                if (clipEditedEarlierInBatch(action.payload.clipId, context)) {
+                // The capture is of the planned clip, which an earlier rename or mute leaves exact but a move does not.
+                if (audioSourceEditedEarlierInBatch(action.payload.clipId, context)) {
                     return { label, inverseAction: null };
                 }
-                const capture = captureAudioSlip(action);
+                const capture = captureAudioSlip(action, readPlannedClip(action.payload.clipId, context));
                 if (!capture) {
                     return { label, inverseAction: null };
                 }
