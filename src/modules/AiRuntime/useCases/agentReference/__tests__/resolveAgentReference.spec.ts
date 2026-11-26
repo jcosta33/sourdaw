@@ -1931,6 +1931,7 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         'set kick two volume to 75%',
         'mute kick track 2',
         'mute kick track two',
+        'set kick 200',
     ])('never resolves "%s" to 01 Kick, whose index another figure-led word replaces', (prompt) => {
         const project = tracksNamed(['01 Kick', '02 Snare']);
 
@@ -1954,6 +1955,17 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         const kickId = trackIdNamed(project, '01 Kick');
 
         expect(resolveTrack(prompt, kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
+    });
+
+    it.each([
+        ['set kick 200 Hz', '01 Kick'],
+        ['delay snare 10 ms', '03 Snare'],
+        ['transpose bass 12 semitones', '02 Bass'],
+    ])('resolves "%s" to %s, whose figure carries a unit', (prompt, picked) => {
+        const project = tracksNamed(['01 Kick', '02 Bass', '03 Snare']);
+        const pickedId = trackIdNamed(project, picked);
+
+        expect(resolveTrack(prompt, pickedId, project)).toMatchObject({ status: 'resolved', id: pickedId });
     });
 
     it('resolves "bypass the Fix It EQ" to the device the user named Fix It EQ', () => {

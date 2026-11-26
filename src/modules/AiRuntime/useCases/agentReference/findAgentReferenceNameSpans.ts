@@ -1,7 +1,7 @@
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { CARDINAL_WORDS, FIGURE_WORD, NUMBER_SIGN_WORDS, ORDINAL_WORDS } from './positionWords';
-import { refinementValueUnits } from './refinementValueUnits';
+import { readUnitWord } from './unitWords';
 
 /** A range of the original text, `end` exclusive. */
 export type AgentReferenceTextRange = { start: number; end: number };
@@ -403,12 +403,12 @@ function matchNameWords(
 }
 
 /**
- * Whether the text opens with a value: a whole figure, decimal part included, with a percent or
- * decibel unit after it, spaced or glued ("50%", "1.5 dB", "3db").
+ * Whether the text opens with a value: a whole figure, decimal part included, with a unit word the
+ * shared unit reader reads after it, spaced or glued ("50%", "1.5 dB", "3db", "200 Hz", "10 ms").
  */
 function opensWithValue(text: string): boolean {
     const figure = FIGURE.exec(text);
-    return figure !== null && refinementValueUnits.percentOrDecibel(text.slice(figure[0].length));
+    return figure !== null && readUnitWord(text.slice(figure[0].length)) !== null;
 }
 
 /**
