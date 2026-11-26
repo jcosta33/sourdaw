@@ -1,4 +1,4 @@
-import { createChordEvent, type ChordEvent } from '../../models/ChordEvent';
+import { compareChordEvents, createChordEvent, type ChordEvent } from '../../models/ChordEvent';
 import { type ChordType } from '../../models/ChordTypes';
 import { chordTrackStore } from '../../stores/chordTrackStore';
 
@@ -16,7 +16,7 @@ export function addChordEvent(
 
     const createdEvent = createChordEvent(beat, root, quality, duration);
     const event = eventId ? { ...createdEvent, id: eventId } : createdEvent;
-    const events = [...state.events, event].sort((alpha, b) => alpha.beat - b.beat);
+    const events = [...state.events, event].sort(compareChordEvents);
 
     chordTrackStore.set({ ...state, events });
     return event;

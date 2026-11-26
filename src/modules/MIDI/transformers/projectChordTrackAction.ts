@@ -1,3 +1,4 @@
+import { compareChordEvents } from '../models/ChordEvent';
 import { type ChordTrackState } from '../models/ChordTrackState';
 import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
 
@@ -19,13 +20,13 @@ export function projectChordTrackAction(state: ChordTrackState, action: ChordMut
             quality: isChordType(action.payload.quality) ? action.payload.quality : 'major',
             duration: action.payload.duration ?? 4,
         });
-        projected.events.sort((alpha, beta) => alpha.beat - beta.beat);
+        projected.events.sort(compareChordEvents);
     } else if (action.type === 'moveChordEvent') {
         const event = projected.events.find((candidate) => candidate.id === action.payload.eventId);
         if (event) {
             event.beat = Math.max(0, action.payload.beat);
         }
-        projected.events.sort((alpha, beta) => alpha.beat - beta.beat);
+        projected.events.sort(compareChordEvents);
     } else if (action.type === 'updateChordEvent') {
         projected.events = projected.events.map((event) => {
             if (event.id !== action.payload.eventId) {

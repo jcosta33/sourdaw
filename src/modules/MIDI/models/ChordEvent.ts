@@ -27,3 +27,15 @@ export function createChordEvent(beat: number, root: number, quality: ChordType,
         duration,
     };
 }
+
+function compareIds(left: string, right: string): number {
+    if (left === right) {
+        return 0;
+    }
+    return left < right ? -1 : 1;
+}
+
+/** The order a chord track keeps: by beat, then id, so a reload reproduces the live order exactly. */
+export function compareChordEvents(left: ChordEvent, right: ChordEvent): number {
+    return left.beat - right.beat || compareIds(left.id, right.id);
+}

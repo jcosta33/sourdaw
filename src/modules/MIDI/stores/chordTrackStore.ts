@@ -1,11 +1,13 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
-import { type ChordEvent } from '../models/ChordEvent';
-import { type ChordTrackState as ChordTrackModel } from '../models/ChordTrackState';
+import { compareChordEvents, type ChordEvent } from '../models/ChordEvent';
 import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
 
-export type ChordTrackState = ChordTrackModel;
+export type ChordTrackState = {
+    enabled: boolean;
+    events: ChordEvent[];
+};
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
@@ -124,7 +126,7 @@ function normalizeState(value: unknown): ChordTrackState {
     }
     return {
         enabled: value.enabled,
-        events: [...value.events].sort((left, right) => left.beat - right.beat || compareIds(left.id, right.id)),
+        events: [...value.events].sort(compareChordEvents),
     };
 }
 
