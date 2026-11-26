@@ -2338,7 +2338,9 @@ struct HelperRegistry {
 
 struct HelperRegistryState {
     stopping: bool,
-    live: BTreeSet<u32>,
+    /// Each live supervisor's pid, with its scan's tree token where it has
+    /// one ([`SCAN_TREE_TOKEN_ENV`]).
+    live: BTreeMap<u32, Option<String>>,
 }
 
 /// Stop exists only for a process about to exit, and a stopped scan has no
@@ -2357,7 +2359,7 @@ impl HelperRegistry {
         Self {
             state: Mutex::new(HelperRegistryState {
                 stopping: false,
-                live: BTreeSet::new(),
+                live: BTreeMap::new(),
             }),
         }
     }
@@ -2379,14 +2381,16 @@ impl HelperRegistry {
         state
     }
 
-    fn spawn(&self, command: &mut Command) -> Result<Child, ScanFailure> {
+    /// Spawn and register a helper, with the tree token its scan set on
+    /// `command`, so a stop can sweep what escaped the helper's parentage.
+    fn spawn(&self, command: &mut Command, tree_token: Option<&str>) -> Result<Child, ScanFailure> {
         let mut state = self.lock_unless_stopped();
         let child = command
             .spawn()
             .map_err(|error| ScanFailure::HelperUnstartable {
                 cause: error.to_string(),
             })?;
-        state.live.insert(child.id());
+        state.live.insert(child.id(), tree_token.map(str::to_owned));
         Ok(child)
     }
 
@@ -2409,12 +2413,17 @@ impl HelperRegistry {
     }
 
     /// Kill every live helper's tree and park every later caller, so the
-    /// stopped scan never answers.
+    /// stopped scan never answers. A parked scan never reaches its own sweep
+    /// by tree token ([`sweep_scan_tree`]), so the stop runs it, after the
+    /// kill by parentage, for each scan that has one.
     fn stop(&self) {
         let mut state = self.lock();
         state.stopping = true;
-        for pid in &state.live {
+        for (pid, tree_token) in &state.live {
             kill_helper_tree(*pid);
+            if let Some(tree_token) = tree_token {
+                sweep_scan_tree(tree_token);
+            }
         }
     }
 }
@@ -2677,37 +2686,43 @@ const SCAN_TREE_TOKEN_ENV: &str = "SOURDAW_SCAN_TREE_TOKEN";
 /// they started with. Jenkins' ProcessTreeKiller finds escaped build
 /// processes the same way, by an environment cookie they inherited.
 ///
-/// Each pass lists every process of this effective user, other than this
-/// one, whose initial environment holds exactly `NAME=token`, stops all it
-/// has not already killed, then kills them; a stopped process cannot fork
-/// before its kill. The sweep ends after a pass that finds nothing new, or
-/// at [`DESCENDANT_SWEEP_PASSES`] passes or [`TREE_SWEEP_BOUND`]. A killed
-/// process is a zombie whose environment no longer reads, so it drops out of
-/// later passes.
+/// Each pass reads, one process at a time, the initial environment of every
+/// process of this effective user other than this one, and stops each one
+/// it has not already killed whose environment holds exactly `NAME=token`
+/// as soon as it has read it; once the pass is done it kills them all. A
+/// stopped process cannot fork before its kill. The sweep ends after a pass
+/// that finds nothing new, or at [`DESCENDANT_SWEEP_PASSES`] passes or
+/// [`TREE_SWEEP_BOUND`]. A killed process is a zombie whose environment no
+/// longer reads, so it drops out of later passes.
 ///
-/// Residual limits: a descendant that execs with an environment stripped of
-/// the token is out of reach, which is deliberate evasion, outside the
-/// threat model on [`kill_own_descendants`]; and a process that dies, and
-/// whose pid is reused, between the read of its environment and the signal,
-/// a window of microseconds, the same race accepted on
-/// [`RecordedDescendants`].
+/// Residual limits:
+///
+/// - A descendant that execs with an environment stripped of the token is
+///   out of reach. That is deliberate evasion, outside the threat model on
+///   [`kill_own_descendants`].
+/// - On Linux, a non-dumpable descendant (one that set `PR_SET_DUMPABLE` to
+///   0, or exec'd a setuid or file-capability binary) has a root-owned
+///   `/proc/<pid>` and an unreadable environment, so the sweep cannot see
+///   it.
+/// - On macOS, `KERN_PROCARGS2` returns no environment for a process
+///   running an Apple platform binary (`/bin/sh`, `/bin/sleep`, `perl`), so
+///   a descendant that execs one is invisible to the sweep. A plugin's own
+///   forks, and anything it execs that is not Apple-signed, are seen.
+/// - A process that dies, and whose pid is reused, between the read of its
+///   environment and its stop: a window of microseconds, the same race
+///   accepted on [`RecordedDescendants`]. Once stopped, a process can end
+///   only by another's kill.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn sweep_scan_tree(token: &str) {
     let entry = format!("{SCAN_TREE_TOKEN_ENV}={token}");
     let bound = Instant::now() + TREE_SWEEP_BOUND;
     let mut killed = BTreeSet::new();
     for _ in 0..DESCENDANT_SWEEP_PASSES {
-        let found: Vec<libc::pid_t> = processes_carrying(entry.as_bytes())
-            .into_iter()
-            .filter(|pid| !killed.contains(pid))
-            .collect();
-        if found.is_empty() {
+        let stopped = stop_processes_carrying(entry.as_bytes(), &killed);
+        if stopped.is_empty() {
             return;
         }
-        for &pid in &found {
-            send_signal(pid, libc::SIGSTOP);
-        }
-        for pid in found {
+        for pid in stopped {
             send_signal(pid, libc::SIGKILL);
             killed.insert(pid);
         }
@@ -2717,16 +2732,18 @@ fn sweep_scan_tree(token: &str) {
     }
 }
 
-/// No other Unix lists another process's environment the same way; its
-/// containment is the supervisor's alone.
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+/// Elsewhere there is no listing of another process's environment to sweep
+/// by: on other Unix systems containment is the tree supervisor's alone, and
+/// on Windows the kill-on-close job bounds the whole tree.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn sweep_scan_tree(_token: &str) {}
 
-/// Every process of this effective user, other than this one, whose initial
-/// environment holds `entry`. A process whose owner or environment cannot be
-/// read is skipped.
+/// One pass of [`sweep_scan_tree`]: stop every process of this effective
+/// user, other than this one and those in `killed`, whose initial
+/// environment holds `entry`, right after reading it, and return them. A
+/// process whose owner or environment cannot be read is skipped.
 #[cfg(target_os = "linux")]
-fn processes_carrying(entry: &[u8]) -> Vec<libc::pid_t> {
+fn stop_processes_carrying(entry: &[u8], killed: &BTreeSet<libc::pid_t>) -> Vec<libc::pid_t> {
     use std::os::unix::fs::MetadataExt;
     // SAFETY: getpid has no preconditions and cannot fail.
     let own = unsafe { libc::getpid() };
@@ -2735,23 +2752,40 @@ fn processes_carrying(entry: &[u8]) -> Vec<libc::pid_t> {
     let Ok(processes) = fs::read_dir("/proc") else {
         return Vec::new();
     };
-    processes
-        .flatten()
-        .filter_map(|process| process.file_name().to_str()?.parse::<libc::pid_t>().ok())
-        .filter(|pid| *pid > 0 && *pid != own)
-        .filter(|pid| fs::metadata(format!("/proc/{pid}")).is_ok_and(|owner| owner.uid() == user))
-        .filter(|pid| {
-            fs::read(format!("/proc/{pid}/environ"))
-                .is_ok_and(|environment| environment.split(|byte| *byte == 0).any(|e| e == entry))
-        })
-        .collect()
+    let mut stopped = Vec::new();
+    for process in processes.flatten() {
+        let Some(pid) = process
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<libc::pid_t>().ok())
+        else {
+            continue;
+        };
+        if pid <= 0 || pid == own || killed.contains(&pid) {
+            continue;
+        }
+        if !fs::metadata(format!("/proc/{pid}")).is_ok_and(|owner| owner.uid() == user) {
+            continue;
+        }
+        let carries = fs::read(format!("/proc/{pid}/environ")).is_ok_and(|environment| {
+            environment
+                .split(|byte| *byte == 0)
+                .any(|variable| variable == entry)
+        });
+        if carries {
+            send_signal(pid, libc::SIGSTOP);
+            stopped.push(pid);
+        }
+    }
+    stopped
 }
 
-/// Every process of this effective user, other than this one, whose initial
-/// environment holds `entry`. A process whose owner or environment cannot be
-/// read is skipped.
+/// One pass of [`sweep_scan_tree`]: stop every process of this effective
+/// user, other than this one and those in `killed`, whose initial
+/// environment holds `entry`, right after reading it, and return them. A
+/// process whose owner or environment cannot be read is skipped.
 #[cfg(target_os = "macos")]
-fn processes_carrying(entry: &[u8]) -> Vec<libc::pid_t> {
+fn stop_processes_carrying(entry: &[u8], killed: &BTreeSet<libc::pid_t>) -> Vec<libc::pid_t> {
     // SAFETY: getpid has no preconditions and cannot fail.
     let own = unsafe { libc::getpid() };
     // SAFETY: geteuid has no preconditions and cannot fail.
@@ -2759,9 +2793,9 @@ fn processes_carrying(entry: &[u8]) -> Vec<libc::pid_t> {
     let Some(mut arguments) = process_arguments_buffer() else {
         return Vec::new();
     };
-    let mut carrying = Vec::new();
+    let mut stopped = Vec::new();
     for pid in all_pids() {
-        if pid <= 0 || pid == own {
+        if pid <= 0 || pid == own || killed.contains(&pid) {
             continue;
         }
         if bsd_info(pid).is_none_or(|info| info.pbi_uid != user) {
@@ -2771,10 +2805,11 @@ fn processes_carrying(entry: &[u8]) -> Vec<libc::pid_t> {
             .and_then(procargs_environment)
             .is_some_and(|environment| environment.contains(&entry));
         if carries {
-            carrying.push(pid);
+            send_signal(pid, libc::SIGSTOP);
+            stopped.push(pid);
         }
     }
-    carrying
+    stopped
 }
 
 /// Every pid on the system. `proc_listallpids` sizes its answer when handed
@@ -2894,7 +2929,7 @@ fn run_bounded_in(
         .stdin(Stdio::from(std::os::fd::OwnedFd::from(supervisor_end)))
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let mut child = registry.spawn(&mut supervised)?;
+    let mut child = registry.spawn(&mut supervised, Some(&tree_token))?;
     // Drops the application's copy of the supervisor's end.
     drop(supervised);
     let mut tie = TreeTie {
@@ -2922,7 +2957,8 @@ fn run_bounded_in(
     command: &mut Command,
     timeout: Duration,
 ) -> Result<ExitStatus, ScanFailure> {
-    let mut child = registry.spawn(command)?;
+    // The kill-on-close job bounds the whole tree; no token is needed.
+    let mut child = registry.spawn(command, None)?;
     #[cfg(windows)]
     let _job = KillOnCloseJob::assign(&child);
     wait_bounded(registry, &mut child, timeout, &mut TreeTie {})
@@ -3499,7 +3535,7 @@ mod tests {
             r#"use std::ffi::{c_char,c_void};
 #[repr(C)] struct Version{major:u32,minor:u32,revision:u32}
 #[repr(C)] struct Entry{version:Version,init:Option<unsafe extern "C" fn(*const c_char)->bool>,deinit:Option<unsafe extern "C" fn()>,get_factory:Option<unsafe extern "C" fn(*const c_char)->*const c_void>}
-#[cfg(unix)] unsafe extern "C" { fn fork()->i32; fn setsid()->i32; fn _exit(code:i32)->!; fn kill(pid:i32,signal:i32)->i32; fn getppid()->i32; fn execve(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->i32; }
+#[cfg(unix)] unsafe extern "C" { fn fork()->i32; fn setsid()->i32; fn _exit(code:i32)->!; fn kill(pid:i32,signal:i32)->i32; fn getppid()->i32; fn getpid()->i32; fn execve(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->i32; }
 #[cfg(unix)] fn fork_a_lingering_child(pid_file:std::ffi::OsString){
  let marker=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_MARKER");
  let leaves_group=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_SETSID").is_some();
@@ -3521,6 +3557,20 @@ mod tests {
   "kill-parent"=>{unsafe{kill(getppid(),9);}loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
   code=>std::process::exit(code.parse().unwrap_or(1)),
  }
+}
+#[cfg(unix)] fn orphan_a_grandchild_then_hang(pid_file:std::ffi::OsString){
+ if unsafe{fork()}==0{
+  let intermediate=unsafe{getpid()};
+  if unsafe{fork()}==0{
+   unsafe{setsid();}
+   while unsafe{getppid()}==intermediate{std::thread::sleep(std::time::Duration::from_millis(5));}
+   let _=std::fs::write(pid_file,unsafe{getpid()}.to_string());
+   std::thread::sleep(std::time::Duration::from_secs(30));
+   unsafe{_exit(0)}
+  }
+  unsafe{_exit(0)}
+ }
+ loop{std::thread::sleep(std::time::Duration::from_secs(1));}
 }
 #[cfg(unix)] fn fork_bare_children(pid_file:std::ffi::OsString){
  let count:usize=std::env::var("SOURDAW_TEST_PLUGIN_BARE_CHILDREN").ok().and_then(|count|count.parse().ok()).unwrap_or(0);
@@ -3549,6 +3599,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
   loop{std::thread::sleep(std::time::Duration::from_secs(1));}
  }
  #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_BARE_CHILDREN_PID_FILE"){fork_bare_children(pid_file);}
+ #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_ORPHAN_PID_FILE"){orphan_a_grandchild_then_hang(pid_file);}
  #[cfg(unix)] if let Some(pid_file)=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_PID_FILE"){fork_a_lingering_child(pid_file);end_after_lingering();return false;}
  if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some(){loop{std::thread::sleep(std::time::Duration::from_secs(1));}}
  if let Some(code)=std::env::var("SOURDAW_TEST_PLUGIN_EXIT_CODE").ok().and_then(|code|code.parse().ok()){std::process::exit(code);}
@@ -4452,6 +4503,45 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert!(
             process_has_exited_within(child, Duration::from_secs(2)),
             "the setsid child {child} of a stopped scan's helper survived"
+        );
+    }
+
+    /// #7122: a stopped scan's helper double-forked, and the intermediate
+    /// exited at once, so its `setsid` grandchild is out of the helper's
+    /// parentage before the stop. The stop's kill walks parentage, and the
+    /// stopped scan's thread parks before its own sweep, so only the stop's
+    /// sweep by the scan's tree token reaches the grandchild. On Linux the
+    /// orphan reparents to the supervisor, its subreaper, and parentage still
+    /// reaches it: this case discriminates on macOS only.
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_scan_kills_a_grandchild_orphaned_out_of_its_tree() {
+        let registry = std::sync::Arc::new(HelperRegistry::new());
+        let pid_file =
+            std::env::temp_dir().join(format!("sourdaw-stopped-orphan-{}", uuid::Uuid::new_v4()));
+        let mut stragglers = Stragglers::cleaning(vec![pid_file.clone()]);
+        let fixture = build_hostile_clap("stopped-orphan");
+        let mut command = hostile_command(&fixture.plugin_path);
+        command.env("SOURDAW_TEST_PLUGIN_ORPHAN_PID_FILE", &pid_file);
+        let scanning = std::sync::Arc::clone(&registry);
+        std::thread::spawn(move || {
+            let _ = run_bounded_in(
+                &scanning,
+                &TreeSupervisorLaunch::TestEntry,
+                &mut command,
+                WORKER_TIMEOUT,
+            );
+        });
+        // The pid is written only once the grandchild is orphaned.
+        let grandchild = read_pid_within(&pid_file, Duration::from_secs(5))
+            .expect("the orphaned grandchild should write its pid");
+        stragglers.pids.push(grandchild);
+
+        registry.stop();
+
+        assert!(
+            process_has_exited_within(grandchild, Duration::from_secs(2)),
+            "the orphaned grandchild {grandchild} of a stopped scan survived"
         );
     }
 
