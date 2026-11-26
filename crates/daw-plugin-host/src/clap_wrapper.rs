@@ -648,6 +648,26 @@ impl HeldHostWrites {
         self.count -= delivered;
     }
 
+    /// Let go of every held write for a parameter `block_writes` writes at any
+    /// offset. Called after `drain_into`, so what remains did not fit in the
+    /// block: the block's own write of its parameter is newer, and delivering
+    /// the held one at the next block's head would revert it.
+    fn discard_overridden_by_block(&mut self, block_writes: &[HostParameterUpdate]) {
+        let mut kept = 0;
+        for index in 0..self.count {
+            let write = self.writes[index];
+            if block_writes
+                .iter()
+                .any(|update| update.param_id == write.param_id)
+            {
+                continue;
+            }
+            self.writes[kept] = write;
+            kept += 1;
+        }
+        self.count = kept;
+    }
+
     fn clear(&mut self) {
         self.count = 0;
     }
@@ -2811,6 +2831,8 @@ impl ClapWrapper {
             &mut self.parameter_scratch,
             MAX_PARAMETER_EVENTS - block_writes.len(),
         );
+        self.held_host_writes
+            .discard_overridden_by_block(block_writes);
         for update in block_writes {
             self.parameter_scratch.push(host_parameter_event(update));
         }
@@ -8925,6 +8947,31 @@ mod tests {
             received_parameter_values(),
             (104..110).map(|id| (0, id, 0.25)).collect::<Vec<_>>(),
             "the held writes that did not fit lead the next processed block"
+        );
+    }
+
+    /// A held write that did not fit in the processed block is older than that
+    /// block's own write of its parameter, wherever in the block it falls, so
+    /// it must not reach the next block and revert the parameter.
+    #[test]
+    fn a_deferred_held_write_never_overrides_a_newer_write_of_its_parameter() {
+        let _guard = held_write_test_guard();
+        stage_emitted_events(Vec::new());
+        let mut wrapper = start_refusing_recording_wrapper();
+        let held: Vec<HostParameterUpdate> = (100..110).map(|id| write(id, 0, 0.25)).collect();
+        let mut block: Vec<HostParameterUpdate> = (0..59).map(|id| write(id, id, 0.75)).collect();
+        block.push(write(109, 59, 0.75));
+
+        process_one_block_with_updates(&mut wrapper, &held);
+        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block_with_updates(&mut wrapper, &block);
+        received_parameter_values();
+
+        process_one_block(&mut wrapper);
+        assert_eq!(
+            received_parameter_values(),
+            (104..109).map(|id| (0, id, 0.25)).collect::<Vec<_>>(),
+            "only the deferred writes no block write overrides lead the next block"
         );
     }
 
