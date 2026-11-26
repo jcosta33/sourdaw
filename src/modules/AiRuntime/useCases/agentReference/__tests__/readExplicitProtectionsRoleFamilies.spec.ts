@@ -309,14 +309,19 @@ describe('readExplicitProtections over a canonical role phrase and the negating 
         ['turn down every audio track by 3 dB, not the vocals', VOCAL_IDS],
         ['make the mix warmer and skip the drums', DRUM_IDS],
         ['make the mix warmer, ignoring Bass', [bass.id]],
+        ['turn down every audio track by 3 dB and not the vocals', VOCAL_IDS],
+        ['make the mix warmer or not Bass', [bass.id]],
     ])('"%s" protects what a skip, ignore or clause-opening not names', (prompt, protectedTrackIds) => {
         expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
     });
 
-    it.each(['turn the mix down, not too much', 'make the vocals warmer but not harsh', 'turn the kick down'])(
-        '"%s" protects nothing',
-        (prompt) => {
-            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
-        }
-    );
+    it.each([
+        'turn the mix down, not too much',
+        'turn the mix down and not too much',
+        'make the vocals warmer but not harsh',
+        'make the vocals louder if not louder still',
+        'turn the kick down',
+    ])('"%s" protects nothing', (prompt) => {
+        expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
+    });
 });

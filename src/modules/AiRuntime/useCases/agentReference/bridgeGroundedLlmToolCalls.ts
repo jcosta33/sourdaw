@@ -1289,6 +1289,18 @@ function isPercentLevelContinuationClause(maskedClause: string, previousScope: A
     );
 }
 
+/** Whether the clause continues the level change before it in decibels or in percent onto another track. */
+function continuesLevelChange(
+    maskedClause: string,
+    decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[],
+    previousScope: ActionPromptScope | undefined
+): boolean {
+    return (
+        isLevelContinuationClause(maskedClause, decibelLevelForms) ||
+        isPercentLevelContinuationClause(maskedClause, previousScope)
+    );
+}
+
 /**
  * The scope extended over a continuation clause. The continuation's reference joins the source
  * side; the destination stays the one the scope already named.
@@ -1840,8 +1852,7 @@ function resolveActionPromptScope({
         const previousScope = matchingScopes.at(-1);
         if (
             continuesScope &&
-            (isLevelContinuationClause(clause.masked, decibelLevelForms) ||
-                isPercentLevelContinuationClause(clause.masked, previousScope)) &&
+            continuesLevelChange(clause.masked, decibelLevelForms, previousScope) &&
             !namesLevelOutsideActionFader(actionName, clause, context)
         ) {
             if (previousScope) {
@@ -5245,6 +5256,7 @@ function groundToolCall({
                     context,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
+                    instruction,
                     targetIds: compilerTargetOverride.stableIds,
                 }),
                 targetRule.argument

@@ -15,6 +15,7 @@ import {
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
+import { findSentenceEnd } from './findSentenceEnd';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -23,6 +24,7 @@ import { maskProjectReferences } from './groundingStrategies/maskProjectReferenc
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
+import { holdsFragmentAtWordStart } from './holdsFragmentAtWordStart';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readTrackPosition } from './readTrackPosition';
@@ -63,16 +65,17 @@ import { scopeToInstruction } from './scopeToInstruction';
  * asks for the call's change, the clause the direct route grounds that action in, less the request's
  * restrictions and the values any call of the batch writes, so another instruction's name never
  * picks its target ("set Vocals volume to 75% and mute Keys" states no Keys gain). An instruction that
- * refers back with "it", "its" or "that track" before naming a track of its own also reads the nearest
- * earlier clause naming one ("turn Vocals down and pan it left"), and one naming no track reads the
- * clauses leading its sentence ("On Vocals, set volume to 75%"); a call no clause grounds reads the
- * whole request. A selection reference ("this track", "the selected track", "it" or "its"
+ * names no track of its own, or none before it refers back with "it", "its" or "that track", also reads
+ * the nearest earlier clause naming one with the run of names leading into it ("turn Vocals down and
+ * pan it left", "On Vocals, set volume to 75%", "Vocals\nKeys\nset volume to 75%"); a call no clause
+ * grounds reads the whole request. A selection reference ("this track", "the selected track", "it" or "its"
  * outside every object name for the selected track) that resolves to the picked objects states those
  * picks only when the text names no object of that kind, by name, id or, for a track, position, or
  * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
  * volume so it sits better" never stands for the selected Keys, nor "set the first track volume so it
- * sits better", nor "bypass the EQ on Play It". A fragment picks a target only when it is a whole
- * word of the target's name, so "pad" never picks Launchpad.
+ * sits better", nor "bypass the EQ on Play It". A fragment picks a target only where it starts a
+ * word of the target's name, a camel-case one included, so "guitar" picks Guitar1 and BassGuitar and
+ * "pad" never picks Launchpad.
  *
  * A role-family selection is admitted only for the roles the instruction states: one naming the
  * family only through a narrower role phrase holding its word ("the lead vocal") admits the tracks of
@@ -314,8 +317,7 @@ function listsSelectionBesideName(text: string, capability: Capability, context:
  */
 function readsSelectionReference(text: string, capability: Capability, context: ProjectContext): boolean {
     const namesObject =
-        namesObjectByName(text, capability, context) ||
-        (capability === 'track' && readTrackPosition(text) !== undefined);
+        capability === 'track' ? namesTrack(text, context) : namesObjectByName(text, capability, context);
     return !namesObject || listsSelectionBesideName(text, capability, context);
 }
 
@@ -383,8 +385,8 @@ function maskRequest(prompt: string, context: ProjectContext): MaskedRequest {
  * instruction.
  */
 function getInstructionEnd(request: MaskedRequest, start: number, catalog: GroundingCatalog): number {
-    const sentenceEnd = /[;!?\n]|\.(?!\d)/u.exec(request.maskedPrompt.slice(start));
-    const limit = sentenceEnd === null ? request.prompt.length : start + sentenceEnd.index;
+    const sentenceEnd = findSentenceEnd(request.maskedPrompt.slice(start));
+    const limit = sentenceEnd === undefined ? request.prompt.length : start + sentenceEnd;
     const nextInstruction = request.clauses.find(
         (clause) =>
             clause.start > start && clause.start < limit && resolveClauseActionIntent(clause.masked, catalog) !== null
@@ -590,12 +592,12 @@ function getObjectName(id: string, context: ProjectContext): string | undefined 
 }
 
 /**
- * Whether the object's name holds the fragment as a whole word, in either number, as the request must
- * state it: the compiler's candidates match it anywhere, so "pad" also reaches Launchpad.
+ * Whether the object's name holds the fragment at the start of a word, as the request must state it:
+ * the compiler's candidates match it anywhere, so "pad" also reaches Launchpad.
  */
 function namesFragmentAsWord(id: string, fragment: string, context: ProjectContext): boolean {
     const name = getObjectName(id, context);
-    return name === undefined || findAgentReferenceNameSpans(name, fragment, NAME_FORMS, []).length > 0;
+    return name === undefined || holdsFragmentAtWordStart(name, fragment);
 }
 
 /** Whether the range reaches past the inner range on either side while covering all of it. */

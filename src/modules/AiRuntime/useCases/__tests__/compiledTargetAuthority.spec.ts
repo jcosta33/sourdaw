@@ -3095,3 +3095,97 @@ describe('#5393 an instruction naming no track reads the leading clause of its s
         expect(targetsOf(result)).toEqual(expected);
     });
 });
+
+function namedTrackGroupItem(names: readonly string[]): CompiledItem {
+    return {
+        id: 'group-named-tracks',
+        name: 'createVcaGroup',
+        arguments: { name: 'Rhythm' },
+        selector: {
+            targetArgument: 'trackIds',
+            entity: 'track',
+            match: { any: names.map((name) => ({ nameIncludes: name })) },
+            quantity: { unit: 'targets', exactly: names.length },
+        },
+    };
+}
+
+describe('#5393 a compiled set is stated only by the instruction that asks for it', () => {
+    it('refuses Keys in the group for "create VCA group for Vocals named Rhythm and mute Keys"', () => {
+        const result = compileAndBridge(
+            'create VCA group for Vocals named Rhythm and mute Keys',
+            [namedTrackGroupItem(['Vocals', 'Keys'])],
+            [vocals.id, keys.id]
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+
+    it('grounds the correctly named "create VCA group for Vocals and Drums named Rhythm and mute Keys"', () => {
+        const result = compileAndBridge(
+            'create VCA group for Vocals and Drums named Rhythm and mute Keys',
+            [namedTrackGroupItem(['Vocals', 'Drums']), trackItem('muteTrack', keys, { muted: true })],
+            [vocals.id, drums.id, keys.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            { type: 'createVcaGroup', payload: { name: 'Rhythm', trackIds: [vocals.id, drums.id] } },
+            expect.objectContaining({ type: 'muteTrack', payload: expect.objectContaining({ trackId: keys.id }) }),
+        ]);
+    });
+});
+
+describe('#5393 an instruction naming no track reads the nearest earlier clause that names one', () => {
+    it.each([
+        ['Select Vocals and set the volume to 75%', [mixVocals]],
+        ['Vocals and Keys:\nset volume to 75%', [mixVocals, mixKeys]],
+        ['Vocals\nKeys\nset volume to 75%', [mixVocals, mixKeys]],
+        ['I want Vocals louder. Set the volume to 75%.', [mixVocals]],
+    ])('grounds "%s"', (prompt, tracks) => {
+        const result = compileMix(
+            prompt,
+            tracks.map((track) => trackItem('setTrackGain', track, { gain: 0.75 }))
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(tracks.map((track) => track.id));
+    });
+
+    it('refuses Vocals for "On Vocals, set Keys volume at 1:30 to 75%", whose colon closes no header', () => {
+        const result = compileMix('On Vocals, set Keys volume at 1:30 to 75%', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+        ]);
+
+        expect(targetsOf(result)).not.toContain(mixVocals.id);
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+});
+
+describe('#5378 a name fragment picks a name holding it at a word start, a camel-case one included', () => {
+    it.each([
+        ['turn down the guitars by 3 dB', 'guitar', ['Guitar1', 'Guitar2']],
+        ['turn down the bass by 3 dB', 'bass', ['BassGuitar']],
+        ['turn down the guitar by 3 dB', 'guitar', ['BassGuitar']],
+    ])('grounds "%s" with a "%s" fragment for %j', (prompt, fragment, names) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(prompt, [nameFragmentItem(fragment, names.length)], [], context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(names.map((name) => track(name).id));
+    });
+});
+
+describe('#5385 a "not" opening a coordinated part protects what it names', () => {
+    it('refuses the protected Keys selector in "set Vocals volume to 75% and not Keys"', () => {
+        const result = compileMix('set Vocals volume to 75% and not Keys', [
+            trackItem('setTrackGain', mixKeys, { gain: 0.75 }),
+        ]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({ reason: 'Compiled target trackId is protected or excluded' })
+        );
+    });
+});
