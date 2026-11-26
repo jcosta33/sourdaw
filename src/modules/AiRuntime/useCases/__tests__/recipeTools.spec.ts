@@ -882,10 +882,10 @@ describe('recipe.expand', () => {
             'master',
             'master-controlled',
             'builtin-compressor',
-            [1, -10, 2.5, 27.5, 200, 8],
+            [1, -11, 2.5, 27.5, 200, 8],
             [
                 ['comp-auto-makeup', 1],
-                ['comp-threshold', -10],
+                ['comp-threshold', -11],
                 ['comp-ratio', 2.5],
                 ['comp-attack', 27.5],
                 ['comp-release', 200],

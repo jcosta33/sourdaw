@@ -105,7 +105,7 @@ const expected = [
         metric: 'dynamicRangeEstimate',
         direction: 'decrease',
         windows: [
-            [-14, -6],
+            [-14, -8],
             [2, 3],
             [25, 30],
             [150, 250],

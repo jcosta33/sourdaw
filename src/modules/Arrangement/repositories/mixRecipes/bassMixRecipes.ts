@@ -56,10 +56,10 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when guitars already occupy the region between 700 Hz and 1.2 kHz.',
         ],
         metrics: [
-            { metric: 'spectralCentroid', direction: 'increase' },
             { metric: 'frequencyBandEnergy', band: 'mid', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' },
         ],
-        source: 'A bass reads as bright through its second and third harmonics rather than through its fundamental, which is why the work happens near 1 kHz and again at the attack region above 3 kHz. This also keeps the part audible on playback systems that cannot reproduce the fundamental at all.',
+        source: 'A bass reads as bright through its second and third harmonics rather than through its fundamental, which is why the work happens near 1 kHz and again at the attack region above 3 kHz. The boosts above the fundamental also lower the share of the energy the bass band holds, and they keep the part audible on playback systems that cannot reproduce the fundamental at all.',
     },
     {
         id: 'bass-tight',
@@ -160,11 +160,8 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip on a mono bass part, where widening produces phase differences rather than image.',
             'Skip when the release target includes vinyl cutting or other mono-summed low-end delivery.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'hold' },
-        ],
-        source: 'Only the harmonic content above the mono crossover can be widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. A crossover at 120 Hz to 200 Hz keeps every fundamental centred while the upper harmonics carry the image.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Only the harmonic content above the mono crossover is widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. The crossover sits at 120 Hz to 200 Hz and removes the side signal below it, though a fundamental close to the crossover keeps part of its side, so no low-frequency stereo claim is made.',
     },
     {
         id: 'bass-intimate',
@@ -228,10 +225,10 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when a low-pass filter is already applied earlier in the chain.',
         ],
         metrics: [
-            { metric: 'spectralCentroid', direction: 'decrease' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
             { metric: 'frequencyBandEnergy', band: 'high-mid', direction: 'decrease' },
         ],
-        source: 'A dark bass is defined by the absence of pick and fret detail above 3 kHz plus a reduced second-harmonic region near 1 kHz, and removing only one of the two leaves the part still reading forward. The cuts stop short of removing the harmonics small speakers need to imply the note at all.',
+        source: 'A dark bass is defined by the absence of pick and fret detail above 3 kHz, so the cut there lowers the high-mid share and leaves the bass band a larger share of the energy. The smaller cut near 1 kHz brings the second harmonic down with it, though it only moves energy between neighbouring bands on some sources, so no mid-band claim is made. The cuts stop short of removing the harmonics small speakers need to imply the note at all.',
     },
     {
         id: 'bass-airy',
@@ -243,9 +240,9 @@ export const bassMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-eq',
                 parameters: [
-                    { paramId: 'eq-high-freq', minimum: 6000, maximum: 10000 },
+                    { paramId: 'eq-high-freq', minimum: 10000, maximum: 14000 },
                     { paramId: 'eq-high-gain', minimum: 1.5, maximum: 3 },
-                    { paramId: 'eq-high-q', minimum: 0.5, maximum: 1 },
+                    { paramId: 'eq-high-q', minimum: 0.5, maximum: 0.8 },
                 ],
             },
         ],

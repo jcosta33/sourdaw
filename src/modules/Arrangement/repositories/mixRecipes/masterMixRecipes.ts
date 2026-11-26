@@ -34,13 +34,13 @@ export const masterMixRecipes: readonly MixRecipe[] = [
         id: 'master-bright',
         descriptor: 'bright',
         roles: ['master'],
-        title: 'Shallow presence and top lift',
+        title: 'Shallow upper-mid and top lift',
         steps: [
             {
                 kind: 'insert',
                 deviceType: 'builtin-eq',
                 parameters: [
-                    { paramId: 'eq-mid-freq', minimum: 2000, maximum: 4000 },
+                    { paramId: 'eq-mid-freq', minimum: 3000, maximum: 4000 },
                     { paramId: 'eq-mid-gain', minimum: 0.3, maximum: 1 },
                     { paramId: 'eq-mid-q', minimum: 0.6, maximum: 1 },
                     { paramId: 'eq-high-freq', minimum: 8000, maximum: 12000 },
@@ -55,11 +55,8 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when the mix already reads harsh on any reference system.',
             'Skip when the dullness traces to one source that could be fixed at its track.',
         ],
-        metrics: [
-            { metric: 'spectralCentroid', direction: 'increase' },
-            { metric: 'frequencyBandEnergy', band: 'presence', direction: 'increase' },
-        ],
-        source: 'A broad lift in the presence region raises whatever is loudest there across the whole mix, so it stays under a decibel and the shelf above it carries most of the perceived change. Wide, shallow curves are what keep a master move from re-voicing individual sources.',
+        metrics: [{ metric: 'spectralCentroid', direction: 'increase' }],
+        source: 'A broad lift between 3 kHz and 4 kHz raises whatever is loudest there across the whole mix, so it stays under a decibel and the shelf above it carries most of the perceived change. Wide, shallow curves are what keep a master move from re-voicing individual sources.',
     },
     {
         id: 'master-tight',
@@ -117,11 +114,8 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when a limiter earlier in the master chain has already removed the peaks.',
             'Skip when the release cannot recover between beats at this tempo, which produces pumping across the whole mix.',
         ],
-        metrics: [
-            { metric: 'shortTermLoudnessMax', direction: 'increase' },
-            { metric: 'transientDensity', direction: 'hold' },
-        ],
-        source: 'An attack past the transient leaves the drum strike untouched and clamps the body behind it, so short-term loudness rises while the peak structure survives. Two or three decibels of reduction is the working range on a master; more starts to move the balance between sources.',
+        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
+        source: 'An attack past the transient leaves the drum strike untouched and clamps the body behind it, so the peak structure survives. Two or three decibels of reduction is the working range on a master; more starts to move the balance between sources.',
     },
     {
         id: 'master-wide',
@@ -135,7 +129,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 parameters: [
                     { paramId: 'width-amount', minimum: 1.05, maximum: 1.25 },
                     { paramId: 'width-mono-bass', minimum: 100, maximum: 150 },
-                    { paramId: 'width-mid', minimum: -1, maximum: 1 },
+                    { paramId: 'width-mid', minimum: -1, maximum: 0 },
                 ],
             },
         ],
@@ -146,11 +140,8 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when individual sources or group buses have already been widened.',
             'Skip when the delivery target sums to mono, such as a club system or a vinyl cut.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'decrease' },
-        ],
-        source: 'Width applied at the master compounds with every widening move already made below it, so the amount stops near 1.25. Summing below 150 Hz removes the low-frequency stereo content that costs level on mono fold-down and destabilises a vinyl cut.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Width applied at the master compounds with every widening move already made below it, so the amount stops near 1.25. A crossover at 100 Hz to 150 Hz removes the side signal below it, which is the low-frequency side content that costs level on mono fold-down and destabilises a vinyl cut, though content near the crossover keeps part of its side, so no low-frequency stereo claim is made.',
     },
     {
         id: 'master-intimate',
@@ -162,7 +153,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-stereo-widener',
                 parameters: [
-                    { paramId: 'width-amount', minimum: 0.7, maximum: 0.95 },
+                    { paramId: 'width-amount', minimum: 0.7, maximum: 0.85 },
                     { paramId: 'width-mono-bass', minimum: 100, maximum: 160 },
                 ],
             },
@@ -315,7 +306,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 deviceType: 'builtin-compressor',
                 parameters: [
                     { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
-                    { paramId: 'comp-threshold', minimum: -14, maximum: -6 },
+                    { paramId: 'comp-threshold', minimum: -14, maximum: -8 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 25, maximum: 30 },
                     { paramId: 'comp-release', minimum: 150, maximum: 250 },
@@ -330,11 +321,8 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when a mix-bus compressor already applies the same slow envelope.',
             'Skip when one loud element, usually the kick, would drive the detector on its own.',
         ],
-        metrics: [
-            { metric: 'integratedLoudness', direction: 'increase' },
-            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-        ],
-        source: 'A single slow envelope across the mix raises the average level relative to the peaks, which is what integrated loudness measures and what cohesion sounds like. Keeping reduction to two or three decibels stops the envelope becoming audible as pumping on the whole programme.',
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'A single slow envelope across the mix narrows the gap between the peaks and the average level, which is what cohesion sounds like. Keeping reduction to two or three decibels stops the envelope becoming audible as pumping on the whole programme.',
     },
     {
         id: 'master-lo-fi',
@@ -423,7 +411,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 deviceType: 'builtin-compressor',
                 parameters: [
                     { paramId: 'comp-auto-makeup', minimum: 1, maximum: 1 },
-                    { paramId: 'comp-threshold', minimum: -14, maximum: -6 },
+                    { paramId: 'comp-threshold', minimum: -14, maximum: -8 },
                     { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
                     { paramId: 'comp-attack', minimum: 25, maximum: 30 },
                     { paramId: 'comp-release', minimum: 150, maximum: 250 },

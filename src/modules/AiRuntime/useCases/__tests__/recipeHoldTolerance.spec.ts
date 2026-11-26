@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
@@ -19,6 +19,12 @@ import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 import { configureMetricGoalProject, resetMetricGoalProject } from './metricGoalWorkflowFixture';
 
 registerDeviceEnginePorts();
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    const { withLowFrequencyStereoHold } = await import('./recipeHoldCatalogFixture');
+    return { ...actual, getMixRecipeCatalog: () => withLowFrequencyStereoHold(actual.getMixRecipeCatalog()) };
+});
 
 const RUN_ID = 'recipe-hold-run';
 const TARGET_ID = 'bass';

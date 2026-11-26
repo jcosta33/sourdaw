@@ -34,7 +34,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
         id: 'bus-bright',
         descriptor: 'bright',
         roles: ['bus'],
-        title: 'Group presence and top raised gently',
+        title: 'Group upper mids and top raised gently',
         steps: [
             {
                 kind: 'insert',
@@ -53,11 +53,8 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when only one source in the group needs the lift.',
             'Skip when a downstream bus already applies a top-end boost.',
         ],
-        metrics: [
-            { metric: 'spectralCentroid', direction: 'increase' },
-            { metric: 'frequencyBandEnergy', band: 'presence', direction: 'increase' },
-        ],
-        source: 'Boosting a shared presence region on a group raises whichever source is loudest there, which is why the bell is wide and shallow rather than targeted. Anything steeper belongs on the individual track that needs it.',
+        metrics: [{ metric: 'spectralCentroid', direction: 'increase' }],
+        source: 'Boosting a shared upper-mid region between 2.5 kHz and 4 kHz on a group raises whichever source is loudest there, which is why the bell is wide and shallow rather than targeted. Anything steeper belongs on the individual track that needs it.',
     },
     {
         id: 'bus-tight',
@@ -144,11 +141,8 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the group contains the only centred anchor of the mix.',
             'Skip when a downstream bus already widens this material.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'hold' },
-        ],
-        source: 'Widening compounds down the bus chain, so a group stays under about 1.4 to leave the parent bus somewhere to go. The mono crossover keeps the summed low end of several sources from decorrelating, which is where width damage shows first.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Widening compounds down the bus chain, so a group stays under about 1.4 to leave the parent bus somewhere to go. A crossover at 100 Hz to 160 Hz removes the side signal below it, which is where width damage on the summed low end of several sources shows first, though content near the crossover keeps part of its side, so no low-frequency stereo claim is made.',
     },
     {
         id: 'bus-intimate',

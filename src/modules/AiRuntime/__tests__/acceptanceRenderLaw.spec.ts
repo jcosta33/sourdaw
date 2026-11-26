@@ -158,3 +158,52 @@ describe('acceptance render law source reuse', () => {
         expect(unprocessed.getChannelData(0)).not.toEqual(first.getChannelData(0));
     });
 });
+
+describe('acceptance render law stereo widener mono-bass filter', () => {
+    const SIDE_TONE_HZ = 110;
+    /** A pure side tone: the first partial only, its right channel half a cycle behind, held steady. */
+    const SIDE_TONE = { sustain: 1, weights: [1, 0, 0, 0, 0, 0], lag: Math.PI } as const;
+    const SOURCE_LEVEL = 0.12;
+
+    /** The steady-state peak of the left output channel, over the half of the render after the filter settles. */
+    function sideToneLevel(monoBassHz: number): number {
+        const track = {
+            ...createTrack({ id: 'wide', name: 'Wide', kind: 'audio' }),
+            gain: 1,
+            devices: [
+                {
+                    id: 'widener',
+                    name: 'Widener',
+                    type: 'builtin-stereo-widener' as const,
+                    bypassed: false,
+                    parameterValues: {
+                        'width-amount': 1,
+                        'width-mid': 0,
+                        'width-side': 0,
+                        'width-mono-bass': monoBassHz,
+                    },
+                },
+            ],
+        };
+        const law = createAcceptanceRenderLaw({
+            trackPosition: () => 0,
+            tempo: () => 120,
+            liveTracks: () => [track],
+            masterGain: () => 1,
+            sourceProfile: () => SIDE_TONE,
+        });
+        const left = law
+            .renderTrack({ targetTrackId: track.id, renderTracks: [track], startBeat: 0, endBeat: 4 })
+            .getChannelData(0);
+        return left.slice(left.length / 2).reduce((peak, sample) => Math.max(peak, Math.abs(sample)), 0) / SOURCE_LEVEL;
+    }
+
+    it('passes a side tone at the crossover at the filter resonance, the one-biquad high-pass the node is', () => {
+        expect(sideToneLevel(SIDE_TONE_HZ)).toBeCloseTo(10 ** (1 / 20), 1);
+    });
+
+    it('removes the side an octave below the crossover and leaves the side far above it untouched', () => {
+        expect(sideToneLevel(SIDE_TONE_HZ * 2)).toBeLessThan(0.3);
+        expect(sideToneLevel(20)).toBeCloseTo(1, 1);
+    });
+});
