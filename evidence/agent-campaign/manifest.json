@@ -198,7 +198,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts",
-                    "digest": "dd4f1de929f69cab66facb512b21b1ec35a7e006f7ae08399d95d3277018ba7c"
+                    "digest": "7604cee4c29bdcdbf4ae3bb844f306a0c9eb6c95efc81fc1514966a8e3ed2f31"
                 }
             ]
         },
@@ -210,7 +210,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts",
-                    "digest": "b24de3f4126706423c9f612b38e51a659614d145cb2bc8defd27a5f5255cf9a7"
+                    "digest": "7dc8f0e5cda6d5593aa9e6d4500935ee2802715de49e18014500984c75ddde77"
                 }
             ]
         },
@@ -258,7 +258,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
-                    "digest": "593ae670e7d720ab619d389f9c0bb75713fca1bc195b1b46062034e8aad1a1c1"
+                    "digest": "077d9db10ba1af9eb672f7d8b2c3d5a68945b213f3369cf00d49006344df0697"
                 }
             ]
         },
@@ -310,7 +310,7 @@
                 },
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandApprovalBoundary.spec.ts",
-                    "digest": "2dd07035aa8372507e4d5a9316942d4619a95dcd0bdd540a446583e8dd7e3b41"
+                    "digest": "5a211c8c7c26df320dd6aacf41ee3398ba6a67522fe1201f6b46775310f7d2fb"
                 }
             ]
         },
@@ -866,7 +866,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
-                    "digest": "09a6f0605b2a2ee68dff4c5de6053547d294068d2058bcd63541adddd71f288b"
+                    "digest": "038cabcdb053d753692947a6d6a7c5938a43ca4b8404064e34876fa1d66527a2"
                 }
             ]
         },
