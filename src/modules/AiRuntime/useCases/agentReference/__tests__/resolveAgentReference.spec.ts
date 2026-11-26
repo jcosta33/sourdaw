@@ -2098,6 +2098,22 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         });
     });
 
+    it('never resolves "mute kick/snares/room" to Kick Snares Room when number forms count, since Snare reads "snares"', () => {
+        const project = tracksNamed(['Kick Snares Room', 'Kick', 'Snare', 'Room']);
+
+        expect(
+            resolveTrackWithNumberForms('mute kick/snares/room', trackIdNamed(project, 'Kick Snares Room'), project)
+        ).toMatchObject({ status: 'rejected' });
+    });
+
+    it('never resolves "mute kick/snare - top" to Kick Snare Top, whose slash lists Snare Top written with a wider joiner', () => {
+        const project = tracksNamed(['Kick Snare Top', 'Kick', 'Snare Top']);
+
+        expect(resolveTrack('mute kick/snare - top', trackIdNamed(project, 'Kick Snare Top'), project)).toMatchObject({
+            status: 'rejected',
+        });
+    });
+
     it('refuses "mute kick/snare room" as ambiguous between Kick Snare and Room, since no sibling name opens the words after the slash', () => {
         const project = tracksNamed(['Kick Snare', 'Kick', 'Room']);
 
