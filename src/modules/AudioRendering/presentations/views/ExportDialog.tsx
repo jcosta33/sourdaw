@@ -25,8 +25,10 @@ import {
     type Track,
 } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '#/modules/AudioEngine/stores';
 import {
     cancelExport,
+    engineSampleRateOf,
     exportStems,
     getAudioContext,
     getAutoDetectedTailSeconds,
@@ -76,6 +78,8 @@ type TailDetectionSnapshot = {
     tracks: readonly Track[];
     soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
+    hostedTailSamplesByInstanceId: Readonly<Record<string, number>>;
+    engineSampleRate: number | null;
 };
 
 const DEFAULT_EXPORT_TAIL_SECONDS = 2;
@@ -162,11 +166,12 @@ const AutoDetectedTailLabel = ({
     soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
 }): ReactElement => {
-    // The estimate reads each hosted instance's tail from this store; subscribing
-    // is what repaints the label when a refresh revises one.
-    useStore(externalPluginTailStore, defaultExternalPluginTailState);
+    const hostedTails = useStore(externalPluginTailStore, defaultExternalPluginTailState);
+    const engineDiagnostics = useStore(engineRtDiagnosticsStore, defaultEngineRtDiagnosticsState);
     const detected = getAutoDetectedTailSeconds({
         tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        hostedTailSamplesByInstanceId: hostedTails.tailSamplesByInstanceId,
+        engineSampleRate: engineSampleRateOf(engineDiagnostics),
         honorMuted,
         tracks,
         soloMode,
@@ -330,6 +335,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const detectTail = (honorMuted: boolean, snapshot: TailDetectionSnapshot) =>
         getAutoDetectedTailSeconds({
             tailForDeviceType: deviceTailFor,
+            hostedTailSamplesByInstanceId: snapshot.hostedTailSamplesByInstanceId,
+            engineSampleRate: snapshot.engineSampleRate,
             honorMuted,
             tracks: snapshot.tracks,
             soloMode: snapshot.soloMode,
@@ -692,6 +699,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 tracks,
                 soloMode: soloModeStore.value?.soloMode ?? defaultSoloModeState.soloMode,
                 automationLanes: automationStore.value?.lanes ?? [],
+                // Read after the refresh above, so the render sizes from what it just re-read.
+                hostedTailSamplesByInstanceId: (externalPluginTailStore.value ?? defaultExternalPluginTailState)
+                    .tailSamplesByInstanceId,
+                engineSampleRate: engineSampleRateOf(engineRtDiagnosticsStore.value),
             };
             const { startBeat, durationBeats } = resolveRange(tracks);
             // Stems keep muted tracks, so they may need a longer tail than the

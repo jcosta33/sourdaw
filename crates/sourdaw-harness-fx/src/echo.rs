@@ -156,6 +156,54 @@ impl Echo {
     }
 }
 
+/// The most `Gain` points one block applies; a host handing more is past what
+/// any test here sends, and the excess is ignored.
+const MAX_GAIN_POINTS: usize = 128;
+
+/// One block's `Gain` points, applied on the samples they name.
+///
+/// Both formats carry a sample offset on every parameter point, and this
+/// fixture honours it: the gain a sample is rendered with is the last point at
+/// or before that sample, so a test reads where each point landed straight off
+/// the printed samples. Collected on the stack — allocation-free — in the order
+/// the host listed them, which both formats require to be sample order.
+pub(crate) struct GainPoints {
+    points: [(u32, f64); MAX_GAIN_POINTS],
+    len: usize,
+    next: usize,
+}
+
+impl GainPoints {
+    pub(crate) fn new() -> Self {
+        Self {
+            points: [(0, 0.0); MAX_GAIN_POINTS],
+            len: 0,
+            next: 0,
+        }
+    }
+
+    pub(crate) fn push(&mut self, sample_offset: u32, value: f64) {
+        if self.len == MAX_GAIN_POINTS {
+            return;
+        }
+        self.points[self.len] = (sample_offset, value);
+        self.len += 1;
+    }
+
+    /// Apply every point at or before `frame` that has not been applied yet.
+    pub(crate) fn apply_due(&mut self, echo: &Echo, frame: u32) {
+        while self.next < self.len && self.points[self.next].0 <= frame {
+            echo.set_gain(self.points[self.next].1);
+            self.next += 1;
+        }
+    }
+
+    /// Apply every point, for a call that renders no audio (a parameter flush).
+    pub(crate) fn apply_all(&mut self, echo: &Echo) {
+        self.apply_due(echo, u32::MAX);
+    }
+}
+
 fn silent_history() -> Box<[Cell<f32>]> {
     (0..HISTORY_FRAMES).map(|_| Cell::new(0.0)).collect()
 }

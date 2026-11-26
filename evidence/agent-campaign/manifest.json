@@ -786,11 +786,11 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
-                    "digest": "83c52ae6db5aeaf9f1869072236b4a491430c105b5e871311a5603c8b01470a1"
+                    "digest": "2fa16eef1ab0b404c507b8e2cf281be60b44d982fbbdc2fe819f52d13db8ee0f"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "8526c59e24759e19f473e5cadb34cd8a9e64125c9e561f63b5963529404aace0"
+                    "digest": "985d2f21f0ce5084df3f8e592cb93b384896dcef353ade01b4d1ec8c5d4ddbf7"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",

@@ -143,12 +143,16 @@ describe('getAutoDetectedTailSeconds', () => {
 
         const withoutLane = getAutoDetectedTailSeconds({
             tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
             honorMuted: true,
             soloMode: 'sip',
             automationLanes: [],
         });
         const withFinalBarLane = getAutoDetectedTailSeconds({
             tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
             honorMuted: true,
             soloMode: 'sip',
             automationLanes: [
@@ -178,7 +182,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(20);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(20);
     });
 
     it('drops a track that solo-in-place gates out', () => {
@@ -195,7 +206,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(1.5);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(1.5);
     });
 
     it('reserves a frozen track’s baked buffer tail, which its devices no longer describe', () => {
@@ -212,7 +230,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(10);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(10);
     });
 
     it('never reserves zero for a frozen buffer whose chain cannot answer', () => {
@@ -234,7 +259,12 @@ describe('getAutoDetectedTailSeconds', () => {
 
         for (const [label, track] of shapes) {
             mockTrackStore.value = { tracks: [track] };
-            const seconds = getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds;
+            const seconds = getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds;
             expect(seconds, `${label} reserved nothing`).toBe(UNKNOWN_FROZEN_TAIL_SECONDS);
         }
     });
@@ -258,7 +288,12 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        const detected = getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true });
+        const detected = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
+            honorMuted: true,
+        });
         expect(detected.seconds).toBe(60);
         expect(detected.clamped).toBe(true);
     });
@@ -270,9 +305,14 @@ describe('getAutoDetectedTailSeconds', () => {
             tracks: [makeTrack([], { frozen: true, frozenTailSeconds: -5 })],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(
-            UNKNOWN_FROZEN_TAIL_SECONDS
-        );
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(UNKNOWN_FROZEN_TAIL_SECONDS);
     });
 
     it('falls back to the device chain when a frozen track records no baked tail', () => {
@@ -290,7 +330,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(40);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(40);
     });
 
     it('does not grant a muted frozen track the pre-fader send exception', () => {
@@ -309,7 +356,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(0);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(0);
     });
 
     it('ignores a frozen track, whose device chain never runs', () => {
@@ -324,7 +378,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(1.5);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(1.5);
     });
 
     it('ignores a disabled track, which is never given a strip', () => {
@@ -335,7 +396,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(1.5);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(1.5);
     });
 
     it('ignores a muted track when the export honours mute, as a mixdown does', () => {
@@ -346,7 +414,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(1.5);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(1.5);
     });
 
     it('counts a muted track when the export ignores mute, as a stem set does', () => {
@@ -357,7 +432,14 @@ describe('getAutoDetectedTailSeconds', () => {
             tracks: [makeTrack([{ type: 'builtin-reverb', parameterValues: { 'rev-decay': 20 } }], { muted: true })],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: false }).seconds).toBe(20);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: false,
+            }).seconds
+        ).toBe(20);
     });
 
     it('counts a muted track that still feeds a bus through a pre-fader send', () => {
@@ -373,7 +455,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(20);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(20);
     });
 
     it('still ignores a muted track whose only send is post-fader', () => {
@@ -388,7 +477,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(0);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(0);
     });
 
     it('reports when the estimate was clamped to the ceiling', () => {
@@ -401,14 +497,24 @@ describe('getAutoDetectedTailSeconds', () => {
         );
         mockTrackStore.value = { tracks: [uncapped] };
 
-        const capped = getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true });
+        const capped = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
+            honorMuted: true,
+        });
         expect(capped.seconds).toBe(60);
         expect(capped.clamped).toBe(true);
 
         mockTrackStore.value = {
             tracks: [makeTrack([{ type: 'builtin-reverb', parameterValues: { 'rev-decay': 5 } }])],
         };
-        const withinCeiling = getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true });
+        const withinCeiling = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
+            honorMuted: true,
+        });
         expect(withinCeiling.seconds).toBe(5);
         expect(withinCeiling.clamped).toBe(false);
     });
@@ -422,7 +528,14 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(4);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(4);
     });
 
     it('skips bypassed devices so their tail no longer counts', () => {
@@ -433,12 +546,26 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(1.5);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(1.5);
     });
 
     it('returns 0 when the track store has no state', () => {
         mockTrackStore.value = null;
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(0);
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBe(0);
     });
 
     it('reserves a track’s chain plus the bus chain it plays through', () => {
@@ -454,10 +581,14 @@ describe('getAutoDetectedTailSeconds', () => {
         };
 
         const delaySeconds = 0.25 * (Math.log(0.001) / Math.log(0.4));
-        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBeCloseTo(
-            delaySeconds + 2,
-            6
-        );
+        expect(
+            getAutoDetectedTailSeconds({
+                tailForDeviceType,
+                hostedTailSamplesByInstanceId: {},
+                engineSampleRate: null,
+                honorMuted: true,
+            }).seconds
+        ).toBeCloseTo(delaySeconds + 2, 6);
     });
 
     it('forwards the device projection together with the descriptor-declared tail', () => {
@@ -466,7 +597,12 @@ describe('getAutoDetectedTailSeconds', () => {
             tracks: [makeTrack([{ type: 'builtin-delay', parameterValues: { 'delay-time': 300 } }])],
         };
 
-        getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true });
+        getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
+            honorMuted: true,
+        });
         expect(spy).toHaveBeenCalledTimes(1);
         const projected = spy.mock.calls[0]![0];
         // The tail declaration has to come from the device's own descriptor —
@@ -506,7 +642,12 @@ describe('getAutoDetectedTailSeconds', () => {
         const spy = vi.spyOn(estimateMod, 'estimateRenderTailSeconds');
         mockTrackStore.value = { tracks: [makeTrack([{ type: 'builtin-eq' }])] };
 
-        getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true });
+        getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            hostedTailSamplesByInstanceId: {},
+            engineSampleRate: null,
+            honorMuted: true,
+        });
         const projected = spy.mock.calls[0]![0];
         expect(projected[0]!.devices[0]!.tail).toBeUndefined();
     });

@@ -19,11 +19,10 @@
  * near-silence, under-reserving is an audible cut (the estimator's own bias).
  */
 
-import { externalPluginTailStore } from '#/modules/PluginHost/stores';
-
-import { isExistingEngineReading } from '../../models/EngineRtDiagnostics';
 import { type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
-import { engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore';
+
+/** Frames of tail each loaded hosted instance reported, by instance id: `externalPluginTailStore`'s value. */
+export type HostedTailSamplesByInstanceId = Readonly<Record<string, number>>;
 
 /** The lowest tail either plugin format reads as one that never ends (`INT32_MAX`). */
 export const UNENDING_PLUGIN_TAIL_SAMPLES = 2_147_483_647;
@@ -37,17 +36,22 @@ function hostedPluginTailSeconds(input: { tailSamples: number; activationSampleR
     return tailSamples / activationSampleRate;
 }
 
-function runningEngineSampleRate(): number | null {
-    const latest = engineRtDiagnosticsStore.value?.latest ?? null;
-    return isExistingEngineReading(latest) ? latest.sampleRate : null;
-}
-
-/** The tail one hosted instance declares, or `undefined` when it reported none. */
-export function readHostedPluginTail(externalInstanceId: string): TailDeclarationLike | undefined {
-    const tailSamples = externalPluginTailStore.value?.tailSamplesByInstanceId[externalInstanceId];
+/**
+ * The tail one hosted instance declares, or `undefined` when it reported none.
+ *
+ * Read from the snapshot of PluginHost's `externalPluginTailStore` the caller
+ * hands in, never from the store: a presentation that subscribes to the store
+ * passes what it subscribed to, so its memoization sees the dependency.
+ */
+export function readHostedPluginTail(
+    externalInstanceId: string,
+    tailSamplesByInstanceId: HostedTailSamplesByInstanceId,
+    engineSampleRate: number | null
+): TailDeclarationLike | undefined {
+    const tailSamples = tailSamplesByInstanceId[externalInstanceId];
     if (tailSamples === undefined || !Number.isFinite(tailSamples) || tailSamples <= 0) {
         return undefined;
     }
-    const seconds = hostedPluginTailSeconds({ tailSamples, activationSampleRate: runningEngineSampleRate() });
+    const seconds = hostedPluginTailSeconds({ tailSamples, activationSampleRate: engineSampleRate });
     return seconds === null ? { kind: 'unbounded' } : { kind: 'fixed', seconds };
 }
