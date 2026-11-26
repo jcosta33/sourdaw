@@ -12,7 +12,13 @@ import {
 } from '../../perceptualConstraints/constraintClauseWords';
 import { words } from '../../perceptualConstraints/words';
 import { METRIC_COMPARATORS, readRequestMetricNumbers } from '../../readRequestMetricNumbers';
-import { CONTROL_WORDS, LEVEL_CONTROL_WORDS, TRACK_KIND_NOUNS } from '../protectionObjectForms';
+import {
+    CONTROL_WORDS,
+    KIND_NOUNS,
+    LEVEL_CONTROL_WORDS,
+    MIX_LEVEL_NOUNS,
+    TRACK_KIND_NOUNS,
+} from '../protectionObjectForms';
 import { protectionSlots } from '../readProtectionSlots';
 
 import { AMOUNT_QUALIFIER_PHRASES } from './amountQualifierWords';
@@ -41,6 +47,7 @@ import { getClauseIntentVocabulary } from './getClauseIntentVocabulary';
 import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { isGenericDeviceIntent } from './isGenericDeviceIntent';
+import { LEVEL_DESTINATION_NOUNS } from './levelDestinationNouns';
 import { MASKED_REFERENCE_PATTERN } from './maskProjectReferences';
 import { namesOnlyNonTrackObject } from './namesOnlyNonTrackObject';
 import { normalizePromptText } from './normalizePromptText';
@@ -105,7 +112,10 @@ const CURRENT_LEVEL_COMPARISON_PATTERN = new RegExp(
     'iu'
 );
 
-type ClauseToken = { kind: 'reference'; start: number; end: number } | { kind: 'word'; word: string };
+/** A word, and whether a project name the masking hid wrote it ("Mix" naming a device parameter). */
+type ClauseWord = { kind: 'word'; word: string; inName: boolean };
+
+type ClauseToken = { kind: 'reference'; start: number; end: number } | ClauseWord;
 
 type LevelClause = {
     /** The clause with project references masked, character for character with `text`. */
@@ -118,11 +128,11 @@ type ReadSpan = { start: number; end: number };
 /** A reason opener after the figure: where it starts, where its word ends, and that word normalized. */
 type ReasonOpener = ReadSpan & { word: string };
 
-function readWords(text: string): ClauseToken[] {
+function readWords(text: string, inName: boolean): ClauseToken[] {
     return normalizePromptText(text)
         .split(' ')
         .filter((word) => word.length > 0)
-        .map((word) => ({ kind: 'word', word }));
+        .map((word) => ({ kind: 'word', word, inName }));
 }
 
 /** The spans of `clause.masked[from, to)` the masking hid, in order. */
@@ -158,7 +168,7 @@ function readSpan(clause: LevelClause, span: ReadSpan, context: ProjectContext):
     if (isReference(clause, span, context)) {
         return [{ kind: 'reference', ...span }];
     }
-    return readWords(clause.text.slice(span.start, span.end));
+    return readWords(clause.text.slice(span.start, span.end), true);
 }
 
 /** The words and whole references of `clause.masked[from, to)`, in order. */
@@ -167,11 +177,11 @@ function readTokens(clause: LevelClause, from: number, to: number, context: Proj
     const tokens: ClauseToken[] = [];
     let cursor = from;
     for (const span of findMaskedSpans(clause, from, to)) {
-        tokens.push(...readWords(masked.slice(cursor, span.start)));
+        tokens.push(...readWords(masked.slice(cursor, span.start), false));
         tokens.push(...readSpan(clause, span, context));
         cursor = span.end;
     }
-    tokens.push(...readWords(masked.slice(cursor, to)));
+    tokens.push(...readWords(masked.slice(cursor, to), false));
     return tokens;
 }
 
@@ -222,15 +232,32 @@ function isLevelWord(word: string, levelWords: ReadonlySet<string>): boolean {
 
 /**
  * Whether a word before the figure is the level's own: one of its words, a preposition joining a level
- * noun to the target it belongs to ("the volume on the Drums"), or a kind noun after a reference ("the
- * Strings track"). Both join the target slot, so neither is read after the figure, which names none.
+ * noun to the target it belongs to ("the volume on the Drums"), or a kind or mix noun after a reference
+ * ("the Strings track", "the Drums mix"). Each joins the target slot, so none is read after the figure,
+ * which names none.
  */
-function isHeadLevelWord(word: string, previous: ClauseToken | undefined, levelWords: ReadonlySet<string>): boolean {
+function isHeadLevelWord(
+    token: ClauseWord,
+    previous: ClauseToken | undefined,
+    levelWords: ReadonlySet<string>
+): boolean {
+    const { word } = token;
     return (
         isLevelWord(word, levelWords) ||
         (LEVEL_NOUN_PREPOSITIONS.has(word) && isLevelNoun(previous)) ||
-        (isTrackKindNoun(word) && previous?.kind === 'reference')
+        (previous?.kind === 'reference' && namesReferencedTrack(token))
     );
+}
+
+/**
+ * Whether a word after a reference names that track: a kind noun, or a mix noun no device parameter's
+ * name wrote ("the Drums mix" beside a Mix parameter names that parameter).
+ */
+function namesReferencedTrack(token: ClauseWord): boolean {
+    if (isTrackKindNoun(token.word)) {
+        return true;
+    }
+    return MIX_LEVEL_NOUNS.includes(token.word) && !token.inName;
 }
 
 /**
@@ -244,7 +271,7 @@ function readsLevelHead(tokens: readonly ClauseToken[], levelWords: ReadonlySet<
     let slotRuns = 0;
     let previousIsSlot = false;
     for (const [index, token] of tokens.entries()) {
-        if (token.kind === 'reference' || isHeadLevelWord(token.word, tokens[index - 1], levelWords)) {
+        if (token.kind === 'reference' || isHeadLevelWord(token, tokens[index - 1], levelWords)) {
             previousIsSlot = false;
             continue;
         }
@@ -318,7 +345,7 @@ function findBoundary(pattern: RegExp, masked: string, from: number): number | n
 
 /** Whether a mixer control other than the level is named: "the send", "the pan". */
 function namesOtherControl(masked: string): boolean {
-    return readWords(masked).some(
+    return readWords(masked, false).some(
         (token) =>
             token.kind === 'word' &&
             !LEVEL_CONTROL_WORDS.includes(token.word) &&
@@ -372,11 +399,22 @@ function closesAmountQualifier(masked: string, end: number): boolean {
     return AMOUNT_QUALIFIER_PHRASES.some((phrase) => phrase.includes(' ') && read.endsWith(` ${phrase}`));
 }
 
+/** Whether a token names where a level goes: a reference, a kind of object ("the send") or a band or the master. */
+function namesLevelDestination(token: ClauseToken): boolean {
+    if (token.kind === 'reference') {
+        return true;
+    }
+    const singular = token.word.replace(/s$/u, '');
+    return [token.word, singular].some((form) => KIND_NOUNS.has(form) || LEVEL_DESTINATION_NOUNS.includes(form));
+}
+
 /**
  * Whether what an opener opens reads as a reason. A cause always does. A purpose does only as a clause
- * of its own: its first word a verb ("to make room") or a subject ("so it sits back", "so Drums sits
- * back"), never a determiner or a bare reference ("to Reverb", "to the low band", "so the send"), which
- * say where the level goes, never why.
+ * of its own. A verb opener's first word is a verb ("to make room"), never a determiner or a reference
+ * ("to Reverb", "to the low band"). A subject opener's subject is a word that is no determiner ("so it
+ * sits back"), a reference more words follow ("so Drums sits back") or a determiner whose words name no
+ * destination ("so the vocal sits"), never a bare reference ("so Vocals") or a destination ("so the low
+ * band", "so the send"), which say where the level goes, never why.
  */
 function opensReason(clause: LevelClause, opener: ReasonOpener, context: ProjectContext): boolean {
     if (CAUSE_OPENER_WORDS.includes(opener.word)) {
@@ -386,10 +424,14 @@ function opensReason(clause: LevelClause, opener: ReasonOpener, context: Project
     if (first === undefined) {
         return false;
     }
+    const opensSubject = SUBJECT_PURPOSE_OPENER_WORDS.includes(opener.word);
     if (first.kind === 'reference') {
-        return SUBJECT_PURPOSE_OPENER_WORDS.includes(opener.word) && rest.length > 0;
+        return opensSubject && rest.length > 0;
     }
-    return !DETERMINER_PATTERN.test(first.word);
+    if (!DETERMINER_PATTERN.test(first.word)) {
+        return true;
+    }
+    return opensSubject && rest.length > 0 && !rest.some(namesLevelDestination);
 }
 
 /**

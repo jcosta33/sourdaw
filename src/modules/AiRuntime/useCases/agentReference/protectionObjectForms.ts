@@ -30,6 +30,11 @@ export const CONNECTIVE_WORDS: ReadonlySet<string> = new Set([
 ]);
 /** The mixer controls that name a track's level: "the Drums fader", "the volume of the Drums". */
 export const LEVEL_CONTROL_WORDS: readonly string[] = ['gain', 'volume', 'fader', 'level'];
+/**
+ * A noun after a track's name that names that track's level in the mix: "the Drums mix". Where a device
+ * parameter carries the name the reference masking hides it, so it names that parameter instead.
+ */
+export const MIX_LEVEL_NOUNS: readonly string[] = ['mix'];
 /** The mixer controls a protection may qualify an object with, in the singular; a plural reads as its singular. */
 export const CONTROL_WORDS: ReadonlySet<string> = new Set([
     'pan',

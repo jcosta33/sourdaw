@@ -68,6 +68,7 @@ const context: ProjectContext = {
         createTrack('track-keys', 'Keys'),
         createTrack('track-vocals', 'Vocals'),
         createTrack('track-mix', 'Mix'),
+        createTrack('track-reverb', 'Reverb'),
     ],
     selectedTrackId: null,
     selectedClipId: null,
@@ -95,6 +96,16 @@ describe('readsAsLevelClause', () => {
         ['a scope word that lowers', 'attenuate Drums by 3 dB'],
         ['a scope word that raises', 'boost Drums by 3 dB'],
         ['a range phrase whose name holds a number before the figure', 'lift Drums in Verse 2 by 1.5 dB'],
+        [
+            'a subject opener whose determiner a subject and its predicate follow',
+            'turn Drums up 2 dB so the vocal sits better',
+        ],
+        ['a subject opener whose determiner a subject and one verb follow', 'turn Drums up 2 dB so the vocal sits'],
+        ['a subject opener whose subject is a pronoun', 'turn Drums up 2 dB so it sits better'],
+        [
+            'a two-word subject opener whose determiner a clause follows',
+            'turn Drums up 2 dB so that the kick cuts through',
+        ],
     ])('reads %s: "%s"', (_rule, prompt) => {
         const actionType = prompt.startsWith('lift') ? 'automateParameterRange' : 'setTrackGain';
 
@@ -110,6 +121,12 @@ describe('readsAsLevelClause', () => {
         ['the word clip written beside a reference', 'turn the Drums clip down 3 dB'],
         ['a track a verb opener names as where the level goes', 'turn Drums up 2 dB to Vocals level'],
         ['a track a subject opener names with nothing after it', 'turn Drums up 2 dB so Vocals'],
+        ['a noun phrase alone after a subject opener', 'turn Drums up 2 dB so the low band'],
+        ['a destination after an amount qualifier', 'turn Drums up 2 dB or so on Reverb'],
+        ['a track a verb opener names', 'turn Drums up 2 dB to Reverb'],
+        ['a determiner after a verb opener', 'turn Drums up 2 dB to the low band'],
+        ['a determiner a whole clause follows after a verb opener', 'turn Drums up 2 dB to the level of Vocals'],
+        ['a kind of object after a subject opener', 'turn Drums up 2 dB so the send'],
     ])('refuses %s: "%s"', (_rule, prompt) => {
         expect(reads(prompt)).toBe(false);
     });

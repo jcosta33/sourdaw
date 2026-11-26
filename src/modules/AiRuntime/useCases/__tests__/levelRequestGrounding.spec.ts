@@ -1632,6 +1632,9 @@ describe('a track level clause reads purposes, comparisons and parameter-named w
         ['turn Drums up 2 dB or so', { deltaDb: 2 }],
         ['turn Drums up 2 dB so it sits better', { deltaDb: 2 }],
         ['turn Drums up 2 dB so that it sits better', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so the vocal sits', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so the vocal sits better', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so that the kick cuts through', { deltaDb: 2 }],
         ['turn Drums up 2 dB so Drums sits better', { deltaDb: 2 }],
         ['turn Drums up 2 dB to make room for the vocal', { deltaDb: 2 }],
         ['lower Drums by 3 dB relative to the current level', { deltaDb: -3 }],
@@ -1704,6 +1707,12 @@ describe('a track level clause reads purposes, comparisons and parameter-named w
             expect(result.actions).toEqual([]);
         }
     );
+
+    it('grounds "lower the Drums mix by 3 dB" where no device carries a Mix parameter', () => {
+        const result = bridge([gain(drums.id, { deltaDb: -3 })], 'lower the Drums mix by 3 dB', purposeContext);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, deltaDb: -3 } }]);
+    });
 
     it('puts no fader level on Drums for "lower Drums by 3 dB in the Mix", which names a bus called Mix', () => {
         const result = bridge([gain(drums.id, { deltaDb: -3 })], 'lower Drums by 3 dB in the Mix', mixBusContext);
