@@ -433,6 +433,31 @@ async function waitForTransientMaterialization(
     return (await lifetime.waitForFrame()) ? 'ready' : 'cancelled';
 }
 
+/**
+ * One planning attempt: the rows at the clip-start tempo read from the document
+ * and, unless the replacement is already stored, its private preparation.
+ * Undefined when the clip-start tempo cannot be read.
+ */
+function planDetectAttempt(
+    preparationScope: PreparationScope,
+    result: DetectedSource,
+    trackId: string,
+    clipId: string
+): { rows: TransientRows; plan: TransientPlan } | undefined {
+    const clipStartTempo = readDocumentClipStartTempo(trackId, clipId);
+    if (clipStartTempo === undefined) {
+        return undefined;
+    }
+    return measurePreparationTask('elastic-transient-plan-task', () => {
+        const rows = planTransientRows(clipId, result, clipStartTempo);
+        // An identical replacement needs no private preparation: it completes without a write.
+        if (replacementIsStored(clipId, rows.replacement)) {
+            return { rows, plan: null };
+        }
+        return { rows, plan: prepareTransientWarpState(preparationScope, clipId, rows.replacement) };
+    });
+}
+
 async function consumeDetectedTransients(
     action: DetectAction,
     context: DetectContext,
@@ -447,18 +472,10 @@ async function consumeDetectedTransients(
     }
     const { clipId, trackId } = result.identity;
     while (lifetime.isCurrent()) {
-        const clipStartTempo = readDocumentClipStartTempo(trackId, clipId);
-        if (clipStartTempo === undefined) {
+        const attempt = planDetectAttempt(preparationScope, result, trackId, clipId);
+        if (!attempt) {
             return transientConflict();
         }
-        const attempt = measurePreparationTask('elastic-transient-plan-task', () => {
-            const rows = planTransientRows(clipId, result, clipStartTempo);
-            // An identical replacement needs no private preparation: it completes without a write.
-            if (replacementIsStored(clipId, rows.replacement)) {
-                return { rows, plan: null };
-            }
-            return { rows, plan: prepareTransientWarpState(preparationScope, clipId, rows.replacement) };
-        });
         const rows = attempt.rows;
         const plan = attempt.plan;
         try {
@@ -476,8 +493,6 @@ async function consumeDetectedTransients(
                 if (!plan.isCurrent()) {
                     continue;
                 }
-            }
-            if (plan) {
                 const request = plan.requestMaterialization;
                 let materialization: MaterializationOutcome = 'ready';
                 if (request) {
