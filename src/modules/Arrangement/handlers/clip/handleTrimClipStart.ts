@@ -199,6 +199,10 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
     return { label, inverseAction, redoAction };
 }
 
+function hasExpectation(payload: TrimClipStartAction['payload']): boolean {
+    return payload.expectedStartBeat !== undefined || payload.expectedMidiOffsetBeats !== undefined;
+}
+
 /** Whether the clip is where a recorded leg expects it: the head, and for MIDI the stored offset. */
 function holdsExpectedState(payload: TrimClipStartAction['payload'], clip: Clip | undefined): boolean {
     if (payload.expectedStartBeat !== undefined && clip?.startBeat !== payload.expectedStartBeat) {
@@ -212,13 +216,18 @@ function holdsExpectedState(payload: TrimClipStartAction['payload'], clip: Clip 
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     canReportConflict: true,
-    canReapplyAfterDivergence: (alpha) =>
-        alpha.payload.expectedStartBeat !== undefined || alpha.payload.expectedMidiOffsetBeats !== undefined,
-    validate: (alpha, context) => holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
+    canReapplyAfterDivergence: (alpha) => hasExpectation(alpha.payload),
+    // An unguarded trim never reads the live clip here; the writer owns its own malformed-state refusal.
+    validate: (alpha, context) =>
+        !hasExpectation(alpha.payload) ||
+        holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
     validateSessionEntry: (entry) =>
         audioClipStartTrimState.isSessionEntry(entry) && rowReplay.validateSessionEntry(entry),
     execute: (alpha) => {
-        if (!holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId))) {
+        if (
+            hasExpectation(alpha.payload) &&
+            !holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId))
+        ) {
             return { status: 'conflict' };
         }
         if (!rowReplay.canExecute(alpha)) {

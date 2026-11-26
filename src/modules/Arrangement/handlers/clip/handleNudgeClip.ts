@@ -60,7 +60,8 @@ export const handleNudgeClip = createHandler<'nudgeClip'>({
     canReapplyAfterDivergence: (alpha) => hasExpectation(alpha.payload),
     validate: (alpha, context) =>
         isAcceptablePlacement(alpha.payload) &&
-        holdsExpectedPlacement(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
+        (!hasExpectation(alpha.payload) ||
+            holdsExpectedPlacement(alpha.payload, readPlannedClip(alpha.payload.clipId, context))),
     execute: (alpha) => {
         if (!isAcceptablePlacement(alpha.payload)) {
             return { status: 'conflict' };
