@@ -708,6 +708,7 @@ beforeEach(async () => {
     nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.programmeCarrier = false;
+    nativeLiveGraphSession.compensationDelaysByStripId = new Map();
     nativeLiveGraphSession.auditionOwner = null;
     nativeLiveGraphSession.auditionRestorationOwner = null;
     nativeLiveGraphSession.auditionOutputSuppressed = false;
@@ -1281,6 +1282,22 @@ describe('startNativeLiveGraphSession', () => {
             expect.objectContaining({ kind: 'set-track-output', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'bus-1' }),
         ]);
+    });
+
+    // The notes and automation of this play read the figure its clips were placed with, so the
+    // session has to hold the installed programme's own map, not a live read taken later.
+    it('holds the compensation the installed programme placed its clips with', async () => {
+        const placedWith = new Map([['audio-1', 0.3]]);
+        mocks.programmeOverride = { ...PLAYING_PROGRAMME, compensationDelaysByStripId: placedWith };
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(nativeLiveGraphSession.compensationDelaysByStripId).toEqual(new Map([['audio-1', 0.3]]));
     });
 
     it('installing a new session disposes the orphan, which has nothing left to park', async () => {

@@ -74,6 +74,7 @@ function programme(tag: string): LiveGraphProgramme {
         bakedStripIds: new Set(),
         webVoicedStripIds: new Set(),
         exclusions: [{ stripId: tag, subjectId: tag, reason: tag }],
+        compensationDelaysByStripId: new Map(),
     };
 }
 

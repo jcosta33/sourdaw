@@ -9525,9 +9525,6 @@
         },
         "sourdaw-craft/no-control-flow-ternary": {
             "count": 2
-        },
-        "sourdaw-craft/no-spread-clone-array-method": {
-            "count": 1
         }
     },
     "src/modules/AudioEngine/useCases/livePlayback/readLiveMidiProgramme.ts": {

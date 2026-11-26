@@ -38,6 +38,7 @@ const programme: LiveGraphProgramme = {
     bakedStripIds: new Set(),
     webVoicedStripIds: new Set(),
     exclusions: [],
+    compensationDelaysByStripId: new Map(),
 };
 function project(tracks: Track[], attached = new Set(['attached'])) {
     const input = {

@@ -200,6 +200,13 @@ export type NativeLiveGraphSession = {
      * only by `claimCarriedStrips`, which is what keeps the two in step.
      */
     carriedStripIds: ReadonlySet<string>;
+    /**
+     * The compensation the clip programme of the play now running was placed
+     * with, per track. The notes and automation of the same play read it back
+     * instead of the live figure, which moves when a latent device is inserted
+     * mid-roll while the clips stay where they were placed.
+     */
+    compensationDelaysByStripId: ReadonlyMap<string, number>;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
     /** Settles when the next session command settles, whether queued before or after it is read. */
@@ -235,6 +242,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     rearmEpoch: 0,
     startsPending: 0,
     carriedStripIds: new Set(),
+    compensationDelaysByStripId: new Map(),
     pending: Promise.resolve(),
     commandSettled: Promise.withResolvers<void>(),
 };

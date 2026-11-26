@@ -152,6 +152,13 @@ export type LiveMidiProgrammeInput = Readonly<{
      */
     resolveArticulationId: OfflineMidiArticulationResolver | null;
     span: LiveMidiSpan;
+    /**
+     * The span one strip's notes are admitted against, in the strip's own
+     * (uncompensated) note time; absent, every strip answers to {@link span}.
+     * A caller that moves a strip's events after projection widens or narrows
+     * the span by that move, so a note is admitted by where it will sound.
+     */
+    spanForStrip?: (stripId: string) => LiveMidiSpan;
 }>;
 
 /** One projected note, before it becomes a note-on and a note-off. */
@@ -519,14 +526,15 @@ export function projectLiveMidiProgramme(input: LiveMidiProgrammeInput): LiveMid
         // releases: the engine holds one key per (channel, note) for it, so the
         // overlap trim and the release both apply.
         const body = nativeBuiltinBody(sink.device.type);
+        const stripSpan = input.spanForStrip ? input.spanForStrip(track.id) : span;
         const events =
             body && !body.takesClipNoteReleases
-                ? strikesForSpan(notes, span)
+                ? strikesForSpan(notes, stripSpan)
                 : eventsForSpan(
                       [...groupByKey(notes).values()].flatMap((keyNotes) =>
                           resolveSameKeyOverlaps(keyNotes, frameSeconds)
                       ),
-                      span
+                      stripSpan
                   );
         if (events.length === 0) {
             continue;

@@ -44,6 +44,8 @@ function noProgramme(stripTracks: LiveGraphProgrammeInput['stripTracks']): LiveG
         bakedStripIds: new Set(),
         webVoicedStripIds: stripIdsHoldingLiveClips(stripTracks),
         exclusions: [],
+        // No clip was placed, so there is no figure for the notes to keep.
+        compensationDelaysByStripId: new Map(),
     };
 }
 

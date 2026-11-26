@@ -155,6 +155,14 @@ function hostedValues(result: ReturnType<typeof readLiveAutomationWrites>, param
     return (entry?.writes ?? []).flatMap((write) => (write.shape === 'step' ? [write.value] : []));
 }
 
+/** The times of the same steps {@link hostedValues} reads. */
+function hostedTimes(result: ReturnType<typeof readLiveAutomationWrites>, parameterId: string): readonly number[] {
+    const entry = result.entries.find(
+        (candidate) => candidate.target.kind === 'device-parameter' && candidate.target.parameterId === parameterId
+    );
+    return (entry?.writes ?? []).flatMap((write) => (write.shape === 'step' ? [write.time] : []));
+}
+
 function emptySeam(): void {
     offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
     offlineDeviceParameterLawState.clampExternalPluginValue = null;
@@ -246,6 +254,9 @@ afterEach(() => {
     automationStore.set({ lanes: [] });
     nativeLiveGraphSession.carriedStripIds = new Set();
     nativeLiveGraphSession.nativeChainByStripId = new Map();
+    nativeLiveGraphSession.compensationDelaysByStripId = new Map();
+    vi.mocked(getCompensationDelay).mockReset();
+    vi.mocked(getCompensationDelay).mockImplementation(() => 0);
 });
 
 describe('readLiveAutomationWrites', () => {
@@ -260,6 +271,22 @@ describe('readLiveAutomationWrites', () => {
             deviceId: HOSTED_DEVICE.id,
             parameterId: '7',
         });
+    });
+
+    // A device inserted mid-roll moves the live figure while the clips keep the one the play
+    // placed them with, and a write that followed the live figure would drift off its strip's clips.
+    it('delays its writes by the figure the session captured, not the live one', () => {
+        fillSeam();
+        const unshifted = hostedTimes(readOneRegion(), '7');
+        nativeLiveGraphSession.compensationDelaysByStripId = new Map([[TRACK.id, 0.25]]);
+        vi.mocked(getCompensationDelay).mockImplementation(() => 0.75);
+
+        const shifted = hostedTimes(readOneRegion(), '7');
+
+        // The opening write is held at the region's first frame whatever the delay; the rest move.
+        const [opening = 0, ...later] = unshifted;
+        expect(later.length).toBeGreaterThan(0);
+        expect(shifted).toEqual([opening, ...later.map((time) => time + 0.25)]);
     });
 
     // A write's own delay has to match the programme's, and that programme
