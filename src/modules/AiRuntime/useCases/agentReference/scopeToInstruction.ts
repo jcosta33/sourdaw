@@ -38,24 +38,28 @@ function getOtherInstructions({ clauses, instruction, reader }: InstructionScope
     return ranges;
 }
 
-/** Whether the call's instruction names a track of its own before any back-reference to earlier ones. */
-function namesOwnTracks({ text, instruction, reader }: InstructionScopeInput): boolean {
+/**
+ * Whether the call's instruction refers back to tracks stated before it ("them", "it", "that track")
+ * and names none of its own before that reference.
+ */
+function readsBackToAntecedent({ text, instruction, reader }: InstructionScopeInput): boolean {
     const own = text.slice(instruction.start, instruction.end);
-    return reader.namesTracks(own.slice(0, reader.findBackReference(own)));
+    const backReference = reader.findBackReference(own);
+    return backReference !== undefined && !reader.namesTracks(own.slice(0, backReference));
 }
 
 /**
- * The request with every other instruction that names its own tracks blanked, so a name only another
+ * The request with every other instruction that names tracks blanked, so a name only another
  * instruction states never picks the call's target ("set Vocals volume to 75% and mute Keys"). An
- * instruction naming no track of its own, or none before it refers back, keeps the nearest earlier
- * one naming tracks ("Mute Vocals and Keys, then pan them left"). Text giving no instruction always
- * stays: "Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums".
+ * instruction that refers back to earlier tracks and names none of its own before it keeps the
+ * nearest earlier one naming tracks ("Mute Vocals and Keys, then pan them left"). Text giving no
+ * instruction always stays: "Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums".
  */
 export function scopeToInstruction(input: InstructionScopeInput): string {
     const naming = getOtherInstructions(input).filter((range) =>
         input.reader.namesTracks(input.text.slice(range.start, range.end))
     );
-    if (namesOwnTracks(input)) {
+    if (!readsBackToAntecedent(input)) {
         return naming.reduce(blankRange, input.text);
     }
     const antecedent = naming.findLast((range) => range.end <= input.instruction.start);

@@ -255,6 +255,30 @@ describe('a compiled pick reads the request less the other instructions that nam
         ).toEqual(UNAUTHORIZED);
     });
 
+    it('refuses Keys for "mute Keys and set the pad to 60%", whose own instruction refers back to nothing', () => {
+        const padMix = createProjectContext([keys, createTrack('track-synth-pad', 'Synth Pad')]);
+        const prompt = 'mute Keys and set the pad to 60%';
+
+        expect(
+            admitPick(prompt, 'set the pad to 60%', (instruction) =>
+                pickTerms(trackNamed('Keys'), ['track-keys'], instruction, padMix)
+            )
+        ).toEqual(UNAUTHORIZED);
+    });
+
+    it.each([['track-vocals'], ['track-keys']])(
+        'admits %s for "Mute Vocals and Keys, then pan them left", which refers back to both',
+        (targetId) => {
+            const name = targetId === 'track-vocals' ? 'Vocals' : 'Keys';
+
+            expect(
+                admitPick('Mute Vocals and Keys, then pan them left', 'pan them left', (instruction) =>
+                    pickTerms(trackNamed(name), [targetId], instruction)
+                )
+            ).toEqual(ADMITTED);
+        }
+    );
+
     it('reads each instruction of one batch apart, whatever start or end the two share', () => {
         const prompt = 'set Vocals volume to 75% and mute Keys';
         const whole = { start: 0, end: prompt.length };

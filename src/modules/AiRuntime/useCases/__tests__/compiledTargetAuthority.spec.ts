@@ -3278,17 +3278,22 @@ describe('#5393 an instruction naming no track reads back one whole antecedent',
             gainItems([mixBass, mixDrums, mixKeys], { gain: 0.75 }),
             [mixBass.id, mixDrums.id, mixKeys.id],
         ],
-        // The colon follows words other than names, so it closes no header and the instruction reads back.
-        [
-            'Mute Vocals, then set volume at 1:30 to 75%',
-            [trackItem('muteTrack', mixVocals, { muted: true }), ...gainItems([mixVocals], { gain: 0.75 })],
-            [mixVocals.id, mixVocals.id],
-        ],
     ])('grounds "%s"', (prompt, items, expected) => {
         const result = compileMix(prompt, items);
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual(expected);
+    });
+
+    // The gain instruction refers back to nothing, so the Vocals the mute names is not its own.
+    it('refuses the Vocals gain for "Mute Vocals, then set volume at 1:30 to 75%"', () => {
+        const result = compileMix('Mute Vocals, then set volume at 1:30 to 75%', [
+            trackItem('muteTrack', mixVocals, { muted: true }),
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+        ]);
+
+        expect(targetsOf(result)).toEqual([mixVocals.id]);
+        expect(authorityRefusals(result)).not.toEqual([]);
     });
 
     it('refuses the backing vocals a vocal-family pan reaches for "turn down the lead vocal by 3 dB and pan it 20% left"', () => {
