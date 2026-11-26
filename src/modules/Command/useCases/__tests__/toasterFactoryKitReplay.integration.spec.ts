@@ -468,6 +468,73 @@ describe('Toaster factory kit history through production Command and document st
         expectChunk({ version: 1, data: { ...UNOWNED, kit: { pads, masterGain: 0.3 } } });
     });
 
+    it.each([
+        {
+            name: 'a stale missing-chunk capture after another writer creates the kit',
+            before: { version: 1, data: { ...UNOWNED, kit: { masterGain: 0.7 } } },
+            action: masterGain({ kind: 'missing-chunk' }, 0.3),
+        },
+        {
+            name: 'a missing owner device',
+            before: { version: 1, data: { ...UNOWNED, kit: { masterGain: 0.7 } } },
+            action: {
+                ...masterGain({ kind: 'value', value: 0.7 }, 0.3),
+                payload: {
+                    ...masterGain({ kind: 'value', value: 0.7 }, 0.3).payload,
+                    deviceId: 'removed-toaster',
+                    deviceIds: ['removed-toaster', NEIGHBOR.id],
+                },
+            } satisfies AppAction,
+        },
+        {
+            name: 'a malformed raw kit source',
+            before: { version: 1, data: { ...UNOWNED, kit: { masterGain: 'invalid' } } },
+            action: masterGain({ kind: 'value', value: 0.7 }, 0.3),
+        },
+        {
+            name: 'an unsupported raw chunk version',
+            before: { version: 2, data: { ...UNOWNED, kit: { masterGain: 0.7 } } },
+            action: masterGain({ kind: 'value', value: 0.7 }, 0.3),
+        },
+        {
+            name: 'a non-map raw kit',
+            before: { version: 1, data: { ...UNOWNED, kit: [] } },
+            action: masterGain({ kind: 'value', value: 0.7 }, 0.3),
+        },
+        {
+            name: 'a malformed non-finite capture',
+            before: { version: 1, data: { ...UNOWNED, kit: { masterGain: 0.7 } } },
+            action: {
+                ...masterGain({ kind: 'value', value: 0.7 }, 0.3),
+                payload: {
+                    ...masterGain({ kind: 'value', value: 0.7 }, 0.3).payload,
+                    before: { kind: 'value', value: Number.NaN },
+                },
+            } satisfies AppAction,
+        },
+    ] satisfies { name: string; before: DeviceStateChunkSnapshot; action: AppAction }[])(
+        'refuses Master edits with $name without changing raw authority, history, or the peer Toaster',
+        async ({ before, action }) => {
+            seed({ before });
+            const original = structuredClone(track());
+            await expect(executeAppActionBatch([action])).resolves.toMatchObject({ status: 'conflicted', actions: [] });
+            expect(track()).toEqual(original);
+            expect(undoStore.value?.past).toEqual([]);
+        }
+    );
+
+    it('refuses a Master edit from a wrong device type without changing either Toaster state', async () => {
+        const before = { version: 1, data: { ...UNOWNED, kit: { masterGain: 0.7 } } };
+        seed({ before, wrongType: true });
+        const original = structuredClone(track());
+        await expect(executeAppActionBatch([masterGain({ kind: 'value', value: 0.7 }, 0.3)])).resolves.toMatchObject({
+            status: 'conflicted',
+            actions: [],
+        });
+        expect(track()).toEqual(original);
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
     it('refuses a mixed Master batch before the earlier rename can write', async () => {
         seed();
         const action = masterGain({ kind: 'missing-chunk' }, 0);
