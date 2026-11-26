@@ -292,11 +292,9 @@ fn vst3_instance_capabilities(
 
 /// A scanned parameter descriptor from a live parameter.
 ///
-/// `is_modulatable` is false and `is_enum` is false because VST3 declares
-/// neither: it has no per-note modulation flag, and `kIsList` marks a stepped
-/// list rather than the enum contract this field names. `stepCount` is what VST3
-/// uses to say a parameter is stepped, and it is not on the seam's parameter
-/// type — so `is_stepped` reports the one thing that *is* knowable from here.
+/// `is_modulatable` is false because VST3 has no per-note modulation flag.
+/// `stepCount` is what VST3 uses to say a parameter is stepped, and `kIsList`
+/// marks a list of named choices, which is this field's enum.
 fn scanned_parameter(parameter: crate::params::PluginParameter) -> ScannedParameterDescriptor {
     ScannedParameterDescriptor {
         id: parameter.id,
@@ -307,8 +305,8 @@ fn scanned_parameter(parameter: crate::params::PluginParameter) -> ScannedParame
         default_value: parameter.default_value,
         is_automatable: parameter.is_automatable,
         is_modulatable: false,
-        is_stepped: false,
-        is_enum: false,
+        is_stepped: parameter.step_count > 0,
+        is_enum: parameter.is_list,
     }
 }
 
@@ -378,6 +376,38 @@ mod tests {
 
     fn categories(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    fn live_parameter(step_count: u32, is_list: bool) -> crate::params::PluginParameter {
+        crate::params::PluginParameter {
+            id: 7,
+            name: "Type".to_string(),
+            value: 0.0,
+            default_value: 0.0,
+            min_value: 0.0,
+            max_value: 1.0,
+            unit: None,
+            is_automatable: true,
+            display_text: None,
+            step_count,
+            is_list,
+            is_read_only: false,
+        }
+    }
+
+    #[test]
+    fn a_stepped_list_parameter_scans_as_stepped_and_enum() {
+        let list = scanned_parameter(live_parameter(3, true));
+        assert!(list.is_stepped);
+        assert!(list.is_enum);
+
+        let toggle = scanned_parameter(live_parameter(1, false));
+        assert!(toggle.is_stepped);
+        assert!(!toggle.is_enum);
+
+        let continuous = scanned_parameter(live_parameter(0, false));
+        assert!(!continuous.is_stepped);
+        assert!(!continuous.is_enum);
     }
 
     /// The scan publishes the bus totals it read and leaves the editor

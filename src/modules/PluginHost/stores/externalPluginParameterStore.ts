@@ -24,6 +24,14 @@ export type ExternalPluginParameter = {
     unit: string;
     /** The plugin's own declaration. A parameter it refuses to automate is never offered. */
     isAutomatable: boolean;
+    /** The plugin's own text for `value`; `null` when the plugin offers none. */
+    displayText: string | null;
+    /** 0 is continuous, 1 a toggle, more a stepped control. */
+    stepCount: number;
+    /** The plugin marks the parameter as a list of named choices. */
+    isList: boolean;
+    /** The plugin reports the parameter and nobody edits it, such as a meter. */
+    isReadOnly: boolean;
 };
 
 /**
@@ -217,7 +225,9 @@ export function markExternalPluginParameterSnapshotsAttached(instanceIds: Readon
  * Only the value moves: a plugin-side edit says what the control is now set to
  * and nothing about its name, range or automatability, so patching the rest from
  * here would be describing a contract the plugin never re-declared — that is
- * what `patchExternalPluginParameters` is for, after a rescan.
+ * what `patchExternalPluginParameters` is for, after a rescan. The display text
+ * was the plugin's text for the old value, so it is cleared until it is asked
+ * for again (`formatExternalPluginParameterValue`).
  *
  * An unknown instance or parameter is ignored rather than created. A value with
  * no contract behind it has no range to be read against, and inventing one would
@@ -234,7 +244,7 @@ export function patchExternalPluginParameterValue(instanceId: string, parameterI
             return current;
         }
         const parameters = snapshot.parameters.map((parameter) =>
-            parameter.id === parameterId ? { ...parameter, value } : parameter
+            parameter.id === parameterId ? { ...parameter, value, displayText: null } : parameter
         );
         bumpEditGeneration(instanceId, parameterId);
         return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, parameters } } };

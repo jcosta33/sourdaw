@@ -2,13 +2,6 @@ import { type ExternalPluginParameter } from '#/modules/PluginHost/stores';
 
 import { type Device } from '../../models/TrackViewTypes';
 
-/** Scan-time facts about one parameter that the live snapshot does not carry. */
-export type ExternalPluginParameterScanFacts = {
-    id: number;
-    is_stepped: boolean;
-    is_enum: boolean;
-};
-
 export type ExternalPluginParameterControlKind = 'toggle' | 'stepped' | 'continuous';
 
 export type ExternalPluginParameterRow = {
@@ -21,23 +14,33 @@ export type ExternalPluginParameterRow = {
     kind: ExternalPluginParameterControlKind;
     /** The unit shown beside the value; empty when the plugin declares none or the value is normalized. */
     unit: string;
+    /** The plugin's own text for `value`, or the plain number when it offers none. */
     valueText: string;
+    /** The plugin's own text for `value`; null when it offers none. */
+    displayText: string | null;
+    /** The plugin reports this parameter and nobody edits it, such as a meter. */
+    readOnly: boolean;
 };
 
 const CONTINUOUS_STEPS = 1000;
 
-function classify(
-    parameter: ExternalPluginParameter,
-    scan: ExternalPluginParameterScanFacts | undefined
-): ExternalPluginParameterControlKind {
-    if (!scan || !(scan.is_stepped || scan.is_enum)) {
-        return 'continuous';
-    }
-    const span = parameter.maxValue - parameter.minValue;
-    if (span === 1 && Number.isInteger(parameter.minValue) && Number.isInteger(parameter.maxValue)) {
+function classify(parameter: ExternalPluginParameter): ExternalPluginParameterControlKind {
+    if (parameter.stepCount === 1) {
         return 'toggle';
     }
-    return 'stepped';
+    if (parameter.stepCount > 1 || parameter.isList) {
+        return 'stepped';
+    }
+    return 'continuous';
+}
+
+/** One step between neighbouring settings: the span divided by the plugin's step count. */
+function stepFor(parameter: ExternalPluginParameter, kind: ExternalPluginParameterControlKind): number {
+    const span = parameter.maxValue - parameter.minValue;
+    if (kind === 'continuous') {
+        return span / CONTINUOUS_STEPS;
+    }
+    return parameter.stepCount > 0 ? span / parameter.stepCount : 1;
 }
 
 /** A wider range needs fewer decimals to tell neighbouring settings apart. */
@@ -81,24 +84,26 @@ export type BuildExternalPluginParameterRowsOptions = {
 
 export function buildExternalPluginParameterRows(
     parameters: readonly ExternalPluginParameter[],
-    scanParameters: readonly ExternalPluginParameterScanFacts[] | undefined,
     options: BuildExternalPluginParameterRowsOptions = { valuesAreNormalized: false }
 ): ExternalPluginParameterRow[] {
-    const scanById = new Map((scanParameters ?? []).map((scan) => [scan.id, scan]));
     return parameters.map((parameter) => {
-        const kind = classify(parameter, scanById.get(parameter.id));
-        const span = parameter.maxValue - parameter.minValue;
+        const kind = classify(parameter);
         const row = {
             id: parameter.id,
             name: parameter.name,
             value: parameter.value,
             min: parameter.minValue,
             max: parameter.maxValue,
-            step: kind === 'continuous' ? span / CONTINUOUS_STEPS : 1,
+            step: stepFor(parameter, kind),
             kind,
             unit: options.valuesAreNormalized ? '' : parameter.unit,
+            displayText: parameter.displayText,
+            readOnly: parameter.isReadOnly,
         };
-        return { ...row, valueText: formatExternalPluginParameterValue(row, parameter.value) };
+        return {
+            ...row,
+            valueText: parameter.displayText ?? formatExternalPluginParameterValue(row, parameter.value),
+        };
     });
 }
 

@@ -4017,6 +4017,63 @@ fn read_plugin_parameters(
     Ok(instance.parameters.clone())
 }
 
+/// The plugin's own text for `value` of one parameter of a loaded instance, or
+/// `None` when the plugin offers none.
+pub async fn format_plugin_parameter_value(
+    instance_id: PluginInstanceId,
+    param_id: u32,
+    value: f64,
+    state: &AppState,
+) -> Result<Option<String>, String> {
+    read_plugin_parameter_text(&instance_id.0, param_id, value, state)
+        .map_err(|error| error.to_string())
+}
+
+fn read_plugin_parameter_text(
+    instance_id: &str,
+    param_id: u32,
+    value: f64,
+    state: &AppState,
+) -> Result<Option<String>, PluginCommandError> {
+    if let Some(runtime) = dormant_plugin_runtime(state, instance_id)? {
+        return runtime
+            .with_control(std::time::Duration::from_secs(2), |plugin| {
+                Ok(plugin.parameter_value_text(param_id, value))
+            })
+            .map_err(|error| PluginCommandError::Control(error.into_refusal()));
+    }
+
+    // Resolve the runtime under the map lock and release it before the call:
+    // the text call is plugin code run on the control seam, which can wait on
+    // the audio thread.
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(PluginCommandError::lock("engine_plugins"))?;
+        match engine_plugins.get(instance_id) {
+            Some(instance) => {
+                instance
+                    .runtime
+                    .ensure_public_control_allowed()
+                    .map_err(PluginCommandError::Control)?;
+                Arc::clone(&instance.runtime)
+            }
+            None => {
+                return Err(PluginCommandError::NoInstance {
+                    instance_id: instance_id.to_string(),
+                })
+            }
+        }
+    };
+
+    runtime
+        .with_control(std::time::Duration::from_secs(2), |plugin| {
+            Ok(plugin.parameter_value_text(param_id, value))
+        })
+        .map_err(|error| PluginCommandError::Control(error.into_refusal()))
+}
+
 /// Read a loaded plugin instance's opaque state chunk.
 ///
 /// Shared by the command layer so the transport can change without the lookup
@@ -4480,6 +4537,10 @@ mod tests {
             max_value: 1.0,
             unit: None,
             is_automatable: true,
+            display_text: None,
+            step_count: 0,
+            is_list: false,
+            is_read_only: false,
         }
     }
 
@@ -4754,6 +4815,58 @@ mod tests {
             parameters.iter().map(|p| p.value).collect::<Vec<_>>(),
             vec![0.9],
             "a parameter changed inside the plugin must reach the command"
+        );
+    }
+
+    #[test]
+    fn format_plugin_parameter_value_returns_the_plugins_text() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "instance-value-text", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "instance-value-text");
+        let mut shaped = plugin_parameter(7, 0.9);
+        shaped.display_text = Some("1.20 kHz".to_string());
+        runtime
+            .with_control(Duration::from_secs(2), |plugin| {
+                plugin
+                    .set_engine_owned_command_fixture_parameters(vec![shaped])
+                    .map_err(|error| error.to_string())
+            })
+            .expect("fixture control access should succeed");
+
+        let text = crate::block_on_test(format_plugin_parameter_value(
+            PluginInstanceId("instance-value-text".to_string()),
+            7,
+            0.9,
+            &state,
+        ))
+        .expect("the text should resolve");
+        let none = crate::block_on_test(format_plugin_parameter_value(
+            PluginInstanceId("instance-value-text".to_string()),
+            8,
+            0.9,
+            &state,
+        ))
+        .expect("a parameter with no text still resolves");
+
+        assert_eq!(text.as_deref(), Some("1.20 kHz"));
+        assert_eq!(none, None);
+    }
+
+    #[test]
+    fn format_plugin_parameter_value_refuses_an_unknown_instance() {
+        let state = AppState::default();
+
+        let error = crate::block_on_test(format_plugin_parameter_value(
+            PluginInstanceId("no-such-instance".to_string()),
+            7,
+            0.5,
+            &state,
+        ))
+        .expect_err("an unknown instance has no text to give");
+
+        assert!(
+            error.contains("no-such-instance"),
+            "the refusal names the instance: {error}"
         );
     }
 

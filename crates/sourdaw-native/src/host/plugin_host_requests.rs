@@ -998,6 +998,10 @@ mod tests {
             max_value: 1.0,
             unit: None,
             is_automatable: true,
+            display_text: None,
+            step_count: 0,
+            is_list: false,
+            is_read_only: false,
         }
     }
 

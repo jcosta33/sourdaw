@@ -796,6 +796,24 @@ impl SourdawNative {
     }
 
     #[napi]
+    pub async fn format_plugin_parameter_value(
+        &self,
+        instance_id: String,
+        param_id: u32,
+        value: f64,
+    ) -> Result<Value> {
+        json(reason(
+            commands::plugins::format_plugin_parameter_value(
+                PluginInstanceId(instance_id),
+                param_id,
+                value,
+                &self.singletons.app_state,
+            )
+            .await,
+        )?)
+    }
+
+    #[napi]
     pub async fn get_plugin_state_bytes(&self, instance_id: String) -> Result<Buffer> {
         Ok(Buffer::from(reason(
             commands::plugins::get_plugin_state_bytes(

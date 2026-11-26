@@ -41,6 +41,7 @@ const UNKNOWN_CID: TUID = uid(0x00000000, 0x00000000, 0x00000000, 0x0000BEEF);
 
 const GAIN_PARAM: ParamID = 0;
 const HIDDEN_PARAM: ParamID = 1;
+const METER_PARAM: ParamID = 2;
 
 /// A six-channel speaker bitmask, for a plugin that ships wider than the host
 /// carries. Any six bits will do: the host reads the speaker count out of an
@@ -1058,19 +1059,31 @@ unsafe fn controller_parameter_info(index: int32, info: *mut ParameterInfo) -> t
     if info.is_null() {
         return kInvalidArgument;
     }
-    let (id, title, flags) = match index {
-        0 => (GAIN_PARAM, "Gain", ParameterFlags_::kCanAutomate),
+    let (id, title, flags, step_count) = match index {
+        0 => (
+            GAIN_PARAM,
+            "Gain",
+            ParameterFlags_::kCanAutomate | ParameterFlags_::kIsList,
+            3,
+        ),
         1 => (
             HIDDEN_PARAM,
             "Internal",
             ParameterFlags_::kCanAutomate | ParameterFlags_::kIsHidden,
+            0,
+        ),
+        2 => (
+            METER_PARAM,
+            "Meter",
+            ParameterFlags_::kCanAutomate | ParameterFlags_::kIsReadOnly,
+            0,
         ),
         _ => return kInvalidArgument,
     };
     // SAFETY: `info` is non-null (checked above) and writable per this fn's contract.
     unsafe { (*info).id = id };
     // SAFETY: as above.
-    unsafe { (*info).stepCount = 0 };
+    unsafe { (*info).stepCount = step_count };
     // SAFETY: as above.
     unsafe { (*info).defaultNormalizedValue = 1.0 };
     // SAFETY: as above.
@@ -1130,7 +1143,7 @@ macro_rules! fake_controller_impls {
             }
 
             unsafe fn getParameterCount(&self) -> int32 {
-                2
+                3
             }
 
             unsafe fn getParameterInfo(
@@ -1144,11 +1157,19 @@ macro_rules! fake_controller_impls {
 
             unsafe fn getParamStringByValue(
                 &self,
-                _id: ParamID,
-                _value_normalized: ParamValue,
-                _string: *mut [TChar; 128],
+                id: ParamID,
+                value_normalized: ParamValue,
+                string: *mut [TChar; 128],
             ) -> tresult {
-                kNotImplemented
+                if id != GAIN_PARAM || string.is_null() {
+                    return kResultFalse;
+                }
+                // SAFETY: `string` is non-null (checked above) and the host's writable String128.
+                write_tchar(
+                    unsafe { &mut *string },
+                    &format!("{value_normalized:.2} dB"),
+                );
+                kResultOk
             }
 
             unsafe fn getParamValueByString(
@@ -2268,13 +2289,57 @@ fn the_parameter_list_omits_hidden_parameters() {
 
     let parameters = wrapper.get_parameters();
 
-    assert_eq!(parameters.len(), 1);
-    assert_eq!(parameters[0].id, GAIN_PARAM);
+    assert_eq!(
+        parameters.iter().map(|p| p.id).collect::<Vec<_>>(),
+        vec![GAIN_PARAM, METER_PARAM]
+    );
     assert_eq!(parameters[0].name, "Gain");
     assert_eq!(parameters[0].unit.as_deref(), Some("dB"));
     assert_eq!(parameters[0].min_value, 0.0);
     assert_eq!(parameters[0].max_value, 1.0);
     assert!(parameters[0].is_automatable);
+}
+
+/// The live parameter carries the plugin's own text, step count and flags, and
+/// read-only still folds out of automation.
+#[test]
+fn the_parameter_list_carries_display_text_step_count_and_flags() {
+    let state = FakeState::new();
+    let wrapper = load(&state, COMBINED_CID);
+
+    let parameters = wrapper.get_parameters();
+
+    let gain = &parameters[0];
+    assert_eq!(gain.display_text.as_deref(), Some("1.00 dB"));
+    assert_eq!(gain.step_count, 3);
+    assert!(gain.is_list);
+    assert!(!gain.is_read_only);
+
+    let meter = &parameters[1];
+    assert_eq!(meter.id, METER_PARAM);
+    assert_eq!(
+        meter.display_text, None,
+        "a plugin that refuses the text call has no text"
+    );
+    assert_eq!(meter.step_count, 0);
+    assert!(!meter.is_list);
+    assert!(meter.is_read_only);
+    assert!(
+        !meter.is_automatable,
+        "a read-only parameter is never automatable"
+    );
+}
+
+#[test]
+fn the_text_of_a_value_comes_from_the_controller() {
+    let state = FakeState::new();
+    let wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(
+        wrapper.parameter_value_text(GAIN_PARAM, 0.25).as_deref(),
+        Some("0.25 dB")
+    );
+    assert_eq!(wrapper.parameter_value_text(METER_PARAM, 0.25), None);
 }
 
 /// The runtime owner queues a host write for the audio thread, and the audio

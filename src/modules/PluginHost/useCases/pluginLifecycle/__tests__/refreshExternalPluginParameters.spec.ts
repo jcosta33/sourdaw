@@ -33,6 +33,10 @@ function pluginParameter(overrides: Partial<PluginParameter> & Pick<PluginParame
         max_value: 1,
         unit: '',
         is_automatable: true,
+        display_text: null,
+        step_count: 0,
+        is_list: false,
+        is_read_only: false,
         ...overrides,
     };
 }
@@ -77,6 +81,10 @@ describe('refreshExternalPluginParameters', () => {
                     maxValue: 20000,
                     unit: 'Hz',
                     isAutomatable: true,
+                    displayText: null,
+                    stepCount: 0,
+                    isList: false,
+                    isReadOnly: false,
                 },
                 {
                     id: 13,
@@ -87,6 +95,10 @@ describe('refreshExternalPluginParameters', () => {
                     maxValue: 1,
                     unit: '',
                     isAutomatable: false,
+                    displayText: null,
+                    stepCount: 0,
+                    isList: false,
+                    isReadOnly: false,
                 },
             ],
         });

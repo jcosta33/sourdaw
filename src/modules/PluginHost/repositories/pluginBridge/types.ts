@@ -20,6 +20,14 @@ export type PluginParameter = {
      */
     unit: string | null;
     is_automatable: boolean;
+    /** The plugin's own text for `value`, or `null` when it offers none. */
+    display_text: string | null;
+    /** 0 is continuous, 1 a toggle, more a stepped control. */
+    step_count: number;
+    /** The plugin marks the parameter as a list of named choices. */
+    is_list: boolean;
+    /** The plugin reports the parameter and nobody edits it, such as a meter. */
+    is_read_only: boolean;
 };
 
 export type PluginInstance = {

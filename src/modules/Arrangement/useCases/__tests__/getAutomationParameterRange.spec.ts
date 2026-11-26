@@ -94,6 +94,10 @@ describe('getAutomationParameterRange', () => {
             maxValue: 24,
             unit: 'dB',
             isAutomatable: true,
+            displayText: null,
+            stepCount: 0,
+            isList: false,
+            isReadOnly: false,
         };
 
         function seedPluginTrack(instanceId = 'inst-1'): void {

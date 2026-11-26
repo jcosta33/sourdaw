@@ -18,5 +18,9 @@ export function toExternalPluginParameters(parameters: readonly PluginParameter[
         // parameter already carries and what a label renders as nothing.
         unit: parameter.unit ?? '',
         isAutomatable: parameter.is_automatable,
+        displayText: parameter.display_text,
+        stepCount: parameter.step_count,
+        isList: parameter.is_list,
+        isReadOnly: parameter.is_read_only,
     }));
 }

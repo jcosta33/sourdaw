@@ -18,6 +18,10 @@ function externalParameter(overrides: Partial<ExternalPluginParameter> = {}): Ex
         maxValue: 20_000,
         unit: 'Hz',
         isAutomatable: true,
+        displayText: null,
+        stepCount: 0,
+        isList: false,
+        isReadOnly: false,
         ...overrides,
     };
 }

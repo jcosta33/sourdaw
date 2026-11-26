@@ -29,6 +29,10 @@ const PARAMETER: ExternalPluginParameter = {
     maxValue: 1,
     unit: '',
     isAutomatable: true,
+    displayText: null,
+    stepCount: 0,
+    isList: false,
+    isReadOnly: false,
 };
 
 function seedDormantInstance(instanceId: string): void {

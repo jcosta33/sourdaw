@@ -17,59 +17,53 @@ const parameter = (overrides: Partial<ExternalPluginParameter>): ExternalPluginP
     maxValue: 1,
     unit: '',
     isAutomatable: true,
+    displayText: null,
+    stepCount: 0,
+    isList: false,
+    isReadOnly: false,
     ...overrides,
 });
 
 describe('buildExternalPluginParameterRows', () => {
     it.each([
-        { name: 'stepped over 0..1 is a toggle', scan: { is_stepped: true, is_enum: false }, max: 1, kind: 'toggle' },
-        { name: 'enum over 0..1 is a toggle', scan: { is_stepped: false, is_enum: true }, max: 1, kind: 'toggle' },
-        { name: 'stepped over 0..7 is stepped', scan: { is_stepped: true, is_enum: false }, max: 7, kind: 'stepped' },
+        { name: 'a step count of 1 is a toggle', overrides: { stepCount: 1 }, kind: 'toggle' },
+        { name: 'a step count above 1 is stepped', overrides: { stepCount: 3 }, kind: 'stepped' },
+        { name: 'a list with no step count is stepped', overrides: { isList: true }, kind: 'stepped' },
         {
-            name: 'not stepped over 0..1 is continuous',
-            scan: { is_stepped: false, is_enum: false },
-            max: 1,
-            kind: 'continuous',
+            name: 'a list with a step count of 1 is a toggle',
+            overrides: { stepCount: 1, isList: true },
+            kind: 'toggle',
         },
-    ])('$name', ({ scan, max, kind }) => {
-        const [row] = buildExternalPluginParameterRows([parameter({ id: 4, maxValue: max })], [{ id: 4, ...scan }]);
+        { name: 'no step count and no list is continuous', overrides: {}, kind: 'continuous' },
+    ])('$name', ({ overrides, kind }) => {
+        const [row] = buildExternalPluginParameterRows([parameter({ id: 4, maxValue: 7, ...overrides })]);
         expect(row?.kind).toBe(kind);
     });
 
-    it('treats a parameter missing from the scan as continuous', () => {
-        const [row] = buildExternalPluginParameterRows(
-            [parameter({ id: 4 })],
-            [{ id: 5, is_stepped: true, is_enum: false }]
-        );
-        expect(row?.kind).toBe('continuous');
+    it('steps a stepped control by its range over its step count and a continuous one finely across the range', () => {
+        const rows = buildExternalPluginParameterRows([
+            parameter({ id: 1, maxValue: 1, stepCount: 4 }),
+            parameter({ id: 2, maxValue: 7, stepCount: 7 }),
+            parameter({ id: 3, maxValue: 7, isList: true }),
+            parameter({ id: 4, minValue: 20, maxValue: 20020 }),
+        ]);
+        expect(rows.map((row) => row.step)).toEqual([0.25, 1, 1, 20]);
     });
 
-    it('treats a stepped parameter over a fractional two-value range as stepped, not a toggle', () => {
-        const [row] = buildExternalPluginParameterRows(
-            [parameter({ id: 4, minValue: 0.5, maxValue: 1.5 })],
-            [{ id: 4, is_stepped: true, is_enum: false }]
-        );
-        expect(row?.kind).toBe('stepped');
+    it('carries the read-only flag so the control can be disabled', () => {
+        const rows = buildExternalPluginParameterRows([parameter({ id: 1, isReadOnly: true }), parameter({ id: 2 })]);
+        expect(rows.map((row) => row.readOnly)).toEqual([true, false]);
     });
 
-    it('gives stepped controls step 1 and continuous controls a fine step across the range', () => {
-        const rows = buildExternalPluginParameterRows(
-            [parameter({ id: 1, maxValue: 7 }), parameter({ id: 2, minValue: 20, maxValue: 20020 })],
-            [{ id: 1, is_stepped: true, is_enum: false }]
-        );
-        expect(rows.map((row) => row.step)).toEqual([1, 20]);
-    });
-
-    it('formats the value as a plain number with the unit when one is declared', () => {
-        const rows = buildExternalPluginParameterRows(
-            [
-                parameter({ id: 1, value: 0.12345 }),
-                parameter({ id: 2, value: 440, minValue: 20, maxValue: 20000, unit: 'Hz' }),
-                parameter({ id: 3, value: 3, maxValue: 7 }),
-            ],
-            [{ id: 3, is_stepped: true, is_enum: false }]
-        );
-        expect(rows.map((row) => row.valueText)).toEqual(['0.123', '440 Hz', '3']);
+    it('shows the plugin display text when it has one and the plain number with its unit when it has none', () => {
+        const rows = buildExternalPluginParameterRows([
+            parameter({ id: 1, value: 0.43, minValue: 20, maxValue: 20000, unit: 'Hz', displayText: '1.20 kHz' }),
+            parameter({ id: 2, value: 440, minValue: 20, maxValue: 20000, unit: 'Hz' }),
+            parameter({ id: 3, value: 0.12345 }),
+            parameter({ id: 4, value: 3, maxValue: 7, stepCount: 7 }),
+        ]);
+        expect(rows.map((row) => row.valueText)).toEqual(['1.20 kHz', '440 Hz', '0.123', '3']);
+        expect(rows.map((row) => row.displayText)).toEqual(['1.20 kHz', null, null, null]);
     });
 
     it.each([
@@ -81,7 +75,7 @@ describe('buildExternalPluginParameterRows', () => {
     ])(
         'shows a continuous value over a span of $span with the precision that span deserves',
         ({ span, value, expected }) => {
-            const [row] = buildExternalPluginParameterRows([parameter({ id: 1, value, maxValue: span })], undefined);
+            const [row] = buildExternalPluginParameterRows([parameter({ id: 1, value, maxValue: span })]);
 
             expect(row?.valueText).toBe(expected);
         }
@@ -90,8 +84,8 @@ describe('buildExternalPluginParameterRows', () => {
     it('keeps the unit unless the values are normalized, where it describes a different number', () => {
         const hertz = [parameter({ id: 2, value: 0.004, unit: 'Hz' })];
 
-        const plain = buildExternalPluginParameterRows(hertz, undefined, { valuesAreNormalized: false });
-        const normalized = buildExternalPluginParameterRows(hertz, undefined, { valuesAreNormalized: true });
+        const plain = buildExternalPluginParameterRows(hertz, { valuesAreNormalized: false });
+        const normalized = buildExternalPluginParameterRows(hertz, { valuesAreNormalized: true });
 
         expect(plain[0]?.valueText).toBe('0.004 Hz');
         expect(normalized[0]?.valueText).toBe('0.004');
@@ -99,10 +93,10 @@ describe('buildExternalPluginParameterRows', () => {
 });
 
 describe('filterExternalPluginParameterRows', () => {
-    const rows = buildExternalPluginParameterRows(
-        [parameter({ id: 1, name: 'Filter Cutoff' }), parameter({ id: 2, name: 'Resonance' })],
-        undefined
-    );
+    const rows = buildExternalPluginParameterRows([
+        parameter({ id: 1, name: 'Filter Cutoff' }),
+        parameter({ id: 2, name: 'Resonance' }),
+    ]);
 
     it.each([
         { query: 'cutoff', expected: [1] },

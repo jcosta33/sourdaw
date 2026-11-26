@@ -87,6 +87,10 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.get_parameters())
     }
 
+    fn parameter_value_text(&self, param_id: u32, value: f64) -> Option<String> {
+        delegate!(self, backend => backend.parameter_value_text(param_id, value))
+    }
+
     fn get_state(&self) -> Result<Vec<u8>, PluginError> {
         delegate!(self, backend => backend.get_state())
     }

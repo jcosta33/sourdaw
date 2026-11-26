@@ -19,6 +19,7 @@ import {
 } from '#/modules/PluginHost/stores';
 import {
     editExternalPluginParameter,
+    formatExternalPluginParameterValue as askPluginForValueText,
     hasUnresolvedExternalPluginRestoreFailure,
     isSupportedPluginFormat,
     refreshExternalPluginParameters,
@@ -108,6 +109,7 @@ const ParameterRow = ({
     // row holds the value it asked for; otherwise a second nudge would start from the stale store value.
     const [pendingValue, setPendingValue] = useState<number | null>(null);
     const latestSendRef = useRef(0);
+    const [answer, setAnswer] = useState<{ value: number; text: string | null } | null>(null);
 
     const sendEdit = async (requested: number, send: number): Promise<void> => {
         try {
@@ -135,10 +137,39 @@ const ParameterRow = ({
 
     const shownValue = pendingValue ?? followed.value;
     const value = shownValue ?? row.value;
-    const valueText = shownValue === null ? row.valueText : formatExternalPluginParameterValue(row, shownValue);
+    const snapshotText = value === row.value ? row.displayText : null;
+    const snapshotTextIsCurrent = snapshotText !== null;
+    const answeredText = answer?.value === value ? answer.text : null;
+    const valueText = snapshotText ?? answeredText ?? formatExternalPluginParameterValue(row, value);
+
+    // The snapshot's text describes the snapshot's value. Any other shown value (a pending edit,
+    // a followed lane, a value just patched in) asks the plugin, one question in flight at a time:
+    // the answer for a value no longer shown is dropped by the check above and the next question
+    // is for the value shown now. A plugin that gave no text at mount is not asked about that value.
+    const noTextAtMountRef = useRef(row.displayText === null);
+    const mountValueRef = useRef(row.value);
+    const askingRef = useRef(false);
+    useEffect(() => {
+        if (snapshotTextIsCurrent || answer?.value === value || askingRef.current) {
+            return;
+        }
+        if (noTextAtMountRef.current && value === mountValueRef.current) {
+            return;
+        }
+        askingRef.current = true;
+        void askPluginForValueText(instanceId, row.id, value).then((text) => {
+            askingRef.current = false;
+            setAnswer({ value, text });
+        });
+    }, [snapshotTextIsCurrent, answer, value, instanceId, row.id]);
+
     // The visible number moves with the lane; announcing every step would flood a screen reader.
     const followingAnnounced = followed.following && pendingValue === null;
-    const describedBy = automated ? automatedDescriptionId : undefined;
+    const readOnlyDescriptionId = useId();
+    const describedBy =
+        [automated ? automatedDescriptionId : null, row.readOnly ? readOnlyDescriptionId : null]
+            .filter((id) => id !== null)
+            .join(' ') || undefined;
 
     return (
         <li
@@ -160,12 +191,18 @@ const ParameterRow = ({
                         </span>
                     </>
                 )}
+                {row.readOnly && (
+                    <span id={readOnlyDescriptionId} className="sr-only">
+                        Read-only
+                    </span>
+                )}
                 {row.kind === 'toggle' && (
                     <input
                         type="checkbox"
                         role="switch"
                         aria-label={row.name}
                         aria-describedby={describedBy}
+                        disabled={row.readOnly}
                         checked={value - row.min >= 0.5}
                         aria-checked={value - row.min >= 0.5}
                         onChange={(event) => edit(event.target.checked ? row.max : row.min)}
@@ -178,6 +215,7 @@ const ParameterRow = ({
                     type="range"
                     aria-label={row.name}
                     aria-describedby={describedBy}
+                    disabled={row.readOnly}
                     aria-valuetext={followingAnnounced ? FOLLOWING_VALUE_TEXT : valueText}
                     className="w-full"
                     min={row.min}
@@ -284,9 +322,9 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     }
 
     const rows = filterExternalPluginParameterRows(
-        buildExternalPluginParameterRows(snapshot.parameters, scanned?.parameters, {
-            // The host reports VST3 values normalized, so the unit does not describe the number; #6579
-            // tracks showing the plugin's own display text.
+        buildExternalPluginParameterRows(snapshot.parameters, {
+            // The host reports VST3 values normalized, so the unit does not describe the plain number
+            // a plugin with no display text falls back to.
             valuesAreNormalized: scanned?.format.toLowerCase() === 'vst3',
         }),
         query
