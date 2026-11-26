@@ -166,12 +166,11 @@ export function unavailable(): number | undefined {
     const directories: string[] = [];
     try {
         const layers = ['src/app', 'src/helpers', 'src/infra', 'src/routes', 'src/utils'];
-        const productTargets = layers.map((layer) => {
+        const productTargets = layers.flatMap((layer) => {
             const directory = mkdtempSync(join(root, layer, 'lint-product-guardrails-'));
             directories.push(directory);
             const file = layer === 'src/routes' ? 'product.tsx' : 'product.ts';
-            const [target] = writeFixtureProject(directory, [file], source);
-            return target;
+            return writeFixtureProject(directory, [file], source);
         });
         const testDirectory = mkdtempSync(join(root, 'src/utils/lint-product-guardrails-'));
         directories.push(testDirectory);
