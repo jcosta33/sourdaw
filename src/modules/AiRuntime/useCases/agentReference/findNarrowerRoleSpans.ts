@@ -1,11 +1,12 @@
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
-import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
+import { CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
 
 import { findAgentReferenceNameSpans, type AgentReferenceTextRange } from './findAgentReferenceNameSpans';
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
+import { PHRASED_ROLES } from './phrasedRoles';
 
-/** The canonical roles whose phrase holds their family's own word in a longer phrase: "lead vocal". */
-const NARROWER_ROLES = CANONICAL_ROLE_OPTIONS.filter((role) => {
+/** The phrased roles holding their family's own word in a longer phrase: "lead vocal". */
+const NARROWER_ROLES = PHRASED_ROLES.filter((role) => {
     const family = CANONICAL_ROLE_TO_RECIPE_ROLE[role];
     return family !== null && role.includes(' ') && findNamedRoleFamilies(role, [family]).named.includes(family);
 });

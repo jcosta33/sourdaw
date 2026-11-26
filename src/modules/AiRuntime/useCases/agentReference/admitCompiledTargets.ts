@@ -9,6 +9,7 @@ import {
     type SemanticCommandListSelector,
 } from '../../models/SemanticCommandList';
 
+import { blankRange } from './blankRange';
 import {
     findAgentReferenceNameSpans,
     type AgentReferenceNameForms,
@@ -16,7 +17,6 @@ import {
 } from './findAgentReferenceNameSpans';
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
 import { findNarrowerRoleSpans } from './findNarrowerRoleSpans';
-import { findSentenceEnd } from './findSentenceEnd';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -28,7 +28,6 @@ import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
 import { holdsFragmentAtWordStart } from './holdsFragmentAtWordStart';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
-import { readTextLines } from './readTextLines';
 import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 import { scopeToInstruction } from './scopeToInstruction';
@@ -63,15 +62,15 @@ import { scopeToInstruction } from './scopeToInstruction';
  * Vocals EQ" and "bypass Vocals' EQ" never state the EQ on Keys, nor "mute the Vocals Verse clip" the
  * Verse clip on Keys; a request naming and selecting no track ("bypass every EQ") leaves the owner
  * open, and so does a selector that also picks by kind, role, role family, tag, device type or
- * condition ("bypass the EQ on Vocals and all MIDI tracks"). The text read is the instruction that
- * asks for the call's change, the clause the direct route grounds that action in, less the request's
- * restrictions and the values any call of the batch writes, so another instruction's name never
- * picks its target ("set Vocals volume to 75% and mute Keys" states no Keys gain). An instruction that
- * names no track or narrower role of its own, or none before it refers back with "it", "them" or "that
- * track", also reads one earlier unit naming one: the run of list lines leading into its line ("1.
- * Bass\n2. Drums\nTurn down both"), else the nearest earlier instruction, taken whole, or statement
- * ("Mute Vocals and Keys, then pan them left", "On Vocals, set volume to 75%"); a call no clause
- * grounds reads the whole request. A selection reference ("this track", "the selected track", "it" or "its"
+ * condition ("bypass the EQ on Vocals and all MIDI tracks"). The text read is the whole request less its
+ * restrictions, the values any call of the batch writes and every other instruction naming its own
+ * tracks, where an instruction is the clause the direct route grounds an action in with the clauses
+ * continuing it, so another instruction's name never picks the call's target ("set Vocals volume to
+ * 75% and mute Keys" states no Keys gain). Text giving no
+ * instruction always counts ("Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums").
+ * An instruction that names no track or narrower role of its own, or none before it refers back with
+ * "it", "them" or "that track", keeps the nearest earlier instruction naming tracks ("Mute Vocals and
+ * Keys, then pan them left"); a call no clause grounds reads the whole request. A selection reference ("this track", "the selected track", "it" or "its"
  * outside every object name for the selected track) that resolves to the picked objects states those
  * picks only when the text names no object of that kind, by name, id or, for a track, position, or
  * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
@@ -388,8 +387,8 @@ function maskRequest(prompt: string, context: ProjectContext): MaskedRequest {
  * instruction.
  */
 function getInstructionEnd(request: MaskedRequest, start: number, catalog: GroundingCatalog): number {
-    const sentenceEnd = findSentenceEnd(request.maskedPrompt.slice(start));
-    const limit = sentenceEnd === undefined ? request.prompt.length : start + sentenceEnd;
+    const sentenceEnd = /[;!?\n]|\.(?!\d)/u.exec(request.maskedPrompt.slice(start));
+    const limit = sentenceEnd === null ? request.prompt.length : start + sentenceEnd.index;
     const nextInstruction = request.clauses.find(
         (clause) =>
             clause.start > start && clause.start < limit && resolveClauseActionIntent(clause.masked, catalog) !== null
@@ -403,10 +402,6 @@ function getRestrictionRanges(request: MaskedRequest, catalog: GroundingCatalog)
         start,
         end: getInstructionEnd(request, start, catalog),
     }));
-}
-
-function blankRange(text: string, { start, end }: AgentReferenceTextRange): string {
-    return `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`;
 }
 
 /**
@@ -502,11 +497,9 @@ function findBackReference(instruction: string, context: ProjectContext): number
 }
 
 /**
- * The text the targets are read from: the call's own instruction, with the clause it refers back to
- * ("mute Vocals and bypass the EQ on it") and the clauses leading its sentence ("On Vocals, set volume
- * to 75%"), with the request's restrictions and the values
- * the batch writes blanked, so a name stated only by another instruction, to protect an object or as
- * a new name is never read as picking a target.
+ * The text the targets are read from: the whole request with its restrictions, the values the batch
+ * writes and every other instruction naming its own tracks blanked, so a name stated only by another
+ * instruction, to protect an object or as a new name is never read as picking a target.
  */
 function getEvidenceText(
     input: RequestReadingInput,
@@ -522,7 +515,6 @@ function getEvidenceText(
     const instruction = extendInstruction(request, input.instruction, catalog);
     return scopeToInstruction({
         text: unwritten,
-        maskedPrompt: request.maskedPrompt,
         clauses: request.clauses,
         instruction,
         reader: {
@@ -556,11 +548,11 @@ function extendOverListLines(request: MaskedRequest, end: number, catalog: Groun
         return end;
     }
     let listEnd = end;
-    for (const line of readTextLines(request.maskedPrompt, { start: end, end: request.maskedPrompt.length })) {
-        if (resolveClauseActionIntent(request.maskedPrompt.slice(line.start, line.end), catalog) !== null) {
+    for (const line of request.maskedPrompt.slice(end).matchAll(/[^\n]+/gu)) {
+        if (resolveClauseActionIntent(line[0], catalog) !== null) {
             break;
         }
-        listEnd = line.end;
+        listEnd = end + line.index + line[0].length;
     }
     return listEnd;
 }
@@ -624,14 +616,9 @@ function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceText
 }
 
 /**
- * Whether the text states the fragment for every target it picks, whose name holds it as a whole
- * word too: as a whole word, in either number,
- * somewhere no range states a longer whole name of another object, so "Bus" inside "the Drum Bus"
- * states the Drum Bus and never the FX Bus. A whole name read no further than the fragment leaves it
- * standing: "the guitars" states the Guitar track and the "guitar" fragment for Guitar 2 alike. A
- * target a track owns must also sit on a track the text names or selects, when it names or selects
- * any, so "the Vocals EQ" never states the EQ on Keys, nor "the Verse clip on Vocals" the Verse clip
- * on Keys.
+ * Whether the text states the fragment for every target it picks: each target's name holds it at a
+ * word start, the text states it as a word outside any longer name of another object, and a target a
+ * track owns sits on a track the text names or selects, when it names or selects any.
  */
 function statesFragment(
     { fragment, occurrences }: FragmentReading,

@@ -321,7 +321,34 @@ describe('readExplicitProtections over a canonical role phrase and the negating 
         'make the vocals warmer but not harsh',
         'make the vocals louder if not louder still',
         'turn the kick down',
+        'mute every track, not including Keys',
     ])('"%s" protects nothing', (prompt) => {
         expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
+    });
+});
+
+// A kick track named apart from its role, so "the kick track" reads the role phrase and never a track name.
+const bassDrum: ProjectContextTrack = { ...createTrack('track-bd', 'BD'), canonicalRole: kick.canonicalRole };
+const unnamedKickContext: ProjectContext = { ...context, tracks: [bassDrum, snare, leadVox, backingVox, bass] };
+
+describe('readExplicitProtections over a role phrase no track name states', () => {
+    it('protects the kick tracks for "make the mix warmer but not the kick track"', () => {
+        expect(
+            readExplicitProtections('make the mix warmer but not the kick track', unnamedKickContext).protectedTrackIds
+        ).toEqual([bassDrum.id]);
+    });
+
+    it('leaves "the Kick track", written as a name no track has, unbound rather than a role', () => {
+        const reading = readExplicitProtections('make the mix warmer but not the Kick track', unnamedKickContext);
+
+        expect(reading.protectedTrackIds).toEqual([]);
+        expect(reading.unresolved).not.toEqual([]);
+    });
+
+    it('reads no role from a member holding a role phrase among other words', () => {
+        expect(
+            readExplicitProtections('make the mix warmer but not the lead vocal double', unnamedKickContext)
+                .protectedTrackIds
+        ).toEqual([]);
     });
 });

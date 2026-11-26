@@ -2,10 +2,10 @@ import {
     SEMANTIC_COMMAND_LIST_ROLE_FAMILIES,
     type SemanticCommandListRoleFamily,
 } from '../../models/SemanticCommandList';
-import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
 
 import { findAgentReferenceNameSpans } from './findAgentReferenceNameSpans';
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
+import { PHRASED_ROLES } from './phrasedRoles';
 import { CONNECTIVE_WORDS, KIND_NOUNS, protectionObjectForms, type Token } from './protectionObjectForms';
 
 /** The kind nouns a role family word may carry ("the drum tracks", "the vocal bus"). */
@@ -37,16 +37,6 @@ function namesNoFamily(token: Token): boolean {
 
 /** The tracks the shared selector resolver places in a role family or in one canonical role. */
 export type RoleTrackIds = (predicate: { roleFamily: SemanticCommandListRoleFamily } | { role: string }) => string[];
-
-/**
- * The canonical roles a protection names by their own phrase: every role of a source family whose
- * phrase is not the family's own word, which the family reading takes ("the backing vocals", "the
- * kick").
- */
-const PHRASED_ROLES = CANONICAL_ROLE_OPTIONS.filter((role) => {
-    const family = CANONICAL_ROLE_TO_RECIPE_ROLE[role];
-    return family !== null && family !== 'bus' && family !== 'master' && role !== family;
-});
 
 /** The canonical role the words state as one whole role phrase, in either number ("backing vocals"). */
 function readRolePhrase(words: readonly string[]): string | undefined {
@@ -83,9 +73,10 @@ function namesKindObject(word: Token, kindNoun: Token): boolean {
 }
 
 /**
- * The tracks a protection member keeps when it names one role family and nothing else but its
- * controls, quantifiers before it and a kind noun after it ("the drums", "all the drum tracks", "the
- * drum kit", "the vocals' sends"). A control opening the member as its verb ("mute the drums") names
+ * The tracks a protection member keeps when it names one role family, or one canonical role by its
+ * whole phrase, and nothing else but its controls, quantifiers before it and a kind noun after it
+ * ("the drums", "all the drum tracks", "the drum kit", "the vocals' sends", "the backing vocals",
+ * "the kick track"); a role phrase keeps the tracks of that role alone. A control opening the member as its verb ("mute the drums") names
  * what the request changes and protects nothing. The tokens come with project names blanked and
  * quotations flagged, so "Drum Bus" and a quoted "drums" name no family, and a capitalized singular
  * kind form of an absent object ("the Drum Bus") is left to the object forms' unbound refusal. A

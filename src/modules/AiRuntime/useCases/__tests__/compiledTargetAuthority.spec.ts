@@ -3153,8 +3153,8 @@ describe('#5393 an instruction naming no track reads the nearest earlier clause 
         expect(targetsOf(result)).toEqual(tracks.map((track) => track.id));
     });
 
-    it('refuses Vocals for "On Vocals, set Keys volume at 1:30 to 75%", whose colon closes no header', () => {
-        const result = compileMix('On Vocals, set Keys volume at 1:30 to 75%', [
+    it('refuses Vocals for "Mute Vocals. Set Keys volume at 1:30 to 75%", whose other instruction names its track', () => {
+        const result = compileMix('Mute Vocals. Set Keys volume at 1:30 to 75%', [
             trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
         ]);
 
@@ -3168,6 +3168,9 @@ describe('#5378 a name fragment picks a name holding it at a word start, a camel
         ['turn down the guitars by 3 dB', 'guitar', ['Guitar1', 'Guitar2']],
         ['turn down the bass by 3 dB', 'bass', ['BassGuitar']],
         ['turn down the guitar by 3 dB', 'guitar', ['BassGuitar']],
+        ['turn down the pad by 3 dB', 'pad', ['Drum-pad']],
+        ['turn down the DI by 3 dB', 'di', ['BassDI']],
+        ['turn down the pad by 3 dB', 'pad', ['Launchpad Pad']],
     ])('grounds "%s" with a "%s" fragment for %j', (prompt, fragment, names) => {
         const { context, track } = namedTracksContext(names);
         const result = compileAndBridge(prompt, [nameFragmentItem(fragment, names.length)], [], context);
@@ -3271,5 +3274,21 @@ describe('#5378 a fragment starts a word at a capital opening a lowercase run af
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual(names.map((name) => track(name).id));
+    });
+});
+
+describe('#5393 text giving no instruction states the tracks of the instruction it follows', () => {
+    it.each([
+        ['Pan Vocals left. Same for Keys.', [trackItem('setTrackPan', mixKeys, { pan: -50 })], [mixKeys.id]],
+        [
+            'Turn down these tracks by 3 dB\nBass\nDrums',
+            [trackItem('setTrackGain', mixBass, { deltaDb: -3 }), trackItem('setTrackGain', mixDrums, { deltaDb: -3 })],
+            [mixBass.id, mixDrums.id],
+        ],
+    ])('grounds "%s"', (prompt, items, expected) => {
+        const result = compileMix(prompt, items);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
     });
 });

@@ -81,6 +81,7 @@ import {
     resolveBatchLocalBindingProducer,
 } from './batchLocalBindingProducers';
 import { type BoundRefinementValue, type RefinementClause } from './bindRefinementFigure';
+import { blankRange } from './blankRange';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
@@ -3062,11 +3063,9 @@ function getAnchorValueScope(
         return actionScope;
     }
     const otherNumbers = numbers.filter((number) => !anchorNumbers.includes(number));
-    const masked = otherNumbers.reduce(
-        (text, number) =>
-            `${text.slice(0, number.index)}${' '.repeat(number.end - number.index)}${text.slice(number.end)}`,
-        actionScope.masked
-    );
+    const masked = otherNumbers
+        .map((number) => ({ start: number.index, end: number.end }))
+        .reduce(blankRange, actionScope.masked);
     return { ...actionScope, masked };
 }
 
