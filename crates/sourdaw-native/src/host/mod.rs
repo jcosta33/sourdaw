@@ -237,19 +237,16 @@ impl EditorDrainRetry {
         {
             Some(index) => index,
             None => {
-                eprintln!(
-                    "[Plugin] {} could not reach instance {}, retrying at longer intervals \
-                     until it answers: {}",
-                    self.context, instance_id, error
-                );
                 episodes.push(UnreachedEpisode {
                     instance_id: instance_id.to_string(),
                     failures: 0,
                     visits_to_skip: 0,
                     #[cfg(test)]
-                    logged_lines: 1,
+                    logged_lines: 0,
                 });
-                episodes.len() - 1
+                let index = episodes.len() - 1;
+                self.log_episode_start(&mut episodes[index], error);
+                index
             }
         };
         let episode = &mut episodes[index];
@@ -257,6 +254,20 @@ impl EditorDrainRetry {
         episode.visits_to_skip = skipped_visits_after(episode.failures);
         drop(episodes);
         reraise();
+    }
+
+    /// The one line a run of failures logs, counted where it is written so a
+    /// second line anywhere in the episode shows in [`Self::logged_lines`].
+    fn log_episode_start(&self, episode: &mut UnreachedEpisode, error: &dyn std::fmt::Display) {
+        eprintln!(
+            "[Plugin] {} could not reach instance {}, retrying at longer intervals \
+             until it answers: {}",
+            self.context, episode.instance_id, error
+        );
+        #[cfg(test)]
+        {
+            episode.logged_lines += 1;
+        }
     }
 
     /// How many lines the current episode of `instance_id` has logged.
