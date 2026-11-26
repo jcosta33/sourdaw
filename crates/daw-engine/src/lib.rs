@@ -774,9 +774,10 @@ impl EngineHandle {
     ///
     /// The reservation [`Self::send_graph_batch_with_headroom`] makes, for a
     /// caller that pushes outside a batch: a ring a batch left full refuses
-    /// the next push as "queue full", so the room is provisioned first. Only
-    /// this handle pushes and the audio thread only pops, so room seen here is
-    /// still there when the pushes follow under the same engine lock.
+    /// the next push as "queue full", so the room is provisioned first. The
+    /// audio thread only pops, so room seen here can only grow; what keeps it
+    /// for the caller's pushes, which may follow under a later acquisition of
+    /// the engine lock, is that the caller is the only one pushing meanwhile.
     pub fn ensure_command_headroom(&mut self, headroom: usize) -> Result<(), CommandError> {
         if self.command_tx.slots() < headroom {
             self.provision_command_channel(headroom)?;
@@ -3809,13 +3810,6 @@ mod tests {
         );
     }
 
-    /// A fresh fixture starts rendering with no fault recorded — the same
-    /// baseline a freshly opened stream has — and `mark_render_stalled`
-    /// clears both, proving [`EngineHandle::is_rendering`] and
-    /// [`EngineHandle::output_stream_fault`] read the fixture's own slots
-    /// rather than some independent default. Mutation: have
-    /// `mark_render_stalled` skip storing the fault when one is given, and
-    /// this goes red on the second assertion.
     /// A caller pushing outside a batch onto a ring a batch nearly filled gets
     /// the room it reserved: the loose pushes that follow all land. Mutation:
     /// make `ensure_command_headroom` return `Ok(())` without provisioning, and
@@ -3838,6 +3832,13 @@ mod tests {
         engine.remove_plugin(11).expect("the second reserved slot");
     }
 
+    /// A fresh fixture starts rendering with no fault recorded — the same
+    /// baseline a freshly opened stream has — and `mark_render_stalled`
+    /// clears both, proving [`EngineHandle::is_rendering`] and
+    /// [`EngineHandle::output_stream_fault`] read the fixture's own slots
+    /// rather than some independent default. Mutation: have
+    /// `mark_render_stalled` skip storing the fault when one is given, and
+    /// this goes red on the second assertion.
     #[test]
     fn is_rendering_reads_the_flag_the_fixture_clears() {
         let (engine, _command_rx, _retired_adoption_rx) =

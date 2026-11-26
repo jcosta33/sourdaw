@@ -6039,14 +6039,17 @@ async fn apply_live_batch(
     // refuses to drain past until every command is visible — the engine
     // applies the batch whole or does not observe it at all. Only this
     // thread pushes onto the ring (the engine mutex is held).
-    // The attach below pushes one `AddHostedPlugin` per instance it takes,
-    // onto a ring this batch sizes to exactly itself and then fills, so the
-    // batch leaves exactly that many slots free. The count and the limit are the
-    // same number: an instance parked after the count is read is left dormant
-    // for the next batch rather than pushed onto a ring with no room, which is
-    // what keeps the reservation exact and a batch with nothing parked as small
-    // as it was before any of this existed.
-    match engine.send_graph_batch_with_headroom(mapped.ops, dormant_plugin_count) {
+    // The attach below pushes `ENGINE_COMMANDS_PER_ATTACH` commands per
+    // instance it takes, onto a ring this batch sizes to exactly itself and
+    // then fills, so the batch leaves exactly that much room free. The
+    // instance count is also the attach's limit: an instance parked after the
+    // count is read is left dormant for the next batch rather than pushed onto
+    // a ring with no room, which is what keeps the reservation exact and a
+    // batch with nothing parked as small as it was before any of this existed.
+    match engine.send_graph_batch_with_headroom(
+        mapped.ops,
+        crate::commands::plugins::attach_command_headroom(dormant_plugin_count),
+    ) {
         Ok(()) => {}
         Err(GraphBatchError::Refused(reason)) => {
             // Nothing of *this batch* was pushed: a refusal here is a clean

@@ -354,11 +354,12 @@ impl fmt::Display for PluginCommandError {
 }
 
 impl PluginCommandError {
-    /// The transient hold this refusal of an engine attach waits on, if any.
+    /// The counted transient hold this refusal of an engine attach waits on,
+    /// if any. A dormant call's refusal owes its wake to the refused runtime
+    /// itself, where the attach still has it (`attach_one_dormant_plugin`).
     fn attach_hold(&self) -> Option<AttachHold> {
         match self {
             Self::LifecycleHeld => Some(AttachHold::LifecycleLease),
-            Self::DormantCallInFlight => Some(AttachHold::DormantCall),
             Self::RuntimeGateHeld => Some(AttachHold::RuntimeGate),
             _ => None,
         }
@@ -3400,6 +3401,16 @@ fn install_host_request_wake(instance_id: &str, runtime: &SharedHostedPlugin) {
     }
 }
 
+/// The engine commands one instance's attach pushes onto the ring:
+/// `add_hosted_plugin`, then `set_effect_latency`
+/// ([`register_runtime_with_engine`]).
+pub(crate) const ENGINE_COMMANDS_PER_ATTACH: usize = 2;
+
+/// The ring room an attach of `instance_count` instances needs reserved.
+pub(crate) fn attach_command_headroom(instance_count: usize) -> usize {
+    instance_count.saturating_mul(ENGINE_COMMANDS_PER_ATTACH)
+}
+
 /// One instance the engine has just taken, for the batch that started it to
 /// report back.
 pub struct AttachedPlugin {
@@ -3416,9 +3427,11 @@ pub struct AttachedPlugin {
 /// the rest of the session. This is what moves it, called by
 /// `apply_graph_commands` right after the crumbs slot it mirrors.
 ///
-/// Each attach pushes one command onto the ring the caller's batch just filled,
-/// so the caller reserves that many slots before sending it and passes the same
-/// number here. Honouring it is what makes the reservation exact: an instance
+/// Each attach pushes [`ENGINE_COMMANDS_PER_ATTACH`] commands onto the ring the
+/// caller's batch just filled, so the caller reserves
+/// [`attach_command_headroom`] of the instance count before sending it and
+/// passes the count itself here. Honouring it is what makes the reservation
+/// exact: an instance
 /// parked after the caller counted is left dormant rather than pushed onto a
 /// ring with no room for it, and the next batch — the roll that follows a
 /// topology within one start sequence — counts it and takes it.
@@ -3565,6 +3578,7 @@ fn attach_one_dormant_plugin(
         Ok(owner) => owner.into_inner(),
         Err(plugin) => {
             drop(engine_guard);
+            let refused = Arc::downgrade(&plugin);
             park_dormant_plugin(
                 state,
                 instance_id,
@@ -3577,6 +3591,9 @@ fn attach_one_dormant_plugin(
                     load_resolution,
                 },
             );
+            // Owed once it is back in the map, whose reference is the one the
+            // debt counts as free.
+            dormant_attach_wake::owe_reattach_when_free(&refused);
             return Err(PluginCommandError::DormantCallInFlight);
         }
     };
