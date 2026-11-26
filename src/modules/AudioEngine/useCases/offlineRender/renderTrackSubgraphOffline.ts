@@ -171,7 +171,7 @@ export async function renderTrackSubgraphOffline({
         { durationBeats, startBeat, tailSeconds, sampleRate },
         source?.project
     );
-    const captured = source === undefined ? null : captureOfflineSubgraphInput({ source, renderTracks, sampleRate });
+    const captured = source === undefined ? null : captureOfflineSubgraphInput({ source, renderTracks });
     const { midi, defaultTempo, changes, durationSeconds, startBeat: renderStartBeat, ...projections } = renderContext;
     const {
         projectMidiEvents,

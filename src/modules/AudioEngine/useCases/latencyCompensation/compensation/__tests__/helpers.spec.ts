@@ -8,8 +8,8 @@ vi.mock('#/modules/Routing/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/stores')>()),
     sidechainStore: { value: null as { routes: unknown[] } | null },
 }));
-// Pin the sample rate so the sidechain-compressor latency is deterministic
-// (128 / 48000 * 1000 ms) without touching the real Web Audio engine.
+// Pin the sample rate so no rate-dependent latency leaks in without touching the
+// real Web Audio engine.
 vi.mock('../../../engineAccess/getAudioContext', () => ({
     getAudioContext: () => ({ sampleRate: 48000 }),
 }));
@@ -21,6 +21,7 @@ import { externalLatencyRegistry } from '../externalLatencyRegistry';
 import { getDeviceLatencyMs } from '../getDeviceLatencyMs';
 import { getMaxTrackLatency } from '../getMaxTrackLatency';
 import { getTrackLatency } from '../getTrackLatency';
+import { DYNAMICS_COMPRESSOR_LOOKAHEAD_MS } from '../helpers';
 
 type MutableTrackStore = { value: { tracks: unknown[] } | null };
 type MutableSidechainStore = { value: { routes: unknown[] } | null };
@@ -48,8 +49,9 @@ function makeTrack(overrides: {
     };
 }
 
-// 128 / 48000 * 1000
-const SIDECHAIN_COMP_MS = (128 / 48000) * 1000;
+// The built-in compressor's documented lookahead: the real, nonzero figure these
+// walks need a latency-bearing device for.
+const COMPRESSOR_MS = DYNAMICS_COMPRESSOR_LOOKAHEAD_MS;
 
 describe('helpers', () => {
     beforeEach(() => {
@@ -75,8 +77,12 @@ describe('helpers', () => {
     });
 
     describe('getDeviceLatencyMs', () => {
-        it('uses the mocked sample rate for sidechain compressor device latency', () => {
-            expect(getDeviceLatencyMs('sc-1', 'builtin-sidechain-compressor')).toBeCloseTo(SIDECHAIN_COMP_MS, 6);
+        it('reports no latency for the sidechain compressor, whose worklet adds no delay', () => {
+            expect(getDeviceLatencyMs('sc-1', 'builtin-sidechain-compressor')).toBe(0);
+        });
+
+        it('reports the built-in compressor lookahead', () => {
+            expect(getDeviceLatencyMs('comp-1', 'builtin-compressor')).toBe(COMPRESSOR_MS);
         });
 
         it('prefers externally reported device latency', () => {
@@ -95,7 +101,7 @@ describe('helpers', () => {
                     makeTrack({ id: 'source' }),
                     makeTrack({
                         id: 'bus',
-                        devices: [{ id: 'sc-1', type: 'builtin-sidechain-compressor' }],
+                        devices: [{ id: 'sc-1', type: 'builtin-compressor' }],
                     }),
                 ],
             };
@@ -115,8 +121,8 @@ describe('helpers', () => {
             const result = getTrackLatency('source');
 
             // Without the sidechain walk this is 0; with it, the bus's
-            // compressor latency (~2.667ms) propagates downstream.
-            expect(result.totalLatencyMs).toBeCloseTo(SIDECHAIN_COMP_MS, 6);
+            // compressor latency propagates downstream.
+            expect(result.totalLatencyMs).toBeCloseTo(COMPRESSOR_MS, 6);
             expect(result.deviceLatencyMs).toBe(0);
         });
 
@@ -126,7 +132,7 @@ describe('helpers', () => {
                     makeTrack({ id: 'source' }),
                     makeTrack({
                         id: 'bus',
-                        devices: [{ id: 'sc-1', type: 'builtin-sidechain-compressor' }],
+                        devices: [{ id: 'sc-1', type: 'builtin-compressor' }],
                     }),
                 ],
             };
@@ -140,11 +146,11 @@ describe('helpers', () => {
                 tracks: [
                     makeTrack({
                         id: 'source',
-                        devices: [{ id: 'src-sc', type: 'builtin-sidechain-compressor' }],
+                        devices: [{ id: 'src-sc', type: 'builtin-compressor' }],
                     }),
                     makeTrack({
                         id: 'bus',
-                        devices: [{ id: 'sc-1', type: 'builtin-sidechain-compressor' }],
+                        devices: [{ id: 'sc-1', type: 'builtin-compressor' }],
                     }),
                 ],
             };
@@ -163,9 +169,9 @@ describe('helpers', () => {
 
             const result = getTrackLatency('source');
 
-            expect(result.deviceLatencyMs).toBeCloseTo(SIDECHAIN_COMP_MS, 6);
+            expect(result.deviceLatencyMs).toBeCloseTo(COMPRESSOR_MS, 6);
             // own device latency + downstream sidechain-target latency.
-            expect(result.totalLatencyMs).toBeCloseTo(SIDECHAIN_COMP_MS * 2, 6);
+            expect(result.totalLatencyMs).toBeCloseTo(COMPRESSOR_MS * 2, 6);
         });
 
         it('does not infinite-loop on a sidechain cycle', () => {
@@ -208,14 +214,14 @@ describe('helpers', () => {
                     }),
                     makeTrack({
                         id: 'bus',
-                        devices: [{ id: 'sc-1', type: 'builtin-sidechain-compressor' }],
+                        devices: [{ id: 'sc-1', type: 'builtin-compressor' }],
                     }),
                     makeTrack({ id: 'dry' }),
                 ],
             };
             mockSidechainStore.value = { routes: [] };
 
-            expect(getMaxTrackLatency()).toBeCloseTo(SIDECHAIN_COMP_MS, 6);
+            expect(getMaxTrackLatency()).toBeCloseTo(COMPRESSOR_MS, 6);
         });
     });
 });

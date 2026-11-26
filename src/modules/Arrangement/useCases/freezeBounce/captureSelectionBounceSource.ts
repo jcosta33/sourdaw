@@ -24,8 +24,8 @@ import { selectionBounceSourceProjection } from './selectionBounceSourceProjecti
 
 const SOURCE_CHANGED = 'Bounce source changed while rendering';
 
-function captureRuntimeFacts(currentTracks: readonly Track[], renderTracks: readonly Track[], sampleRate: number) {
-    const runtime = captureOfflineRenderRuntimeInput(currentTracks, sampleRate);
+function captureRuntimeFacts(currentTracks: readonly Track[], renderTracks: readonly Track[]) {
+    const runtime = captureOfflineRenderRuntimeInput(currentTracks);
     const renderDeviceIds = new Set(renderTracks.flatMap((row) => row.devices.map((device) => device.id)));
     return {
         sampleRate: getAudioContext().sampleRate,
@@ -109,13 +109,12 @@ export function captureSelectionBounceSource(track: Track, signal?: AbortSignal)
     const clipIds = collectSourceClipIds(sourceTracks, project.takeLanes);
     const projectSource = selectionBounceSourceProjection(trackIds, clipIds);
     const expectedSource = projectSource(root);
-    const sampleRate = getAudioContext().sampleRate;
-    const runtime = captureRuntimeFacts(tracks, renderTracks, sampleRate);
+    const runtime = captureRuntimeFacts(tracks, renderTracks);
     const materials = captureMaterialFacts(sourceTracks);
     function runtimeMatches(): boolean {
         const current = captureOfflineRenderProjectSource();
         return (
-            valuesEqual(captureRuntimeFacts(current.tracks?.tracks ?? [], renderTracks, sampleRate), runtime) &&
+            valuesEqual(captureRuntimeFacts(current.tracks?.tracks ?? [], renderTracks), runtime) &&
             materials.every(
                 ({ id, buffer, publication }) =>
                     audioBufferCache.get(id) === buffer &&

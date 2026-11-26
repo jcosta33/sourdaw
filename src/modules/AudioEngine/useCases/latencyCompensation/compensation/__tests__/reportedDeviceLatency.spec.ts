@@ -76,11 +76,24 @@ describe('a reported device latency reaches plugin-delay compensation (RT-4)', (
         externalLatencyRegistry.clear();
     });
 
-    it('captures sidechain block latency at the export rate and keeps hosted plugins at zero', () => {
-        expect(getDeviceLatencyMs('detector', 'builtin-sidechain-compressor', 96_000)).toBeCloseTo(128 / 96, 10);
-        expect(getDeviceLatencyMs('detector', 'builtin-sidechain-compressor')).toBeCloseTo(128 / 48, 10);
+    it('reports no latency for the sidechain compressor, and keeps hosted plugins at zero', () => {
+        // The worklet applies each block's gain to that same block's input, so it
+        // adds no delay; reporting one block would push every other strip late.
+        expect(getDeviceLatencyMs('detector', 'builtin-sidechain-compressor')).toBe(0);
         reportLatency('hosted', 900);
-        expect(getDeviceLatencyMs('hosted', 'external-plugin', 96_000)).toBe(0);
+        expect(getDeviceLatencyMs('hosted', 'external-plugin')).toBe(0);
+    });
+
+    it('compensates no other track for a track hosting a sidechain compressor', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'bass', devices: [{ id: 'dev-sc', type: 'builtin-sidechain-compressor' }] }),
+                makeTrack({ id: 'drums' }),
+            ],
+        };
+
+        expect(getTrackLatency('bass').totalLatencyMs).toBe(0);
+        expect(getCompensationDelay('drums')).toBe(0);
     });
 
     it('folds a reported device latency into its own track total', () => {
