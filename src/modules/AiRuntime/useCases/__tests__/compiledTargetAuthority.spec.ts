@@ -2983,13 +2983,24 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
     it.each([
         ['set the volume to 75% on Vocals, Drums to 60%'],
         ['set the volume to 75% on Vocals, Drums to 60%, Keys to 50%'],
-    ])('refuses Drums at the 75%% "%s" gives Vocals', (prompt) => {
+    ])('refuses Drums at the level "%s" gives Vocals', (prompt) => {
         const result = compileMix(prompt, [
             trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
             trackItem('setTrackGain', mixDrums, { gain: 0.75 }),
         ]);
 
         expect(targetsOf(result)).toEqual([mixVocals.id]);
+        expect(result.rejections).toHaveLength(1);
+    });
+
+    it('refuses Keys at the 60% "set the volume to 75% on Vocals, Drums to 60%, Keys to 50%" gives Drums', () => {
+        const result = compileMix('set the volume to 75% on Vocals, Drums to 60%, Keys to 50%', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('setTrackGain', mixDrums, { gain: 0.6 }),
+            trackItem('setTrackGain', mixKeys, { gain: 0.6 }),
+        ]);
+
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixDrums.id]);
         expect(result.rejections).toHaveLength(1);
     });
 
