@@ -181,6 +181,22 @@ describe('handleExtractGroove re-extraction', () => {
         expect(storedTemplates().filter((template) => template.id !== `groove-${CLIP_ID}-v2`)).toEqual(before);
     });
 
+    it('writes and pins nothing for straight notes while an earlier version of the clip exists', () => {
+        setNotes(0.02);
+        extractIdLess();
+        setNotes(0);
+        const before = structuredClone(grooveTemplateStore.value);
+
+        const action = createIdLessAction();
+
+        expect(handleExtractGroove.isNoop?.(action)).toBe(true);
+        expect(handleExtractGroove.describe(action).inverseAction).toBeNull();
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'no-write' });
+        expect(action.payload.templateId).toBeUndefined();
+        expect(action.payload).not.toHaveProperty('proposal');
+        expect(grooveTemplateStore.value).toEqual(before);
+    });
+
     it('still refuses a different template already holding the id the action carries', () => {
         setNotes(0.02);
         extractIdLess();

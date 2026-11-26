@@ -111,9 +111,9 @@ export const PianoRollContextMenu = ({
     const handleExtractGroove = async (): Promise<void> => {
         const sourceName = getGrooveSourceClipName(clipId) ?? clipId;
         await executeUserAppAction({ type: 'extractGroove', payload: { clipId, sourceName } });
-        const templateId = resolveGrooveExtractionTemplateId({ clipId, sourceName, subdivision: '1/16' });
-        const extractedTemplateId = getGrooveTemplate(templateId)?.id ?? getStraightGrooveTemplateId();
-        setGrooveTemplateId(extractedTemplateId);
+        const resolved = resolveGrooveExtractionTemplateId({ clipId, sourceName, subdivision: '1/16' });
+        const extractedTemplate = resolved.status === 'extracted' ? getGrooveTemplate(resolved.templateId) : undefined;
+        setGrooveTemplateId(extractedTemplate?.id ?? getStraightGrooveTemplateId());
     };
 
     const handleApplyGroove = async (): Promise<void> => {

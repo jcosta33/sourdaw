@@ -31,16 +31,20 @@ type ExtractGroovePlan =
           code: 'source-revision-mismatch' | 'proposal-mismatch' | 'template-identity-conflict';
       };
 
-/** The id the caller named, or else the version of this clip's template the extraction creates or finds. */
-function resolveTemplateId(action: ExtractGrooveAction): string {
-    return (
-        action.payload.templateId ??
-        resolveGrooveExtractionTemplateId({
-            clipId: action.payload.clipId,
-            sourceName: action.payload.sourceName ?? action.payload.clipId,
-            subdivision: action.payload.subdivision ?? '1/16',
-        })
-    );
+/**
+ * The id the caller named, or else the version of this clip's template the extraction creates or finds.
+ * Undefined when the notes extract no template, so the extraction reads them without naming one.
+ */
+function resolveTemplateId(action: ExtractGrooveAction): string | undefined {
+    if (action.payload.templateId !== undefined) {
+        return action.payload.templateId;
+    }
+    const resolved = resolveGrooveExtractionTemplateId({
+        clipId: action.payload.clipId,
+        sourceName: action.payload.sourceName ?? action.payload.clipId,
+        subdivision: action.payload.subdivision ?? '1/16',
+    });
+    return resolved.status === 'extracted' ? resolved.templateId : undefined;
 }
 
 function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
@@ -94,6 +98,9 @@ function pinExtraction(action: ExtractGrooveAction): void {
         return;
     }
     const templateId = resolveTemplateId(action);
+    if (templateId === undefined) {
+        return;
+    }
     const result = prepareGrooveExtraction({
         clipId: action.payload.clipId,
         sourceName: action.payload.sourceName ?? action.payload.clipId,

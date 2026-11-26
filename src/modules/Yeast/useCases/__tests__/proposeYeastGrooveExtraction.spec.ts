@@ -3,7 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockTrackStore, mockPrepareExtraction, mockResolveTemplateId } = vi.hoisted(() => ({
     mockTrackStore: { value: null as unknown as { tracks: Array<{ clips: Array<Record<string, unknown>> }> } },
     mockPrepareExtraction: vi.fn(),
-    mockResolveTemplateId: vi.fn(({ clipId }: { clipId: string }) => `resolved-groove-${clipId}`),
+    mockResolveTemplateId: vi.fn(
+        ({
+            clipId,
+        }: {
+            clipId: string;
+        }): { status: 'extracted'; templateId: string } | { status: 'not-extracted' } => ({
+            status: 'extracted',
+            templateId: `resolved-groove-${clipId}`,
+        })
+    ),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mockTrackStore }));
@@ -62,6 +71,15 @@ describe('proposeYeastGrooveExtraction', () => {
             subdivision: '1/8',
             templateId: 'resolved-groove-c1',
         });
+    });
+
+    it('names no template id when the MIDI module resolves none for the clip', () => {
+        mockTrackStore.value = stateWithClips([midiClip('c1', 'On Grid')]);
+        mockResolveTemplateId.mockReturnValueOnce({ status: 'not-extracted' });
+        mockPrepareExtraction.mockReturnValue({ status: 'straight', template: { id: 'groove-straight' } });
+        proposeYeastGrooveExtraction({ clipId: 'c1', subdivision: '1/16' });
+        expect(mockPrepareExtraction).toHaveBeenCalledTimes(1);
+        expect(mockPrepareExtraction.mock.calls[0]?.[0]).not.toHaveProperty('templateId', expect.any(String));
     });
 
     it('returns the straight groove with source metadata', () => {
