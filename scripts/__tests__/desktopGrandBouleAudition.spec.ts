@@ -272,7 +272,7 @@ describe('packaged audition capture admission', () => {
     it.each([
         ['local host', undefined, device, false],
         ['self-hosted runner', 'self-hosted', device, false],
-        ['hosted runner with a competing input', 'github-hosted', device + '\nBuilt-in Microphone', false],
+        ['hosted runner with a competing input', 'github-hosted', `${device}\nBuilt-in Microphone`, false],
         ['hosted runner with only BlackHole', 'github-hosted', device, true],
     ] as const)(
         'routes concealed capture through host admission on a %s',
@@ -283,9 +283,9 @@ describe('packaged audition capture admission', () => {
                 switch (args.join(' ')) {
                     case '-c -t output':
                     case '-c -t input':
-                        return device + '\n';
+                        return `${device}\n`;
                     case '-a -t input':
-                        return inputs + '\n';
+                        return `${inputs}\n`;
                     default:
                         throw new Error('unexpected audio command');
                 }
@@ -309,7 +309,7 @@ describe('packaged audition capture admission', () => {
                         try {
                             return await evaluate(options);
                         } catch (error) {
-                            throw new Error('page.evaluateHandle: ' + String(error));
+                            throw new Error(`page.evaluateHandle: ${String(error)}`);
                         }
                     }
                 ),
@@ -405,7 +405,7 @@ describe('BlackHole renderer capture admission', () => {
         [
             'hosted runner with a competing input',
             'github-hosted',
-            name + '\nBuilt-in Microphone',
+            `${name}\nBuilt-in Microphone`,
             [
                 ['-a', '-t', 'input'],
                 ['-c', '-t', 'input'],
@@ -414,7 +414,7 @@ describe('BlackHole renderer capture admission', () => {
         [
             'hosted runner with duplicate virtual inputs',
             'github-hosted',
-            name + '\n' + name,
+            `${name}\n${name}`,
             [
                 ['-a', '-t', 'input'],
                 ['-c', '-t', 'input'],

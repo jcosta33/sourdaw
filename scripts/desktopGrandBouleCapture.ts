@@ -111,7 +111,8 @@ export async function openBlackHoleMedia({
     device: string;
     allowHiddenDefault?: boolean;
 }) {
-    const media = navigator.mediaDevices;
+    const runtimeNavigator: { mediaDevices?: MediaDevices } = navigator;
+    const media = runtimeNavigator.mediaDevices;
     if (!media) {
         throw new Error('capture-media-devices-unavailable');
     }
@@ -159,7 +160,7 @@ export async function openBlackHoleMedia({
     try {
         const [track, ...extra] = stream.getAudioTracks();
         const settings = track?.getSettings();
-        if (!track || extra.length !== 0 || settings?.deviceId !== deviceId) {
+        if (!track || extra.length > 0 || settings?.deviceId !== deviceId) {
             throw new Error('capture-returned-input-mismatch');
         }
         const verifiedInput =
