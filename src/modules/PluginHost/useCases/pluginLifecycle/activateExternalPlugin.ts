@@ -376,8 +376,8 @@ export function activateExternalPlugin({
                 parameters: toExternalPluginParameters(instance.parameters),
             });
             // What an export reserves after the last note for this instance's
-            // decay; later revisions arrive over `plugin-tail-changed`. One the
-            // plugin reported before this answer arrived is newer than it.
+            // decay; later revisions arrive over `plugin-tail-changed`. A figure
+            // held during the load applies only if its native sequence outranks this answer's.
             writeExternalPluginTail(instanceId, {
                 tailSamples: instance.tail_samples,
                 sequence: instance.tail_sequence,

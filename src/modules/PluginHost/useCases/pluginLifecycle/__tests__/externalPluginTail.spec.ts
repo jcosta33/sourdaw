@@ -97,6 +97,20 @@ describe('external plugin tail store', () => {
         expect(tailOf('inst-1')).toBe(240_000);
     });
 
+    it('ignores a tail held during a load whose native sequence the load answer outranks', async () => {
+        const load = Promise.withResolvers<PluginInstance>();
+        mocks.loadPluginRepo.mockReturnValueOnce(load.promise);
+        const activation = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1));
+        // Numbered by the host before the load read its own figure, delivered before the answer.
+        nativeTailHandler?.({ instance_id: 'inst-1', tail_samples: 240_000, sequence: 2 });
+
+        load.resolve({ ...loadedInstance('inst-1', 96_000), tail_sequence: 5 });
+        await activation;
+
+        expect(tailOf('inst-1')).toBe(96_000);
+    });
+
     it('seeds no tail reported during a load the graph rebuild superseded', async () => {
         let finishLoad: () => void = () => {};
         mocks.loadPluginRepo.mockImplementation(
