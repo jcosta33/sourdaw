@@ -56,6 +56,7 @@ function loadedInstance(instanceId: string, tailSamples: number): PluginInstance
         latency_samples: 0,
         latency_ms: 0,
         tail_samples: tailSamples,
+        tail_sequence: 0,
         engine_plugin_id: 7,
     };
 }
@@ -304,6 +305,19 @@ describe('refreshExternalPluginTails', () => {
 
             expect(tailBeforeSeed).toBeUndefined();
             expect(tailOf('inst-1')).toBe(240_000);
+        });
+
+        it('ignores a held answer whose sequence the load answer outranks', async () => {
+            const load = Promise.withResolvers<PluginInstance>();
+            mocks.loadPluginRepo.mockReturnValueOnce(load.promise);
+            const activation = activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+            mocks.readPluginTailsRepo.mockResolvedValue([reading('inst-1', 240_000, 2)]);
+
+            await refreshExternalPluginTails();
+            load.resolve({ ...loadedInstance('inst-1', 96_000), tail_sequence: 5 });
+            await activation;
+
+            expect(tailOf('inst-1')).toBe(96_000);
         });
 
         it('lets a held event with a later sequence win over a held answer', async () => {
