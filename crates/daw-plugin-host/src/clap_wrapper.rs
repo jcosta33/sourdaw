@@ -1387,9 +1387,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
-            event_order_scratch: Vec::with_capacity(
-                MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK,
-            ),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
@@ -1441,9 +1439,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
-            event_order_scratch: Vec::with_capacity(
-                MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK,
-            ),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             command_fixture: Some(EngineOwnedCommandFixture {
                 state,
@@ -3375,6 +3371,12 @@ fn merge_event_order(
     }
 }
 
+/// An empty merge-order scratch reserved for a full block of parameter values
+/// and notes, so `merge_event_order` never grows it on the audio thread.
+fn event_order_scratch() -> Vec<u32> {
+    Vec::with_capacity(MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK)
+}
+
 /// Refill the block's note scratch from the host's events.
 ///
 /// Each event's `frame_offset` becomes the CLAP header's `time`, which is what
@@ -4702,9 +4704,7 @@ mod tests {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
-            event_order_scratch: Vec::with_capacity(
-                MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK,
-            ),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
