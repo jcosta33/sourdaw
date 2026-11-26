@@ -362,6 +362,7 @@ export type BuiltinDeviceNode = {
         allNotesOff: () => void;
         setParam: (name: string, value: number) => void;
         setMode: (mode: string) => void;
+        refreshSample?: () => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
