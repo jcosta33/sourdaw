@@ -47,8 +47,19 @@ const mocks = vi.hoisted(() => ({
     selectOfflineRenderEngine: vi.fn(),
     createOfflineTrackStrip: vi.fn(),
     buffers: new Map<string, AudioBuffer>(),
+    /** The renderer cap this render sees; `null` keeps the real one. */
+    maxOfflineFrames: null as number | null,
 }));
 
+vi.mock('../../repositories/clampRenderFrameCount', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../repositories/clampRenderFrameCount')>();
+    return {
+        ...actual,
+        get MAX_OFFLINE_FRAMES() {
+            return mocks.maxOfflineFrames ?? actual.MAX_OFFLINE_FRAMES;
+        },
+    };
+});
 vi.mock('../../stores/audioBufferCache', () => ({
     audioBufferCache: {
         get: (id: string) => mocks.buffers.get(id),
@@ -363,6 +374,7 @@ describe('an export prints its latency compensation from the head', () => {
     });
 
     afterEach(() => {
+        mocks.maxOfflineFrames = null;
         externalLatencyRegistry.delete('latent-device');
         mocks.buffers.clear();
         vi.unstubAllGlobals();
@@ -371,6 +383,42 @@ describe('an export prints its latency compensation from the head', () => {
     it('keeps a compensated clip on its timeline frame and the file its length on Web Audio', async () => {
         const rendered = await renderOffline(exportOptions);
 
+        expect(createdContextFrames).toEqual([HEAD_FRAMES + OUTPUT_FRAMES]);
+        expect(rendered.length).toBe(OUTPUT_FRAMES);
+        expect(soundingSpan(rendered)).toEqual({
+            first: CLIP_START_SECONDS * SAMPLE_RATE,
+            last: CLIP_END_SECONDS * SAMPLE_RATE - 1,
+        });
+    });
+
+    it('cuts a head the renderer cap leaves no room for to the room left, warning, and keeps the file its length', async () => {
+        const roomFrames = HEAD_FRAMES / 2;
+        mocks.maxOfflineFrames = OUTPUT_FRAMES + roomFrames;
+        const warnings: string[] = [];
+
+        const rendered = await renderOffline({ ...exportOptions, onWarning: (message) => warnings.push(message) });
+
+        expect(warnings).toEqual([
+            `This export is at the renderer's ${OUTPUT_FRAMES + roomFrames}-frame cap, so 0.125 s of the ` +
+                'latency compensation its master arrives late by is not printed ahead of it: the export lands ' +
+                'that much late and its last 0.125 s is not printed.',
+        ]);
+        expect(createdContextFrames).toEqual([OUTPUT_FRAMES + roomFrames]);
+        expect(rendered.length).toBe(OUTPUT_FRAMES);
+        // The crop drops the cut head, so the window still ends on the render's last frame.
+        expect(soundingSpan(rendered)).toEqual({
+            first: CLIP_START_SECONDS * SAMPLE_RATE + HEAD_FRAMES - roomFrames,
+            last: OUTPUT_FRAMES - 1,
+        });
+    });
+
+    it('leaves a head that just fits under the renderer cap whole', async () => {
+        mocks.maxOfflineFrames = OUTPUT_FRAMES + HEAD_FRAMES;
+        const warnings: string[] = [];
+
+        const rendered = await renderOffline({ ...exportOptions, onWarning: (message) => warnings.push(message) });
+
+        expect(warnings).toEqual([]);
         expect(createdContextFrames).toEqual([HEAD_FRAMES + OUTPUT_FRAMES]);
         expect(rendered.length).toBe(OUTPUT_FRAMES);
         expect(soundingSpan(rendered)).toEqual({

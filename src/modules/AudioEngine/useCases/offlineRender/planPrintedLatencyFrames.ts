@@ -7,6 +7,8 @@ type PlanPrintedLatencyFramesInput = {
     trackId: string;
     /** The device latencies the render aligned its strips by; absent reads the live ones. */
     latency?: LatencyCompensationInput;
+    /** Device types on the strip the render leaves out of its print (`unprintedDeviceTypes`). */
+    unprintedDeviceTypes?: readonly string[];
     sampleRate: number;
     /** Frames the render holds without the shift, already within the renderer's cap. */
     baseFrameCount: number;
@@ -25,11 +27,12 @@ type PlanPrintedLatencyFramesInput = {
 export function planPrintedLatencyFrames({
     trackId,
     latency,
+    unprintedDeviceTypes,
     sampleRate,
     baseFrameCount,
     onWarning,
 }: PlanPrintedLatencyFramesInput): number {
-    const shiftSeconds = getPrintedLatencyShift(trackId, latency);
+    const shiftSeconds = getPrintedLatencyShift(trackId, latency, unprintedDeviceTypes);
     const wantedFrames = Math.max(0, Math.round(shiftSeconds * sampleRate));
     const roomFrames = Math.max(0, MAX_OFFLINE_FRAMES - baseFrameCount);
     if (wantedFrames <= roomFrames) {

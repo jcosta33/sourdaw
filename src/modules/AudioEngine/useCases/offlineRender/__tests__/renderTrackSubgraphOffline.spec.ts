@@ -890,6 +890,47 @@ describe('renderTrackSubgraphOffline', () => {
             });
         });
 
+        it('crops a bounce without inserts by the compensation alone, since the withheld insert prints no latency', async () => {
+            // The insert reports 100 ms, so compensation holds this strip back 150 ms to meet the 250 ms
+            // strip. A bounce without inserts prints that 150 ms and not the insert's own 100 ms.
+            const INSERT_SECONDS = 0.1;
+            const COMPENSATION_FRAMES = Math.round((LATENCY_SECONDS - INSERT_SECONDS) * SAMPLE_RATE);
+            // Beat 0 at 120 bpm, half a beat long: frames 0 to 0.25 s on the timeline.
+            const NOTE_FRAMES = Math.round(0.25 * SAMPLE_RATE);
+            reportLatency('insert-1', INSERT_SECONDS * 1000);
+            const withInsert = TrackDummy.create({
+                ...target,
+                devices: [
+                    ...target.devices,
+                    { id: 'insert-1', name: 'Insert', type: 'knead', bypassed: false, parameterValues: {} },
+                ],
+            });
+            const deepest = trackStore.value!.tracks.find((track) => track.id === 'deepest')!;
+            trackStore.set({ tracks: [withInsert, deepest], selectedTrackId: null, ghostClips: [] });
+            const { midiStore } = await import('#/modules/MIDI/stores');
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-1': [{ id: 'downbeat', pitch: 60, startBeat: 0, duration: 0.5, velocity: 100 }],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: withInsert.id,
+                renderTracks: [withInsert],
+                startBeat: 0,
+                endBeat: 4,
+                includeInserts: false,
+                cropPrintedLatency: true,
+            });
+
+            expect(createdContexts[0]!.length).toBe(REGION_FRAMES + COMPENSATION_FRAMES);
+            expect(buffer!.length).toBe(REGION_FRAMES);
+            expect(soundingFrames(buffer!)).toEqual({ first: 0, last: NOTE_FRAMES - 1 });
+        });
+
         it('crops a region that starts after beat 0 by the delay as well as its history', async () => {
             const buffer = await renderTrackSubgraphOffline({
                 targetTrackId: target.id,

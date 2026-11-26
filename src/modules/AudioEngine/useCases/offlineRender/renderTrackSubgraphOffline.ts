@@ -35,6 +35,7 @@ import { scheduleOfflineAdjustmentCurves } from './scheduleOfflineAdjustmentCurv
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
 import { type OfflineScheduleTally, type OfflineTrackStrip, type PendingWorkletEvent } from './types';
+import { unprintedDeviceTypes } from './unprintedDeviceTypes';
 import { wireAdjustmentBusChain } from './wireAdjustmentBusChain';
 import { yieldToMain } from './yieldToMain';
 
@@ -112,9 +113,8 @@ type RenderTrackSubgraphOfflineInput = {
      */
     includeTargetVca?: boolean;
     /**
-     * Renders the delay the target's output carries (compensation plus its own devices) as extra
-     * frames and crops it from the head, so the buffer keeps its length and nothing is cut. Off keeps
-     * the delay at the head, as freeze replays it; bounce, which places the buffer, turns it on.
+     * Renders the delay the print carries (compensation plus the devices it prints) as extra frames and
+     * crops it from the head, so the buffer keeps its length. Off keeps it at the head, as freeze replays it.
      */
     cropPrintedLatency?: boolean;
     onProgress?: (fraction: number) => void;
@@ -207,18 +207,18 @@ export async function renderTrackSubgraphOffline({
     }
 
     // Shared with the mixdown and the stem path so an over-long freeze is
-    // *reported* rather than silently producing a short buffer that looks like a
-    // success. This used to re-inline the `Math.min`, which is the same clamp
-    // with no warning channel — and `onWarning` was already in scope.
+    // *reported* rather than silently producing a short buffer.
     const baseFrameCount = clampRenderFrameCount({ durationSeconds: baseDurationSeconds, sampleRate, onWarning });
     if (baseFrameCount <= 0) {
         return null;
     }
     let shiftFrames = 0;
     if (cropPrintedLatency) {
+        const targetDevices = renderTracks.find((track) => track.id === targetTrackId)?.devices ?? [];
         shiftFrames = planPrintedLatencyFrames({
             trackId: targetTrackId,
             latency: captured?.scheduling.latency,
+            unprintedDeviceTypes: unprintedDeviceTypes(targetDevices, includeInserts),
             sampleRate,
             baseFrameCount,
             onWarning,

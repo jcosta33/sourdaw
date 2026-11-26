@@ -37,6 +37,11 @@ function resolveBaseSpan(
  * the Web Audio render holds ahead of the requested window for the
  * compensation it prints. A printed head is counted exactly, history and head
  * and window, so the crop that drops the head can never overrun the render.
+ *
+ * The renderer's cap limits the head alone: one that does not fit is cut to
+ * the room history and window leave, and the cut is reported, because the
+ * export then lands that much late and loses as much from its end. A window
+ * that does not fit even without a head keeps the base span and its clamp.
  */
 function resolveRenderSpan(
     captured: ReturnType<typeof captureOfflineRenderInput>,
@@ -47,14 +52,21 @@ function resolveRenderSpan(
         return resolveBaseSpan(captured, onWarning);
     }
     const { sampleRate, historyFrameCount, outputFrameCount } = captured;
-    const compensationHeadFrameCount = webCompensationHeadFrames(captured.scheduling.latency, sampleRate);
-    if (compensationHeadFrameCount === 0) {
+    const wantedHeadFrames = webCompensationHeadFrames(captured.scheduling.latency, sampleRate);
+    const roomFrames = MAX_OFFLINE_FRAMES - historyFrameCount - outputFrameCount;
+    if (wantedHeadFrames === 0 || roomFrames < 0) {
         return resolveBaseSpan(captured, onWarning);
     }
-    const frameCount = historyFrameCount + compensationHeadFrameCount + outputFrameCount;
-    if (frameCount > MAX_OFFLINE_FRAMES) {
-        throw new Error('The export exceeds the renderer frame limit once its latency compensation is included');
+    const compensationHeadFrameCount = Math.min(wantedHeadFrames, roomFrames);
+    if (compensationHeadFrameCount < wantedHeadFrames) {
+        const cutSeconds = ((wantedHeadFrames - compensationHeadFrameCount) / sampleRate).toFixed(3);
+        onWarning?.(
+            `This export is at the renderer's ${MAX_OFFLINE_FRAMES}-frame cap, so ${cutSeconds} s of the ` +
+                'latency compensation its master arrives late by is not printed ahead of it: the export lands ' +
+                `that much late and its last ${cutSeconds} s is not printed.`
+        );
     }
+    const frameCount = historyFrameCount + compensationHeadFrameCount + outputFrameCount;
     return { frameCount, durationSeconds: frameCount / sampleRate, compensationHeadFrameCount };
 }
 
