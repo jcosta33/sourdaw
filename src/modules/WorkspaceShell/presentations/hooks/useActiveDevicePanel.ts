@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
+import { findYeastDevice } from '#/modules/Yeast/useCases';
 
 import { type DevicePanelKind, devicePanelKindOf } from '../../models/DevicePanelByDeviceType';
 import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
@@ -68,7 +69,7 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
             }
             const state = trackStore.value;
             const track = state?.tracks.find((candidate) => candidate.id === state?.selectedTrackId);
-            return track?.devices.find((device) => device.type === 'yeast')?.id ?? null;
+            return track ? (findYeastDevice(track.devices)?.id ?? null) : null;
         };
         // One builder per device-bearing kind. The mapped type forces an entry for
         // every `NeedsDeviceId` (add a kind → missing-key error here), and the

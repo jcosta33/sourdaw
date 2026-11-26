@@ -50,7 +50,8 @@ type TrackStoreValue = {
 const trackStoreState = vi.hoisted(() => ({ value: null as TrackStoreValue }));
 const trackStoreSubscribers = vi.hoisted(() => new Set<(value: TrackStoreValue) => void>());
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -133,6 +134,47 @@ describe('useActiveDevicePanel', () => {
         // The mock track store carries no devices, so a null deviceId cannot
         // resolve to an instance — the panel falls back to selection itself.
         expect(result.current.activePanel).toEqual({ kind: 'yeast', deviceId: null, trackId: 'track-yeast' });
+    });
+
+    it("binds a null-deviceId yeast open to the selected track's first Yeast device", () => {
+        publishTracks({
+            selectedTrackId: 'track-yeast',
+            tracks: [
+                {
+                    id: 'track-yeast',
+                    devices: [
+                        { id: 'eq-1', type: 'builtin-eq' },
+                        { id: 'yeast-first', type: 'yeast' },
+                        { id: 'yeast-second', type: 'yeast' },
+                    ],
+                },
+            ],
+        });
+        const { result } = renderHook(() => useActiveDevicePanel());
+
+        act(() => {
+            bus.fire('panel.showDevice', { deviceType: 'yeast', deviceId: null });
+        });
+
+        expect(result.current.activePanel).toEqual({
+            kind: 'yeast',
+            deviceId: 'yeast-first',
+            trackId: 'track-yeast',
+        });
+    });
+
+    it('leaves a null-deviceId yeast open unbound when the selected track holds no Yeast', () => {
+        publishTracks({
+            selectedTrackId: 'track-1',
+            tracks: [{ id: 'track-1', devices: [{ id: 'eq-1', type: 'builtin-eq' }] }],
+        });
+        const { result } = renderHook(() => useActiveDevicePanel());
+
+        act(() => {
+            bus.fire('panel.showDevice', { deviceType: 'yeast', deviceId: null });
+        });
+
+        expect(result.current.activePanel).toEqual({ kind: 'yeast', deviceId: null, trackId: 'track-1' });
     });
 
     it('opens the yeast panel bound to the deviceId the event carried', () => {

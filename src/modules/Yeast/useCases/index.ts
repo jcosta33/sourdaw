@@ -17,3 +17,4 @@ export { addYeastProcessor } from './addYeastProcessor';
 export { setYeastProcessorParam } from './setYeastProcessorParam';
 export { getYeastHandlers } from './getYeastHandlers';
 export { captureOfflineYeastProjections } from './captureOfflineYeastProjections';
+export { findYeastDevice } from './findYeastDevice';

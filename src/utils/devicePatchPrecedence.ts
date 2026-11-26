@@ -1,5 +1,37 @@
 import { projectBacteriaParameters } from './bacteriaParameterReplay';
+import { type BuiltinDeviceType, resolveBuiltinDeviceType } from './builtinDeviceTypes';
 import { resolveNativeDspDeviceType } from './nativeDspDeviceTypes';
+
+type ParameterValues = Record<string, number> | Readonly<Record<string, number>>;
+
+type ReplayOrder = (parameterValues: ParameterValues) => Array<[string, number]>;
+
+const TOASTER_ENGINE_TYPE_KEYS: readonly string[] = Array.from({ length: 16 }, (_, pad) => `pad${pad}_engine_type`);
+
+function replayInInsertionOrder(parameterValues: ParameterValues): Array<[string, number]> {
+    return Object.entries(parameterValues);
+}
+
+function replayPrecedenceFirst(precedence: readonly string[]): ReplayOrder {
+    const precedenceSet = new Set(precedence);
+    return (parameterValues) => {
+        const leading: Array<[string, number]> = [];
+        for (const key of precedence) {
+            if (Object.hasOwn(parameterValues, key)) {
+                const value = parameterValues[key];
+                if (value !== undefined) {
+                    leading.push([key, value]);
+                }
+            }
+        }
+        const rest = Object.entries(parameterValues).filter(([key]) => !precedenceSet.has(key));
+        return [...leading, ...rest];
+    };
+}
+
+function replayBacteriaProjection(parameterValues: ParameterValues): Array<[string, number]> {
+    return Object.entries(projectBacteriaParameters(parameterValues));
+}
 
 /**
  * Ordering laws for native device parameters when replaying a device's patch.
@@ -12,30 +44,58 @@ import { resolveNativeDspDeviceType } from './nativeDspDeviceTypes';
  * - Grinder: `GRINDER_PATCH_PRECEDENCE` (`neuralEnabled`).
  * - Fermenter: `LAYER_ROUTING_KEY` (`activeLayer` / `active_layer`).
  * - Toaster: `TOASTER_PATCH_PRECEDENCE` (`pad0_engine_type` ... `pad15_engine_type`).
+ * - Bacteria: projects saved band overrides and crossovers instead of ordering keys.
+ *
+ * Every built-in type has exactly one row, so a new device type fails compilation
+ * until its replay order is decided (ADR 0063).
  */
-export const DEVICE_PATCH_PRECEDENCE: Readonly<Record<string, readonly string[]>> = {
-    crust: ['style'],
-    gluten: ['style', 'topology', 'amount'],
-    grinder: ['neuralEnabled'],
-    fermenter: ['activeLayer', 'active_layer'],
-    toaster: [
-        'pad0_engine_type',
-        'pad1_engine_type',
-        'pad2_engine_type',
-        'pad3_engine_type',
-        'pad4_engine_type',
-        'pad5_engine_type',
-        'pad6_engine_type',
-        'pad7_engine_type',
-        'pad8_engine_type',
-        'pad9_engine_type',
-        'pad10_engine_type',
-        'pad11_engine_type',
-        'pad12_engine_type',
-        'pad13_engine_type',
-        'pad14_engine_type',
-        'pad15_engine_type',
-    ],
+export const PATCH_REPLAY_BY_TYPE: { readonly [Type in BuiltinDeviceType]: ReplayOrder } = {
+    'builtin-eq': replayInInsertionOrder,
+    'builtin-compressor': replayInInsertionOrder,
+    'builtin-reverb': replayInInsertionOrder,
+    'builtin-delay': replayInInsertionOrder,
+    'builtin-gain': replayInInsertionOrder,
+    'builtin-sidechain-compressor': replayInInsertionOrder,
+    'builtin-chorus': replayInInsertionOrder,
+    'builtin-phaser': replayInInsertionOrder,
+    'builtin-distortion': replayInInsertionOrder,
+    'builtin-limiter': replayInInsertionOrder,
+    'builtin-flanger': replayInInsertionOrder,
+    'builtin-tremolo': replayInInsertionOrder,
+    'builtin-bitcrusher': replayInInsertionOrder,
+    'builtin-filter': replayInInsertionOrder,
+    'builtin-autopan': replayInInsertionOrder,
+    'builtin-convolution-reverb': replayInInsertionOrder,
+    'builtin-stereo-widener': replayInInsertionOrder,
+    'builtin-deesser': replayInInsertionOrder,
+    'builtin-lufs-meter': replayInInsertionOrder,
+    'builtin-synth': replayInInsertionOrder,
+    'builtin-synth-mellotron': replayInInsertionOrder,
+    'builtin-synth-strings': replayInInsertionOrder,
+    'builtin-synth-808bass': replayInInsertionOrder,
+    'builtin-synth-brass': replayInInsertionOrder,
+    'builtin-drum-kit': replayInInsertionOrder,
+    'builtin-drum-machine-808': replayInInsertionOrder,
+    'builtin-drum-machine-analog': replayInInsertionOrder,
+    'builtin-drum-machine-electronic': replayInInsertionOrder,
+    'builtin-drum-machine-acoustic': replayInInsertionOrder,
+    fermenter: replayPrecedenceFirst(['activeLayer', 'active_layer']),
+    toaster: replayPrecedenceFirst(TOASTER_ENGINE_TYPE_KEYS),
+    levain: replayInInsertionOrder,
+    'builtin-crumbs': replayInInsertionOrder,
+    'grand-boule': replayInInsertionOrder,
+    gluten: replayPrecedenceFirst(['style', 'topology', 'amount']),
+    crust: replayPrecedenceFirst(['style']),
+    bacteria: replayBacteriaProjection,
+    grinder: replayPrecedenceFirst(['neuralEnabled']),
+    proof: replayInInsertionOrder,
+    'dutch-oven': replayInInsertionOrder,
+    'native-scoring': replayInInsertionOrder,
+    knead: replayInInsertionOrder,
+    'transient-shaper': replayInInsertionOrder,
+    yeast: replayInInsertionOrder,
+    'drum-kit': replayInInsertionOrder,
+    synth: replayInInsertionOrder,
 };
 
 /**
@@ -47,29 +107,12 @@ export const DEVICE_PATCH_PRECEDENCE: Readonly<Record<string, readonly string[]>
  */
 export function orderDeviceParametersForReplay(
     deviceType: string,
-    parameterValues: Record<string, number> | Readonly<Record<string, number>>
+    parameterValues: ParameterValues
 ): Array<[string, number]> {
     const canonicalType = resolveNativeDspDeviceType(deviceType) ?? deviceType.toLowerCase();
-    if (canonicalType === 'bacteria') {
-        return Object.entries(projectBacteriaParameters(parameterValues));
+    const builtinType = resolveBuiltinDeviceType(canonicalType);
+    if (builtinType === null) {
+        return replayInInsertionOrder(parameterValues);
     }
-
-    const entries = Object.entries(parameterValues);
-    const precedence = DEVICE_PATCH_PRECEDENCE[canonicalType];
-    if (!precedence || precedence.length === 0) {
-        return entries;
-    }
-
-    const precedenceSet = new Set(precedence);
-    const leading: Array<[string, number]> = [];
-    for (const key of precedence) {
-        if (Object.hasOwn(parameterValues, key)) {
-            const value = parameterValues[key];
-            if (value !== undefined) {
-                leading.push([key, value]);
-            }
-        }
-    }
-    const rest = entries.filter(([key]) => !precedenceSet.has(key));
-    return [...leading, ...rest];
+    return PATCH_REPLAY_BY_TYPE[builtinType](parameterValues);
 }

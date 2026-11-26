@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { orderDeviceParametersForReplay } from '../devicePatchPrecedence';
+import { BUILTIN_DEVICE_TYPES } from '../builtinDeviceTypes';
+import { orderDeviceParametersForReplay, PATCH_REPLAY_BY_TYPE } from '../devicePatchPrecedence';
 
 describe('orderDeviceParametersForReplay', () => {
     it('orders crust parameters with style before algorithm', () => {
@@ -150,4 +151,31 @@ describe('orderDeviceParametersForReplay', () => {
             ['pitch', 0],
         ]);
     });
+
+    it('has a replay answer for every built-in type', () => {
+        expect(Object.keys(PATCH_REPLAY_BY_TYPE).toSorted()).toEqual([...BUILTIN_DEVICE_TYPES].toSorted());
+    });
+
+    it.each(['external-plugin', '', 'constructor', '__proto__', 'toString', 'faust-x', 'builtin-eq'])(
+        'replays %j in insertion order',
+        (deviceType) => {
+            const params = { style: 1, topology: 2, activeLayer: 3, neuralEnabled: 4 };
+            expect(orderDeviceParametersForReplay(deviceType, params)).toEqual(Object.entries(params));
+        }
+    );
+
+    it.each(['CRUST', 'Gluten', 'FERMENTER', 'Toaster', 'GRINDER'])(
+        'case-folds %s onto its precedence law',
+        (deviceType) => {
+            const result = orderDeviceParametersForReplay(deviceType, {
+                zzz: 0,
+                pad1_engine_type: 1,
+                activeLayer: 2,
+                neuralEnabled: 3,
+                amount: 4,
+                style: 5,
+            });
+            expect(result[0]?.[0]).not.toBe('zzz');
+        }
+    );
 });
