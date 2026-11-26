@@ -3220,16 +3220,21 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
     });
 
     // lsof lists a forked same-UID process, then is refused its files once it execs a set-user-ID
-    // binary such as another guard's `ps`. Every simulated lsof call costs 100 ms.
+    // binary such as another guard's `ps`. Every simulated lsof call costs 100 ms. At the deadline
+    // the process lists still name the departed process, so only the reason separates the rows.
     it.skipIf(process.getuid === undefined).each([
-        { route: 'whole', departure: 'exited', ending: 'complete', state: 'dead', reason: undefined },
-        { route: 'whole', departure: 'changed UID', ending: 'complete', state: 'dead', reason: undefined },
-        { route: 'whole', departure: 'exited', ending: 'holder', state: 'alive', reason: undefined },
+        { route: 'whole', departure: 'exited', ending: 'complete', state: 'dead', reason: 'none' },
+        { route: 'whole', departure: 'changed UID', ending: 'complete', state: 'dead', reason: 'none' },
+        { route: 'whole', departure: 'exited', ending: 'holder', state: 'alive', reason: 'none' },
+        { route: 'whole', departure: 'exited', ending: 'deadline', state: 'unknown', reason: 'left' },
         { route: 'whole', departure: 'changed UID', ending: 'deadline', state: 'unknown', reason: 'left' },
-        { route: 'whole', departure: 'stays', ending: 'deadline', state: 'unknown', reason: 'stable' },
-        { route: 'scoped', departure: 'exited', ending: 'complete', state: 'dead', reason: undefined },
-        { route: 'scoped', departure: 'changed UID', ending: 'complete', state: 'dead', reason: undefined },
-        { route: 'scoped', departure: 'changed UID', ending: 'holder', state: 'alive', reason: undefined },
+        { route: 'whole', departure: 'stays', ending: 'deadline', state: 'unknown', reason: 'whole stable' },
+        { route: 'scoped', departure: 'exited', ending: 'complete', state: 'dead', reason: 'none' },
+        { route: 'scoped', departure: 'changed UID', ending: 'complete', state: 'dead', reason: 'none' },
+        { route: 'scoped', departure: 'changed UID', ending: 'holder', state: 'alive', reason: 'none' },
+        { route: 'scoped', departure: 'exited', ending: 'deadline', state: 'unknown', reason: 'exited' },
+        { route: 'scoped', departure: 'changed UID', ending: 'deadline', state: 'unknown', reason: 'other UID' },
+        { route: 'scoped', departure: 'stays', ending: 'deadline', state: 'unknown', reason: 'scoped stable' },
     ])(
         'classifies a Darwin $route refusal whose process $departure by the $ending observation',
         async ({ route, departure, ending, state, reason }) => {
@@ -3267,7 +3272,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                             }else stdout=uid+' S\\n';
                         }else if(args[1]==='pid=,uid='){
                             stdout=pid+' '+uid+'\\n';
-                            if(!departed())stdout+=missed+' '+uid+'\\n';
+                            if(!departed()||ending==='deadline')stdout+=missed+' '+uid+'\\n';
                             else if(departure==='changed UID')stdout+=missed+' 0\\n';
                         }else throw Error('unexpected ps '+args.join(' '));
                     }else if(command==='lsof'){
@@ -3304,17 +3309,19 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                     timeout: 10_000,
                 })
             );
-            const detail = `pid=${observed.initial.missed}:fd=txt:type=missing:name=text:match=operation-not-permitted`;
-            const expectedReasons: string[] = [];
-            if (reason === 'left') {
-                expectedReasons.push(`lsof-inspected-pid-left:${detail}`);
-            }
-            if (reason === 'stable') {
-                expectedReasons.push(`lsof-fields-unusable:file-inspection-diagnostic:${detail}`);
-            }
+            const missed = observed.initial.missed;
+            const detail = `pid=${missed}:fd=txt:type=missing:name=text:match=operation-not-permitted`;
+            const expectedReasons = new Map<string, string[]>([
+                ['none', []],
+                ['left', [`lsof-inspected-pid-left:${detail}`]],
+                ['exited', [`lsof-missed-pid-exited:count=1:pid=${missed}`]],
+                ['other UID', [`lsof-live-pid-missing:count=1:pid/uid/state=${missed}/0/S`]],
+                ['whole stable', [`lsof-fields-unusable:file-inspection-diagnostic:${detail}`]],
+                ['scoped stable', [`lsof-scoped-fields-unusable:file-inspection-diagnostic:${detail}`]],
+            ]);
             expect(observed.initial.state).toBe(state);
-            expect(observed.initial.reasons).toEqual(expectedReasons);
-            expect(observed.initial.transient).toBe(reason === 'left');
+            expect(observed.initial.reasons).toEqual(expectedReasons.get(reason));
+            expect(observed.initial.transient).toBe(!['none', 'whole stable', 'scoped stable'].includes(reason));
             expect(observed.released).toBe(state === 'dead');
             expect(observed.retained).toBe(state !== 'dead');
         }
