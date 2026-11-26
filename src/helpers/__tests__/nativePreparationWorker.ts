@@ -72,8 +72,12 @@ export class NativePreparationWorker {
     constructor(url: URL) {
         const root = process.cwd();
         const pathname = url.pathname;
-        // Only prospective preparation uses this transport. Persistence uses
-        // the repository's platform fallback when its own Worker is absent.
+        // This fixture cannot host IndexedDB in a Worker. Exercise audio
+        // durability's actual no-Worker compatibility path in its callers.
+        if (pathname.endsWith('/audioBufferDurabilityWorker.ts')) {
+            throw new DOMException('This fixture does not support the audio durability Worker', 'NotSupportedError');
+        }
+        // Only prospective preparation uses this transport.
         if (!pathname.endsWith('/prospectiveMutationWorker.ts')) {
             throw new Error('The native preparation fixture only hosts the prospective Worker');
         }

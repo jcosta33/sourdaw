@@ -15,7 +15,8 @@ function initializeControlGeneration(processor: Awaited<ReturnType<typeof create
                 trackId: 'track-1',
                 deviceId: 'grinder-1',
                 deviceType: 'grinder',
-                parameterIds: ['sag', 'bypass'],
+                parameterIds: ['sagAmount', 'bypass'],
+                allowUncapturedImmediate: false,
             },
             correlation: { workletGeneration: 7 },
         },
@@ -38,7 +39,7 @@ function fallbackControl(controlSequence: number): Record<string, unknown> {
     return {
         schemaVersion: 1,
         command: 'set-fallback-param',
-        target: { trackId: 'track-1', deviceId: 'grinder-1', deviceType: 'grinder', parameterId: 'sag' },
+        target: { trackId: 'track-1', deviceId: 'grinder-1', deviceType: 'grinder', parameterId: 'sagAmount' },
         value: 0.5,
         correlation: { workletGeneration: 7, controlSequence },
         scheduling: { targetFrame: null, deadlineFrame: null },
@@ -101,9 +102,9 @@ describe('GrinderProcessor neural-patch protocol', () => {
         processor.port.onmessage?.({ data: fallbackControl(3) });
 
         expect(grinderSetParamCalls).toEqual([
-            { name: 'sag', value: 0.5 },
+            { name: 'sagAmount', value: 0.5 },
             { name: 'neuralModelMode', value: 0 },
-            { name: 'sag', value: 0.5 },
+            { name: 'sagAmount', value: 0.5 },
         ]);
     });
 });
