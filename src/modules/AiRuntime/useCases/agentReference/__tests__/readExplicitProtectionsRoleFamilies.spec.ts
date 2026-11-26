@@ -295,3 +295,79 @@ describe('readExplicitProtections over a role family', () => {
         });
     });
 });
+
+describe('readExplicitProtections over a canonical role phrase and the negating forms', () => {
+    it.each([
+        ['turn down the vocals by 3 dB but not the backing vocals', [backingVox.id]],
+        ['make the mix warmer, leave the lead vocal alone', [leadVox.id]],
+        ['make the mix warmer but not the kick track', [kick.id]],
+    ])('"%s" protects the tracks of the role it names alone', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
+    });
+
+    it.each([
+        ['turn down every audio track by 3 dB, not the vocals', VOCAL_IDS],
+        ['make the mix warmer and skip the drums', DRUM_IDS],
+        ['make the mix warmer, ignoring Bass', [bass.id]],
+        ['make the mix warmer, skipping the drums', DRUM_IDS],
+        ['make the mix warmer and ignore Bass', [bass.id]],
+        ['turn down every audio track by 3 dB and not the vocals', VOCAL_IDS],
+        ['make the mix warmer or not Bass', [bass.id]],
+    ])('"%s" protects what a skip, ignore or clause-opening not names', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
+    });
+
+    it.each([
+        ['Do not change Keys, not Bass and the drums.', [keys.id, ...DRUM_IDS]],
+        ['Never change Keys, not Bass, not Drums.', [keys.id]],
+        ["Don't touch Keys, not Bass.", [keys.id]],
+        ['Leave Keys alone, not Bass.', [keys.id]],
+    ])('"%s" continues the protection through a coordinated not', (prompt, protectedTrackIds) => {
+        expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
+    });
+
+    it.each([
+        'turn the mix down, not too much',
+        'turn the mix down and not too much',
+        'make the vocals warmer but not harsh',
+        'make the vocals louder if not louder still',
+        'turn the kick down',
+        'make the mix warmer but not the loud backing vocals',
+    ])('"%s" protects nothing', (prompt) => {
+        expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
+    });
+});
+
+// A kick track named apart from its role, so "the kick track" reads the role phrase and never a track name.
+const bassDrum: ProjectContextTrack = { ...createTrack('track-bd', 'BD'), canonicalRole: kick.canonicalRole };
+const unnamedKickContext: ProjectContext = { ...context, tracks: [bassDrum, snare, leadVox, backingVox, bass] };
+
+describe('readExplicitProtections over a role phrase no track name states', () => {
+    it('protects the kick tracks for "make the mix warmer but not the kick track"', () => {
+        expect(
+            readExplicitProtections('make the mix warmer but not the kick track', unnamedKickContext).protectedTrackIds
+        ).toEqual([bassDrum.id]);
+    });
+
+    it('leaves "the Kick track", written as a name no track has, unbound rather than a role', () => {
+        const reading = readExplicitProtections('make the mix warmer but not the Kick track', unnamedKickContext);
+
+        expect(reading.protectedTrackIds).toEqual([]);
+        expect(reading.unresolved).not.toEqual([]);
+    });
+
+    it('reads no role from a member holding a role phrase among other words', () => {
+        expect(
+            readExplicitProtections('make the mix warmer but not the lead vocal double', unnamedKickContext)
+                .protectedTrackIds
+        ).toEqual([]);
+    });
+});
+
+describe('readExplicitProtections leaves "not including" to the track-control restriction', () => {
+    it('reads nothing from "clear all solos, not including Keys, and mute Guitar"', () => {
+        expect(readExplicitProtections('clear all solos, not including Keys, and mute Guitar', context)).toEqual(
+            NOTHING
+        );
+    });
+});

@@ -74,6 +74,8 @@ export const TRACK_KIND_WORDS: ReadonlySet<string> = new Set([
 ]);
 /** Words that point at the selection rather than name an object ("the selected clip"). */
 export const SELECTION_WORDS: ReadonlySet<string> = new Set(['selected', 'this', 'that', 'current']);
+/** The verbs that set what they name aside from the request's change: "skip Keys", "ignoring Bass". */
+export const SKIP_VERBS: readonly string[] = ['skip', 'skipping', 'ignore', 'ignoring'];
 /**
  * Words that stand for the project's aggregate mix or conventional routing: "the overall level",
  * "the Master bus", "the FX return", "the Click track". Quoting a name still makes its whole owner explicit.

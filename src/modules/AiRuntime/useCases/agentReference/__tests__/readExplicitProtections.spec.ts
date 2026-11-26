@@ -207,6 +207,7 @@ describe('readExplicitProtections', () => {
             ['leave the first track alone', ['first track']],
             ['leave Keys as well as the first track alone', ['first track']],
             ['leave Keys along with the second track alone', ['second track']],
+            ['leave the 2nd track alone', ['2nd track']],
             ['leave Keys as well as the last one alone', ['last one']],
             ['leave the Keys alone except the second one', ['second one']],
             ['leave the next one alone', ['next one']],
@@ -410,6 +411,52 @@ describe('readExplicitProtections', () => {
             expect(readExplicitProtections('turn Drums down 3 dB except Bass', context)).toMatchObject({
                 protectedTrackIds: [bass.id],
             });
+        });
+
+        it.each(['turn Drums down 3 dB, not Keys', 'turn Drums down 3 dB and not Keys'])(
+            'names a track a coordinated bare not carves out of an instruction in "%s"',
+            (prompt) => {
+                expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([keys.id]);
+            }
+        );
+
+        it.each([
+            'Keep Keys, not Bass, unchanged',
+            'keep Keys, not Bass, as is',
+            'turn Drums down 3 dB and keep Keys, not Bass, unchanged',
+        ])('keeps a keep clause whole across a coordinated not before its closing word in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([keys.id]);
+        });
+
+        it.each([
+            'turn Drums down 3 dB, the problem is not Keys',
+            'turn Drums down 3 dB; what clashes is not the Keys',
+        ])('reads no carve-out from a not inside a clause in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
+        });
+
+        it.each([
+            'turn Drums down 3 dB and leave Bass alone, do not change Keys',
+            "turn Drums down 3 dB and leave Bass alone, don't touch Keys",
+        ])('reads a do not instruction as its own prohibition, not a carve-out, in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([bass.id, keys.id]);
+        });
+
+        it.each([
+            'lower everything by 3 dB, skip Keys',
+            'lower everything by 3 dB, skipping Keys',
+            'lower everything by 3 dB, ignore Keys',
+            'lower everything by 3 dB, ignoring Keys',
+        ])('protects the track a skip verb sets aside in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([keys.id]);
+        });
+
+        it.each([
+            ['Do not change Keys, not Bass or Drums.', [keys.id, drums.id]],
+            ['Do not change Keys, not Bass, Drums.', [keys.id, drums.id]],
+            ['Do not change Keys and not Bass.', [keys.id]],
+        ])('keeps a prohibition whole across a coordinated not in "%s"', (prompt, protectedTrackIds) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
         });
     });
 
