@@ -563,6 +563,32 @@ describe('createPartitionedLocalStorage', () => {
         expect(outcomes.at(-1)).toEqual(final);
     });
 
+    it('never pairs parts of two commits another writer made while it read', () => {
+        const old = { version: 1, items: items(3) };
+        const theirs = createStorage();
+        theirs.trySet(old);
+        const afterFirst = { ...old, items: old.items.with(0, { id: 'item-0', label: 'First' }) };
+        const afterSecond = { ...afterFirst, items: afterFirst.items.with(1, { id: 'item-1', label: 'Second' }) };
+        const getItem = Storage.prototype.getItem;
+        let committing = false;
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
+            const text = getItem.call(this, key);
+            if (!committing && key === `${PART_PREFIX}item-0`) {
+                committing = true;
+                theirs.trySet(afterFirst);
+                theirs.trySet(afterSecond);
+            }
+            return text;
+        });
+
+        const reader = createStorage();
+        expect(reader.get()).toBeNull();
+        vi.restoreAllMocks();
+
+        expect(reader.trySet(old)).toBe(false);
+        expect(createStorage().get()).toEqual(afterSecond);
+    });
+
     it('drops a part a commit that stopped before its index left behind, once that commit cannot still be running', () => {
         const old = { version: 1, items: items(3) };
         createStorage().trySet(old);
