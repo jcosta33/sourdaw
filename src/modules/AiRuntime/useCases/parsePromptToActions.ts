@@ -1898,6 +1898,7 @@ const planPromptIntent = inject({ logger })(
                     context,
                     revision: projectRevision ?? '',
                     ...creativeAuthorityFields,
+                    musicalReadProof: refinement.status === 'refines' ? undefined : planningOutcome.musicalReadProof,
                 });
                 if (compiledList.status === 'rejected') {
                     return {
@@ -2152,6 +2153,8 @@ const planPromptIntent = inject({ logger })(
                     transformCommands,
                     transformTargetIds,
                     creativeAuthority,
+                    musicalReadProof: refinement.status === 'refines' ? undefined : planningOutcome.musicalReadProof,
+                    thread,
                     providerProposal,
                     ...(refinedBasis === undefined ? {} : { refinementBasis: refinedBasis }),
                     ...(refinedProtections === undefined ? {} : { refinementProtections: refinedProtections }),

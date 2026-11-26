@@ -296,6 +296,7 @@ const projectTakeLaneActionByActionType: {
     addAutomationPoint: keepLanes,
     insertAutomationLanePoints: keepLanes,
     quantizeNotes: keepLanes,
+    editMidiNotes: keepLanes,
     removeShortMidiOverlaps: keepLanes,
     createDrumPreviewBranches: keepLanes,
     deleteDrumPreviewBranches: keepLanes,

@@ -83,6 +83,7 @@ export const automationPointLaneIdByActionType: AutomationPointLaneLookup = {
     addAutomationPoint: (action) => action.payload.laneId,
     setAutomationLaneEnabled: noAutomationPointLane,
     quantizeNotes: noAutomationPointLane,
+    editMidiNotes: noAutomationPointLane,
     removeShortMidiOverlaps: noAutomationPointLane,
     createDrumPreviewBranches: noAutomationPointLane,
     copyMidiArticulations: noAutomationPointLane,

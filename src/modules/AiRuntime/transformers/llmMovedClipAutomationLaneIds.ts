@@ -87,6 +87,7 @@ export const movedClipAutomationLaneIdsByActionType: MovedAutomationLaneLookup =
     addAutomationPoint: noMovedAutomationLanes,
     setAutomationLaneEnabled: noMovedAutomationLanes,
     quantizeNotes: noMovedAutomationLanes,
+    editMidiNotes: noMovedAutomationLanes,
     removeShortMidiOverlaps: noMovedAutomationLanes,
     createDrumPreviewBranches: noMovedAutomationLanes,
     copyMidiArticulations: noMovedAutomationLanes,

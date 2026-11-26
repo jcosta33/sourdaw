@@ -11,6 +11,8 @@ import {
     type ThreadMeasuredDelta,
 } from '../models/ThreadContext';
 
+import { isMidiNoteEditProposal } from './isMidiNoteEditProposal';
+
 type ThreadConfirmation = {
     id: string;
     runId: string;
@@ -78,6 +80,40 @@ function isOpenProjectConfirmation(confirmation: ThreadConfirmation, sources: Th
     return confirmation.approvalSnapshot.commandBatch?.authority.projectId === sources.projectId;
 }
 
+function publicMidiNoteEditArguments(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+    if (!Array.isArray(payload.operations)) {
+        return undefined;
+    }
+    const operations = payload.operations.map((operation: unknown) => {
+        if (!isRecord(operation) || operation.type !== 'insert' || !isRecord(operation.note)) {
+            return operation;
+        }
+        const { id: _assigned, ...note } = operation.note;
+        return { type: 'insert', note };
+    });
+    const visible = { clipId: payload.clipId, operations };
+    return isMidiNoteEditProposal(visible) ? visible : undefined;
+}
+
+function publicDeviceParameterArguments(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+    const { deviceId, paramId, value } = payload;
+    if (typeof deviceId !== 'string' || typeof paramId !== 'string' || typeof value !== 'number') {
+        return undefined;
+    }
+    return { deviceId, paramId, value };
+}
+
+function publicCommandArguments(type: string, payload: Record<string, unknown>): Record<string, unknown> | undefined {
+    switch (type) {
+        case 'editMidiNotes':
+            return publicMidiNoteEditArguments(payload);
+        case 'setDeviceParameter':
+            return publicDeviceParameterArguments(payload);
+        default:
+            return payload;
+    }
+}
+
 function interpretationForRun(
     run: ThreadRun | undefined,
     authorityIds: readonly string[] | undefined
@@ -93,7 +129,13 @@ function commandsOfSnapshot(snapshot: ThreadConfirmation['approvalSnapshot']): T
     return snapshot.actions.map((action, index) => {
         const command: ThreadCommand = { name: action.type, label: snapshot.actionLabels[index] ?? action.type };
         if (isRecord(action.payload)) {
-            command.arguments = action.payload;
+            const args = publicCommandArguments(action.type, action.payload);
+            if (args !== undefined) {
+                command.arguments = args;
+            }
+            if (action.type === 'setDeviceParameter' && typeof action.payload.expectedTrackId === 'string') {
+                command.targetTrackId = action.payload.expectedTrackId;
+            }
         }
         return command;
     });

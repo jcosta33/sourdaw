@@ -149,6 +149,7 @@ export const trackCreationByActionType: { readonly [Type in AppActionType]: Trac
     addAutomationPoint: 'none',
     insertAutomationLanePoints: 'none',
     quantizeNotes: 'none',
+    editMidiNotes: 'none',
     removeShortMidiOverlaps: 'none',
     createDrumPreviewBranches: 'none',
     deleteDrumPreviewBranches: 'none',

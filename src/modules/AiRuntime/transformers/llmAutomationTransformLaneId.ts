@@ -94,6 +94,7 @@ const automationTransformLaneIdByActionType: AutomationLaneLookup = {
     addAutomationPoint: noAutomationLane,
     setAutomationLaneEnabled: noAutomationLane,
     quantizeNotes: noAutomationLane,
+    editMidiNotes: noAutomationLane,
     removeShortMidiOverlaps: noAutomationLane,
     createDrumPreviewBranches: noAutomationLane,
     copyMidiArticulations: noAutomationLane,

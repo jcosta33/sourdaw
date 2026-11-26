@@ -325,6 +325,7 @@ export const macroReplayCreateByActionType: {
     addAutomationPoint: beginAutomationPointCreate,
     insertAutomationLanePoints: notAGeneratedCreate,
     quantizeNotes: notAGeneratedCreate,
+    editMidiNotes: notAGeneratedCreate,
     removeShortMidiOverlaps: notAGeneratedCreate,
     createDrumPreviewBranches: notAGeneratedCreate,
     deleteDrumPreviewBranches: notAGeneratedCreate,

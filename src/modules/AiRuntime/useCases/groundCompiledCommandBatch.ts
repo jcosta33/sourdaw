@@ -15,10 +15,14 @@ import {
 } from '../models/ProposalGroundingBasis';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
+import { type ThreadContext } from '../models/ThreadContext';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
+import { containsMidiNoteEditCall } from '../transformers/containsMidiNoteEditCall';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
+import { captureMidiNoteEditGuard } from './actionStateGuards/captureMidiNoteEditGuard';
+import { type MaterializeActionStateGuardsOptions } from './actionStateGuards/MaterializationState';
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
@@ -26,6 +30,8 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { proposalGroundingBasis, unionProposalProtectionFacts } from './agentReference/proposalGroundingBasis';
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
+import { readMidiToneProtectionPrompt } from './agentReference/readMidiToneProtectionPrompt';
+import { checkMidiNoteEditAuthority } from './checkMidiNoteEditAuthority';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
@@ -46,6 +52,8 @@ type GroundCompiledCommandBatchInput = {
     transformCommands: readonly ToolCallResult[];
     transformTargetIds: readonly string[];
     creativeAuthority: CreativeRequestAuthority | undefined;
+    musicalReadProof?: Parameters<typeof checkMidiNoteEditAuthority>[0]['proof'];
+    thread?: ThreadContext | null;
     providerProposal: AgentRunProviderProposal | null;
     /**
      * The grounding of the pending card this batch refines. Undefined grounds the batch exactly as
@@ -135,7 +143,8 @@ function isOrdinaryBatch(input: GroundCompiledCommandBatchInput): boolean {
 }
 
 function bridgeCompiledCalls(
-    input: GroundCompiledCommandBatchInput
+    input: GroundCompiledCommandBatchInput,
+    midiNoteEdit: MaterializeActionStateGuardsOptions['midiNoteEdit']
 ): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
     const transformProof = buildTransformProof(input);
@@ -150,6 +159,8 @@ function bridgeCompiledCalls(
         projectRevision: input.projectRevision,
         workflowCapabilityId: input.workflowCapabilityId,
         creativeAuthority: input.creativeAuthority,
+        midiNoteEditClipId: midiNoteEdit?.clipId,
+        midiToneProtectionPrompt: getMidiToneProtectionPrompt(input, midiNoteEdit),
         refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
         protectionFacts: readPriorProtectionFacts(input),
     };
@@ -191,10 +202,27 @@ function bridgeCompiledCalls(
     return bridged;
 }
 
+function getMidiToneProtectionPrompt(
+    input: GroundCompiledCommandBatchInput,
+    edit: MaterializeActionStateGuardsOptions['midiNoteEdit']
+): string | undefined {
+    if (!edit || input.creativeAuthority?.editDimensions.some((dimension) => dimension !== 'midi-content')) {
+        return undefined;
+    }
+    return readMidiToneProtectionPrompt({
+        prompt: input.prompt,
+        context: input.context,
+        clipId: edit.clipId,
+        trackId: edit.guard.trackId,
+        thread: input.thread,
+    });
+}
+
 /** Runtime validation, batch-local identities, state guards and the production brief, in that order. */
 function bindBridgedActions(
     bridged: Bridged,
-    context: ProjectContext
+    context: ProjectContext,
+    midiNoteEdit: MaterializeActionStateGuardsOptions['midiNoteEdit']
 ): Guarded | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const validated = validateActions(bridged.actions, bridged.batchLocalActionIdentities);
     if (validated.length !== bridged.actions.length) {
@@ -216,6 +244,7 @@ function bindBridgedActions(
         appOwnedRenderTailSeconds: bridged.appOwnedRenderTailSeconds,
         bassProcessingCopyScope: bridged.bassProcessingCopyScope,
         midiOverlapTransformScope: bridged.midiOverlapTransformScope,
+        midiNoteEdit,
         drumPreviewBranchesScope: bridged.drumPreviewBranchesScope,
         syncopatedArpeggioScope: bridged.syncopatedArpeggioScope,
     });
@@ -454,6 +483,28 @@ function getProviderKnownTargetIds(input: GroundCompiledCommandBatchInput): stri
     return [...new Set([...compiledTargetIds, ...input.transformTargetIds])];
 }
 
+function readCompiledMidiEditAuthority(input: GroundCompiledCommandBatchInput) {
+    const compiled = input.compilerEvidence?.commands;
+    const command = compiled?.[0];
+    if (
+        compiled?.length !== 1 ||
+        command?.name !== 'editMidiNotes' ||
+        input.workflowCapabilityId !== undefined ||
+        input.selectedCompilations.length > 0 ||
+        input.transformCommands.length > 0 ||
+        input.refinementBasis !== undefined ||
+        input.refinementProtections !== undefined
+    ) {
+        return null;
+    }
+    return checkMidiNoteEditAuthority({
+        call: command,
+        proof: input.musicalReadProof,
+        authority: input.creativeAuthority,
+        revision: input.projectRevision,
+    });
+}
+
 /**
  * Grounds one compiled command batch against a project snapshot: the bridge, runtime validation,
  * batch-local identities, state guards, the production brief, and the application-verified scope.
@@ -462,14 +513,27 @@ function getProviderKnownTargetIds(input: GroundCompiledCommandBatchInput): stri
  * the same gates whichever turn produced it.
  */
 export function groundCompiledCommandBatch(input: GroundCompiledCommandBatchInput): GroundCompiledCommandBatchResult {
-    const bridged = bridgeCompiledCalls(input);
+    let midiNoteEdit: MaterializeActionStateGuardsOptions['midiNoteEdit'];
+    if (containsMidiNoteEditCall(input.toolCalls)) {
+        const authority = readCompiledMidiEditAuthority(input);
+        const guard = authority && captureMidiNoteEditGuard(authority);
+        if (!authority || !guard) {
+            return {
+                status: 'rejected',
+                rejectionReason:
+                    'Selective MIDI editing requires a complete current read and one unambiguous base-note selection.',
+            };
+        }
+        midiNoteEdit = { clipId: authority.clipId, guard };
+    }
+    const bridged = bridgeCompiledCalls(input, midiNoteEdit);
     if ('status' in bridged) {
         return bridged;
     }
     if (bridged.actions.length === 0) {
         return { status: 'empty' };
     }
-    const guarded = bindBridgedActions(bridged, input.context);
+    const guarded = bindBridgedActions(bridged, input.context, midiNoteEdit);
     if (guarded.status !== 'accepted') {
         return guarded;
     }

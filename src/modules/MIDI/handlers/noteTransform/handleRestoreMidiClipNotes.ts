@@ -20,7 +20,7 @@ function getEarlierRestoreProjection(action: RestoreMidiClipNotesAction, context
 
 function getProjectedNoteTransformReplayTarget(action: RestoreMidiClipNotesAction, context: HandlerValidationContext) {
     const guard = action.payload.noteTransformReplayGuard;
-    if (!guard) {
+    if (!guard || guard.requiresEditableBaseClip) {
         return undefined;
     }
     const clipProducer = context.actions.slice(0, context.actionIndex).find((candidate) => {

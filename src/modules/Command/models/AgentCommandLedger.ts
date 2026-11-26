@@ -228,6 +228,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
 
     // MIDI — midi
     ['addNotes', 'midi', 'MIDI'],
+    ['editMidiNotes', 'midi', 'MIDI'],
     ['quantizeNotes', 'midi', 'MIDI'],
     ['removeShortMidiOverlaps', 'midi', 'MIDI'],
     ['copyMidiArticulations', 'midi', 'MIDI'],

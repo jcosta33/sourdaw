@@ -157,6 +157,7 @@ const restoredMidiOwnerIdsByActionType: {
     addAutomationPoint: noOwnerIds,
     insertAutomationLanePoints: noOwnerIds,
     quantizeNotes: noOwnerIds,
+    editMidiNotes: noOwnerIds,
     removeShortMidiOverlaps: noOwnerIds,
     createDrumPreviewBranches: noOwnerIds,
     deleteDrumPreviewBranches: noOwnerIds,

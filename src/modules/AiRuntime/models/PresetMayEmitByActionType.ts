@@ -72,6 +72,7 @@ export const presetMayEmitByActionType: { readonly [Type in RuntimeActionType]: 
     setAutomationLaneEnabled: true,
     addAutomationPoint: true,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: true,
     createDrumPreviewBranches: true,
     copyMidiArticulations: true,

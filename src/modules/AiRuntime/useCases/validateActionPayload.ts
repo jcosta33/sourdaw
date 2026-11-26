@@ -43,6 +43,7 @@ import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 import { MAX_TRACK_HEIGHT, MAX_TRACK_ZOOM_DELTA, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
+import { isMidiNoteEditProposal } from '../transformers/isMidiNoteEditProposal';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
 type Extract2<ActionUnion, TypeString> = ActionUnion extends { type: TypeString } ? ActionUnion : never;
@@ -653,6 +654,7 @@ const validators = {
         isPositiveNumber(param.gridSize) &&
         param.gridSize <= 64 &&
         isOptionalOwn(param, 'noteIds', isNonEmptyStringArray),
+    editMidiNotes: isMidiNoteEditProposal,
     removeShortMidiOverlaps: (param): param is PayloadOf<'removeShortMidiOverlaps'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'maximumOverlapMs']) &&

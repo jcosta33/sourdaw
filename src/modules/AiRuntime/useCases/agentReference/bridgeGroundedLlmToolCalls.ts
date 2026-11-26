@@ -30,6 +30,7 @@ import {
     SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
 } from '../../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
+import { containsMidiNoteEditCall } from '../../transformers/containsMidiNoteEditCall';
 import {
     bridgeLlmToolCalls,
     type LlmActionBridgeResult,
@@ -193,6 +194,7 @@ type BridgeGroundedLlmToolCallsInput = {
     projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;
     creativeAuthority?: CreativeRequestAuthority;
+    midiNoteEditClipId?: string;
     /**
      * The grounding of the pending card this batch refines. Absent, the batch grounds exactly as any
      * request does; present, a call may inherit a pending command instead of grounding in this text.
@@ -205,6 +207,8 @@ type BridgeGroundedLlmToolCallsInput = {
     protectionFacts?: ProposalProtectionFacts;
     /** Complete binding for replay of the same already-admitted request, never a new refinement. */
     requestProtections?: BoundRequestProtections;
+    /** Clip protection text with a contextual tone constraint consumed by the admitted MIDI-only route. */
+    midiToneProtectionPrompt?: string;
 };
 
 type GroundToolCallInput = {
@@ -7330,6 +7334,15 @@ function groundInheritedRefinement(route: {
 }
 
 export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    if (
+        containsMidiNoteEditCall(input.calls) &&
+        (input.midiNoteEditClipId === undefined ||
+            input.compilerEvidence?.commands.length !== 1 ||
+            input.compilerEvidence.commands[0]?.name !== 'editMidiNotes' ||
+            input.compilerEvidence.commands[0].arguments.clipId !== input.midiNoteEditClipId)
+    ) {
+        return refuseProtectedRequest('Selective MIDI editing requires one application-admitted note selection.');
+    }
     if (input.requestProtections !== undefined && input.requestProtections.request !== input.prompt) {
         return refuseProtectedRequest('Stored protections belong to a different request');
     }
@@ -7457,7 +7470,7 @@ function refuseWhenProtectionIsUnresolved(
     }
     // A protection binding any clip is a clip protection, so every member it lists must name an object.
     // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
-    const clipProtection = readClipProtection(input.prompt, context, protections);
+    const clipProtection = readClipProtection(input, protections);
     const unnamedMembers =
         clipProtection.clips.length > 0
             ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
@@ -7496,18 +7509,27 @@ function refuseWhenProtectionIsUnresolved(
  * a clip's name or close name ("keep the Kick level punchy"). The blanked text keeps every offset of the request.
  */
 function readClipProtection(
-    prompt: string,
-    context: ProjectContext,
+    input: Pick<
+        BridgeGroundedLlmToolCallsInput,
+        'prompt' | 'context' | 'midiNoteEditClipId' | 'midiToneProtectionPrompt'
+    >,
     trackProtections: ReturnType<typeof readExplicitProtections>
 ): ReturnType<typeof getExplicitClipProtection> & { read: string } {
+    const { context, midiNoteEditClipId } = input;
+    const prompt = input.midiToneProtectionPrompt ?? input.prompt;
     const clipProtection = getExplicitClipProtection(prompt, context);
     if (clipProtection.complete) {
         return { ...clipProtection, read: prompt };
     }
-    const inertClauses = inertProtectionClauses
-        .read(prompt, context)
-        .filter(({ start, end }) => !clipProtectionReading.namesClip(prompt.slice(start, end), context));
-    const clipPrompt = [...trackProtections.resolvedTrackClauses, ...inertClauses].reduce(
+    // MIDI may blank an otherwise unresolved tone clause only after validating its standing receipt.
+    let blankedClauses = trackProtections.resolvedTrackClauses;
+    if (midiNoteEditClipId === undefined) {
+        const inertClauses = inertProtectionClauses
+            .read(prompt, context)
+            .filter(({ start, end }) => !clipProtectionReading.namesClip(prompt.slice(start, end), context));
+        blankedClauses = [...blankedClauses, ...inertClauses];
+    }
+    const clipPrompt = blankedClauses.reduce(
         (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
         prompt
     );
@@ -7577,7 +7599,10 @@ function bridgeWithoutReferencedLevelPhrases(input: BridgeGroundedLlmToolCallsIn
 }
 
 function bridgeUnrefinedLlmToolCalls(
-    {
+    input: BridgeGroundedLlmToolCallsInput,
+    catalog: GroundingCatalog
+): BridgeGroundedLlmToolCallsResult {
+    const {
         calls,
         context,
         markerSignatures = [],
@@ -7589,9 +7614,7 @@ function bridgeUnrefinedLlmToolCalls(
         workflowCapabilityId,
         creativeAuthority,
         requestProtections,
-    }: BridgeGroundedLlmToolCallsInput,
-    catalog: GroundingCatalog
-): BridgeGroundedLlmToolCallsResult {
+    } = input;
     const transformCompilations = transformProof?.compilations ?? [];
     const transformCalls = materializeTransformToolCalls(transformCompilations);
     if (
@@ -7621,7 +7644,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            complete = readClipProtection(prompt, context, trackProtections).complete;
+            complete = readClipProtection(input, trackProtections).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));

@@ -87,6 +87,7 @@ const runtimeActionMembershipByActionType = {
     addAutomationPoint: true,
     setAutomationLaneEnabled: true,
     quantizeNotes: true,
+    editMidiNotes: true,
     removeShortMidiOverlaps: true,
     createDrumPreviewBranches: true,
     copyMidiArticulations: true,

@@ -285,6 +285,7 @@ const projectTakeLaneOwnersByActionType: {
     addAutomationPoint: keepOwners,
     insertAutomationLanePoints: keepOwners,
     quantizeNotes: keepOwners,
+    editMidiNotes: keepOwners,
     removeShortMidiOverlaps: keepOwners,
     createDrumPreviewBranches: keepOwners,
     deleteDrumPreviewBranches: keepOwners,

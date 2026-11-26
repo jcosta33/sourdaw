@@ -117,6 +117,7 @@ const clipTargetIdsByActionType: ClipTargetLookup = {
     addAutomationPoint: noClipTargets,
     setAutomationLaneEnabled: noClipTargets,
     quantizeNotes: payloadClipId,
+    editMidiNotes: noClipTargets,
     removeShortMidiOverlaps: noClipTargets,
     createDrumPreviewBranches: noClipTargets,
     copyMidiArticulations: noClipTargets,

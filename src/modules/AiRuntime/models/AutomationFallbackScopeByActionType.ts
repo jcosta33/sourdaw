@@ -158,6 +158,7 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     addAutomationPoint: noFallbackScope,
     insertAutomationLanePoints: noFallbackScope,
     quantizeNotes: noFallbackScope,
+    editMidiNotes: noFallbackScope,
     removeShortMidiOverlaps: noFallbackScope,
     createDrumPreviewBranches: noFallbackScope,
     deleteDrumPreviewBranches: noFallbackScope,

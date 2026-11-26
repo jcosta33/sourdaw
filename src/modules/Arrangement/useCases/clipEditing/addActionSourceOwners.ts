@@ -317,6 +317,7 @@ const addActionSourceOwnersByActionType: {
     addAutomationPoint: addNoOwners,
     insertAutomationLanePoints: addNoOwners,
     quantizeNotes: addNoOwners,
+    editMidiNotes: addNoOwners,
     removeShortMidiOverlaps: addNoOwners,
     createDrumPreviewBranches: addNoOwners,
     deleteDrumPreviewBranches: addNoOwners,

@@ -23,6 +23,12 @@ const levainIdentityRefusal: MacroReplayRoute = {
     precedence: 1,
 };
 
+const midiNoteEditRefusal: MacroReplayRoute = {
+    kind: 'refuse',
+    reason: 'Selective MIDI note edits depend on the original note selection.',
+    precedence: 2,
+};
+
 /** How a saved macro replays each action: dispatched as recorded, through the tempo map, or refused. */
 export const macroReplayRouteByActionType: { readonly [Type in AppActionType]: MacroReplayRoute } = {
     importStemSet: replayRoute,
@@ -164,6 +170,7 @@ export const macroReplayRouteByActionType: { readonly [Type in AppActionType]: M
     addAutomationPoint: replayRoute,
     insertAutomationLanePoints: automationLaneInsertionRefusal,
     quantizeNotes: replayRoute,
+    editMidiNotes: midiNoteEditRefusal,
     removeShortMidiOverlaps: replayRoute,
     createDrumPreviewBranches: replayRoute,
     deleteDrumPreviewBranches: replayRoute,

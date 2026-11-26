@@ -228,6 +228,7 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     addAutomationPoint: unchangedContext,
     setAutomationLaneEnabled: unchangedContext,
     quantizeNotes: unchangedContext,
+    editMidiNotes: unchangedContext,
     removeShortMidiOverlaps: unchangedContext,
     createDrumPreviewBranches: unchangedContext,
     copyMidiArticulations: unchangedContext,

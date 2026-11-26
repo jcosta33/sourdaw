@@ -141,6 +141,7 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     addAutomationPoint: false,
     insertAutomationLanePoints: false,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     deleteDrumPreviewBranches: false,

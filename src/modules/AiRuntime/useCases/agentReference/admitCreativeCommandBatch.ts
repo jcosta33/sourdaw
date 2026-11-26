@@ -2,6 +2,7 @@ import { getExecutableAppActionEffect, getExecutableAppActionGroundingRules } fr
 
 import { type CreativeEditDimension, type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { isMidiNoteEditProposal } from '../../transformers/isMidiNoteEditProposal';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
@@ -421,6 +422,13 @@ function admitCreations(input: {
     return { status: 'admitted', usedSlotIndexes };
 }
 
+function requestedCreations(call: ToolCallResult, effect: ExecutableAppActionEffect): readonly EffectCreatedObject[] {
+    if (call.name === 'editMidiNotes' && isMidiNoteEditProposal(call.arguments)) {
+        return call.arguments.operations.flatMap((operation) => (operation.type === 'insert' ? ['notes'] : []));
+    }
+    return effect.creates ?? [];
+}
+
 function admitCall(input: {
     authority: CreativeRequestAuthority;
     call: ToolCallResult;
@@ -455,7 +463,7 @@ function admitCall(input: {
     }
     // A deletion is never something a request delegated by describing a sound; an explicit request to
     // remove an object carries its own vocabulary and grounds on the ordinary route.
-    if ((effect.removes ?? []).length > 0) {
+    if ((effect.removes ?? []).length > 0 && input.call.name !== 'editMidiNotes') {
         return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} never removes existing objects`);
     }
     const groundingRules = getExecutableAppActionGroundingRules(input.call.name);
@@ -479,7 +487,7 @@ function admitCall(input: {
     const creationAdmission = admitCreations({
         authority: input.authority,
         context: input.context,
-        creates: effect.creates ?? [],
+        creates: requestedCreations(input.call, effect),
         slotUsage: input.slotUsage,
         targets: targetAdmission.targets,
     });

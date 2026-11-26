@@ -160,6 +160,7 @@ export const plannedOwnerProjectorByActionType: {
     addAutomationPoint: projectEveryOwner,
     insertAutomationLanePoints: projectEveryOwner,
     quantizeNotes: projectEveryOwner,
+    editMidiNotes: projectEveryOwner,
     removeShortMidiOverlaps: projectEveryOwner,
     createDrumPreviewBranches: projectEveryOwner,
     deleteDrumPreviewBranches: projectEveryOwner,

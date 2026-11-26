@@ -211,6 +211,7 @@ export const trackNameProjectionByActionType: {
     addAutomationPoint: keepTrackNames,
     insertAutomationLanePoints: keepTrackNames,
     quantizeNotes: keepTrackNames,
+    editMidiNotes: keepTrackNames,
     removeShortMidiOverlaps: keepTrackNames,
     createDrumPreviewBranches: keepTrackNames,
     deleteDrumPreviewBranches: keepTrackNames,

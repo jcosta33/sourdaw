@@ -160,6 +160,7 @@ export const legacyLoopAnchorInverseByActionType: {
     addAutomationPoint: keepAction,
     insertAutomationLanePoints: keepAction,
     quantizeNotes: keepAction,
+    editMidiNotes: keepAction,
     removeShortMidiOverlaps: keepAction,
     createDrumPreviewBranches: keepAction,
     deleteDrumPreviewBranches: keepAction,

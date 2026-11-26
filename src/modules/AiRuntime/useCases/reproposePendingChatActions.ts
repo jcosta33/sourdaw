@@ -31,6 +31,7 @@ import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getProjectContext } from './getProjectContext';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { prepareMetricGoalPreview } from './prepareMetricGoalPreview';
+import { readMidiNoteEditApprovalRefusal } from './readMidiNoteEditApprovalRefusal';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 type ReproposePendingChatActionsInput = {
@@ -75,6 +76,22 @@ function holdsPreparedStemResources(actions: PendingAppActionConfirmation['actio
     return actions.some((action) => action.type === 'importStemSet' && action.payload.stems.length > 0);
 }
 
+function readReproposalBriefRefusal(
+    run: NonNullable<ReturnType<typeof agentRunLifecycle.get>>,
+    confirmation: PendingAppActionConfirmation
+): Extract<ReproposePendingChatActionsResult, { status: 'rejected' }> | null {
+    // A later vibe-run batch was planned against one brief; re-proposing it under another would
+    // ground a plan the brief no longer states.
+    const schedule = run.plan?.batchSchedule;
+    if (schedule?.kind === 'vibe-run' && (confirmation.approvalSnapshot.batchPosition?.index ?? 1) > 1) {
+        const drift = readVibeRunBriefDrift(schedule, getProjectContext().productionBrief?.revision ?? null);
+        if (drift !== null) {
+            return { status: 'rejected', reason: `The ${drift}.` };
+        }
+    }
+    return null;
+}
+
 /** Only a live proposal on a live run can be replaced; everything else keeps the state it settled into. */
 function admitReproposal(
     confirmation: PendingAppActionConfirmation
@@ -92,14 +109,9 @@ function admitReproposal(
     if (TERMINAL_RUN_PHASES.has(run.phase)) {
         return { status: 'rejected', reason: `The run this proposal belongs to is already ${run.phase}.` };
     }
-    // A later vibe-run batch was planned against one brief; re-proposing it under another would
-    // ground a plan the brief no longer states.
-    const schedule = run.plan?.batchSchedule;
-    if (schedule?.kind === 'vibe-run' && (confirmation.approvalSnapshot.batchPosition?.index ?? 1) > 1) {
-        const drift = readVibeRunBriefDrift(schedule, getProjectContext().productionBrief?.revision ?? null);
-        if (drift !== null) {
-            return { status: 'rejected', reason: `The ${drift}.` };
-        }
+    const briefRefusal = readReproposalBriefRefusal(run, confirmation);
+    if (briefRefusal !== null) {
+        return briefRefusal;
     }
     if (holdsPreparedStemResources(confirmation.actions)) {
         return { status: 'rejected', reason: PREPARED_STEM_RESOURCES_REASON };
@@ -311,6 +323,19 @@ function recordReplacementBatch(
     }
 }
 
+function selectsPartialBatch(input: ReproposePendingChatActionsInput, originalCommandIds: readonly string[]): boolean {
+    return (
+        input.selectedIntentGroupIds !== undefined && input.selectedIntentGroupIds.length !== originalCommandIds.length
+    );
+}
+
+function readReproposalMidiRefusal(
+    confirmation: PendingAppActionConfirmation
+): Extract<ReproposePendingChatActionsResult, { status: 'rejected' }> | null {
+    const reason = readMidiNoteEditApprovalRefusal(confirmation.approvalSnapshot.actions, confirmation.projectRevision);
+    return reason === null ? null : { status: 'rejected', reason };
+}
+
 function prepareReproposal(input: ReproposePendingChatActionsInput) {
     const confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
@@ -319,6 +344,10 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
     const refusal = admitReproposal(confirmation);
     if (refusal) {
         return refusal;
+    }
+    const selectionRefusal = readReproposalMidiRefusal(confirmation);
+    if (selectionRefusal !== null) {
+        return selectionRefusal;
     }
     const { agentApproval, commandBatch } = confirmation.approvalSnapshot;
     if (!commandBatch) {
@@ -332,8 +361,7 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
         return { status: 'rejected' as const, reason: parsedOriginal.reason };
     }
     const originalCommandIds = parsedOriginal.envelope.commands.map((command) => command.commandId);
-    const selectsSubset =
-        input.selectedIntentGroupIds !== undefined && input.selectedIntentGroupIds.length !== originalCommandIds.length;
+    const selectsSubset = selectsPartialBatch(input, originalCommandIds);
 
     let workingBatch: WorkingBatch = commandBatch;
     let includedOriginalCommandIds: readonly string[] = originalCommandIds;
@@ -458,23 +486,18 @@ function persistReproposalConfirmation(
     return persistedId;
 }
 
-/**
- * Measure the re-previewed batch again and record the fresh proof on the live run, refusing
- * when the card or run moved meanwhile or the run plan cannot hold the new evidence.
- */
-async function refreshMetricProof(
+async function prepareRefreshedMetricProof(
     prepared: PreparedReproposal,
     goalState: NonNullable<ReturnType<typeof metricGoalStateCodec>>,
     context: ReturnType<typeof getProjectContext>
 ): Promise<
     | { status: 'rejected'; reason: string }
-    | { status: 'refreshed'; state: typeof goalState; approval: ReturnType<typeof compileAgentRiskApproval> }
+    | { status: 'measured'; proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>> }
 > {
     const { confirmation, refreshed } = prepared;
-    let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
     const watch = watchVibeBatchRePreview(confirmation, context);
     try {
-        refreshedProof = await prepareMetricGoalPreview({
+        const proof = await prepareMetricGoalPreview({
             state: goalState,
             commandBatch: refreshed.commandBatch,
             context,
@@ -483,40 +506,25 @@ async function refreshMetricProof(
             onBegin: watch.onBegin,
             onProgress: watch.onProgress,
         });
+        return { status: 'measured', proof };
     } catch (error) {
         return { status: 'rejected', reason: failureReason(error) };
     } finally {
         await watch.settle();
     }
-    const live = getPendingActionConfirmation(confirmation.id);
-    const liveRun = agentRunLifecycle.get(confirmation.runId);
-    if (
-        live?.status !== 'proposed' ||
-        live.supersededBy !== null ||
-        live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
-        liveRun === null ||
-        TERMINAL_RUN_PHASES.has(liveRun.phase)
-    ) {
-        return {
-            status: 'rejected',
-            reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
-        };
-    }
-    const approval = compileAgentRiskApproval({
-        commandBatch: refreshed.commandBatch,
-        requireExplicitApproval: true,
-        metricGoalState: JSON.stringify(refreshedProof.state),
-    });
-    const refusal = recordBatchPreviewEvidence(
-        liveRun,
-        refreshed.currentRevision,
-        approval.metricGoalState,
-        refreshedProof.receipts
+}
+
+function proofRefreshStillCurrent(
+    live: PendingAppActionConfirmation,
+    liveRun: NonNullable<ReturnType<typeof agentRunLifecycle.get>>,
+    confirmation: PendingAppActionConfirmation
+): boolean {
+    return (
+        live.status === 'proposed' &&
+        live.supersededBy === null &&
+        live.approvalSnapshot.metricGoalState === confirmation.approvalSnapshot.metricGoalState &&
+        !TERMINAL_RUN_PHASES.has(liveRun.phase)
     );
-    if (refusal !== null) {
-        return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
-    }
-    return { status: 'refreshed', state: refreshedProof.state, approval };
 }
 
 /**
@@ -536,20 +544,45 @@ async function reproposeWithoutReporting(
         prepared;
     let approval = prepared.approval;
 
-    let goalState = metricGoalStateCodec(approval.metricGoalState);
+    const goalState = metricGoalStateCodec(approval.metricGoalState);
     let measuredState: typeof goalState = null;
     const context = getProjectContext();
     if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
-        if (selectsSubset) {
-            goalState = { ...goalState, proofs: [] };
+        const measured = await prepareRefreshedMetricProof(
+            prepared,
+            selectsSubset ? { ...goalState, proofs: [] } : goalState,
+            context
+        );
+        if (measured.status !== 'measured') {
+            return measured;
         }
-        const refreshedPreview = await refreshMetricProof(prepared, goalState, context);
-        if (refreshedPreview.status !== 'refreshed') {
-            return refreshedPreview;
+        const live = getPendingActionConfirmation(confirmation.id);
+        const liveRun = agentRunLifecycle.get(confirmation.runId);
+        if (live === null || liveRun === null || !proofRefreshStillCurrent(live, liveRun, confirmation)) {
+            return {
+                status: 'rejected',
+                reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
+            };
         }
-        goalState = refreshedPreview.state;
-        measuredState = goalState;
-        approval = refreshedPreview.approval;
+        const selectionRefusal = readReproposalMidiRefusal(live);
+        if (selectionRefusal !== null) {
+            return selectionRefusal;
+        }
+        measuredState = measured.proof.state;
+        approval = compileAgentRiskApproval({
+            commandBatch: refreshed.commandBatch,
+            requireExplicitApproval: true,
+            metricGoalState: JSON.stringify(measuredState),
+        });
+        const refusal = recordBatchPreviewEvidence(
+            liveRun,
+            refreshed.currentRevision,
+            approval.metricGoalState,
+            measured.proof.receipts
+        );
+        if (refusal !== null) {
+            return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
+        }
     }
     const card = composeRePreviewedCard({
         confirmation,

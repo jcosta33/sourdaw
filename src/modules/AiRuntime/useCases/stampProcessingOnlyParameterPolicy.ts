@@ -181,6 +181,7 @@ const stampByActionType: Stamp = {
     addAutomationPoint: leaveUnstamped,
     insertAutomationLanePoints: leaveUnstamped,
     quantizeNotes: leaveUnstamped,
+    editMidiNotes: leaveUnstamped,
     removeShortMidiOverlaps: leaveUnstamped,
     createDrumPreviewBranches: leaveUnstamped,
     deleteDrumPreviewBranches: leaveUnstamped,

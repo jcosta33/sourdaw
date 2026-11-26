@@ -4355,7 +4355,7 @@
             "count": 3
         },
         "typescript/no-non-null-assertion": {
-            "count": 4
+            "count": 3
         }
     },
     "src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts": {
@@ -4780,7 +4780,7 @@
     },
     "src/modules/AiRuntime/useCases/planLastCommitContinuation.ts": {
         "eslint/complexity": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/planPromptActions.ts": {
@@ -4910,11 +4910,6 @@
         },
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 2
-        }
-    },
-    "src/modules/AiRuntime/useCases/reproposePendingChatActions.ts": {
-        "eslint/complexity": {
-            "count": 1
         }
     },
     "src/modules/AiRuntime/useCases/requireMidiNoteGenerationToolCall.ts": {
@@ -14880,9 +14875,6 @@
     "src/modules/MIDI/useCases/midiNoteTransforms/getRestoreMidiClipNotesStatus.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/MIDI/useCases/midiNoteTransforms/joinNotes.ts": {
@@ -14907,11 +14899,8 @@
         }
     },
     "src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 1
-        },
         "sourdaw-craft/no-useless-clone-spread": {
-            "count": 4
+            "count": 2
         }
     },
     "src/modules/MIDI/useCases/midiNoteTransforms/projectShortMidiOverlapRemoval.ts": {

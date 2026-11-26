@@ -149,6 +149,7 @@ export const canonicalControlByActionType: { readonly [Type in AppActionType]: C
     addAutomationPoint: ownControl,
     insertAutomationLanePoints: ownControl,
     quantizeNotes: ownControl,
+    editMidiNotes: ownControl,
     removeShortMidiOverlaps: ownControl,
     createDrumPreviewBranches: ownControl,
     deleteDrumPreviewBranches: ownControl,

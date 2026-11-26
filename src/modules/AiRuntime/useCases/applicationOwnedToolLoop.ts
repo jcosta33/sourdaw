@@ -123,6 +123,7 @@ import {
 } from './projectPlanningProviderToolSchemas';
 import { readAnswerProjectQuery } from './readAnswerProjectQuery';
 import { readMusicalContentRefusalMessage } from './readMusicalContentRefusalMessage';
+import { toolChoiceRefusal } from './toolChoiceRefusal';
 import { validateCommandBatchProposal } from './validateCommandBatchProposal';
 import { validateOneProposalPerTurn } from './validateOneProposalPerTurn';
 
@@ -183,6 +184,7 @@ export type ApplicationOwnedToolLoopOutcome =
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           terminalMeasurementSettlement?: string;
+          musicalReadProof?: ReturnType<NonNullable<ReturnType<typeof createMusicalReadPrerequisite>>['completed']>;
           turns: number;
           /** Whether this run's control phase admitted an interpretation, asked to clarify, or never ran. */
           interpretation: ApplicationOwnedToolLoopInterpretationOutcome;
@@ -2003,26 +2005,6 @@ function admitsMeasurementAttempt(input: {
     );
 }
 
-function toolChoiceRefusal(
-    calls: readonly ToolCallResult[],
-    directive: HostedToolChoiceDirective,
-    finalTurn: boolean
-): string | null {
-    if (directive.mode === 'required' && calls.length === 0) {
-        if (finalTurn) {
-            return 'Provider returned no tool call on the final application tool-loop turn.';
-        }
-        return 'Provider returned no tool call on a required application tool-loop step.';
-    }
-    if (directive.parallelToolCalls === false && calls.length > 1) {
-        return 'Provider returned multiple tool calls on a single-call application tool-loop step.';
-    }
-    if (directive.mode === 'required' && calls.some((call) => !directive.toolNames.includes(call.name))) {
-        return 'Provider returned a tool outside the required application tool-loop set.';
-    }
-    return null;
-}
-
 export async function runApplicationOwnedToolLoop(
     input: RunApplicationOwnedToolLoopInput
 ): Promise<ApplicationOwnedToolLoopOutcome> {
@@ -2060,6 +2042,8 @@ export async function runApplicationOwnedToolLoop(
     const hasMeasurementWitness = (opportunity: MeasurementOpportunity): boolean =>
         measurementWitness !== null && sameMeasurementAuthority(measurementWitness.opportunity, opportunity);
 
+    const readCompletedMusicalProof = () => musicalRead?.completed();
+
     const validateTerminalCalls = (calls: readonly IdentifiedToolCall[]): ValidatedTerminalCalls =>
         validateCatalogTerminalCalls(
             calls,
@@ -2092,6 +2076,7 @@ export async function runApplicationOwnedToolLoop(
         turns: turn,
         interpretation,
         retainedCompilations: [...retainedCompilations.values()],
+        musicalReadProof: readCompletedMusicalProof(),
     });
 
     const releaseHeldTerminal = (held: HeldTerminal, turn: number): ApplicationOwnedToolLoopOutcome => {
@@ -3161,6 +3146,7 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
                 interpretation,
                 retainedCompilations: [...retainedCompilations.values()],
+                musicalReadProof: readCompletedMusicalProof(),
             };
         }
         if (isFinalTurn && heldTerminal === null) {

@@ -194,6 +194,7 @@ const projectClipActionByActionType: {
     addAutomationPoint: keepState,
     insertAutomationLanePoints: keepState,
     quantizeNotes: keepState,
+    editMidiNotes: keepState,
     removeShortMidiOverlaps: keepState,
     createDrumPreviewBranches: keepState,
     deleteDrumPreviewBranches: keepState,

@@ -327,10 +327,12 @@ const RETIRED_RUNTIME_ACTION_TYPES = [
 ] as const;
 
 describe('RuntimeAction', () => {
-    it('lists the previous vocabulary less the retired types, in its order', () => {
+    it('preserves the order of the remaining previous vocabulary', () => {
         const retired: ReadonlySet<string> = new Set(RETIRED_RUNTIME_ACTION_TYPES);
 
-        expect(RUNTIME_ACTION_TYPES).toEqual(PREVIOUS_RUNTIME_ACTION_TYPES.filter((type) => !retired.has(type)));
+        expect(RUNTIME_ACTION_TYPES.filter((type) => type !== 'editMidiNotes')).toEqual(
+            PREVIOUS_RUNTIME_ACTION_TYPES.filter((type) => !retired.has(type))
+        );
     });
 
     it('retires only types the previous vocabulary held', () => {
@@ -363,14 +365,15 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(209);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(210);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).not.toContain('stemSeparate');
         expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
         expect(RUNTIME_ACTION_TYPES).toContain('automateParameterRange');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
-        expect(digest >>> 0).toBe(3_860_504_128);
+        expect(RUNTIME_ACTION_TYPES).toContain('editMidiNotes');
+        expect(digest >>> 0).toBe(2_597_075_016);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {

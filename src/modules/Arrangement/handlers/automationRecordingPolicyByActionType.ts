@@ -155,6 +155,7 @@ export const automationRecordingPolicyByActionType: {
     addAutomationPoint: noPolicy,
     insertAutomationLanePoints: noPolicy,
     quantizeNotes: noPolicy,
+    editMidiNotes: noPolicy,
     removeShortMidiOverlaps: noPolicy,
     createDrumPreviewBranches: noPolicy,
     deleteDrumPreviewBranches: noPolicy,

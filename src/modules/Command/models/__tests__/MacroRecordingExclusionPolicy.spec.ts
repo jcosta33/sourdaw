@@ -10,6 +10,7 @@ const EXPECTED = new Set<string>([
     'playMacro',
     'deleteMacro',
     'renameMacro',
+    'editMidiNotes',
     'insertAutomationLanePoints',
     'setLevainIdentity',
     'setToasterFactoryKit',
@@ -20,7 +21,7 @@ const EXPECTED = new Set<string>([
 ]);
 
 describe('macroRecordingExcludesActionType', () => {
-    it('excludes the macro meta-actions and local project edits', () => {
+    it('excludes macro meta-actions, authority-bound MIDI note edits, and local project edits', () => {
         const actual = new Set(
             Object.entries(macroRecordingExcludesActionType)
                 .filter(([, value]) => value)

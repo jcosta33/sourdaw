@@ -161,6 +161,7 @@ const tempoScalarTransitionByActionType: {
     addAutomationPoint: notATempoAction,
     insertAutomationLanePoints: notATempoAction,
     quantizeNotes: notATempoAction,
+    editMidiNotes: notATempoAction,
     removeShortMidiOverlaps: notATempoAction,
     createDrumPreviewBranches: notATempoAction,
     deleteDrumPreviewBranches: notATempoAction,

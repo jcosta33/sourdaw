@@ -192,6 +192,7 @@ const extraTargetsByActionType: {
     addAutomationPoint: noExtraTargets,
     insertAutomationLanePoints: noExtraTargets,
     quantizeNotes: noExtraTargets,
+    editMidiNotes: noExtraTargets,
     removeShortMidiOverlaps: noExtraTargets,
     createDrumPreviewBranches: noExtraTargets,
     deleteDrumPreviewBranches: noExtraTargets,

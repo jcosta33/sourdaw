@@ -85,6 +85,7 @@ export const clipDestinationTrackIdsByActionType: ClipDestinationLookup = {
     addAutomationPoint: noDestinationTracks,
     setAutomationLaneEnabled: noDestinationTracks,
     quantizeNotes: noDestinationTracks,
+    editMidiNotes: noDestinationTracks,
     removeShortMidiOverlaps: noDestinationTracks,
     createDrumPreviewBranches: noDestinationTracks,
     copyMidiArticulations: noDestinationTracks,

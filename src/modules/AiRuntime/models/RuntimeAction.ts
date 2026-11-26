@@ -84,6 +84,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     removeSidechainRoute: ['sourceTrackId', 'targetTrackId'],
     arpeggiate: ['clipId', 'pattern', 'rate', 'octaves', 'gate'],
     quantizeNotes: ['clipId', 'gridSize', 'noteIds'],
+    editMidiNotes: ['clipId', 'operations'],
     removeShortMidiOverlaps: ['clipId', 'maximumOverlapMs'],
     createDrumPreviewBranches: ['sectionId', 'candidateCount', 'varyingRoles'],
     copyMidiArticulations: ['sourceClipId', 'targetClipId'],
@@ -150,6 +151,7 @@ export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     removeSidechainRoute: ['sourceTrackId', 'targetTrackId'],
     arpeggiate: ['clipId'],
     quantizeNotes: ['clipId', 'gridSize'],
+    editMidiNotes: ['clipId', 'operations'],
     removeShortMidiOverlaps: ['clipId', 'maximumOverlapMs'],
     createDrumPreviewBranches: ['sectionId', 'candidateCount', 'varyingRoles'],
     copyMidiArticulations: ['sourceClipId', 'targetClipId'],
@@ -191,22 +193,33 @@ type RuntimeAddNotesPayload = {
     clipId: AppActionPayload<'addNotes'>['clipId'];
     notes: Array<Omit<AppActionPayload<'addNotes'>['notes'][number], 'id'>>;
 };
+type RuntimeEditMidiNotesOperation = AppActionPayload<'editMidiNotes'>['operations'][number];
+type RuntimeInsertedMidiNote = Extract<RuntimeEditMidiNotesOperation, { type: 'insert' }>['note'];
+type RuntimeEditMidiNotesPayload = {
+    clipId: AppActionPayload<'editMidiNotes'>['clipId'];
+    operations: Array<
+        | Exclude<RuntimeEditMidiNotesOperation, { type: 'insert' }>
+        | { type: 'insert'; note: Omit<RuntimeInsertedMidiNote, 'id'> }
+    >;
+};
 type RuntimeImportStemSetPayload = Pick<AppActionPayload<'importStemSet'>, 'selectionId' | 'groupName'> & {
     stems: Array<Pick<AppActionPayload<'importStemSet'>['stems'][number], 'stemId' | 'role'>>;
 };
 type RuntimeActionWithPayload<ActionType extends RuntimePayloadOverrideType> = ActionType extends 'addNotes'
     ? Omit<AppActionOf<ActionType>, 'payload'> & { payload: RuntimeAddNotesPayload }
-    : ActionType extends 'importStemSet'
-      ? Omit<AppActionOf<ActionType>, 'payload'> & { payload: RuntimeImportStemSetPayload }
-      : Omit<AppActionOf<ActionType>, 'payload'> & {
-            payload: RuntimePayloadOverride<ActionType> &
-                Required<
-                    Pick<
-                        AppActionPayload<ActionType>,
-                        Extract<RuntimeRequiredPayloadKey<ActionType>, keyof AppActionPayload<ActionType>>
-                    >
-                >;
-        };
+    : ActionType extends 'editMidiNotes'
+      ? Omit<AppActionOf<ActionType>, 'payload'> & { payload: RuntimeEditMidiNotesPayload }
+      : ActionType extends 'importStemSet'
+        ? Omit<AppActionOf<ActionType>, 'payload'> & { payload: RuntimeImportStemSetPayload }
+        : Omit<AppActionOf<ActionType>, 'payload'> & {
+              payload: RuntimePayloadOverride<ActionType> &
+                  Required<
+                      Pick<
+                          AppActionPayload<ActionType>,
+                          Extract<RuntimeRequiredPayloadKey<ActionType>, keyof AppActionPayload<ActionType>>
+                      >
+                  >;
+          };
 
 type CanonicalRuntimeAction = Exclude<
     Extract<AppAction, { type: RuntimeActionType }>,

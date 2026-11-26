@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { presetMayEmitByActionType } from '../PresetMayEmitByActionType';
 
 describe('presetMayEmitByActionType', () => {
-    it('withholds exactly the note transforms and punch enabling from presets', () => {
+    it('withholds exactly the note edits, note transforms and punch enabling from presets', () => {
         const withheld = Object.entries(presetMayEmitByActionType)
             .filter(([, mayEmit]) => !mayEmit)
             .map(([type]) => type);
 
         expect(withheld.toSorted()).toEqual([
+            'editMidiNotes',
             'invertNotes',
             'quantizeNoteLengths',
             'quantizeNotes',

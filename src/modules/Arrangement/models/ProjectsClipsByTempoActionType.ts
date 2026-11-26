@@ -141,6 +141,7 @@ export const projectsClipsByTempoActionType: { readonly [Type in AppActionType]:
     addAutomationPoint: false,
     insertAutomationLanePoints: false,
     quantizeNotes: false,
+    editMidiNotes: false,
     removeShortMidiOverlaps: false,
     createDrumPreviewBranches: false,
     deleteDrumPreviewBranches: false,

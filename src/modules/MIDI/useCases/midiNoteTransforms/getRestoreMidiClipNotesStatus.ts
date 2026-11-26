@@ -1,10 +1,12 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { type MidiAppAction } from '../../events/midiAppActions';
 import { type MidiClipNoteSnapshot } from '../../events/midiClipDataSnapshots';
 import { midiStore } from '../../stores/midiStore';
 import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
+import { findEditableBaseMidiClip } from '../midiNoteCrud/findEditableBaseMidiClip';
 
 export type GetRestoreMidiClipNotesStatusInput = {
     clipId: string;
@@ -21,12 +23,10 @@ export type GetRestoreMidiClipNotesStatusInput = {
         expectedSourceClipLocked: boolean;
         expectedTargetClipLocked: boolean;
     };
-    noteTransformReplayGuard?: {
-        trackId: string;
-        expectedTrackFrozen: boolean;
-        expectedClipLocked: boolean;
-        expectedTempo?: number;
-    };
+    noteTransformReplayGuard?: Extract<
+        MidiAppAction,
+        { type: 'restoreMidiClipNotes' }
+    >['payload']['noteTransformReplayGuard'];
     projectedNotes?: readonly MidiClipNoteSnapshot[];
     projectedNotesBucketPresent?: boolean;
     projectedNoteTransformReplayTarget?: {
@@ -61,6 +61,30 @@ function readLiveNoteTransformReplayTarget(trackId: string, clipId: string): Not
     return target;
 }
 
+function noteTransformReplayMatches({
+    clipId,
+    noteTransformReplayGuard: guard,
+    projectedNoteTransformReplayTarget,
+}: Pick<
+    GetRestoreMidiClipNotesStatusInput,
+    'clipId' | 'noteTransformReplayGuard' | 'projectedNoteTransformReplayTarget'
+>): boolean {
+    if (!guard) {
+        return true;
+    }
+    if (guard.requiresEditableBaseClip && !findEditableBaseMidiClip(clipId, guard.trackId)) {
+        return false;
+    }
+    const target = projectedNoteTransformReplayTarget ?? readLiveNoteTransformReplayTarget(guard.trackId, clipId);
+    return (
+        target !== undefined &&
+        target.trackId === guard.trackId &&
+        target.trackFrozen === guard.expectedTrackFrozen &&
+        target.clipLocked === guard.expectedClipLocked &&
+        (guard.expectedTempo === undefined || transportStore.value?.tempo === guard.expectedTempo)
+    );
+}
+
 export function getRestoreMidiClipNotesStatus({
     clipId,
     notes,
@@ -80,6 +104,7 @@ export function getRestoreMidiClipNotesStatus({
             expectedNotes,
             notesBucketPresent,
             expectedNotesBucketPresent,
+            noteTransformReplayGuard,
         })
     ) {
         return 'conflict';
@@ -108,26 +133,8 @@ export function getRestoreMidiClipNotesStatus({
             return 'conflict';
         }
     }
-    if (noteTransformReplayGuard) {
-        const replayTarget =
-            projectedNoteTransformReplayTarget ??
-            readLiveNoteTransformReplayTarget(noteTransformReplayGuard.trackId, clipId);
-        if (!replayTarget) {
-            return 'conflict';
-        }
-        if (
-            replayTarget.trackId !== noteTransformReplayGuard.trackId ||
-            replayTarget.trackFrozen !== noteTransformReplayGuard.expectedTrackFrozen ||
-            replayTarget.clipLocked !== noteTransformReplayGuard.expectedClipLocked
-        ) {
-            return 'conflict';
-        }
-        if (
-            noteTransformReplayGuard.expectedTempo !== undefined &&
-            transportStore.value?.tempo !== noteTransformReplayGuard.expectedTempo
-        ) {
-            return 'conflict';
-        }
+    if (!noteTransformReplayMatches({ clipId, noteTransformReplayGuard, projectedNoteTransformReplayTarget })) {
+        return 'conflict';
     }
     const storedNotes = projectedNotes ?? state.notesByClipId[clipId];
     const storedNotesPresent = projectedNotesBucketPresent ?? Object.hasOwn(state.notesByClipId, clipId);

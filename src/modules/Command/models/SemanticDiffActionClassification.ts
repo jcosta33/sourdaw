@@ -163,6 +163,7 @@ export const semanticDiffClassificationByActionType: {
     addAutomationPoint: { created: true },
     insertAutomationLanePoints: { overwrite: true },
     quantizeNotes: NONE,
+    editMidiNotes: NONE,
     removeShortMidiOverlaps: NONE,
     createDrumPreviewBranches: NONE,
     deleteDrumPreviewBranches: NONE,
