@@ -77,3 +77,7 @@ export const CRUST_PRESETS: CrustPreset[] = [
         channelLinkTransient: 60,
     }),
 ];
+
+export function getCrustFactoryPreset(presetId: string): CrustPreset | undefined {
+    return CRUST_PRESETS.find((preset) => preset.id === presetId);
+}
