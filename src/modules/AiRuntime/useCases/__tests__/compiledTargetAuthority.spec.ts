@@ -2922,6 +2922,8 @@ describe('a figure-led word before the words of an indexed name replaces its ind
         'set track2 kick volume to 75%',
         'set kick 2 volume to 75%',
         'set kick two volume to 75%',
+        'set kick track 2 volume to 75%',
+        'set kick track two volume to 75%',
     ])('refuses a 01 Kick pick for "%s"', (prompt) => {
         const result = compileAndBridge(prompt, [setKick], [], indexed.context);
 
@@ -2929,29 +2931,35 @@ describe('a figure-led word before the words of an indexed name replaces its ind
         expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 
-    it.each(['mute kick two', 'mute kick number 2', 'mute kick no. 2'])('refuses a 01 Kick mute for "%s"', (prompt) => {
-        const result = compileAndBridge(
-            prompt,
-            [trackItem('muteTrack', indexed.track('01 Kick'), { muted: true })],
-            [],
-            indexed.context
-        );
+    it.each(['mute kick two', 'mute kick number 2', 'mute kick no. 2', 'mute kick track 2', 'mute kick track two'])(
+        'refuses a 01 Kick mute for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [trackItem('muteTrack', indexed.track('01 Kick'), { muted: true })],
+                [],
+                indexed.context
+            );
 
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toContainEqual({ index: 0, name: 'muteTrack', reason: UNGROUNDED_TRACK });
-    });
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual({ index: 0, name: 'muteTrack', reason: UNGROUNDED_TRACK });
+        }
+    );
 
-    it('grounds a 01 Kick mute for "mute kick", which states no figure', () => {
-        const result = compileAndBridge(
-            'mute kick',
-            [trackItem('muteTrack', indexed.track('01 Kick'), { muted: true })],
-            [],
-            indexed.context
-        );
+    it.each(['mute kick', 'mute the kick, no more'])(
+        'grounds a 01 Kick mute for "%s", which states no figure',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [trackItem('muteTrack', indexed.track('01 Kick'), { muted: true })],
+                [],
+                indexed.context
+            );
 
-        expect(result.rejections).toEqual([]);
-        expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
-    });
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
+        }
+    );
 
     it.each([
         ['set kick 50% volume', { gain: 0.5 }],
@@ -2977,6 +2985,13 @@ describe('a figure-led word before the words of an indexed name replaces its ind
             [],
             indexed.context
         );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
+    });
+
+    it('grounds a 01 Kick pick for "set the kick track volume to 75%", whose number sign states no figure', () => {
+        const result = compileAndBridge('set the kick track volume to 75%', [setKick], [], indexed.context);
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);

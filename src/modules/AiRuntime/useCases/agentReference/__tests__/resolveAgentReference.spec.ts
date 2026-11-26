@@ -1888,6 +1888,8 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         ['mute kick', ['01 Kick', '02 Snare'], '01 Kick'],
         ['mute kick two', ['Kick', 'Snare'], 'Kick'],
         ['mute kick number 2', ['Kick', 'Snare'], 'Kick'],
+        ['mute the kick, no more', ['01 Kick', '02 Snare'], '01 Kick'],
+        ['set the kick track volume to 75%', ['01 Kick', '02 Snare'], '01 Kick'],
     ])('resolves "%s" among %j to %s and no sibling', (prompt, names, picked) => {
         const project = tracksNamed(names);
         const pickedId = trackIdNamed(project, picked);
@@ -1936,6 +1938,8 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         'mute kick number 2',
         'mute kick no. 2',
         'set kick two volume to 75%',
+        'mute kick track 2',
+        'mute kick track two',
     ])('never resolves "%s" to 01 Kick, whose index another figure-led word replaces', (prompt) => {
         const project = tracksNamed(['01 Kick', '02 Snare']);
 
