@@ -13,6 +13,7 @@ const CLOSENESS_RANK: Readonly<Record<AgentReferenceNameCloseness, number>> = {
     typed: 0,
     folded: 1,
     'number-form': 2,
+    'without-index': 3,
 };
 
 /** Whether the other span reads the span's range better: it covers a longer range, or the same range more closely. */

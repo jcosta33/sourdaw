@@ -44,6 +44,12 @@ function statesUnitWord(words: string): boolean {
     );
 }
 
+/** Whether the text opens with a percent or a decibel unit word: "%", "percent", "dB", "db". */
+function opensWithPercentOrDecibel(text: string): boolean {
+    const unit = readUnitWord(text)?.unit;
+    return unit === '%' || unit === 'dB';
+}
+
 /** The device parameter a pending command sets, when it sets one. */
 function findPendingParameter(command: ProposalGroundingCommand, context: ProjectContext) {
     const deviceId = command.targets.find((target) => target.argument === 'deviceId')?.id;
@@ -86,6 +92,7 @@ function getOwnUnit(command: ProposalGroundingCommand, context: ProjectContext):
 /** How a refinement figure's unit reads, and the unit a pending value is stated in. */
 export const refinementValueUnits = {
     unitWord: readUnitWord,
+    percentOrDecibel: opensWithPercentOrDecibel,
     statesUnitWord,
     pendingParameter: findPendingParameter,
     ownUnit: getOwnUnit,
