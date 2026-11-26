@@ -1178,7 +1178,8 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     page,
 }, info) => {
     // Serial fixture commits have their own deadline so setup cannot consume the reopen checks' time.
-    // Seeding is 2048 serial retained edits at a measured ~43 ms each (116 s locally) and exceeded 210 s on CI.
+    // Locally the 2048 serial retained edits took 86.7 s (42.4 ms mean) of a 115.9 s seed; CI exceeded 210 s.
+    // The dense-elastic-seed-timing attachment records these figures per run.
     test.setTimeout(540_000);
     await setupWorkspace(page, { clearLocalStorage: false });
     await launch_new_project(page);
@@ -1220,6 +1221,10 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
             ),
         { timeout: 420_000 }
     );
+    await info.attach('dense-elastic-seed-timing', {
+        body: JSON.stringify(fixture.timing),
+        contentType: 'application/json',
+    });
     const readPreserved = (historyHeads?: typeof fixture.historyHeads) =>
         page.evaluate(
             async ({ path, historyHeads, companionIds }) => {
