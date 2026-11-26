@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { type Track } from '#/modules/Arrangement/stores';
+import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '#/modules/AudioEngine/stores';
 import { externalPluginTailStore } from '#/modules/PluginHost/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
@@ -118,6 +119,9 @@ type ExportDialogMocks = {
     commit: ReturnType<typeof vi.fn<Commit>>;
     getAudioContext: ReturnType<typeof vi.fn<() => BaseAudioContext | null>>;
     getAutoDetectedTailSeconds: ReturnType<typeof vi.fn>;
+    engineSampleRateOf: ReturnType<
+        typeof vi.fn<(diagnostics: { nativeEngineObserved: boolean } | null) => number | null>
+    >;
     isExportActive: ReturnType<typeof vi.fn<() => boolean>>;
     listToasterPatternsOutsideArrangement: ReturnType<
         typeof vi.fn<(input: unknown) => TestToasterPatternOutsideArrangement[]>
@@ -176,6 +180,10 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         commit: vi.fn<Commit>(async () => {}),
         getAudioContext: vi.fn<() => BaseAudioContext | null>(() => null),
         getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, uncappedSeconds: 2, clamped: false })),
+        // Stands in for the diagnostics-to-rate rule: an observed engine renders at 48 kHz.
+        engineSampleRateOf: vi.fn((diagnostics: { nativeEngineObserved: boolean } | null) =>
+            diagnostics?.nativeEngineObserved ? 48_000 : null
+        ),
         isExportActive: vi.fn(() => false),
         listToasterPatternsOutsideArrangement: vi.fn<(input: unknown) => TestToasterPatternOutsideArrangement[]>(
             () => []
@@ -397,6 +405,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         },
         getAudioContext: mocks.getAudioContext,
         getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
+        engineSampleRateOf: mocks.engineSampleRateOf,
         isExportActive: mocks.isExportActive,
         renderOffline: async (options: Parameters<RenderOffline>[0]) => {
             const buffer = await mocks.renderOffline(options);
@@ -1439,11 +1448,82 @@ describe('ExportDialog', () => {
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 20 }));
     });
 
-    it('repaints the detected tail label when the hosted tail store changes', () => {
-        render(<ExportDialog open={true} onClose={vi.fn()} />);
+    /**
+     * One hosted instance: the estimate follows only the snapshot the dialog hands
+     * over, as the real detector does, so the label and the render can only agree
+     * through what the dialog subscribed to and what it reads at export start.
+     */
+    async function followHostedSnapshots(): Promise<void> {
+        const { useStore: subscribeToStore } =
+            await vi.importActual<typeof import('#/infra/store/useStore')>('#/infra/store/useStore');
+        mocks.getAutoDetectedTailSeconds.mockImplementation(
+            (input: {
+                hostedTailSamplesByInstanceId: Readonly<Record<string, number>>;
+                engineSampleRate: number | null;
+            }) => {
+                const frames = input.hostedTailSamplesByInstanceId['inst-1'] ?? 0;
+                const seconds = input.engineSampleRate === null ? 0 : frames / input.engineSampleRate;
+                return { seconds, uncappedSeconds: seconds, clamped: false };
+            }
+        );
+        mocks.useStore.mockImplementation((store: TestStore<unknown>, defaultValue?: unknown) => {
+            if (Object.is(store, externalPluginTailStore)) {
+                return subscribeToStore(externalPluginTailStore);
+            }
+            if (Object.is(store, engineRtDiagnosticsStore)) {
+                return subscribeToStore(engineRtDiagnosticsStore);
+            }
+            return store.value ?? defaultValue;
+        });
+    }
 
-        const subscribedStores = mocks.useStore.mock.calls.map(([store]) => store);
-        expect(subscribedStores).toContain(externalPluginTailStore);
+    function stopFollowingHostedSnapshots(): void {
+        externalPluginTailStore.set({ tailSamplesByInstanceId: {} });
+        engineRtDiagnosticsStore.set(defaultEngineRtDiagnosticsState);
+        mocks.useStore.mockImplementation(
+            (store: TestStore<unknown>, defaultValue?: unknown) => store.value ?? defaultValue
+        );
+    }
+
+    it('repaints the detected tail label from the hosted tail store and sizes the render from the same figure', async () => {
+        const hostedRate = 48_000;
+        await followHostedSnapshots();
+        engineRtDiagnosticsStore.set({ ...defaultEngineRtDiagnosticsState, nativeEngineObserved: true });
+        externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 3 * hostedRate } });
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            expect(screen.getByText('3.00s detected')).toBeInTheDocument();
+
+            act(() => {
+                externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 10 * hostedRate } });
+            });
+
+            expect(await screen.findByText('10.00s detected')).toBeInTheDocument();
+            expect(screen.queryByText('3.00s detected')).not.toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
+            await waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledTimes(1));
+            expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 10 }));
+        } finally {
+            stopFollowingHostedSnapshots();
+        }
+    });
+
+    it('repaints the detected tail label when the engine rate its frames are read in changes', async () => {
+        await followHostedSnapshots();
+        externalPluginTailStore.set({ tailSamplesByInstanceId: { 'inst-1': 5 * 48_000 } });
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            // No engine yet: the figure has no rate to be read in.
+            expect(screen.getByText('2.00s minimum (0.00s detected)')).toBeInTheDocument();
+
+            act(() => {
+                engineRtDiagnosticsStore.set({ ...defaultEngineRtDiagnosticsState, nativeEngineObserved: true });
+            });
+
+            expect(await screen.findByText('5.00s detected')).toBeInTheDocument();
+        } finally {
+            stopFollowingHostedSnapshots();
+        }
     });
 
     it('re-reads the project snapshot for tail detection after async export preparation', async () => {

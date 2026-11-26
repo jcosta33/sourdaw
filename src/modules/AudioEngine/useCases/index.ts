@@ -210,6 +210,7 @@ export { isRenderBusyError } from './offlineRender/isRenderBusyError';
 export { checkCancel } from './offlineRender/checkCancel';
 export { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
+export { engineSampleRateOf } from './offlineRender/engineSampleRateOf';
 export { getDeviceChainTailSeconds } from './offlineRender/getDeviceChainTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
