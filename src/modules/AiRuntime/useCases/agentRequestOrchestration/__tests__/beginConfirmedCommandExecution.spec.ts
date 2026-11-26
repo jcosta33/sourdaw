@@ -6,6 +6,7 @@ import { retainedRenderReceipts } from '../retainedRenderReceipts';
 import type { createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import type { AgentRenderReceipt } from '#/utils/agentRenderReceipt';
 import type { AgentRunWorkLease } from '../../../models/AgentRun';
+import type { ProjectContext, ProjectContextTrack } from '../../../models/ProjectContext';
 import type { PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
@@ -19,6 +20,8 @@ type InvalidateForProjectChange =
     typeof import('../confirmationTerminalSettlement').confirmationTerminalSettlement.invalidateForProjectChange;
 type ValidateAgentRiskApproval = typeof import('../../validateAgentRiskApproval').validateAgentRiskApproval;
 type GetPlannedActionAffectedIds = typeof import('../../getPlannedActionAffectedIds').getPlannedActionAffectedIds;
+type GetPlannedActionAffectedIdsWithOwners =
+    typeof import('../../getPlannedActionAffectedIdsWithOwners').getPlannedActionAffectedIdsWithOwners;
 type PendingProtectedTarget = PendingAppActionConfirmation['protectedUnchanged'][number];
 type GetProjectContext = typeof import('../../getProjectContext').getProjectContext;
 
@@ -28,6 +31,7 @@ const mocks = vi.hoisted(() => ({
     claimLease: vi.fn(),
     failPreflight: vi.fn<FailApprovalPreflight>(),
     getAffectedIds: vi.fn<GetPlannedActionAffectedIds>(() => []),
+    getAffectedIdsWithOwners: vi.fn<GetPlannedActionAffectedIdsWithOwners>(),
     getArtifacts: vi.fn<() => Pick<AgentSectionRenderArtifact, 'jobId'>[]>(),
     getRun: vi.fn(),
     getContext: vi.fn<GetProjectContext>(),
@@ -60,6 +64,9 @@ vi.mock('../../agentRunLifecycle', () => ({ agentRunLifecycle: { get: mocks.getR
 vi.mock('../../agentRunWorkLease', () => ({ agentRunWorkLease: { claim: mocks.claimLease } }));
 vi.mock('../../agentWorkBudget', () => ({ agentWorkBudget: { reserveCommandWork: mocks.reserveBudget } }));
 vi.mock('../../getPlannedActionAffectedIds', () => ({ getPlannedActionAffectedIds: mocks.getAffectedIds }));
+vi.mock('../../getPlannedActionAffectedIdsWithOwners', () => ({
+    getPlannedActionAffectedIdsWithOwners: mocks.getAffectedIdsWithOwners,
+}));
 vi.mock('../../getProjectContext', () => ({ getProjectContext: mocks.getContext }));
 vi.mock('../../validateAgentRiskApproval', () => ({ validateAgentRiskApproval: mocks.validateApproval }));
 vi.mock('../agentRunExecutionSettlement', () => ({
@@ -309,6 +316,7 @@ async function createVerifiedRecoveryReceipt(): Promise<CommandVerifiedBatchRece
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getAffectedIdsWithOwners.mockImplementation((action) => mocks.getAffectedIds(action));
     mocks.admitReceipt.mockReturnValue({ status: 'admitted', action: gatedAction });
     mocks.getArtifacts.mockReturnValue([{ jobId: RENDER_PROVENANCE.jobId }]);
     mocks.getRun.mockReturnValue({ runId: confirmation.runId, cancellation: { generation: 0 } });
@@ -445,6 +453,129 @@ describe('beginConfirmedCommandExecution', () => {
             protectedConfirmation,
             'The approved action batch targets protected IDs: track-protected.'
         );
+    });
+
+    describe('protected tracks reached through the objects a command targets', () => {
+        const owners = {
+            protectedTrack: { id: 'track-protected', name: 'Protected track' },
+            otherTrack: { id: 'track-other', name: 'Other track' },
+        };
+
+        function createContextTrack(id: string, name: string, deviceId: string): ProjectContextTrack {
+            return {
+                id,
+                name,
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                soloSafe: false,
+                armed: false,
+                gain: 0.8,
+                pan: 0,
+                automationMode: 'read',
+                clipCount: 0,
+                deviceCount: 1,
+                clips: [],
+                devices: [{ id: deviceId, type: 'builtin-compressor', bypassed: false }],
+            };
+        }
+
+        const liveContext = {
+            tempo: 120,
+            timeSignature: [4, 4],
+            isPlaying: false,
+            isRecording: false,
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 16,
+            punchInEnabled: false,
+            punchInBeat: 0,
+            punchOutBeat: 16,
+            metronomeEnabled: false,
+            metronomeVolume: 0.5,
+            masterGain: 0.8,
+            tracks: [
+                createContextTrack(owners.protectedTrack.id, owners.protectedTrack.name, 'device-on-protected'),
+                createContextTrack(owners.otherTrack.id, owners.otherTrack.name, 'device-on-other'),
+            ],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            activeView: 'mix',
+            playheadPosition: 0,
+        } satisfies ProjectContext;
+
+        function protectTrackWith(action: PendingAppActionConfirmation['actions'][number]) {
+            return {
+                ...confirmation,
+                actions: [action],
+                protectedUnchanged: [owners.protectedTrack],
+                approvalSnapshot: {
+                    ...confirmation.approvalSnapshot,
+                    actions: [action],
+                    protectedUnchanged: [owners.protectedTrack],
+                },
+            } satisfies PendingAppActionConfirmation;
+        }
+
+        beforeEach(async () => {
+            const actualOwners = await vi.importActual<typeof import('../../getPlannedActionAffectedIdsWithOwners')>(
+                '../../getPlannedActionAffectedIdsWithOwners'
+            );
+            const actualReader = await vi.importActual<typeof import('../../getPlannedActionAffectedIds')>(
+                '../../getPlannedActionAffectedIds'
+            );
+            mocks.getAffectedIdsWithOwners.mockImplementation(actualOwners.getPlannedActionAffectedIdsWithOwners);
+            mocks.getAffectedIds.mockImplementation(actualReader.getPlannedActionAffectedIds);
+            mocks.getContext.mockReturnValue(liveContext);
+        });
+
+        afterEach(() => {
+            mocks.getAffectedIds.mockImplementation(() => []);
+        });
+
+        it('refuses a parameter write on an existing device of a protected track that names no track', async () => {
+            const action = {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-on-protected', paramId: 'comp-threshold', value: -16 },
+            } satisfies PendingAppActionConfirmation['actions'][number];
+            const protectedConfirmation = protectTrackWith(action);
+
+            await expectAuthorizationPreflightFailure(
+                protectedConfirmation,
+                'The executable action batch targets protected IDs: track-protected.'
+            );
+            expect(mocks.failPreflight).toHaveBeenCalledTimes(1);
+        });
+
+        it('admits the same parameter write on a device of an unprotected track', () => {
+            const action = {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-on-other', paramId: 'comp-threshold', value: -16 },
+            } satisfies PendingAppActionConfirmation['actions'][number];
+
+            const result = beginConfirmedCommandExecution({
+                confirmation: protectTrackWith(action),
+                priorVerifiedBatchReceipt: null,
+                recoveringPendingEffects: false,
+            });
+
+            expect(result.status).toBe('ready');
+            expect(mocks.failPreflight).not.toHaveBeenCalled();
+        });
+
+        it('refuses an addDevice onto a protected track', async () => {
+            const action = {
+                type: 'addDevice',
+                payload: { trackId: 'track-protected', deviceType: 'eq', deviceId: 'device-minted' },
+            } satisfies PendingAppActionConfirmation['actions'][number];
+
+            await expectAuthorizationPreflightFailure(
+                protectTrackWith(action),
+                'The executable action batch targets protected IDs: track-protected.'
+            );
+            expect(mocks.failPreflight).toHaveBeenCalledTimes(1);
+        });
     });
 
     it.each([
