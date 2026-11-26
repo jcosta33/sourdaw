@@ -373,8 +373,9 @@ function readReachableOwnedIds(texts: EvidenceTexts, input: RequestReadingInput)
     if (readStatedIds(texts.whole, 'track', context).length === 0 && !refersToSelectedTrack(texts.whole, context)) {
         return null;
     }
-    const namedTrackIds = readStatedIds(texts.scoped, 'track', context);
-    const selectsTrack = refersToSelectedTrack(texts.scoped, context);
+    const ownerTexts = readOwnerTexts(texts);
+    const namedTrackIds = ownerTexts.flatMap((text) => readStatedIds(text, 'track', context));
+    const selectsTrack = ownerTexts.some((text) => refersToSelectedTrack(text, context));
     const selectedTrackIds = selectsTrack && context.selectedTrackId !== null ? [context.selectedTrackId] : [];
     return new Set(
         [...namedTrackIds, ...selectedTrackIds].flatMap((trackId) => getTrackOwnedObjectIds(trackId, context))
@@ -702,15 +703,17 @@ function statesTrack(text: string, trackId: string, context: ProjectContext): bo
 }
 
 /**
- * Whether the request states the owner track the instruction picks by. An instruction stating a track
- * by position ("bypass the EQ on track 2") names one the shared resolver does not bind, so its owner
- * is read from the whole request, as it was before instructions were read apart.
+ * The texts an instruction's owner track is read from. An instruction stating a track by position
+ * ("bypass the EQ on track 2") names one the shared resolver does not bind, so its owner is also read
+ * from the whole request, as it was before instructions were read apart.
  */
+function readOwnerTexts(texts: EvidenceTexts): string[] {
+    return readTrackPosition(texts.scoped) === undefined ? [texts.scoped] : [texts.scoped, texts.whole];
+}
+
+/** Whether the request states the owner track the instruction picks by. */
 function statesOwnerTrack(texts: EvidenceTexts, trackId: string, context: ProjectContext): boolean {
-    return (
-        statesTrack(texts.scoped, trackId, context) ||
-        (readTrackPosition(texts.scoped) !== undefined && statesTrack(texts.whole, trackId, context))
-    );
+    return readOwnerTexts(texts).some((text) => statesTrack(text, trackId, context));
 }
 
 /** A name fragment a selector picks by, and every place the text states it as a whole word. */

@@ -1945,6 +1945,32 @@ describe('an instruction naming no track takes no selected owner once another in
         expect(payloadTargets(result)).toEqual([mixKeys.id, mixKeysEq.id]);
     });
 
+    describe('through a name fragment pick', () => {
+        const namedKeysEq = { ...mixKeysEq, name: 'EQ' };
+        const fragmentContext: ProjectContext = {
+            ...mixContext,
+            tracks: mixContext.tracks.map((track) =>
+                track.id === mixKeys.id ? { ...mixKeys, devices: [namedKeysEq] } : track
+            ),
+            selectedTrackId: mixKeys.id,
+        };
+        const items = [trackItem('muteTrack', mixKeys, { muted: true }), bypassEqsItem([{ nameIncludes: 'EQ' }], 1)];
+
+        it('mutes Keys and grounds the Keys EQ for "Mute Keys. Bypass the EQ on track 2."', () => {
+            const result = compileAndBridge('Mute Keys. Bypass the EQ on track 2.', items, [], fragmentContext);
+
+            expect(result.rejections).toEqual([]);
+            expect(payloadTargets(result)).toEqual([mixKeys.id, namedKeysEq.id]);
+        });
+
+        it('refuses the Keys EQ and mutes Keys for "Mute Keys. Bypass the EQ."', () => {
+            const result = compileAndBridge('Mute Keys. Bypass the EQ.', items, [], fragmentContext);
+
+            expect(payloadTargets(result)).toEqual([mixKeys.id]);
+            expect(result.rejections).toEqual([{ index: 1, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE }]);
+        });
+    });
+
     it.each(['Mute Keys. Bypass the EQ on the first track.', 'Mute Keys. Bypass the EQ on track 1.'])(
         'refuses the selected Vocals EQ and mutes Keys for "%s"',
         (prompt) => {
@@ -3003,6 +3029,28 @@ describe('a role, family or kind selection never widens past the role its clause
 
         expect(targetsOf(result)).not.toContain(leadVox.id);
         expect(targetsOf(result)).not.toContain(backingVoxOne.id);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('refuses the drums a prohibition continues to past a coordinated not', () => {
+        const result = compileAndBridge(
+            'Do not change Rhodes, not Bass DI and the drums. Turn down every audio track by 3 dB.',
+            [
+                roleItem(
+                    'setTrackGain',
+                    { deltaDb: -3 },
+                    { targetArgument: 'trackId', entity: 'track', where: { kind: 'audio' } },
+                    ROLE_AUDIO_TRACK_IDS.length
+                ),
+            ],
+            [],
+            roleContext
+        );
+
+        expect(targetsOf(result)).toContain(bassDi.id);
+        expect(targetsOf(result)).not.toContain(rhodes.id);
+        expect(targetsOf(result)).not.toContain(kickIn.id);
+        expect(targetsOf(result)).not.toContain(snareTop.id);
         expect(result.rejections).not.toEqual([]);
     });
 });

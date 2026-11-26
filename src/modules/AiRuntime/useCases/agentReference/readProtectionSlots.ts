@@ -274,7 +274,32 @@ function splitPieces(masked: string, names: readonly Range[]): Piece[] {
         }
     }
     pieces.push({ start: cursor, end: masked.length, lead, memberSeparators });
-    return pieces;
+    return pieces.flatMap((piece, index) => resumeProhibitionAfterNot(masked, piece, pieces[index - 1]));
+}
+
+const RESUMING_AND = /\band\s+(?!not\b)/iu;
+
+/**
+ * A coordinated "not" after a prohibition sets its own member apart, and an `and` after that member returns to the
+ * prohibition ("do not change Keys, not Bass and the drums" protects the drums), so the joined members are cut off
+ * the carve-out as a prohibition of their own.
+ */
+function resumeProhibitionAfterNot(masked: string, piece: Piece, previous: Piece | undefined): Piece[] {
+    const { lead } = piece;
+    const prohibition = previous?.lead;
+    if (prohibition?.kind !== 'prohibition' || lead?.kind !== 'carve-out') {
+        return [piece];
+    }
+    const joining = RESUMING_AND.exec(masked.slice(lead.end, piece.end));
+    if (masked.slice(piece.start, lead.end).toLowerCase() !== 'not' || joining === null) {
+        return [piece];
+    }
+    const cut = lead.end + joining.index;
+    const resumed = { kind: 'prohibition' as const, end: cut + joining[0].length, text: prohibition.text };
+    return [
+        { ...piece, end: cut },
+        { start: cut, end: piece.end, lead: resumed, memberSeparators: [] },
+    ];
 }
 
 type Closer = Range & { word: string };
