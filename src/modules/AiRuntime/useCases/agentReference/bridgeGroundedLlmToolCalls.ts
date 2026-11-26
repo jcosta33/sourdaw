@@ -3059,7 +3059,7 @@ function getAnchorValueScope(
     const bound = bindDecibelFiguresToReferences(actionScope.text, anchored.references, numbers);
     const anchorNumbers = bound.get(anchored.anchorId) ?? [];
     const boundNumbers = new Set([...bound.values()].flat());
-    if (anchorNumbers.length === 0 || numbers.some((number) => !boundNumbers.has(number))) {
+    if (numbers.some((number) => !boundNumbers.has(number))) {
         return actionScope;
     }
     const otherNumbers = numbers.filter((number) => !anchorNumbers.includes(number));
