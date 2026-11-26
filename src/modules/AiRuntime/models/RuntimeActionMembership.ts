@@ -291,6 +291,7 @@ const runtimeActionMembershipByActionType = {
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
     setBacteriaFactoryPatch: false,
+    setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
     setProofPatchSelection: false,
     restoreTrackInput: false,

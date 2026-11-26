@@ -1,13 +1,9 @@
-import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
-
-import { audioEngine } from '../../repositories/createWebAudioEngine';
-
 import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
-import { withDeviceParameterRuntimeWriteOwner } from './withDeviceParameterRuntimeWriteOwner';
 import { writeNativeBuiltinParameters } from './writeNativeBuiltinParameters';
+import { writeWebDeviceParam } from './writeWebDeviceParam';
 
 /**
- * The single door every device-parameter write reaches the DSP through.
+ * Apply one project device parameter to the DSP.
  *
  * The declared range binds here rather than at each caller. Twenty call sites
  * reach the engine this way — the synth param bridges, preset load, the
@@ -38,10 +34,7 @@ export function updateDeviceParam(
     value: number,
     runtimeOwner?: symbol
 ): void {
-    const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
-    withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, runtimeOwner, () => {
-        audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
-    });
+    const clamped = writeWebDeviceParam({ trackId, deviceId, paramId, value }, runtimeOwner);
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
     if (body) {
         writeNativeBuiltinParameters(trackId, deviceId, { [body.parameterName(paramId)]: clamped });
