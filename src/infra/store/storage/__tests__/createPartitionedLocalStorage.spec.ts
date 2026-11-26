@@ -142,6 +142,7 @@ describe('createPartitionedLocalStorage', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.useRealTimers();
     });
 
     it('restores a written value in a fresh adapter', () => {
@@ -428,15 +429,160 @@ describe('createPartitionedLocalStorage', () => {
         expect(createStorage().get()).toEqual(next);
     });
 
-    it('saves an unchanged committed part without reading its key', () => {
+    it('leaves an unchanged part whose key still holds its committed text unwritten', () => {
         const storage = createStorage();
         const value = { version: 1, items: items(3) };
         storage.trySet(value);
-        const getItem = vi.spyOn(Storage.prototype, 'getItem');
+        const setItem = vi.spyOn(Storage.prototype, 'setItem');
 
         expect(storage.trySet({ ...value, version: 2 })).toBe(true);
 
-        expect(getItem.mock.calls.map(([key]) => key).filter((key) => key.startsWith(PART_PREFIX))).toEqual([]);
+        expect(setItem.mock.calls.map(([key]) => key)).toEqual([INDEX_KEY]);
+    });
+
+    it.each([
+        [
+            'commits a value without one part and with another changed',
+            (theirs: ReturnType<typeof createStorage>, value: Value) => {
+                theirs.trySet({ version: 1, items: [{ id: 'item-1', label: 'Theirs' }, value.items[2]!] });
+            },
+        ],
+        [
+            'commits a value with one part changed',
+            (theirs: ReturnType<typeof createStorage>, value: Value) => {
+                theirs.trySet({ ...value, items: value.items.with(1, { id: 'item-1', label: 'Theirs' }) });
+            },
+        ],
+    ])('saves exactly its value after another writer %s and no storage event arrived', (_, commitTheirs) => {
+        const mine = createStorage();
+        const value = { version: 1, items: items(3) };
+        mine.trySet(value);
+        const theirs = createStorage();
+        theirs.get();
+        commitTheirs(theirs, value);
+
+        const next = { ...value, version: 2 };
+        expect(mine.trySet(next)).toBe(true);
+
+        expect(createStorage().get()).toEqual(next);
+    });
+
+    type Interleaving = { old: Value; next: Value; final: Value; refuse?: (key: string) => boolean };
+
+    /** One fresh adapter's read before each write and removal `commit` makes, and one after its last. */
+    function readAtEveryStepOf(commit: () => void, refuse: (key: string) => boolean = () => false) {
+        const reads: { adapter: ReturnType<typeof createStorage>; value: Value | null }[] = [];
+        const read = () => {
+            const adapter = createStorage();
+            reads.push({ adapter, value: adapter.get() });
+        };
+        const setItem = Storage.prototype.setItem;
+        const removeItem = Storage.prototype.removeItem;
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, text) {
+            read();
+            if (refuse(key)) {
+                throw new DOMException('Quota exceeded', 'QuotaExceededError');
+            }
+            setItem.call(this, key, text);
+        });
+        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key) {
+            read();
+            removeItem.call(this, key);
+        });
+        commit();
+        vi.restoreAllMocks();
+        read();
+        return reads;
+    }
+
+    it.each<[string, () => Interleaving]>([
+        [
+            'evicts, changes and adds parts',
+            () => {
+                const old = { version: 1, items: items(3) };
+                createStorage().trySet(old);
+                const next = {
+                    version: 2,
+                    items: [{ id: 'item-1', label: 'Changed' }, old.items[2]!, ...items(4).slice(3)],
+                };
+                return { old, next, final: next };
+            },
+        ],
+        [
+            'changes one part and nothing else',
+            () => {
+                const old = { version: 1, items: items(3) };
+                createStorage().trySet(old);
+                const next = { ...old, items: old.items.with(1, { id: 'item-1', label: 'Changed' }) };
+                return { old, next, final: next };
+            },
+        ],
+        [
+            'migrates the legacy value',
+            () => {
+                const old = { version: 1, items: items(3) };
+                localStorage.setItem(LEGACY_KEY, stringify(old));
+                const next = { version: 2, items: old.items.with(1, { id: 'item-1', label: 'Changed' }) };
+                return { old, next, final: next };
+            },
+        ],
+        [
+            'is refused for quota at its index and puts back what it replaced',
+            () => {
+                const old = { version: 1, items: items(3) };
+                createStorage().trySet(old);
+                const next = { version: 2, items: [{ id: 'item-1', label: 'Changed' }, ...items(4).slice(3)] };
+                return { old, next, final: old, refuse: (key) => key === INDEX_KEY };
+            },
+        ],
+        [
+            'migrates, is refused for quota, and writes the legacy value whole instead',
+            () => {
+                const old = bigLegacyValue(1);
+                localStorage.setItem(LEGACY_KEY, stringify(old));
+                const next = bigLegacyValue(2);
+                return { old, next, final: next, refuse: (key) => key === `${PART_PREFIX}item-2` };
+            },
+        ],
+    ])('never reads a mix of two values at any step of a commit that %s', (_, arrange) => {
+        const { old, next, final, refuse } = arrange();
+
+        const reads = readAtEveryStepOf(() => {
+            const writer = createStorage();
+            writer.get();
+            writer.trySet(next);
+        }, refuse);
+
+        expect(reads.length).toBeGreaterThan(2);
+        const outcomes = reads.map(
+            ({ adapter, value }) => value ?? (adapter.trySet(next) ? 'empty and writable' : 'refused')
+        );
+        for (const outcome of outcomes) {
+            expect([old, next, 'refused']).toContainEqual(outcome);
+        }
+        expect(outcomes.at(-1)).toEqual(final);
+    });
+
+    it('drops a part a commit that stopped before its index left behind, once that commit cannot still be running', () => {
+        const old = { version: 1, items: items(3) };
+        createStorage().trySet(old);
+        const next = { version: 2, items: old.items.map((item) => ({ ...item, label: 'Changed' })) };
+        const states = recordStatesAfterEachWrite(() => {
+            const writer = createStorage();
+            writer.get();
+            writer.trySet(next);
+        });
+        restoreStoredState(states[0]!);
+
+        expect(createStorage().get()).toBeNull();
+
+        vi.useFakeTimers({ now: Date.now() + 60 * 60 * 1000, toFake: ['Date'] });
+        const warn = vi.spyOn(logger, 'warn');
+        const storage = createStorage();
+        expect(storage.get()).toEqual({ version: 1, items: old.items.slice(1) });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(storage.trySet(old)).toBe(true);
+        expect(createStorage().get()).toEqual(old);
     });
 
     it('rewrites a committed part once another writer announces it changed that part', () => {
