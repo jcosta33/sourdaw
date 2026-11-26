@@ -99,6 +99,17 @@ export type PluginTailChange = {
 };
 
 /**
+ * Payload of the `plugin-service-changed` event: the native host took a hosted
+ * instance out of service or put it back. Mirrors the Rust struct
+ * `PluginServiceChanged` in `host/service_watcher.rs`.
+ */
+export type PluginServiceChange = {
+    instance_id: string;
+    /** Why the host stopped serving the instance; `null` means back in service. */
+    out_of_service_reason: string | null;
+};
+
+/**
  * One instance's tail as `read_plugin_tails` answers it: the figure the plugin
  * reports now, asked for rather than pushed. An instance the host could not
  * reach is absent from the answer, never present with a guessed tail.

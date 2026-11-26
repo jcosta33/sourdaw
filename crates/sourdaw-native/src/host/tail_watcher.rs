@@ -47,8 +47,16 @@ static TAIL_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// and the frontend can rank an event against an answer however late either one
 /// is delivered. A u64 stays a JSON number the frontend reads exactly while it
 /// is below 2^53, which a counter bumped once per tail read never reaches.
+///
+/// The increment is acquire-release so that a figure numbered above a
+/// successor's load number can see the predecessor's retirement. `retire` is a
+/// release store sequenced before the unload returns, and the successor takes
+/// its load number after that; a predecessor's number that lands above it read
+/// from that release sequence, so a lifecycle read made after taking the number
+/// observes the retirement. The check therefore goes after the number, never
+/// before it.
 pub(crate) fn next_tail_sequence() -> u64 {
-    TAIL_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
+    TAIL_SEQUENCE.fetch_add(1, Ordering::AcqRel) + 1
 }
 
 /// How long re-reading one plugin's tail may wait for the audio thread to
@@ -132,6 +140,19 @@ pub(crate) fn publish_pending_tail_changes_within(
             })
             .map_err(PluginControlError::into_refusal);
 
+        // The number above may exceed one a same-id successor's load seeded the
+        // frontend with, which would apply this figure to the successor. Retired
+        // is checked, not unloading: a cancelled unload leaves the instance
+        // live and its figure stands. The flag is consumed, and the hint is not
+        // raised again, because nothing is left to re-read.
+        if matches!(refreshed, Ok(Some(_))) && runtime.is_retired() {
+            eprintln!(
+                "[Plugin] tail figure dropped for retired instance {}",
+                instance_id
+            );
+            continue;
+        }
+
         if let Err(error) = &refreshed {
             retry_unreached_instance(
                 &runtime,
@@ -151,6 +172,9 @@ pub(crate) fn publish_pending_tail_changes_within(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::native_bridge::SharedHostedPlugin;
+    use daw_engine::timeline::DeviceKind;
+    use daw_plugin_host::ClapWrapper;
 
     #[test]
     fn a_flagged_tail_becomes_an_event_payload_carrying_frames() {
@@ -208,5 +232,122 @@ mod tests {
             "sequences start at 1 so 0 can mean none applied"
         );
         assert!(second > first);
+    }
+
+    #[derive(Default)]
+    struct RecordingEventSink {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl RecordingEventSink {
+        fn tail_events(&self) -> Vec<serde_json::Value> {
+            self.events
+                .lock()
+                .expect("event log")
+                .iter()
+                .filter(|(name, _)| name == PLUGIN_TAIL_CHANGED_EVENT)
+                .map(|(_, payload)| payload.clone())
+                .collect()
+        }
+    }
+
+    impl EventSink for RecordingEventSink {
+        fn emit_json(&self, event: &str, payload: serde_json::Value) {
+            self.events
+                .lock()
+                .expect("event log")
+                .push((event.to_string(), payload));
+        }
+    }
+
+    /// Hold the instance's audio seam, start a visit that waits on it, run
+    /// `meanwhile` (standing in for what the unload and the successor's load do
+    /// during that wait), release the seam, and return the tail events the visit
+    /// emitted.
+    fn tail_events_of_a_visit_that_waits_on_the_seam(
+        meanwhile: impl FnOnce(&SharedHostedPlugin),
+    ) -> Vec<serde_json::Value> {
+        let _guard = crate::host::hint_test_support::guard();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Tail Fixture", Vec::new(), false);
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_tail_dirty();
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        let mut map = HashMap::new();
+        map.insert(
+            "inst-1".to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 11,
+                runtime: Arc::clone(&runtime),
+                name: "Tail Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: false,
+                chain_kind: DeviceKind::Effect,
+                parameter_events: None,
+                load_resolution: crate::commands::plugins::VettedRegistryEntry::fixture(),
+            },
+        );
+        let engine_plugins: EnginePlugins = Arc::new(Mutex::new(map));
+        let sink = Arc::new(RecordingEventSink::default());
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let ticking_sink = Arc::clone(&sink);
+        let (started, ticking_started) = std::sync::mpsc::channel();
+        let ticker = std::thread::spawn(move || {
+            started.send(()).expect("the test is listening");
+            // A deadline only the release below can beat.
+            publish_pending_tail_changes_within(
+                Duration::from_secs(10),
+                &engine_plugins,
+                ticking_sink.as_ref(),
+            );
+        });
+        ticking_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the ticker starts");
+        // Let the ticker reach the seam wait; a stall that delays it past the
+        // lifecycle change can only make a test pass vacuously, never fail.
+        std::thread::sleep(Duration::from_millis(50));
+        meanwhile(&runtime);
+        drop(seam);
+        ticker.join().expect("the visit finishes");
+
+        sink.tail_events()
+    }
+
+    /// An unload retires the runtime and a same-id successor then seeds the
+    /// frontend with its own load number. A predecessor still waiting on the
+    /// seam numbers its figure above that seed, and the frontend would apply it
+    /// to the successor, so a retired runtime's figure is not published.
+    #[test]
+    fn a_retired_instances_tail_figure_is_not_published() {
+        let events = tail_events_of_a_visit_that_waits_on_the_seam(|runtime| {
+            runtime.begin_unload();
+            runtime.retire();
+            // The successor's load number.
+            next_tail_sequence();
+        });
+
+        assert_eq!(
+            events,
+            Vec::<serde_json::Value>::new(),
+            "a figure numbered after the instance was retired must not reach the frontend"
+        );
+    }
+
+    /// A cancelled unload leaves the instance live; its figure still publishes,
+    /// so the refusal above is about retirement and not about any lifecycle move.
+    #[test]
+    fn a_cancelled_unloads_tail_figure_is_still_published() {
+        let events = tail_events_of_a_visit_that_waits_on_the_seam(|runtime| {
+            runtime.begin_unload();
+            runtime.cancel_unload();
+            next_tail_sequence();
+        });
+
+        assert_eq!(events.len(), 1, "the live instance's figure is published");
     }
 }

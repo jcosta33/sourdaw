@@ -85,6 +85,46 @@ function createSampleLoadHandshake(port: MessagePort, loadToken: number, signal?
     return { completion, isSettled: () => settled, settle };
 }
 
+function transferCrumbsSample({
+    deviceId,
+    filePath,
+    port,
+    signal,
+    decoded,
+}: {
+    deviceId: string;
+    filePath: string;
+    port: MessagePort;
+    signal?: AbortSignal;
+    decoded: Awaited<ReturnType<typeof decodeCrumbsSampleFile>>;
+}): Promise<PrepareCrumbsEngineOutcome> {
+    const loadToken = allocateSampleLoadToken();
+    const handshake = createSampleLoadHandshake(port, loadToken, signal);
+    if (handshake.isSettled()) {
+        return handshake.completion;
+    }
+
+    // Transfer rather than copy: a decoded sample is megabytes, and the sender
+    // has no further use for it. Readiness settles only after the worklet has
+    // copied the PCM into WASM and selected the resulting sample id.
+    try {
+        port.postMessage(
+            {
+                type: 'loadSample',
+                loadToken,
+                data: decoded.data,
+                channels: decoded.channels,
+                sampleRate: decoded.sampleRate,
+            },
+            [decoded.data.buffer]
+        );
+    } catch (error) {
+        logger.warn(`[Crumbs] Could not transfer "${filePath}" for ${deviceId}: ${String(error)}`);
+        handshake.settle('failed');
+    }
+    return handshake.completion;
+}
+
 export type PrepareCrumbsEngineInput = {
     /** Device id; also the Crumbs instance key on `crumbsStore`. */
     deviceId: string;
@@ -93,6 +133,8 @@ export type PrepareCrumbsEngineInput = {
     /** Aborts the read/decode on export cancellation or deadline. */
     signal?: AbortSignal;
     captured?: ReturnType<typeof captureCrumbsEngine>;
+    /** Refresh sample content without replaying an older mode. */
+    sampleOnly?: boolean;
 };
 
 /**
@@ -137,6 +179,7 @@ export async function prepareCrumbsEngine({
     port,
     signal,
     captured,
+    sampleOnly = false,
 }: PrepareCrumbsEngineInput): Promise<PrepareCrumbsEngineOutcome> {
     const state = captured === undefined ? captureCrumbsEngine({ deviceId }) : captured;
     if (!state) {
@@ -145,7 +188,9 @@ export async function prepareCrumbsEngine({
 
     // Mode first: it is cheap, needs no I/O, and the engine reads it when a
     // note arrives rather than when it is set.
-    port.postMessage({ type: 'mode', mode: state.mode });
+    if (!sampleOnly) {
+        port.postMessage({ type: 'mode', mode: state.mode });
+    }
 
     const filePath = state.filePath;
     if (!filePath) {
@@ -170,29 +215,5 @@ export async function prepareCrumbsEngine({
         return 'cancelled';
     }
 
-    const loadToken = allocateSampleLoadToken();
-    const handshake = createSampleLoadHandshake(port, loadToken, signal);
-    if (handshake.isSettled()) {
-        return handshake.completion;
-    }
-
-    // Transfer rather than copy: a decoded sample is megabytes, and the sender
-    // has no further use for it. Readiness settles only after the worklet has
-    // copied the PCM into WASM and selected the resulting sample id.
-    try {
-        port.postMessage(
-            {
-                type: 'loadSample',
-                loadToken,
-                data: decoded.data,
-                channels: decoded.channels,
-                sampleRate: decoded.sampleRate,
-            },
-            [decoded.data.buffer]
-        );
-    } catch (error) {
-        logger.warn(`[Crumbs] Could not transfer "${filePath}" for ${deviceId}: ${String(error)}`);
-        handshake.settle('failed');
-    }
-    return handshake.completion;
+    return transferCrumbsSample({ deviceId, filePath, port, signal, decoded });
 }

@@ -339,6 +339,37 @@ describe('persistPromptActionConfirmation', () => {
         expect(mocks.transitionPhase).not.toHaveBeenCalled();
     });
 
+    // Red when a refused re-preview fails the run its still-proposed original card shares, leaving
+    // a card that reads proposed on a run Confirm can no longer run.
+    it('leaves the run of a live superseded card alone when the replacement is not retained', () => {
+        mocks.proposeConfirmation.mockReturnValue(null);
+        mocks.getConfirmation.mockImplementation((id: string) =>
+            id === 'confirmation-original' ? { id, runId: 'run-confirmation', status: 'proposed' } : undefined
+        );
+
+        const result = persistPromptActionConfirmation({ ...createInput(), supersedes: 'confirmation-original' });
+
+        expect(result).toBeNull();
+        expect(mocks.updateBatchStatus).not.toHaveBeenCalled();
+        expect(mocks.recordError).not.toHaveBeenCalled();
+        expect(mocks.updateChatMessage).not.toHaveBeenCalled();
+        expect(mocks.transitionPhase).not.toHaveBeenCalled();
+    });
+
+    // Red when the shared-run exemption is widened to a refinement whose replacement owns another run.
+    it('still fails the run of a replacement whose superseded card belongs to another run', () => {
+        mocks.proposeConfirmation.mockReturnValue(null);
+        mocks.getConfirmation.mockImplementation((id: string) =>
+            id === 'confirmation-original' ? { id, runId: 'run-other', status: 'proposed' } : undefined
+        );
+
+        persistPromptActionConfirmation({ ...createInput(), supersedes: 'confirmation-original' });
+
+        expect(mocks.recordError).toHaveBeenCalledWith(
+            expect.objectContaining({ runId: 'run-confirmation', terminal: true })
+        );
+    });
+
     it('publishes the retained confirmation before waiting for approval', () => {
         const ordering: string[] = [];
         const resourceLease = { bytes: 64 };

@@ -227,58 +227,85 @@ describe('yeastRuntime', () => {
         expect(runtime.getYeastRuntimeStatus()).toBe('ready');
     });
 
-    it('publishes worker preview sidecars without changing the scheduler result', async () => {
-        const runtime = (await loadRuntime()) as RuntimeWithTransaction;
-        const { yeastPreviewTap } = await import('../yeastPreviewTap');
-        const previewScope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
-        yeastPreviewTap.setEnabled(previewScope, false);
-        yeastPreviewTap.setEnabled(previewScope, true);
-        const context = {} as BaseAudioContext;
-        const node = makeNode(context);
-        const events: MidiEvent[] = [
-            { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
-        ];
-        const preview = {
-            rackId: 'rack-a',
-            routeId: 'track-a',
-            trackId: 'track-a',
-            captureEpoch: yeastPreviewTap.getCaptureState(previewScope).captureEpoch,
-            projectionVersion: 1,
-            reset: false,
-            records: [
-                {
-                    eventId: 1,
-                    rackId: 'rack-a',
-                    routeId: 'track-a',
-                    trackId: 'track-a',
-                    projectionVersion: 1,
-                    phase: 'closed' as const,
-                    beatTime: 0,
-                    durationBeats: 0.5,
-                    pitch: 60,
-                    velocity: 90,
-                    probability: null,
-                    realized: true,
-                    processorId: 'filter-1',
-                    bypassed: true,
-                    failed: false,
-                },
-            ],
-            provenance: [{ processorId: 'filter-1', bypassed: true, failed: false, eventCount: 0 }],
-            droppedEvents: 0,
-        };
-        node.processBlock.mockImplementationOnce(() => {
-            node.emitPreview(preview);
-            return Promise.resolve(events);
-        });
-        createNode.mockResolvedValueOnce(node);
+    it.each(['processYeastRuntimeBlock', 'processYeastRuntimeTransaction'] as const)(
+        '%s publishes the beat-zero preview on the first block of a new transport epoch',
+        async (processBlock) => {
+            const runtime = await loadRuntime();
+            const { yeastPreviewTap } = await import('../yeastPreviewTap');
+            const context = {} as BaseAudioContext;
+            const node = makeNode(context);
+            const input = makeRuntimeBlockInput(context);
+            const previewScope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+            yeastPreviewTap.setEnabled(previewScope, false);
+            yeastPreviewTap.setEnabled(previewScope, true);
+            createNode.mockResolvedValueOnce(node);
+            await runtime.ensureYeastRuntime({ context, projection: projectionA });
 
-        const output = await runtime.processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+            const previousCaptureEpoch = yeastPreviewTap.getCaptureState(previewScope).captureEpoch;
+            await runtime[processBlock]({
+                ...input,
+                blockStartSamples: 24000,
+                blockEndSamples: 24128,
+                transport: { ...input.transport, ppqPosition: 1, beatInBar: 1 },
+            });
+            const previousRuntimeEpoch = node.processBlock.mock.lastCall?.[3].discontinuityEpoch;
+            expect(previousRuntimeEpoch).toBeTypeOf('number');
+            expect(node.processBlock.mock.lastCall?.[8]).toBe(previousCaptureEpoch);
 
-        expect(output).toBe(events);
-        expect(yeastPreviewTap.read(previewScope).events).toEqual(preview.records);
-        expect(node.onPreview).toHaveBeenCalledTimes(1);
-    });
+            const events: MidiEvent[] = [
+                { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
+            ];
+            const preview: Omit<YeastPreviewBlock, 'captureEpoch'> = {
+                ...previewScope,
+                projectionVersion: 1,
+                reset: false,
+                records: [
+                    {
+                        ...previewScope,
+                        eventId: 1,
+                        projectionVersion: 1,
+                        phase: 'closed',
+                        beatTime: 0,
+                        durationBeats: 0.5,
+                        pitch: 60,
+                        velocity: 90,
+                        probability: null,
+                        realized: true,
+                        processorId: 'arp-1',
+                        bypassed: false,
+                        failed: false,
+                    },
+                ],
+                provenance: [{ processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 }],
+                droppedEvents: 0,
+            };
+            node.processBlock.mockImplementationOnce((...block) => {
+                node.emitPreview({ ...preview, captureEpoch: block[8] ?? 0 });
+                return Promise.resolve(events);
+            });
+
+            const transport = { ...input.transport, discontinuityEpoch: 41 };
+            await expect(runtime[processBlock]({ ...input, events, transport })).resolves.toBe(events);
+            node.emitPreview({ ...preview, captureEpoch: previousCaptureEpoch, reset: true, records: [] });
+
+            const snapshot = yeastPreviewTap.read(previewScope);
+            expect(snapshot.events).toEqual(preview.records);
+            expect(snapshot.captureEpoch).not.toBe(previousCaptureEpoch);
+            expect(node.releasePreview).toHaveBeenCalledWith({ ...previewScope, captureEpoch: previousCaptureEpoch });
+            expect(node.processBlock).toHaveBeenLastCalledWith(
+                events,
+                0,
+                128,
+                { ...transport, discontinuityEpoch: (previousRuntimeEpoch ?? 0) + 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'track-a',
+                snapshot.captureEpoch,
+                undefined
+            );
+        }
+    );
 
     it('retires preview bindings and publishes an empty reset before panic acknowledgement', async () => {
         const runtime = await loadRuntime();
