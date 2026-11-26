@@ -680,6 +680,7 @@ impl<Runtime: HostedPluginRuntime> ControlVisit<'_, Runtime> {
     /// the call back unrun. The caller, still holding the gate on its own
     /// thread, backs off and hops again until `timeout` has passed from the
     /// start of the visit, then refuses with [`PluginControlRefusal::TimedOut`].
+    /// A visit run on the UI thread itself waits at most [`UI_THREAD_SEAM_WAIT`].
     /// The seam then covers the plugin's own call, because that call is handed
     /// the whole wrapper the audio thread also borrows.
     pub fn on_ui_thread<Ui, Produced>(
@@ -728,7 +729,15 @@ impl<Runtime: HostedPluginRuntime> ControlVisit<'_, Runtime> {
         Produced: Send + 'static,
         Call: FnOnce(&mut Runtime) -> Produced + Send + 'static,
     {
-        let deadline = Instant::now() + timeout;
+        let started = Instant::now();
+        let deadline = started + timeout;
+        // A caller that is itself the UI thread is the shell's one thread, so
+        // its wait for the seam is the short bound, not the control timeout.
+        let seam_wait_until = if ui.is_ui_thread() {
+            deadline.min(started + UI_THREAD_SEAM_WAIT)
+        } else {
+            deadline
+        };
         let mut call = call;
         let mut rehop = false;
         loop {
@@ -761,8 +770,7 @@ impl<Runtime: HostedPluginRuntime> ControlVisit<'_, Runtime> {
                 Err(unreached) => return Err(PluginControlError::Operation(unreached)),
             }
 
-            // A caller that is itself the UI thread must not wait either.
-            if ui.is_ui_thread() || Instant::now() >= deadline {
+            if Instant::now() >= seam_wait_until {
                 return Err(self.seam_timed_out());
             }
             without_stalling_async_worker(|| thread::sleep(SEAM_RETRY_BACKOFF));
@@ -780,6 +788,17 @@ impl<Runtime: HostedPluginRuntime> ControlVisit<'_, Runtime> {
 /// How long a visit waits, off the UI thread, before it hops again to find the
 /// access seam free; the audio thread's block is normally far shorter.
 const SEAM_RETRY_BACKOFF: Duration = Duration::from_millis(2);
+
+/// The most a visit run on the UI thread itself waits for the audio seam.
+///
+/// Its callers are an OS window close and the quit cascade's editor close, which
+/// cannot hop elsewhere and must not fail merely because the audio thread is
+/// inside a block: while playing, the seam is held for part of every block, and
+/// a plugin's processing of one block is a few milliseconds even under heavy
+/// load. 50 ms is comfortably above that, so a close finds the seam free, and
+/// far below the control timeout, so a plugin whose block hangs costs the shell
+/// at most this before the close refuses.
+const UI_THREAD_SEAM_WAIT: Duration = Duration::from_millis(50);
 
 /// What a call that hopped to the UI thread found there.
 enum Landed<Produced, Call> {
@@ -5499,6 +5518,65 @@ mod tests {
         assert!(
             shared.try_claim_control().is_some(),
             "the seam is free again once the call has run"
+        );
+    }
+
+    /// A shell whose caller is the UI thread: every task runs inline.
+    struct InlineUiThread;
+
+    impl UiThread for InlineUiThread {}
+
+    /// A close issued from the shell's own thread (an OS window close, the quit
+    /// cascade) while the audio thread is inside a block must wait out the
+    /// block, not fail on the first busy try. Mutation: refuse at once when the
+    /// caller is the UI thread — this fails.
+    #[test]
+    fn a_visit_on_the_ui_thread_waits_out_a_short_audio_block() {
+        let (_slot, shared, _notes) = seam_recording_slot();
+        let audio_block = shared
+            .try_claim_control()
+            .expect("the audio side takes a free seam");
+
+        let outcome = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                std::thread::sleep(Duration::from_millis(5));
+                drop(audio_block);
+            });
+            shared.with_control_on_ui_thread(Duration::from_secs(2), &InlineUiThread, |_| 9)
+        });
+
+        assert_eq!(
+            outcome,
+            Ok(9),
+            "the call runs once the block's seam is free"
+        );
+    }
+
+    /// A seam held past the bound refuses within about the bound, not the
+    /// control timeout: the shell's thread is not parked for a hung block.
+    #[test]
+    fn a_visit_on_the_ui_thread_refuses_within_the_bound_when_the_seam_stays_held() {
+        let (_slot, shared, _notes) = seam_recording_slot();
+        let _audio_block = shared
+            .try_claim_control()
+            .expect("the audio side takes a free seam");
+
+        let started = Instant::now();
+        let outcome =
+            shared.with_control_on_ui_thread(Duration::from_secs(2), &InlineUiThread, |_| ());
+        let waited = started.elapsed();
+
+        assert_eq!(
+            outcome,
+            Err(PluginControlError::Refused(
+                PluginControlRefusal::TimedOut {
+                    plugin: shared.name.clone()
+                }
+            ))
+        );
+        assert!(
+            waited >= UI_THREAD_SEAM_WAIT && waited < UI_THREAD_SEAM_WAIT * 4,
+            "refused after {waited:?}, expected about {UI_THREAD_SEAM_WAIT:?}"
         );
     }
 

@@ -33,6 +33,9 @@
 //! the seam indefinitely, and the UI thread is the shell's one thread for every
 //! window. A busy seam returns the call unrun to the worker, which still holds
 //! the gate, backs off off the UI thread, and hops again until its own timeout.
+//! A visit already on the UI thread (a window close, the quit cascade) has no
+//! other thread to back off on, so it retries for a few milliseconds only
+//! (`UI_THREAD_SEAM_WAIT`) before refusing.
 //!
 //! The second is that a call already on the UI thread runs there, inline. The
 //! editor lifecycle re-enters the host from inside its own calls (a VST3 view
