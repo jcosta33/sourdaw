@@ -28,9 +28,14 @@
 //! (`ControlVisit::on_ui_thread` in `native_bridge.rs`). The seam is the one
 //! claim the audio thread competes for, and a hop can wait for as long as the
 //! shell's thread is busy; held across that wait, it skips the plugin's blocks
-//! for the whole of it. Claiming it on the UI thread waits on nothing that
-//! waits on the UI thread: while the worker holds the gate, the only other
-//! holder of the seam is the audio thread, which lets go at the end of a block.
+//! for the whole of it. Landed, the call makes a single non-blocking try at the
+//! seam and the UI thread never waits for it: a plugin whose block hangs holds
+//! the seam indefinitely, and the UI thread is the shell's one thread for every
+//! window. A busy seam returns the call unrun to the worker, which still holds
+//! the gate, backs off off the UI thread, and hops again until its own timeout.
+//! A visit already on the UI thread (a window close, the quit cascade) has no
+//! other thread to back off on, so it retries for a few milliseconds only
+//! (`UI_THREAD_SEAM_WAIT`) before refusing.
 //!
 //! The second is that a call already on the UI thread runs there, inline. The
 //! editor lifecycle re-enters the host from inside its own calls (a VST3 view
@@ -507,7 +512,7 @@ impl<Value: ?Sized + Sync> LentRef<Value> {
 /// Not for a call into a registered runtime's editor: the `&mut` comes from the
 /// audio access seam, which this would hold across the wait. Those go through
 /// `ControlVisit::on_ui_thread` (`native_bridge.rs`), which claims the seam only
-/// once the call has landed.
+/// once the call has landed, with one try and no wait.
 pub fn lend_on_ui_thread<Ui, Target, Produced>(
     ui: &Ui,
     target: &mut Target,

@@ -9,9 +9,10 @@ The panel is labelled **Note rack**. It opens on **Play**. The left rail heading
 
 The Effects card reads **Arpeggiator · Chord Generator · Scale Filter**.
 
-A project has one Yeast rack. **Rack read** says **No processors yet** until you add processors
+Each Yeast device has its own rack. **Rack read** says **No processors yet** until you add processors
 from **Sprout**, **Build**, **Route**, or **Lab**. **Rack frame**, **Sprout**, **Phrase view**, and
-the selected deck stay on screen. A second Yeast on another track shows that same rack.
+the selected deck stay on screen. A second Yeast on another track starts with its own empty rack
+and can keep a different chain.
 
 ## At a glance
 
