@@ -7,6 +7,7 @@ import {
     type GroundingAdmissionResult,
     type GroundingAdmissionStrategyDefinition,
 } from './createGroundingAdmissionStrategyRegistry';
+import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { hasRestrictedTrackControlScope } from './hasRestrictedTrackControlScope';
 import { isExplicitClipLoopLengthPrompt } from './isExplicitClipLoopLengthPrompt';
 import { normalizePromptText } from './normalizePromptText';
@@ -31,9 +32,8 @@ export type PreScopeAdmissionStrategyDefinition<Name extends PreScopeActionName>
 const preScopeAdmissionLabel = 'pre-scope admission';
 
 function isExplicitStopPlaybackPrompt(prompt: string): boolean {
-    let commandText = prompt.trim();
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandText = commandText.replace(/^please\s+/iu, '');
+    const trimmed = prompt.trim();
+    const commandText = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     const normalized = normalizePromptText(commandText);
     return [
         'stop playback',

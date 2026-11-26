@@ -137,6 +137,7 @@ import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
 import { getIntentPhraseIndex } from './groundingStrategies/getIntentPhraseIndex';
 import { getNearestIntentAction } from './groundingStrategies/getNearestIntentAction';
+import { getPoliteCommandPrefixLength } from './groundingStrategies/getPoliteCommandPrefixLength';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { getReferencedCancellationAction } from './groundingStrategies/getReferencedCancellationAction';
 import { getStatedDecibelLevelForms } from './groundingStrategies/getStatedDecibelLevelForms';
@@ -771,9 +772,8 @@ function isExplicitDirectionalCommandClause(
     directionalIntent: NonNullable<GroundingRules['directionalIntent']>,
     targetReferences: DirectionalTargetReferences
 ): boolean {
-    let commandSource = text.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
+    const trimmed = text.trim();
+    const commandSource = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     if (/^["'“”‘’]/u.test(commandSource)) {
         return false;
     }
@@ -6332,18 +6332,16 @@ function hasClipLoopLengthFamilyReference(prompt: string): boolean {
 }
 
 function isExactPunchCommandClause(clause: PromptClause): boolean {
-    let commandSource = clause.masked.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
+    const trimmed = clause.masked.trim();
+    const commandSource = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     return /^(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\s+(?:(?:at|to)\s+)?beat\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[?!]?$/iu.test(
         commandSource
     );
 }
 
 function isExactPunchEnabledCommandClause(clause: PromptClause): boolean {
-    let commandSource = clause.masked.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
+    const trimmed = clause.masked.trim();
+    const commandSource = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     return /^(?:(?:enable|disable)\s+punch\s+(?:in\s*\/\s*out|mode)|turn\s+punch\s+(?:in\s*\/\s*out|mode)\s+(?:on|off))(?:\s+please)?\s*[?!.]?$/iu.test(
         commandSource
     );
