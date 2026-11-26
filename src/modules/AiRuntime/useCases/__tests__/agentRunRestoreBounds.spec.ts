@@ -461,4 +461,35 @@ describe('restore-only bounds on agent run fields are checked when the run is wr
             ).toThrow(`the run cannot hold more than ${String(BOUND)} entries in run.decision.scope.targetIds`);
         });
     });
+
+    describe('creation', () => {
+        const CREATED_RUN_ID = 'created-past-bound-run';
+
+        function create(targetCount: number) {
+            return () =>
+                agentRunLifecycle.create({
+                    runId: CREATED_RUN_ID,
+                    request: 'Brighten the vocal.',
+                    mode: 'plan',
+                    createdRevision: 'revision-1',
+                    scope: { ...scope, targetIds: ids('track', targetCount) },
+                });
+        }
+
+        it('refuses a run created with a scope past the bound and persists nothing', () => {
+            const storedBefore = storedText();
+
+            expect(create(BOUND + 1)).toThrow(
+                `the run cannot hold more than ${String(BOUND)} entries in run.scope.targetIds`
+            );
+            expect(agentRunLifecycle.get(CREATED_RUN_ID)).toBeNull();
+            expect(storedText()).toBe(storedBefore);
+            expect(agentRunLifecycle.get(RUN_ID)?.runId).toBe(RUN_ID);
+        });
+
+        it('admits a run created with a scope at the bound', () => {
+            expect(create(BOUND)()).toEqual({ status: 'created' });
+            expect(agentRunLifecycle.get(CREATED_RUN_ID)?.scope.targetIds).toHaveLength(BOUND);
+        });
+    });
 });
