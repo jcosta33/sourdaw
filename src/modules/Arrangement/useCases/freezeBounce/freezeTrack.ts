@@ -54,7 +54,11 @@ type FreezeTaskIdentity = {
     pendingFreeze: FreezeStateSnapshot | null;
     /** The settled state the document still holds when a rebase drops the freezing write. */
     previousFreeze: FreezeStateSnapshot;
-    /** The root document's heads as of this task's last own write; anything later is someone else's. */
+    /**
+     * The root document's heads as of this task's last accepted write; a freeze-field write after them
+     * is someone else's. Moved forward after each progress write, so a move of the track the task
+     * already accepted stops hiding later field writes behind the row it reinserted.
+     */
     documentHeads: string[];
 };
 

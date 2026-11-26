@@ -1,33 +1,37 @@
-import { getCrdtDoc, readRootPatchPathsSince } from '#/modules/CrdtDocument/useCases';
+import { readRootListItemWritesSince } from '#/modules/CrdtDocument/useCases';
 
-const FREEZE_FIELDS: ReadonlySet<string | number> = new Set(['frozen', 'frozenBufferId', 'freezeState']);
+const FREEZE_FIELDS = ['frozen', 'frozenBufferId', 'freezeState'];
 const TRACK_LIST_PATH = ['tracks', 'tracks'];
-const TRACK_INDEX_DEPTH = TRACK_LIST_PATH.length;
-
-type RootWithTracks = { tracks?: { tracks?: ReadonlyArray<{ id: string }> } };
-
-function isFreezeFieldWrite(path: ReadonlyArray<string | number>): boolean {
-    if (!TRACK_LIST_PATH.every((segment, index) => path[index] === segment)) {
-        return false;
-    }
-    // A track written whole replaces its freeze fields too.
-    return path.length === TRACK_INDEX_DEPTH + 1 || FREEZE_FIELDS.has(path[TRACK_INDEX_DEPTH + 1] ?? '');
-}
 
 /**
- * Whether anything has written a track's `frozen`, `frozenBufferId` or `freezeState` in the document
- * since `heads`, whatever it wrote. A running freeze's own writes stay uncommitted until its action
- * ends, so a write found here is someone else's, and a value that merely equals the state the freeze
- * started from (a collaborator's unfreeze of a never-frozen track) is told apart from a rebase that
- * only dropped the freeze's own write.
+ * Whether anything has written this track's `frozen`, `frozenBufferId` or `freezeState` in the
+ * document since `heads`, whatever it wrote. A running freeze's own writes stay uncommitted until its
+ * action ends, so a write found here is someone else's, and a value that merely equals the state the
+ * freeze started from (a collaborator's unfreeze of a never-frozen track) still counts.
+ *
+ * `renderProgress` is progress, not freeze state: a local action that commits the track list carries
+ * the freeze's own pending progress into the document with it, so it is not a foreign write.
+ *
+ * A track moved since `heads` is written whole as a new row, so its field writes cannot be told apart
+ * from the move; the caller's value check alone decides then. Heads the document no longer holds (a
+ * rollback discarded them) prove nothing, so they count as a write.
  */
 export function freezeFieldsWrittenSince(heads: readonly string[], trackId: string): boolean {
-    const tracks = getCrdtDoc<RootWithTracks>('root')?.tracks?.tracks;
-    return readRootPatchPathsSince(heads).some((path) => {
-        if (!isFreezeFieldWrite(path)) {
-            return false;
-        }
-        const index = path[TRACK_INDEX_DEPTH];
-        return typeof index === 'number' && tracks?.[index]?.id === trackId;
+    const writes = readRootListItemWritesSince({
+        heads,
+        listPath: TRACK_LIST_PATH,
+        itemId: trackId,
+        keys: FREEZE_FIELDS,
     });
+    if (writes.status === 'unknown') {
+        return true;
+    }
+    if (writes.status !== 'present') {
+        return false;
+    }
+    return writes.writtenPaths.some((path) => !isRenderProgressWrite(path));
+}
+
+function isRenderProgressWrite(path: readonly string[]): boolean {
+    return path[0] === 'freezeState' && path[1] === 'renderProgress';
 }

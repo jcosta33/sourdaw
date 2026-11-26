@@ -86,6 +86,24 @@ function rawTrack(): Track {
     return track;
 }
 
+function rawTrackById(id: string): Track {
+    const track = getCrdtDoc<{ tracks: { tracks: Track[] } }>('root')?.tracks.tracks.find(
+        (candidate) => candidate.id === id
+    );
+    if (!track) {
+        throw new Error(`Expected raw track ${id}`);
+    }
+    return track;
+}
+
+function projectedTrackById(id: string): Track {
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === id);
+    if (!track) {
+        throw new Error(`Expected projected track ${id}`);
+    }
+    return track;
+}
+
 function freeze(): Promise<void> {
     return executeAppAction({ type: 'freezeTrack', payload: { trackId: 'freeze-track' } });
 }
@@ -438,6 +456,151 @@ describe('freezeTrack started over a running freeze', () => {
                 expect(track.frozenBufferId).not.toBe('old-take');
             }
             expect(trackStore.value?.tracks[1]?.name).toBe('Renamed by a collaborator');
+        });
+
+        it.each([
+            {
+                name: 'deletes the track above it',
+                change: (tracks: Track[]) => {
+                    tracks.splice(0, 1);
+                },
+            },
+            {
+                name: 'moves it to the top',
+                change: (tracks: Track[]) => {
+                    // A collaborator's move writes the row anew from the settled values it holds.
+                    tracks.splice(1, 1);
+                    tracks.unshift(TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }));
+                },
+            },
+        ])('commits the take after a collaborator $name', async ({ change }) => {
+            seedTracks([
+                TrackDummy.create({ id: 'above', name: 'Above' }),
+                TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }),
+            ]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange(change);
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+        });
+
+        it('commits the take after a local move of the freezing track', async () => {
+            seedTracks([
+                TrackDummy.create({ id: 'above', name: 'Above' }),
+                TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }),
+            ]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            await executeAppAction({ type: 'reorderTrack', payload: { trackId: 'freeze-track', newIndex: 0 } });
+            expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['freeze-track', 'above']);
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+        });
+
+        it('commits the take after a local rename of another track', async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: 'other-track', name: 'Renamed here' } });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+        });
+
+        it("keeps a collaborator's unfreeze that arrives with a delete of the track above, committing no take", async () => {
+            seedTracks([TrackDummy.create({ id: 'above', name: 'Above' }), TrackDummy.create({ id: 'freeze-track' })]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+                tracks.splice(0, 1);
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+        });
+
+        it("keeps a collaborator's unfreeze that lands after a local move and a progress tick, committing no take", async () => {
+            seedTracks([TrackDummy.create({ id: 'above', name: 'Above' }), TrackDummy.create({ id: 'freeze-track' })]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            await executeAppAction({ type: 'reorderTrack', payload: { trackId: 'freeze-track', newIndex: 0 } });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.5);
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+        });
+
+        it('commits no take after the document is rolled back to before the freeze started', async () => {
+            const beforeFreeze = Automerge.getHeads(getCrdtDoc<RootDocument>('root')!);
+            seedTracks([TrackDummy.create({ id: 'freeze-track' }), TrackDummy.create({ id: 'other-track' })]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            const current = getCrdtDoc<RootDocument>('root')!;
+            replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(Automerge.view(current, beforeFreeze)) });
+            projectCrdtToStores();
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).not.toBe('frozen');
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+        });
+
+        it("commits the take after a collaborator writes another track's freeze fields", async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const other = inboundTrack(tracks, 'other-track');
+                other.freezeState = { status: 'error', errorMessage: 'remote failure' };
+            });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.5);
+            expect(projectedTrack().freezeState.renderProgress).toBe(0.5);
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+            expect(rawTrackById('other-track').freezeState).toEqual({
+                status: 'error',
+                errorMessage: 'remote failure',
+            });
         });
 
         it('commits the take after an inbound edit to another field of the same track', async () => {
