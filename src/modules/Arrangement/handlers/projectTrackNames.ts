@@ -154,6 +154,7 @@ export const trackNameProjectionByActionType: {
     setGrandBouleDeviceState: keepTrackNames,
     setToasterFactoryKit: keepTrackNames,
     setBacteriaFactoryPatch: keepTrackNames,
+    setCrustFactoryPreset: keepTrackNames,
     setGlutenFactoryPreset: keepTrackNames,
     setGrinderFactoryPreset: keepTrackNames,
     setProofPatchSelection: keepTrackNames,

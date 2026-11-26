@@ -92,6 +92,7 @@ export const trackCreationByActionType: { readonly [Type in AppActionType]: Trac
     setGrandBouleDeviceState: 'none',
     setToasterFactoryKit: 'none',
     setBacteriaFactoryPatch: 'none',
+    setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',
     setGrinderFactoryPreset: 'none',
     setProofPatchSelection: 'none',

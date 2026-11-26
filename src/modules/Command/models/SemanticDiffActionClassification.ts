@@ -106,6 +106,7 @@ export const semanticDiffClassificationByActionType: {
     setGrandBouleDeviceState: NONE,
     setToasterFactoryKit: NONE,
     setBacteriaFactoryPatch: NONE,
+    setCrustFactoryPreset: NONE,
     setGlutenFactoryPreset: NONE,
     setGrinderFactoryPreset: NONE,
     setProofPatchSelection: NONE,

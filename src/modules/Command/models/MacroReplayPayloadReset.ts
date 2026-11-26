@@ -155,6 +155,7 @@ export const macroReplayPayloadResetByActionType: {
     setGrandBouleDeviceState: keepRecordedPayload,
     setToasterFactoryKit: keepRecordedPayload,
     setBacteriaFactoryPatch: keepRecordedPayload,
+    setCrustFactoryPreset: keepRecordedPayload,
     setGlutenFactoryPreset: keepRecordedPayload,
     setGrinderFactoryPreset: keepRecordedPayload,
     setProofPatchSelection: keepRecordedPayload,

@@ -18,3 +18,23 @@ export const pendingKeyedUnloads = new Map<string, Promise<void>>();
  * (Remove, Undo, Redo) owns the instance's fate, so the waiter must not reload.
  */
 export const pendingKeyedUnloadGenerations = new Map<string, number>();
+
+/**
+ * The latest keyed-unload generation of each instance id that a rebuild fence
+ * let go of (`failUnresponsiveExternalPlugins`). That unload, and every one
+ * admitted before it, no longer owns the instance: the id may already belong to
+ * a later activation, so a late native answer writes nothing onto it.
+ */
+export const letGoKeyedUnloadGenerations = new Map<string, number>();
+
+/** The generation of each instance id's keyed unload still pending, as a fence reads them when it begins. */
+export function pendingKeyedUnloadAdmissions(): ReadonlyMap<string, number> {
+    const admissions = new Map<string, number>();
+    for (const instanceId of pendingKeyedUnloads.keys()) {
+        const generation = pendingKeyedUnloadGenerations.get(instanceId);
+        if (generation !== undefined) {
+            admissions.set(instanceId, generation);
+        }
+    }
+    return admissions;
+}

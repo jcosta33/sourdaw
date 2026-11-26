@@ -5810,6 +5810,13 @@ impl ActiveEffect {
         self.bypassed || self.runs_nowhere()
     }
 
+    /// Where a span's first frame sits in the block this device is handed,
+    /// which every event stamp for the span is measured from.
+    #[inline]
+    fn stamp_base(&self, span_offset: usize) -> u32 {
+        stamp_base_for(self.placement, span_offset)
+    }
+
     /// Queue one live note at the head of whatever this device renders next.
     ///
     /// The note is tracked in this device's live set, apart from the stored
@@ -5895,10 +5902,7 @@ impl ActiveEffect {
             return false;
         };
 
-        let stamp_base = match *placement {
-            EffectPlacement::MasterChain => span_offset as u32,
-            _ => 0,
-        };
+        let stamp_base = stamp_base_for(*placement, span_offset);
         let span_end = block_start.saturating_add(frames as u64);
         let entries = store.entries();
         // The store is frame-ordered, so the span's own run is a slice of it:
@@ -6260,6 +6264,19 @@ fn scheduled_note_offs_from(store: &MidiNoteStore, from_frame: u64) -> NoteAddre
         }
     }
     covered
+}
+
+/// The offset a span's first frame takes in the block a device at `placement`
+/// is handed. A chain device is handed each span on its own, so its stamps run
+/// from the span's head; a master insert drains once per callback over the
+/// whole buffer, so its stamps run from the callback's, where the span begins
+/// at `span_offset`. Stamping a master insert from the span would put every
+/// delivery after a loop seam a seam's worth early.
+fn stamp_base_for(placement: EffectPlacement, span_offset: usize) -> u32 {
+    match placement {
+        EffectPlacement::MasterChain => span_offset as u32,
+        _ => 0,
+    }
 }
 
 /// The note-off that ends a note a store sounded, supplied by the engine
@@ -8260,11 +8277,22 @@ impl AudioScheduler {
         }
     }
 
-    /// Land every time-stamped device-parameter change the block has reached.
+    /// Land every time-stamped device-parameter change the span
+    /// `block_start..block_start + frames` has reached.
     ///
-    /// A device owns its own parameter smoothing, so these apply once at the
-    /// block boundary rather than at a sample offset inside it.
-    fn apply_due_device_params(&mut self, block_start: u64, frames: usize) {
+    /// A hosted plugin is handed each change at the sample that renders its
+    /// frame, through the same frame of reference
+    /// [`ActiveEffect::enqueue_due_midi_notes`] stamps notes in: a chain
+    /// device's offsets run from the span's first frame, a master insert's
+    /// from the callback's, `span_offset` being where the span begins inside
+    /// the callback. A stamp the playhead has already passed lands at the
+    /// head of its span: offset 0 for a chain device, the span's own offset in
+    /// the callback for a master insert. Several stamps for one parameter in one span are each delivered,
+    /// in stamp order, because the queue pops them that way.
+    ///
+    /// A built-in owns its own parameter smoothing and holds no per-sample
+    /// event list, so its changes apply once at the span boundary.
+    fn apply_due_device_params(&mut self, block_start: u64, frames: usize, span_offset: usize) {
         if frames == 0 {
             return;
         }
@@ -8297,6 +8325,7 @@ impl AudioScheduler {
             let mut retired_model = None;
             let effect = &mut self.effects[slot];
             let receives_no_block = effect.receives_no_block();
+            let stamp_base = effect.stamp_base(span_offset);
             let mut wrote_builtin = false;
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match (&mut effect.instance, event.param) {
@@ -8331,7 +8360,9 @@ impl AudioScheduler {
                     (PluginCore::Native(_), DeviceParamTarget::Hosted { .. })
                         if receives_no_block => {}
                     (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
-                        if !plugin.apply_parameter_on_audio_thread(id, event.value) {
+                        let sample_offset =
+                            stamp_base + event.at_frame.saturating_sub(block_start) as u32;
+                        if !plugin.apply_parameter_on_audio_thread(id, event.value, sample_offset) {
                             self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                         }
                     }
@@ -8544,7 +8575,7 @@ impl AudioScheduler {
             };
 
             self.refresh_transport_at(block_start);
-            self.apply_due_device_params(block_start, span_frames);
+            self.apply_due_device_params(block_start, span_frames, offset);
             self.apply_due_midi_notes(block_start, span_frames, offset);
             self.render_timeline(
                 block_start,
@@ -13304,18 +13335,28 @@ mod timeline_tests {
     /// the audio thread hands it, and answers the way the test needs — a plugin
     /// that took the write, or one that refused it.
     struct ParameterRecordingPlugin {
-        queued: Arc<Mutex<Vec<(u32, f64)>>>,
+        queued: QueuedParameters,
+        offsets: QueuedOffsets,
         accepts: bool,
     }
 
     impl NativePlugin for ParameterRecordingPlugin {
         fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
 
-        fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64) -> bool {
+        fn apply_parameter_on_audio_thread(
+            &mut self,
+            id: u32,
+            value: f64,
+            sample_offset: u32,
+        ) -> bool {
             self.queued
                 .lock()
                 .expect("the parameter log")
                 .push((id, value));
+            self.offsets
+                .lock()
+                .expect("the offset log")
+                .push((id, value, sample_offset));
             self.accepts
         }
 
@@ -13333,13 +13374,25 @@ mod timeline_tests {
     }
 
     fn parameter_recording_plugin(accepts: bool) -> (Box<dyn NativePlugin>, QueuedParameters) {
+        let (plugin, queued, _offsets) = offset_recording_plugin(accepts);
+        (plugin, queued)
+    }
+
+    /// The same recording plugin, also handing back the log of the sample
+    /// offset each write was queued at.
+    fn offset_recording_plugin(
+        accepts: bool,
+    ) -> (Box<dyn NativePlugin>, QueuedParameters, QueuedOffsets) {
         let queued = Arc::new(Mutex::new(Vec::new()));
+        let offsets = Arc::new(Mutex::new(Vec::new()));
         (
             Box::new(ParameterRecordingPlugin {
                 queued: Arc::clone(&queued),
+                offsets: Arc::clone(&offsets),
                 accepts,
             }),
             queued,
+            offsets,
         )
     }
 
@@ -13434,6 +13487,10 @@ mod timeline_tests {
 
     /// The `(parameter id, value)` writes a recording plugin has accepted.
     type QueuedParameters = Arc<Mutex<Vec<(u32, f64)>>>;
+
+    /// The `(parameter id, value, sample offset)` writes a recording plugin
+    /// was handed, in the order the scheduler handed them.
+    type QueuedOffsets = Arc<Mutex<Vec<(u32, f64, u32)>>>;
 
     /// One note as an instrument received it: the absolute frame it landed
     /// on, which note it named, and whether it pressed or released.
@@ -15228,6 +15285,180 @@ mod timeline_tests {
                 .unmapped_set_param_calls,
             0,
             "a stamp the engine discards is not a call the plugin refused"
+        );
+    }
+
+    fn automate_hosted(
+        harness: &mut Harness,
+        effect_id: usize,
+        id: u32,
+        value: f64,
+        at_frame: u64,
+    ) {
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id,
+            param: DeviceParamTarget::Hosted { id },
+            value,
+            at_frame,
+        });
+    }
+
+    /// A hosted plugin on a track chain, whose writes the returned log records
+    /// with their sample offsets.
+    fn hosted_on_a_track(harness: &mut Harness, effect_id: usize) -> QueuedOffsets {
+        let (plugin, _queued, offsets) = offset_recording_plugin(true);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddPlugin(effect_id, plugin, None));
+        harness.send(insert_track_device(1, effect(effect_id), 0));
+        offsets
+    }
+
+    /// A hosted stamp reaches the plugin at the sample that renders its frame,
+    /// measured from the head of the block it lands in. Several points for one
+    /// parameter inside one block all arrive, in stamp order, interleaved with
+    /// the other parameter's point by frame. Landing them all at the block head
+    /// — the block-granular contract this replaces — moves a point up to a
+    /// buffer early and collapses a ramp onto its last value.
+    #[test]
+    fn a_hosted_stamp_reaches_the_plugin_at_the_offset_of_its_frame() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let offsets = hosted_on_a_track(&mut harness, 3);
+        automate_hosted(&mut harness, 3, 4, 0.2, 10);
+        automate_hosted(&mut harness, 3, 7, 0.5, 100);
+        automate_hosted(&mut harness, 3, 4, 0.8, 200);
+        automate_hosted(&mut harness, 3, 4, 0.6, 256 + 30);
+
+        harness.render(256);
+        assert_eq!(
+            *offsets.lock().expect("the offset log"),
+            vec![(4, 0.2, 10), (7, 0.5, 100), (4, 0.8, 200)],
+            "every point of the block reaches the plugin at its own frame, in frame order"
+        );
+
+        harness.render(256);
+        assert_eq!(
+            offsets.lock().expect("the offset log")[3..],
+            [(4, 0.6, 30)],
+            "the offset is measured from the head of the block that renders the \
+             frame, not from the start of the timeline"
+        );
+    }
+
+    /// Across a loop seam a stamp belongs to the span that renders its frame.
+    /// A callback that straddles the seam lands a stamp just ahead of the seam
+    /// inside its first span, and once the playhead has wrapped, a stamp the
+    /// producer re-arms for the next pass is measured from the wrapped
+    /// playhead — not from the absolute frames the transport has walked.
+    #[test]
+    fn a_hosted_stamp_is_measured_from_the_span_that_renders_it_across_a_loop_seam() {
+        const LOOP_END: u64 = 1_024;
+        const CALLBACK: usize = 384;
+
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        let offsets = hosted_on_a_track(&mut harness, 3);
+        harness.render(CALLBACK);
+        harness.render(CALLBACK);
+
+        // The third callback renders 768..1024 and wraps onto 0..128.
+        automate_hosted(&mut harness, 3, 4, 0.3, 1_000);
+        harness.render(CALLBACK);
+        assert_eq!(
+            *offsets.lock().expect("the offset log"),
+            vec![(4, 0.3, 1_000 - 768)],
+            "the stamp ahead of the seam lands inside the span before it"
+        );
+
+        // The playhead now stands at 128 of the next pass.
+        automate_hosted(&mut harness, 3, 4, 0.9, 200);
+        harness.render(CALLBACK);
+        assert_eq!(
+            offsets.lock().expect("the offset log")[1..],
+            [(4, 0.9, 200 - 128)],
+            "a stamp on the next pass is measured from the wrapped playhead"
+        );
+    }
+
+    /// A stamp due while the device is bypassed is discarded, and the block
+    /// after the bypass ends lands its own stamp at that block's offset: the
+    /// discarded write is not delivered late at the head of the next block,
+    /// and the next write is not moved to the head either.
+    #[test]
+    fn a_hosted_stamp_after_a_bypassed_block_lands_at_its_own_offset() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let offsets = hosted_on_a_track(&mut harness, 3);
+        harness.send(GraphCommand::SetBypass(3, true));
+        automate_hosted(&mut harness, 3, 4, 0.1, 100);
+        automate_hosted(&mut harness, 3, 4, 0.7, 256 + 40);
+
+        harness.render(256);
+        harness.send(GraphCommand::SetBypass(3, false));
+        harness.render(256);
+
+        assert_eq!(
+            *offsets.lock().expect("the offset log"),
+            vec![(4, 0.7, 40)],
+            "only the stamp the un-bypassed block renders arrives, at its own frame"
+        );
+    }
+
+    /// A hosted stamp is measured from where the block its device is handed
+    /// begins. A span after a loop seam begins `SPAN_OFFSET` frames into the
+    /// callback; a master insert, handed the whole callback in one block,
+    /// takes that offset into its stamp and a track device does not.
+    ///
+    /// Driven through `apply_due_device_params` because no callback can place
+    /// a due stamp in a span after the seam: a stamp the playhead has passed
+    /// is already popped by the span before it, at that span's own head.
+    const SPAN_OFFSET: usize = 256;
+
+    #[test]
+    fn a_hosted_stamp_on_a_master_insert_is_measured_from_the_callback() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let (plugin, _queued, offsets) = offset_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(
+            3,
+            plugin,
+            Some(MidiNoteStore::new()),
+        ));
+        automate_hosted(&mut harness, 3, 4, 0.6, 40);
+
+        harness
+            .scheduler
+            .apply_due_device_params(0, 128, SPAN_OFFSET);
+
+        assert_eq!(
+            *offsets.lock().expect("the offset log"),
+            vec![(4, 0.6, SPAN_OFFSET as u32 + 40)],
+            "the master insert's block began at the callback, so the span's \
+             offset is part of the stamp"
+        );
+    }
+
+    #[test]
+    fn a_hosted_stamp_on_a_track_device_is_measured_from_its_span() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let offsets = hosted_on_a_track(&mut harness, 3);
+        automate_hosted(&mut harness, 3, 4, 0.6, 40);
+
+        harness
+            .scheduler
+            .apply_due_device_params(0, 128, SPAN_OFFSET);
+
+        assert_eq!(
+            *offsets.lock().expect("the offset log"),
+            vec![(4, 0.6, 40)],
+            "a track device is handed each span on its own, so the span's \
+             offset in the callback is not part of the stamp"
         );
     }
 
@@ -25257,7 +25488,7 @@ mod timeline_tests {
             value: 0.0,
             at_frame: 0,
         });
-        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64));
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64, 0));
         let slot = harness.scheduler.effect_index.lookup(7).unwrap();
         assert!(
             !harness.scheduler.effects[slot].pending_params.is_empty(),
@@ -25267,7 +25498,7 @@ mod timeline_tests {
             matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body) if body.has_native_model())
         );
         drop(harness.retired_rx.pop().unwrap());
-        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64));
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64, 0));
         assert!(harness.scheduler.effects[slot].pending_params.is_empty());
         assert!(
             matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body) if !body.has_native_model())

@@ -268,6 +268,7 @@ export const grooveTemplateProjectorByActionType: {
     setGrandBouleDeviceState: leaveGrooveTemplateStateUnchanged,
     setToasterFactoryKit: leaveGrooveTemplateStateUnchanged,
     setBacteriaFactoryPatch: leaveGrooveTemplateStateUnchanged,
+    setCrustFactoryPreset: leaveGrooveTemplateStateUnchanged,
     setGlutenFactoryPreset: leaveGrooveTemplateStateUnchanged,
     setGrinderFactoryPreset: leaveGrooveTemplateStateUnchanged,
     setProofPatchSelection: leaveGrooveTemplateStateUnchanged,

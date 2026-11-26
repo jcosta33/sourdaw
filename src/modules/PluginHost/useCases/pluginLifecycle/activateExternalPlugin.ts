@@ -10,7 +10,7 @@ import {
     externalPluginParameterStore,
     writeExternalPluginParameterSnapshot,
 } from '../../stores/externalPluginParameterStore';
-import { writeExternalPluginTail } from '../../stores/externalPluginTailStore';
+import { reviseExternalPluginTail, writeExternalPluginTail } from '../../stores/externalPluginTailStore';
 
 import { activationFailureMessage } from './activationFailureMessage';
 import {
@@ -27,6 +27,7 @@ import {
     type ExternalPluginActivationResult,
 } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
+import { externalPluginServiceMessages } from './externalPluginServiceMessages';
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { markExternalPluginRestoreFailure } from './markExternalPluginRestoreFailure';
@@ -39,6 +40,7 @@ import { toExternalPluginParameters } from './toExternalPluginParameters';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 import { watchExternalPluginParameterEvents } from './watchExternalPluginParameterEvents';
 import { watchExternalPluginParameterRescan } from './watchExternalPluginParameterRescan';
+import { watchExternalPluginService } from './watchExternalPluginService';
 import { watchExternalPluginTail } from './watchExternalPluginTail';
 
 type ActivateExternalPluginInput = {
@@ -78,7 +80,10 @@ function writeActivationSlot(instanceId: string, slot: ExternalPluginActivationS
 }
 
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
-    writeActivationSlot(instanceId, message ? { status, message } : { status });
+    // A plain 'active' must not erase the out-of-service message the host raised
+    // while this load was in flight: each change is published once.
+    const shown = message ?? (status === 'active' ? externalPluginServiceMessages.get(instanceId) : undefined);
+    writeActivationSlot(instanceId, shown ? { status, message: shown } : { status });
 }
 
 /**
@@ -173,7 +178,8 @@ function loadedInstanceSlot(instanceId: string, pluginId: string): ExternalPlugi
     if (externalPluginParameterStore.value?.byInstanceId[instanceId]?.engineAttached === false) {
         return { status: 'active', message: NO_ENGINE_MESSAGE };
     }
-    return { status: 'active' };
+    const serviceMessage = externalPluginServiceMessages.get(instanceId);
+    return serviceMessage ? { status: 'active', message: serviceMessage } : { status: 'active' };
 }
 
 /**
@@ -328,6 +334,8 @@ export function activateExternalPlugin({
     // Before the load for the same reason: a plugin that lengthens its tail
     // while it first activates must find the subscription already up.
     watchExternalPluginTail();
+    // And a plugin the host takes out of service on its first block.
+    watchExternalPluginService();
 
     if (onLatencyMs) {
         // Register before the load so a latency change the plugin flags during
@@ -376,9 +384,16 @@ export function activateExternalPlugin({
                 parameters: toExternalPluginParameters(instance.parameters),
             });
             // What an export reserves after the last note for this instance's
-            // decay; later revisions arrive over `plugin-tail-changed`. One the
-            // plugin reported before this answer arrived is newer than it.
-            writeExternalPluginTail(instanceId, tailRevisionsDuringLoad.get(instanceId) ?? instance.tail_samples);
+            // decay; later revisions arrive over `plugin-tail-changed`. A figure
+            // held during the load applies only if its native sequence outranks this answer's.
+            writeExternalPluginTail(instanceId, {
+                tailSamples: instance.tail_samples,
+                sequence: instance.tail_sequence,
+            });
+            const heldTail = tailRevisionsDuringLoad.get(instanceId);
+            if (heldTail !== undefined) {
+                reviseExternalPluginTail(instanceId, heldTail);
+            }
             tailRevisionsDuringLoad.delete(instanceId);
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so

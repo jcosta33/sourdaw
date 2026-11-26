@@ -156,6 +156,7 @@ const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActio
     setGrandBouleDeviceState: describeAsPlanned,
     setToasterFactoryKit: describeAsPlanned,
     setBacteriaFactoryPatch: describeAsPlanned,
+    setCrustFactoryPreset: describeAsPlanned,
     setGlutenFactoryPreset: describeAsPlanned,
     setGrinderFactoryPreset: describeAsPlanned,
     setProofPatchSelection: describeAsPlanned,

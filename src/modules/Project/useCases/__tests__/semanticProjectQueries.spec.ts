@@ -743,6 +743,72 @@ describe('semantic project queries', () => {
         );
     });
 
+    it('reads harmony as explicit unknown without a chord in the window, and as chord rows when one exists', () => {
+        registerCrdtStorageRuntime();
+        seedProject();
+        midiStore.hydrate();
+        const track = createTrack({ id: 'harmony-track', name: 'Harmony', kind: 'midi' });
+        track.clips = [
+            {
+                id: 'harmony-clip',
+                trackId: track.id,
+                name: 'Harmony',
+                type: 'midi' as const,
+                startBeat: 8,
+                endBeat: 12,
+                muted: false,
+                locked: false,
+                color: '',
+                gain: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            },
+        ];
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+        setMidiStoreState({
+            ...structuredClone(defaultMidiStoreState),
+            notesByClipId: { 'harmony-clip': [{ id: 'h1', pitch: 64, startBeat: 0, duration: 1, velocity: 80 }] },
+        });
+        function readRows() {
+            const parsed = bindMusicalContentQuery(
+                { type: 'musical-content', filters: { stableId: 'harmony-clip', startBeat: 8, endBeat: 12 } },
+                captureMusicalContentBinding()
+            );
+            if (parsed.status !== 'valid') {
+                throw new Error('Harmony query was refused');
+            }
+            return querySemanticProject(parsed.input).items;
+        }
+
+        chordTrackStore.set({ enabled: true, events: [] });
+        const unknown = readRows();
+        expect(unknown.filter((item) => item.kind === 'harmony')).toEqual([
+            { id: 'harmony-unknown', kind: 'harmony', provenance: 'unknown' },
+        ]);
+        expect(unknown).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'note', noteId: 'h1' })]));
+
+        chordTrackStore.set({
+            enabled: true,
+            events: [
+                { id: 'outside', beat: 12, root: 5, quality: 'major', duration: 4 },
+                { id: 'a-minor', beat: 8, root: 9, quality: 'minor', duration: 4 },
+            ],
+        });
+        const known = readRows();
+        expect(known.filter((item) => item.kind === 'harmony')).toEqual([
+            {
+                id: 'a-minor',
+                kind: 'harmony',
+                beat: 8,
+                duration: 4,
+                root: 9,
+                quality: 'minor',
+                enabled: true,
+                provenance: 'chord-track',
+            },
+        ]);
+    });
+
     it('reads contrasting equal-count MIDI phrases and authored harmony through bound paged queries', () => {
         registerCrdtStorageRuntime();
         seedProject();

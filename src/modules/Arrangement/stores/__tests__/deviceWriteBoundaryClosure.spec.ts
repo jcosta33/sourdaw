@@ -83,7 +83,8 @@ const BUILT_IN_USE_CASE_ROOTS = [
 const SINK_DEFINITIONS: Record<SinkFamily, SinkDefinition> = {
     'persistence-runtime': {
         // Bare identifiers intentionally catch imports, property aliases, and calls.
-        pattern: /\b(?:persistDeviceParam|persistDevicePatch|updateDeviceParam|updateDevicePatch)\b/g,
+        pattern:
+            /\b(?:persistDeviceParam|persistDevicePatch|updateDeviceParam|updateDeviceParameters|updateDevicePatch)\b/g,
         includes: includeAllPaths,
     },
     'strip-add': {
@@ -181,13 +182,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // built-in the native session carries, reached only from the guard-listed
         // automation tick path. Engine-only, reaches no document (#3893).
         'src/modules/AudioEngine/useCases/deviceControls/holdWebFallbackDeviceParam.ts': 1,
-        // Count provenance: measured 2 in code — the function declaration plus
-        // its one `audioEngine.updateDeviceParam` call, the single door every
-        // device-param write reaches the DSP through, where the declared-range
-        // law binds.
-        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 2,
+        // The single-parameter and ordered batch doors each declare their
+        // runtime entry point. Both share the clamped Web Audio writer below.
+        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 1,
+        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParameters.ts': 1,
         'src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts': 2,
-        'src/modules/AudioEngine/useCases/index.ts': 4,
+        // The scalar Web Audio call moved from updateDeviceParam into this helper.
+        'src/modules/AudioEngine/useCases/deviceControls/writeWebDeviceParam.ts': 1,
+        // The batch adds one named export and one matching module specifier.
+        'src/modules/AudioEngine/useCases/index.ts': 6,
         // Count provenance: pre-#597 this file scored 2 — a doc-comment mention
         // plus the single canonical updateDeviceParam call site. #597
         // (canonicalize device targets) rewrote the doc comment, and #609
@@ -237,12 +240,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // a sink in this family at all — the reason a census that counts sinks
         // could not see the defect.
         // 'src/modules/Crumbs/useCases/voiceStacking.ts': removed (0),
-        // Count provenance: measured 5, was 4. The fifth is the flush-side
-        // persist of the algorithm a `style` write derives, written after
-        // `style` so the record's insertion order matches `CRUST_PATCH_PRECEDENCE`,
-        // with no engine push for it.
-        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 5,
+        // The frame flush persists the algorithm derived from style. Presets
+        // replay through the separate sink after the owning command commits.
+        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 3,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
+        // The batch import and its single call replay the committed preset.
+        'src/modules/Crust/useCases/crustParamBridge/syncCrustPresetRuntime.ts': 2,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
         // import and its single call site. The panel's true-peak reset has to
         // reach the engine as well as the store: Crust's engine holds the
@@ -339,7 +342,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Read the family name carefully: 'persistence-runtime' is a *combined*
         // family. Its pattern counts both the CRDT persistence identifiers
         // (`persistDeviceParam`, `persistDevicePatch`) and the runtime engine ones
-        // (`updateDeviceParam`, `updateDevicePatch`). A hit in this family
+        // (`updateDeviceParam`, `updateDeviceParameters`, `updateDevicePatch`). A hit in this family
         // therefore does NOT by itself mean a write reached the document — check
         // which identifier matched before reading it as one.
         //
@@ -758,8 +761,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // engine, which is not the worklet that renders. The commit reaches the
         // worklet, and project truth, through `setDeviceParameter`.
         'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 3,
-        'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts': 1,
-        'src/modules/Crust/presentations/views/CrustPanel.tsx': 3,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 1,
         // Count provenance: measured 3 each — loader identifier import,
         // module-specifier string and call. These adapters delegate the actual
@@ -1235,7 +1236,6 @@ const DEVICE_DATA_COUNTS = {
         // `executeAppAction` — the migration it calls is a pure function that
         // returns its input untouched when nothing applies.
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
-        'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
         // The explicit parameter map and shorthand returned device chain are both
         // part of the owning store write.
@@ -1453,7 +1453,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts',
-    'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts',
+    'src/modules/Crust/useCases/readCrustFactoryPresetTarget.ts',
     'src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts',
     'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts',
     // Preparation guards before optimistic feedback; the Arrangement owner
@@ -2661,6 +2661,14 @@ describe('device write boundary closure', () => {
             name: 'an aliased persistence/runtime writer',
             path: 'src/modules/Unexpected/newRuntimeWriter.ts',
             source: 'const { updateDeviceParam: write } = dependencies; write("t", "d", "p", 1);',
+        },
+        {
+            name: 'an aliased batch runtime writer',
+            path: 'src/modules/Unexpected/newBatchedRuntimeWriter.ts',
+            source: [
+                "import { updateDeviceParameters as write } from '#/modules/AudioEngine/useCases';",
+                'write("t", "d", [["gain", 1]]);',
+            ].join('\n'),
         },
         {
             name: 'a strip-add writer',

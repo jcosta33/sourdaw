@@ -1,39 +1,20 @@
-import { computeTrackHash } from '../../services/computeTrackHash';
-import { type Track, trackStore } from '../../stores/trackStore';
-
+import { digestFreezePrintInput } from './digestFreezePrintInput';
 import { CHANGED_DURING_FREEZE } from './freezeChangedMessage';
-
-function findLiveTrack(trackId: string): Track {
-    const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-    if (!liveTrack) {
-        throw new Error(CHANGED_DURING_FREEZE);
-    }
-    return liveTrack;
-}
+import { readLiveFreezePrintInput } from './readLiveFreezePrintInput';
 
 /**
- * The render ran against the clips and device chain captured before its await, but edits that
- * carry an unfrozen stamp (agent batches, user edits) can land while the track is still
- * "freezing". Committing the take then would pin a buffer and hash to a source the track no
- * longer has. Throws, so the freeze ends as any failed render does: unfrozen, nothing cached.
+ * The render read the input captured before it started, but edits that carry an unfrozen stamp
+ * (agent batches, user edits) can land while the track is still "freezing". Committing the take
+ * then would pin a buffer and signature to a source the track no longer has. Throws, so the freeze
+ * ends as any failed render does: unfrozen, nothing cached.
  *
- * Hashing is itself asynchronous, so the track is re-read after the digest: a hash only counts
- * for the clips and devices it was taken from, and an edit that landed meanwhile is hashed again.
- * Returns the live track whose clips and devices were hashed, so a caller can tell whether they are
- * still the live ones once the returned promise settles.
+ * Synchronous: the live input is selected and digested in one read, so nothing can land between
+ * this check and the commit that follows it. An edit undone before the commit passes, and rightly:
+ * the take was rendered from the captured input, which the live one matches again.
  */
-export async function assertFreezeSourceUnchanged(trackId: string, renderedSourceHash: string): Promise<Track> {
-    let hashed = findLiveTrack(trackId);
-    for (;;) {
-        const liveHash = await computeTrackHash(hashed.clips, hashed.devices);
-        const current = findLiveTrack(trackId);
-        if (current.clips !== hashed.clips || current.devices !== hashed.devices) {
-            hashed = current;
-            continue;
-        }
-        if (liveHash !== renderedSourceHash) {
-            throw new Error(CHANGED_DURING_FREEZE);
-        }
-        return current;
+export function assertFreezeSourceUnchanged(trackId: string, renderedSignature: string): void {
+    const live = readLiveFreezePrintInput(trackId);
+    if (!live || digestFreezePrintInput(live) !== renderedSignature) {
+        throw new Error(CHANGED_DURING_FREEZE);
     }
 }

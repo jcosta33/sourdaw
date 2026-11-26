@@ -511,7 +511,11 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildLevainZoneTables: buildLevainZoneTablesMock,
+    captureDeviceParameterRuntimeWriteAuthority: vi.fn(() => {
+        throw new Error('bootstrap wiring fixture does not capture device parameter write authority');
+    }),
     updateDeviceParam: noop,
+    updateDeviceParameters: noop,
     holdWebFallbackDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
@@ -551,6 +555,9 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationHandlers: sentinelHandlers('Automation'),
     getAutomationValueAtBeat: () => null,
+    captureTouchAutomationRecordingAuthority: vi.fn(() => {
+        throw new Error('bootstrap wiring fixture does not capture touch automation recording authority');
+    }),
     // This fixture has no lanes, so its captured evaluator has no values to read.
     createOfflineAutomationEvaluator: vi.fn(() => () => null),
     prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
@@ -653,6 +660,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     recordActionHistoryEntry: noop,
     recordActionHistoryEntries: noop,
     clearActionHistory: noop,
+    readOwnedProjectPublications: () => [],
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
     subscribeToPublishedActionHistory: subscribeToPublishedActionHistoryMock,
     sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
@@ -704,6 +712,11 @@ vi.mock('#/modules/Fermenter/useCases', () => ({
     getFermenterHandlers: sentinelHandlers('Fermenter'),
     setFermenterMappedParam: noop,
     setFermenterDependencies: noop,
+}));
+
+vi.mock('#/modules/Crust/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crust/useCases')>()),
+    getCrustHandlers: sentinelHandlers('Crust'),
 }));
 
 vi.mock('#/modules/Gluten/useCases', () => ({
@@ -782,6 +795,9 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 
 vi.mock('#/modules/Project/useCases', () => ({
     agentCapabilityDiscoveryPort: { setProvider: noop },
+    captureProjectTransitionAuthority: vi.fn(() => {
+        throw new Error('bootstrap wiring fixture does not capture project edit authority');
+    }),
     getProjectProtocolContracts: noop,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     subscribeToProductionBriefChanges: briefAdmissionWiring.subscribeToProductionBriefChanges,
@@ -1095,6 +1111,7 @@ describe('bootstrap', () => {
         'GrandBoule',
         'Levain',
         'Toaster',
+        'Crust',
         'Gluten',
         'Grinder',
         'Proof',

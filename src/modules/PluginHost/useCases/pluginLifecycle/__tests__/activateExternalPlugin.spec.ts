@@ -8,6 +8,7 @@ import { activateExternalPlugin } from '../activateExternalPlugin';
 import { clearExternalPluginRestoreFailure } from '../clearExternalPluginRestoreFailure';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures';
+import { externalPluginServiceMessages } from '../externalPluginServiceMessages';
 import { hasUnresolvedExternalPluginRestoreFailure } from '../hasUnresolvedExternalPluginRestoreFailure';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { readPluginState } from '../readPluginState';
@@ -105,6 +106,20 @@ describe('activateExternalPlugin', () => {
         expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1);
         expect(mocks.setPluginStateRepo).toHaveBeenCalledWith('inst-1', SAVED_BYTES);
         expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' });
+    });
+
+    it('keeps an out-of-service message the host published while the load was in flight', async () => {
+        const message = 'p is out of service: refused to start processing.';
+        mocks.loadPluginRepo.mockImplementation(() => {
+            // The watcher published this once, between the host's answer and the
+            // activation writing its slot.
+            externalPluginServiceMessages.set('inst-1', message);
+            return Promise.resolve({ instance_id: 'inst-1', parameters: [] });
+        });
+
+        await activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active', message });
     });
 
     it('marks the instance live synchronously so a same-tick second call is skipped', async () => {

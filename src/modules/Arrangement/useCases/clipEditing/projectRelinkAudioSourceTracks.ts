@@ -209,6 +209,7 @@ const relinkPrefixStepByActionType: {
     setGrandBouleDeviceState: keepTracks,
     setToasterFactoryKit: keepTracks,
     setBacteriaFactoryPatch: keepTracks,
+    setCrustFactoryPreset: keepTracks,
     setGlutenFactoryPreset: keepTracks,
     setGrinderFactoryPreset: keepTracks,
     setProofPatchSelection: keepTracks,

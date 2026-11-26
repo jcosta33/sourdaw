@@ -54,6 +54,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
+    isMidiTransformDevice: (deviceType: string) => deviceType === 'yeast',
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({

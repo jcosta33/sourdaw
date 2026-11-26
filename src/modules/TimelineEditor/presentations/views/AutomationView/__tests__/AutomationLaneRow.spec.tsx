@@ -402,6 +402,36 @@ describe('AutomationLaneRow', () => {
     });
 
     it.each(['oklch(68% 0.2 35)', '#579aca', 'var(--color-palette-steel)'])(
+        'paints a bounded automation object with its lane color %s at the original opacity',
+        (trackColor) => {
+            const lane = {
+                ...defaultProps.lane,
+                objects: [
+                    {
+                        id: 'object-1',
+                        laneId: defaultProps.lane.id,
+                        startBeat: 2,
+                        endBeat: 6,
+                        name: 'Bounded gain',
+                        points: [],
+                        loopLength: 2,
+                    },
+                ],
+            };
+            render(<AutomationLaneRow {...defaultProps} lane={lane} trackColor={trackColor} />);
+
+            const region = screen.getByText('Bounded gain').closest('g')?.querySelector('rect');
+            expect(region).toHaveAttribute('fill', trackColor);
+            expect(Number(region?.getAttribute('fill-opacity'))).toBeCloseTo(8 / 255, 10);
+            expect(region).toHaveAttribute('stroke', trackColor);
+            expect(region).toHaveAttribute('stroke-opacity', '0.4');
+            expect(region).toHaveAttribute('stroke-dasharray', '6 3');
+            expect(region).toHaveAttribute('x', '24');
+            expect(region).toHaveAttribute('width', '48');
+        }
+    );
+
+    it.each(['oklch(68% 0.2 35)', '#579aca', 'var(--color-palette-steel)'])(
         'paints the marquee with its lane color %s and a translucent interior',
         (trackColor) => {
             vi.mocked(onRubberBandStart).mockImplementationOnce((_event, _lane, changeBand) => {

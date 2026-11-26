@@ -10,6 +10,7 @@ pub mod plugin_scan_worker;
 pub mod plugin_window;
 pub mod process_refusal_reporter;
 pub mod runtime_scope;
+pub mod service_watcher;
 pub mod tail_watcher;
 pub mod ui_thread;
 
@@ -132,6 +133,163 @@ pub(crate) fn retry_unreached_instance(
     reraise();
 }
 
+/// The most drain visits an instance that keeps failing sits out between two
+/// attempts: about half a second of the parameter drain's 16 ms tick.
+const MAX_SKIPPED_EDITOR_DRAIN_VISITS: u32 = 31;
+
+/// One instance's current run of failed editor-drain attempts.
+#[derive(Debug)]
+struct UnreachedEpisode {
+    instance_id: String,
+    failures: u32,
+    visits_to_skip: u32,
+    #[cfg(test)]
+    logged_lines: u32,
+}
+
+/// The retry rule of one editor drain: an instance the drain could not reach is
+/// tried again at doubling intervals, and the run of failures is logged once.
+///
+/// Each failed attempt costs the drain tick that also carries every plugin's
+/// knob edits — a whole hop deadline when the shell's thread has stopped taking
+/// work — and a window thread that refuses at once fails on every tick. Retrying
+/// every tick spends that cost, and a line of log, sixty times a second for as
+/// long as the shell stays that way. The interval doubles from the next visit
+/// up to [`MAX_SKIPPED_EDITOR_DRAIN_VISITS`], and resets on the first success.
+///
+/// Counted in drain visits rather than time, because a visit is what an attempt
+/// costs: an instance sat out raises the drain's hint again so the drain keeps
+/// coming back for it.
+pub(crate) struct EditorDrainRetry {
+    context: &'static str,
+    episodes: Mutex<Vec<UnreachedEpisode>>,
+}
+
+impl EditorDrainRetry {
+    pub(crate) const fn new(context: &'static str) -> Self {
+        Self {
+            context,
+            episodes: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn episodes(&self) -> std::sync::MutexGuard<'_, Vec<UnreachedEpisode>> {
+        self.episodes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Forget every episode whose instance this visit no longer finds.
+    pub(crate) fn forget_absent(&self, runtimes: &[(String, Arc<SharedHostedPlugin>)]) {
+        self.episodes().retain(|episode| {
+            runtimes
+                .iter()
+                .any(|(instance_id, _)| *instance_id == episode.instance_id)
+        });
+    }
+
+    /// Whether this visit attempts `instance_id`. One sat out raises `reraise`,
+    /// so a later visit comes back for it.
+    pub(crate) fn admits(&self, instance_id: &str, reraise: fn()) -> bool {
+        let mut episodes = self.episodes();
+        let Some(episode) = episodes
+            .iter_mut()
+            .find(|episode| episode.instance_id == instance_id)
+        else {
+            return true;
+        };
+        if episode.visits_to_skip == 0 {
+            return true;
+        }
+        episode.visits_to_skip -= 1;
+        reraise();
+        false
+    }
+
+    /// The attempt reached the instance: its episode, if any, is over.
+    pub(crate) fn reached(&self, instance_id: &str) {
+        self.episodes()
+            .retain(|episode| episode.instance_id != instance_id);
+    }
+
+    /// The attempt did not reach the instance.
+    ///
+    /// An instance still accepting public control is retried, which is the
+    /// difference between a control path or shell busy right now and an
+    /// instance unloading or retired, which would refuse every retry. The first
+    /// failure of an episode is logged; the rest are counted.
+    pub(crate) fn unreached(
+        &self,
+        runtime: &SharedHostedPlugin,
+        instance_id: &str,
+        error: &dyn std::fmt::Display,
+        reraise: fn(),
+    ) {
+        if runtime.ensure_public_control_allowed().is_err() {
+            self.reached(instance_id);
+            return;
+        }
+
+        let mut episodes = self.episodes();
+        let index = match episodes
+            .iter()
+            .position(|episode| episode.instance_id == instance_id)
+        {
+            Some(index) => index,
+            None => {
+                episodes.push(UnreachedEpisode {
+                    instance_id: instance_id.to_string(),
+                    failures: 0,
+                    visits_to_skip: 0,
+                    #[cfg(test)]
+                    logged_lines: 0,
+                });
+                let index = episodes.len() - 1;
+                self.log_episode_start(&mut episodes[index], error);
+                index
+            }
+        };
+        let episode = &mut episodes[index];
+        episode.failures = episode.failures.saturating_add(1);
+        episode.visits_to_skip = skipped_visits_after(episode.failures);
+        drop(episodes);
+        reraise();
+    }
+
+    /// The one line a run of failures logs, counted where it is written so a
+    /// second line anywhere in the episode shows in [`Self::logged_lines`].
+    fn log_episode_start(&self, episode: &mut UnreachedEpisode, error: &dyn std::fmt::Display) {
+        eprintln!(
+            "[Plugin] {} could not reach instance {}, retrying at longer intervals \
+             until it answers: {}",
+            self.context, episode.instance_id, error
+        );
+        #[cfg(test)]
+        {
+            episode.logged_lines += 1;
+        }
+    }
+
+    /// How many lines the current episode of `instance_id` has logged.
+    #[cfg(test)]
+    pub(crate) fn logged_lines(&self, instance_id: &str) -> u32 {
+        self.episodes()
+            .iter()
+            .find(|episode| episode.instance_id == instance_id)
+            .map_or(0, |episode| episode.logged_lines)
+    }
+}
+
+/// Visits sat out after `failures` consecutive failures: none after the first,
+/// so a one-off refusal is retried on the very next tick, then 1, 3, 7, … up to
+/// the ceiling — attempts on visits 1, 2, 4, 8, 16, ….
+fn skipped_visits_after(failures: u32) -> u32 {
+    let doubled = 1u32
+        .checked_shl(failures.saturating_sub(1))
+        .unwrap_or(u32::MAX);
+    (doubled - 1).min(MAX_SKIPPED_EDITOR_DRAIN_VISITS)
+}
+
 /// The process-wide hints every watcher reads are shared by every test in the
 /// binary, so a test that raises one, sweeps on one, or asserts one is
 /// absent takes this first, and starts from a slate with none raised.
@@ -141,7 +299,7 @@ pub(crate) mod hint_test_support {
         take_pending_editor_resize_signal, take_pending_latency_requery_signal,
         take_pending_main_thread_callback_signal, take_pending_parameter_events_signal,
         take_pending_parameter_flush_signal, take_pending_process_refusal_signal,
-        take_pending_tail_change_signal,
+        take_pending_service_change_signal, take_pending_tail_change_signal,
     };
     use std::sync::{Mutex, MutexGuard};
 
@@ -155,6 +313,7 @@ pub(crate) mod hint_test_support {
         take_pending_parameter_events_signal();
         take_pending_parameter_flush_signal();
         take_pending_tail_change_signal();
+        take_pending_service_change_signal();
         take_pending_process_refusal_signal();
         take_pending_editor_resize_signal();
         take_pending_latency_requery_signal();

@@ -130,6 +130,7 @@ const controllerRestoresByActionType: {
     setGrandBouleDeviceState: noControllerRestores,
     setToasterFactoryKit: noControllerRestores,
     setBacteriaFactoryPatch: noControllerRestores,
+    setCrustFactoryPreset: noControllerRestores,
     setGlutenFactoryPreset: noControllerRestores,
     setGrinderFactoryPreset: noControllerRestores,
     setProofPatchSelection: noControllerRestores,
