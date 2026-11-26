@@ -1285,7 +1285,7 @@ function isLevelContinuationClause(
 function isPercentLevelContinuationClause(maskedClause: string, previousScope: ActionPromptScope | undefined): boolean {
     return (
         previousScope !== undefined &&
-        /(?:\d|\.\d)%/u.test(previousScope.masked) &&
+        /\d%/u.test(previousScope.masked) &&
         /^\s*(?:(?:the|a|an)\s+)?□+\s+(?:at|to)\s+(?:\d+(?:\.\d+)?|\.\d+)\s*%\s*$/iu.test(maskedClause)
     );
 }

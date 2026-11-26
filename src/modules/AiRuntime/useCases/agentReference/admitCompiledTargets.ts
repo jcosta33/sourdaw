@@ -67,12 +67,14 @@ import { scopeToInstruction } from './scopeToInstruction';
  * restrictions, the values any call of the batch writes and every other instruction naming its own
  * tracks, where an instruction is the clause the direct route grounds an action in with the clauses
  * continuing it, so another instruction's name never picks the call's target ("set Vocals volume to
- * 75% and mute Keys" states no Keys gain). Text giving no
- * instruction always counts ("Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums").
- * An instruction that names no track or narrower role of its own, or none before it refers back with
- * "it", "them" or "that track", keeps the nearest earlier instruction naming tracks ("Mute Vocals and
- * Keys, then pan them left"); a call no clause grounds reads the whole request. A selection reference ("this track", "the selected track", "it" or "its"
- * outside every object name for the selected track) that resolves to the picked objects states those
+ * 75% and mute Keys" states no Keys gain). An instruction names tracks when it states them in any
+ * form a selector picks by: a name, id or position, a role phrase, a family word, or a word-start
+ * fragment of a track name ("mute the pad" names Synth Pad). Text giving no instruction always
+ * counts ("Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums"). Only an
+ * instruction that refers back with "it", "them" or "that track", naming no track before that
+ * reference, keeps the nearest earlier instruction naming tracks ("Mute Vocals and Keys, then pan
+ * them left"); a call no clause grounds reads the whole request. A selection reference ("this
+ * track", "the selected track", "it" or "its" outside every object name for the selected track) that resolves to the picked objects states those
  * picks only when the text names no object of that kind, by name, id or, for a track, position, or
  * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
  * volume so it sits better" never stands for the selected Keys, nor "set the first track volume so it
@@ -248,8 +250,9 @@ function getTrackOwnedObjectIds(trackId: string, context: ProjectContext): strin
     return [...track.devices.map((device) => device.id), ...track.clips.map((clip) => clip.id), ...laneIds];
 }
 
-function isTrackOwned(id: string, context: ProjectContext): boolean {
-    return context.tracks.some((track) => getTrackOwnedObjectIds(track.id, context).includes(id));
+/** The track owning a device, clip or automation lane. */
+function findObjectOwner(id: string, context: ProjectContext): ProjectContextTrack | undefined {
+    return context.tracks.find((track) => getTrackOwnedObjectIds(track.id, context).includes(id));
 }
 
 /** The name of every object in the project, which a value or fragment read in the text never runs into. */
@@ -641,7 +644,9 @@ function statesFragment(
     return pickedIds.every(
         (targetId) =>
             namesFragmentAsWord(targetId, fragment, input.context) &&
-            (reachableIds === null || !isTrackOwned(targetId, input.context) || reachableIds.has(targetId)) &&
+            (reachableIds === null ||
+                findObjectOwner(targetId, input.context) === undefined ||
+                reachableIds.has(targetId)) &&
             occurrences.some((occurrence) =>
                 nameRanges.every((nameRange) => nameRange.id === targetId || !extendsBeyond(nameRange, occurrence))
             )
@@ -769,7 +774,7 @@ function getFamilyPicks(input: RequestReadingInput): FamilyPick[] {
 
 /** The track itself, or the track that owns the object. */
 function getOwnerTrack(id: string, context: ProjectContext): ProjectContextTrack | undefined {
-    return context.tracks.find((track) => track.id === id || getTrackOwnedObjectIds(track.id, context).includes(id));
+    return context.tracks.find((track) => track.id === id) ?? findObjectOwner(id, context);
 }
 
 function holdsStatedRole(id: string, roles: ReadonlySet<string>, context: ProjectContext): boolean {

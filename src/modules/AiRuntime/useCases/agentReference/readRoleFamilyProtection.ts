@@ -76,11 +76,12 @@ function namesKindObject(word: Token, kindNoun: Token): boolean {
  * The tracks a protection member keeps when it names one role family, or one canonical role by its
  * whole phrase, and nothing else but its controls, quantifiers before it and a kind noun after it
  * ("the drums", "all the drum tracks", "the drum kit", "the vocals' sends", "the backing vocals",
- * "the kick track"); a role phrase keeps the tracks of that role alone. A control opening the member as its verb ("mute the drums") names
- * what the request changes and protects nothing. The tokens come with project names blanked and
- * quotations flagged, so "Drum Bus" and a quoted "drums" name no family, and a capitalized singular
- * kind form of an absent object ("the Drum Bus") is left to the object forms' unbound refusal. A
- * family no track resolves to is none, so the object forms read the member as before.
+ * "the kick track"); a role phrase keeps the tracks of that role alone. A control opening the
+ * member as its verb ("mute the drums") names what the request changes and protects nothing. The
+ * tokens come with project names blanked and quotations flagged, so "Drum Bus" and a quoted "drums"
+ * name no family, and a capitalized singular kind form of an absent object ("the Drum Bus") is left
+ * to the object forms' unbound refusal. A family no track resolves to is none, so the object forms
+ * read the member as before.
  */
 export function readRoleFamilyProtection(
     tokens: readonly Token[],

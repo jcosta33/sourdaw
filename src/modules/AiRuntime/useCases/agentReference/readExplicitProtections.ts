@@ -27,8 +27,7 @@ import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
  * An explicit protection is a preservation clause ("leave Keys alone", "with Bass unchanged", "Keys
  * stays as is"), a prohibition ("do not change the fader of Strings", "without touching Keys",
  * "no changes to Keys", "skip Keys") or a carve-out ("except the second one", "..., not the vocals").
- * Its closing words are the
- * refinement grammar's own closed forms.
+ * Its closing words are the refinement grammar's own closed forms.
  *
  * Protection wording cannot tell a project object that is absent from a quality, a brand or a name
  * nobody asked about ("leave the Kick alone" may name a track or a sound), so a reference refuses

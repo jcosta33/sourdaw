@@ -16,9 +16,9 @@ function isCoordinatingGap(gap: string): boolean {
 
 /**
  * The figures (decibel figures, or any number) one scope binds to each reference it names, keyed by
- * reference id. A figure
- * binds to the nearest reference before it; a figure after a coordinated list ("from A and B at
- * -15 dB") binds to every member of that list. A figure no reference precedes binds to none.
+ * reference id. A figure binds to the nearest reference before it; a figure after a coordinated list
+ * ("from A and B at -15 dB") binds to every member of that list. A figure no reference precedes
+ * binds to none.
  *
  * Reference spans and figure indexes share one coordinate space: the scope text and its masked
  * form are the same length.
