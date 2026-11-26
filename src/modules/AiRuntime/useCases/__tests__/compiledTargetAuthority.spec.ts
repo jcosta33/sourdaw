@@ -2959,6 +2959,16 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
         expect(targetsOf(result)).toEqual(tracks.map((track) => track.id));
     });
 
+    it.each([
+        ['set the volume to 75% on Vocals and Drums'],
+        ['set the volume to 75% on Vocals from bar 5 and Drums from bar 9'],
+        ['set the volume to 75% on Vocals, Drums to 60%'],
+    ])('refuses Vocals at 90%% for "%s", which states 75%% before every track it names', (prompt) => {
+        const result = compileMix(prompt, [trackItem('setTrackGain', mixVocals, { gain: 0.9 })]);
+
+        expect(result.rejections).not.toEqual([]);
+    });
+
     it('refuses Drums at 60% for "set Vocals volume to -6 dB, Drums to 60%", which continues no percent level', () => {
         const result = compileMix('set Vocals volume to -6 dB, Drums to 60%', [
             trackItem('setTrackGain', mixVocals, { gainDb: -6 }),
