@@ -536,11 +536,6 @@ function statesNoAction(
     );
 }
 
-/** Whether a clause is only the reference trailers a removal closes on, which the splitter cut off after a comma. */
-function statesOnlyReferenceTrailers(words: string): boolean {
-    return words.length > 0 && refinementRequestReading.stripTrailers(words).trim() === '';
-}
-
 /**
  * The first clause beside a removal that may withdraw or qualify it, read as the refinement reader
  * reads a clause it cannot consume: one stating a negation ("or not", "never mind", "without changing
@@ -552,33 +547,57 @@ function statesOnlyReferenceTrailers(words: string): boolean {
 function findUnreadQualifier(reading: readonly ClauseReading[], scope: ProtectionScope): ClauseReading | null {
     const catalog = getExecutableAppActionGroundingCatalog();
     let describesAddition = false;
-    return (
-        reading.find((clause) => {
-            if (clause.directives.some((directive) => directive.intention === 'remove')) {
-                describesAddition = false;
-                return false;
-            }
-            // Read with a trailing space, so a clause of connectors alone (the "And" the splitter cuts
-            // off "And then remove …") reads as empty rather than as a word.
-            const words = refinementRequestReading
-                .withoutLeadingConnectors(`${normalizePromptText(clause.text)} `)
-                .trim();
-            if (
-                refinementProtectionForms.readsRestOfMix(words) ||
-                protectsOffCardObjects(words, scope) ||
-                statesOnlyReferenceTrailers(words)
-            ) {
-                return false;
-            }
-            if (refinementRequestReading.statesNegation(clause)) {
-                return true;
-            }
-            // A clause naming an added command's verb opens its description, which the clauses the
-            // splitter cut from it ("… the published gain and pan values") go on with.
-            describesAddition = statesAddedVerb(words, scope) || (describesAddition && clause.mentions.length === 0);
-            return !describesAddition && statesNoAction(clause, words, catalog);
-        }) ?? null
-    );
+    for (const clause of reading) {
+        const verdict = readClauseBesideRemoval(clause, describesAddition, scope, catalog);
+        if (verdict.unread) {
+            return clause;
+        }
+        describesAddition = verdict.describesAddition;
+    }
+    return null;
+}
+
+type ClauseBesideRemoval = {
+    /** Whether the clause may withdraw or qualify the removal and the refinement reader cannot consume it. */
+    unread: boolean;
+    /** Whether the clauses after this one still go on describing a command the batch adds. */
+    describesAddition: boolean;
+};
+
+function readClauseBesideRemoval(
+    clause: ClauseReading,
+    describesAddition: boolean,
+    scope: ProtectionScope,
+    catalog: ReturnType<typeof getExecutableAppActionGroundingCatalog>
+): ClauseBesideRemoval {
+    if (clause.directives.some((directive) => directive.intention === 'remove')) {
+        return { unread: false, describesAddition: false };
+    }
+    // Read with a trailing space, so a clause of connectors alone (the "And" the splitter cuts
+    // off "And then remove …") reads as empty rather than as a word.
+    const words = refinementRequestReading.withoutLeadingConnectors(`${normalizePromptText(clause.text)} `).trim();
+    if (
+        refinementProtectionForms.readsRestOfMix(words) ||
+        protectsOffCardObjects(words, scope) ||
+        statesOnlyReferenceTrailers(words)
+    ) {
+        return { unread: false, describesAddition };
+    }
+    if (refinementRequestReading.statesNegation(clause)) {
+        return { unread: true, describesAddition };
+    }
+    // A clause naming an added command's verb opens its description, which the clauses the
+    // splitter cut from it ("… the published gain and pan values") go on with.
+    const describesAdditionNow = statesAddedVerb(words, scope) || (describesAddition && clause.mentions.length === 0);
+    return {
+        unread: !describesAdditionNow && statesNoAction(clause, words, catalog),
+        describesAddition: describesAdditionNow,
+    };
+}
+
+/** Whether a clause is only the reference trailers a removal closes on, which the splitter cut off after a comma. */
+function statesOnlyReferenceTrailers(words: string): boolean {
+    return words.length > 0 && refinementRequestReading.stripTrailers(words).trim() === '';
 }
 
 /** A removal the request reads, unless a clause beside it may withdraw or qualify it, which is asked. */
