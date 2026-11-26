@@ -1,12 +1,17 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { spy } from '#/infra/di/testing/spy';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
 import { grinderNeuralLibraryStore } from '../../../stores/grinderNeuralLibraryStore';
-import { grinderStore } from '../../../stores/grinderStore';
+import { getGrinderState, grinderStore } from '../../../stores/grinderStore';
+import { grinderParamBridgeDependencies } from '../../../useCases/grinderParamBridge/grinderParamBridgeDependencies';
+import { loadGrinderPatchWithAudio } from '../../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
 import { GrinderPanel } from '../GrinderPanel';
 
 vi.mock('../../../useCases/importGrinderNeuralModels', () => ({
@@ -28,10 +33,10 @@ vi.mock('../../../models/GrinderDisclosure', async (importOriginal) => ({
 describe('GrinderPanel', () => {
     const device_id = 'test-device';
 
-    function grinderTrack(parameterValues: Record<string, number>, trackId = 'track-1'): Track {
+    function grinderTrack(parameterValues: Record<string, number>, trackId = 'track-1', deviceId = device_id): Track {
         return {
             ...createTrack({ id: trackId, name: 'Guitar', kind: 'audio' }),
-            devices: [{ id: device_id, name: 'Grinder', type: 'grinder', bypassed: false, parameterValues }],
+            devices: [{ id: deviceId, name: 'Grinder', type: 'grinder', bypassed: false, parameterValues }],
         };
     }
 
@@ -299,6 +304,99 @@ describe('GrinderPanel', () => {
 
         const disabled_view = render(<GrinderPanel deviceId={device_id} />);
         expect(within(disabled_view.container).queryByText('Mic 2')).not.toBeInTheDocument();
+    });
+
+    describe('cabinet edits', () => {
+        const otherDeviceId = 'other-grinder';
+        const otherPatch = { ...DEFAULT_PATCH, mic1: { ...DEFAULT_PATCH.mic1, positionX: 0.91 } };
+        const outputs = spy<typeof grinderParamBridgeDependencies>();
+
+        beforeEach(() => {
+            outputs.updateDeviceParam.mockClear();
+            injectDependencies(loadGrinderPatchWithAudio, {
+                ...grinderParamBridgeDependencies,
+                updateDeviceParam: outputs.updateDeviceParam,
+                updateDevicePatch: outputs.updateDevicePatch,
+                persistDeviceParam: outputs.persistDeviceParam,
+            });
+            setProjectTracks([
+                grinderTrack({
+                    mic1PositionX: 0.24,
+                    mic1PositionY: 0.38,
+                    mic1Distance: 0.46,
+                    mic2Enabled: 1,
+                    mic2PositionX: 0.62,
+                    mic2PositionY: 0.73,
+                    mic2Distance: 0.87,
+                }),
+                grinderTrack({ mic1PositionX: 0.91 }, 'track-2', otherDeviceId),
+            ]);
+            grinderStore.set({
+                [device_id]: { patch: { ...DEFAULT_PATCH, uiSection: 'cab' }, basePatch: DEFAULT_PATCH },
+                [otherDeviceId]: { patch: otherPatch, basePatch: DEFAULT_PATCH },
+            });
+        });
+
+        afterEach(() => {
+            Container.clear();
+        });
+
+        it('applies cabinet voice, mode and routing choices to the selected Grinder', () => {
+            render(<GrinderPanel deviceId={device_id} />);
+            const panel = within(screen.getByRole('region', { name: 'Grinder controls' }));
+
+            const choices = [
+                ['4x12 Tight', '1x12 Combo', 'cabIrSlot', 2],
+                ['Both', 'Parametric', 'cabType', 1],
+                ['Serial', 'Dual Amp', 'routingMode', 3],
+            ] as const;
+
+            for (const [previous, next, parameter, value] of choices) {
+                const oldChoice = panel.getByRole('button', { name: previous, pressed: true });
+                const newChoice = panel.getByRole('button', { name: next, pressed: false });
+                outputs.updateDeviceParam.mockClear();
+                fireEvent.click(newChoice);
+
+                expect(newChoice).toHaveAttribute('aria-pressed', 'true');
+                expect(oldChoice).toHaveAttribute('aria-pressed', 'false');
+                expect(outputs.updateDeviceParam.mock.calls.filter(([, , key]) => key === parameter)).toEqual([
+                    ['track-1', device_id, parameter, value],
+                ]);
+            }
+
+            expect(getGrinderState(device_id).patch).toMatchObject({
+                cabIrId: '1x12-combo',
+                cabType: 'parametric',
+                routingMode: 'dual-amp',
+            });
+            expect(getGrinderState(otherDeviceId).patch).toEqual(otherPatch);
+        });
+
+        it('routes each microphone knob to its own position or distance parameter', async () => {
+            render(<GrinderPanel deviceId={device_id} />);
+            const panel = within(screen.getByRole('region', { name: 'Grinder controls' }));
+            const controls = [
+                ['Mic 1 horizontal position', 'ArrowRight', 'mic1PositionX', 0.25],
+                ['Mic 1 vertical position', 'ArrowLeft', 'mic1PositionY', 0.37],
+                ['Mic 1 distance', 'ArrowRight', 'mic1Distance', 0.47],
+                ['Mic 2 horizontal position', 'ArrowLeft', 'mic2PositionX', 0.61],
+                ['Mic 2 vertical position', 'ArrowRight', 'mic2PositionY', 0.74],
+                ['Mic 2 distance', 'ArrowLeft', 'mic2Distance', 0.86],
+            ] as const;
+
+            for (const [name, key, , value] of controls) {
+                const knob = panel.getByRole('slider', { name });
+                fireEvent.keyDown(knob, { key });
+                expect(knob).toHaveAttribute('aria-valuenow', String(value));
+            }
+
+            await waitFor(() =>
+                expect(outputs.updateDeviceParam.mock.calls).toEqual(
+                    controls.map(([, , parameter, value]) => ['track-1', device_id, parameter, value])
+                )
+            );
+            expect(getGrinderState(otherDeviceId).patch).toEqual(otherPatch);
+        });
     });
 
     it('should display the shared compressor threshold default in the drive section', () => {
