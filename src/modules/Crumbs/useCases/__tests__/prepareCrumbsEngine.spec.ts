@@ -93,6 +93,32 @@ describe('prepareCrumbsEngine', () => {
         crumbsStore.set({});
     });
 
+    it('cancels an older decode and refreshes without replaying mode', async () => {
+        ensureInstance(DEVICE);
+        setActiveSample(DEVICE, sampleMeta('/old.wav'));
+        const oldDecode = Promise.withResolvers<{ data: Float32Array; channels: number; sampleRate: number }>();
+        decodeMock.mockReturnValueOnce(oldDecode.promise).mockResolvedValueOnce({
+            data: new Float32Array([0.75]),
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        const { port, posts, emit } = recordingPort();
+        const controller = new AbortController();
+        const old = prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal });
+        setMode(DEVICE, 'drum');
+        setActiveSample(DEVICE, sampleMeta('/new.wav'));
+        controller.abort();
+        const latest = prepareCrumbsEngine({ deviceId: DEVICE, port, sampleOnly: true });
+        await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
+        oldDecode.resolve({ data: new Float32Array([0.1]), channels: 1, sampleRate: 48_000 });
+        await expect(old).resolves.toBe('cancelled');
+        emit({ type: 'sampleLoaded', loadToken: messagesOfType(posts, 'loadSample')[0]?.loadToken });
+        await expect(latest).resolves.toBe('ready');
+        expect(messagesOfType(posts, 'loadSample')).toHaveLength(1);
+        expect(messagesOfType(posts, 'mode')).toEqual([{ type: 'mode', mode: 'quick' }]);
+        expect(decodeMock).toHaveBeenNthCalledWith(2, { filePath: '/new.wav' });
+    });
+
     it('decodes the captured sample and mode after same-id live state replacement', async () => {
         ensureInstance(DEVICE);
         setMode(DEVICE, 'slice');

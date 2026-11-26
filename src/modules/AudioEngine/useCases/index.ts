@@ -38,6 +38,7 @@ export { hostsPadOutputs } from './deviceCapabilities/hostsPadOutputs';
 export { hostsStoredControllers } from './deviceCapabilities/hostsStoredControllers';
 export { isDrumDevice } from './deviceCapabilities/isDrumDevice';
 export { isMidiTransformDevice } from './deviceCapabilities/isMidiTransformDevice';
+export { isToasterDevice } from './deviceCapabilities/isToasterDevice';
 export { readDrumKitOutputGain } from './deviceCapabilities/readDrumKitOutputGain';
 export { readStoredControllerDefault } from './deviceCapabilities/readStoredControllerDefault';
 export { resolveDrumKitBy } from './deviceCapabilities/resolveDrumKitBy';
@@ -102,6 +103,7 @@ export { discardDecodedAudioFile } from './discardDecodedAudioFile';
 export { discardDecodedAudioFileIfCurrent } from './discardDecodedAudioFileIfCurrent';
 
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
+export { updateDeviceParameters } from './deviceControls/updateDeviceParameters';
 export { captureDeviceParameterRuntimeWriteAuthority } from './deviceControls/captureDeviceParameterRuntimeWriteAuthority';
 export { writeNativeBuiltinParameters } from './deviceControls/writeNativeBuiltinParameters';
 export { holdWebFallbackDeviceParam } from './deviceControls/holdWebFallbackDeviceParam';

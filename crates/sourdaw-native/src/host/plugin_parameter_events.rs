@@ -68,6 +68,7 @@ use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::plugin_editor_asks::answer_pending_editor_window_asks;
 use crate::host::plugin_host_requests::apply_pending_editor_resizes;
 use crate::host::process_refusal_reporter::report_pending_process_refusals;
+use crate::host::service_watcher::publish_pending_service_changes;
 use crate::host::tail_watcher::publish_pending_tail_changes;
 use crate::host::{all_engine_runtimes, CommandPlugins};
 use crate::state::EnginePluginInstanceData;
@@ -75,8 +76,9 @@ use daw_plugin_host::{
     is_empty_batch, pair_gestures, signal_pending_parameter_flush,
     take_pending_editor_resize_signal, take_pending_parameter_events_signal,
     take_pending_parameter_flush_signal, take_pending_process_refusal_signal,
-    take_pending_tail_change_signal, AudioPlugin, PairedParameterEvents, PluginParameterEvent,
-    PluginParameterEventKind, PluginParameterEventQueue,
+    take_pending_service_change_signal, take_pending_tail_change_signal, AudioPlugin,
+    PairedParameterEvents, PluginParameterEvent, PluginParameterEventKind,
+    PluginParameterEventQueue,
 };
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -337,6 +339,10 @@ fn run_tick(
 
     if take_pending_tail_change_signal() {
         publish_pending_tail_changes(engine_plugins, events);
+    }
+
+    if take_pending_service_change_signal() {
+        publish_pending_service_changes(engine_plugins, events);
     }
 
     if take_pending_process_refusal_signal() {
@@ -907,6 +913,31 @@ mod tests {
         assert!(
             sequence > marker,
             "the event's sequence {sequence} was taken before the control path was reached ({marker} came later)"
+        );
+    }
+
+    /// A refused start is latched on the audio thread, which can name no
+    /// instance, so this tick is the only path that carries it to the renderer.
+    #[test]
+    fn a_tick_publishes_the_service_change_a_plugin_latched() {
+        let _guard = hint_guard();
+        let mut wrapper = fixture_wrapper();
+        wrapper.latch_engine_owned_command_fixture_processing_start_refusal();
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            sink.events(),
+            vec![(
+                crate::host::service_watcher::PLUGIN_SERVICE_CHANGED_EVENT.to_string(),
+                serde_json::json!({
+                    "instance_id": "inst-1",
+                    "out_of_service_reason":
+                        "'Drain Fixture' refused to start processing; its blocks pass through unprocessed",
+                }),
+            )]
         );
     }
 

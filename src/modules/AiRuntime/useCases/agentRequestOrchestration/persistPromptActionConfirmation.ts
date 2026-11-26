@@ -76,8 +76,21 @@ function describeBatchPosition(batchPosition: PersistPromptActionConfirmationInp
         : `Batch ${String(batchPosition.index)} of ${String(batchPosition.total)}: `;
 }
 
-/** A proposal the store refused to retain settles its run and chat message as failed; nothing stays pending. */
+/** A re-preview's replacement shares its run with the card it would retire, which that card still owns. */
+function sharesRunWithLiveSupersededCard(input: PersistPromptActionConfirmationInput): boolean {
+    const superseded = input.supersedes ? getPendingActionConfirmation(input.supersedes) : undefined;
+    return superseded?.status === 'proposed' && superseded.runId === input.runId;
+}
+
+/**
+ * A proposal the store refused to retain settles its run and chat message as failed; nothing stays
+ * pending. A replacement refused beside a live original on the same run touches neither: the original
+ * stays confirmable, and the caller reports the refusal and withdraws the replacement's message.
+ */
 function failUnretainedProposal(input: PersistPromptActionConfirmationInput): void {
+    if (sharesRunWithLiveSupersededCard(input)) {
+        return;
+    }
     const reason = 'Prepared action resources exceed the live confirmation limit.';
     agentRunLifecycle.updateBatchStatus({
         runId: input.runId,
