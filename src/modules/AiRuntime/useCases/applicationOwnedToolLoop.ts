@@ -123,6 +123,7 @@ import {
 } from './projectPlanningProviderToolSchemas';
 import { readAnswerProjectQuery } from './readAnswerProjectQuery';
 import { readMusicalContentRefusalMessage } from './readMusicalContentRefusalMessage';
+import { toolChoiceRefusal } from './toolChoiceRefusal';
 import { validateCommandBatchProposal } from './validateCommandBatchProposal';
 import { validateOneProposalPerTurn } from './validateOneProposalPerTurn';
 
@@ -2002,26 +2003,6 @@ function admitsMeasurementAttempt(input: {
                     (receipt.status === 'failure' && receipt.revision === null))
         )
     );
-}
-
-function toolChoiceRefusal(
-    calls: readonly ToolCallResult[],
-    directive: HostedToolChoiceDirective,
-    finalTurn: boolean
-): string | null {
-    if (directive.mode === 'required' && calls.length === 0) {
-        if (finalTurn) {
-            return 'Provider returned no tool call on the final application tool-loop turn.';
-        }
-        return 'Provider returned no tool call on a required application tool-loop step.';
-    }
-    if (directive.parallelToolCalls === false && calls.length > 1) {
-        return 'Provider returned multiple tool calls on a single-call application tool-loop step.';
-    }
-    if (directive.mode === 'required' && calls.some((call) => !directive.toolNames.includes(call.name))) {
-        return 'Provider returned a tool outside the required application tool-loop set.';
-    }
-    return null;
 }
 
 export async function runApplicationOwnedToolLoop(
