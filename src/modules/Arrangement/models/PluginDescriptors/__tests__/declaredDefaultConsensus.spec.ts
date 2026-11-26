@@ -613,10 +613,8 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
             '`models/ToasterKit.ts` exports pad identity (`DEFAULT_PAD_NAMES`, `DEFAULT_ENGINE_TYPES`, ' +
             '`PAD_COLORS`) and no parameter values at all.',
         noPanelReason:
-            '`ToasterPanel` declares thirteen reset literals and binds every one through ' +
-            "`setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)`, where the id is the third " +
-            'argument. This scanner reads the first only; widening it would read `deviceId` and the pad index as ' +
-            'parameter names.',
+            '`ToasterPanel` writes kit and pad parameters through handlers that take the device ID first. ' +
+            '`MasterKnob` binds its reset through a dedicated Master gesture and names no parameter in the element.',
     },
     levain: {
         moduleDir: 'src/modules/Levain',
@@ -1225,6 +1223,7 @@ const PANEL_FILES: readonly { readonly file: string; readonly declared?: number;
     { file: 'src/modules/Proof/presentations/components/ProofLimiterSection.tsx', readable: 0 },
     { file: 'src/modules/Proof/presentations/views/ProofPanel.tsx', readable: 0 },
     { file: 'src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx', declared: 18, readable: 17 },
+    { file: 'src/modules/Toaster/presentations/views/MasterKnob.tsx', readable: 0 },
     { file: 'src/modules/Toaster/presentations/views/ToasterPanel.tsx', readable: 0 },
     { file: 'src/modules/Tuner/presentations/views/TunerPanel.tsx', readable: 0 },
 ];
