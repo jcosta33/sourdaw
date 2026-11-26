@@ -1716,6 +1716,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             "glue 'MIDI Intro' and 'MIDI Verse' clips",
             'please glue MIDI Intro and MIDI Verse clips',
             'could you join MIDI Intro with MIDI Verse please',
+            'will you glue MIDI Intro and MIDI Verse clips',
             'glue MIDI Intro and MIDI Verse clips thanks',
             'join MIDI Intro with MIDI Verse thank you',
         ];

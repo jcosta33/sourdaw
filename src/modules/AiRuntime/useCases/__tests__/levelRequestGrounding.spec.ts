@@ -1526,6 +1526,7 @@ describe('a track level clause reads its qualifiers, closings and tails from the
         ["I'd like you to lower Drums by 3 dB", { deltaDb: -3 }],
         ['I’d like you to lower Drums by 3 dB', { deltaDb: -3 }],
         ['I would like you to lower Drums by 3 dB', { deltaDb: -3 }],
+        ['will you lower Drums by 3 dB', { deltaDb: -3 }],
         ['hey, lower Drums by 3 dB', { deltaDb: -3 }],
         ['lower Drums by 3 dB thanks a lot', { deltaDb: -3 }],
         ['lower Drums by 3 dB right now', { deltaDb: -3 }],
