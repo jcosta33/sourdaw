@@ -52,10 +52,11 @@ export function projectCapturedDevicePatch(
         if (typeof value !== 'number' || !Number.isFinite(value)) {
             return null;
         }
-        parameterValues[key] =
-            mode === 'restore-captured'
-                ? value
-                : clampDeviceParameterValue({ deviceType: device.type, paramId: key, value });
+        if (mode === 'restore-captured') {
+            parameterValues[key] = value;
+            continue;
+        }
+        parameterValues[key] = clampDeviceParameterValue({ deviceType: device.type, paramId: key, value });
     }
     const { deviceState: previousChunk, ...withoutChunk } = device;
     void previousChunk;

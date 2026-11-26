@@ -11,6 +11,7 @@ import { recordDiscardedDevicePluginStates } from '../track/discardedPluginState
 import { findPlannedDeviceOwner } from './findPlannedDeviceOwner';
 
 type RemoveDeviceAction = Extract<AppAction, { type: 'removeDevice' }>;
+type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RemovalCapture = {
     trackId: string;
     owner: DeviceOwnerIncarnation;
@@ -67,6 +68,55 @@ function plannedOwnerFreezeMatches(
     }
     const owner = findPlannedDeviceOwner(deviceId, context);
     return owner !== undefined && owner.frozen === expectedFrozen;
+}
+
+function findRemovalTarget(deviceId: string) {
+    const state = getTrackStoreState();
+    const owners = (state?.tracks ?? []).flatMap((track) => {
+        const deviceIndex = track.devices.findIndex((device) => device.id === deviceId);
+        if (deviceIndex < 0) {
+            return [];
+        }
+        return [{ track, deviceIndex, device: track.devices[deviceIndex]! }];
+    });
+    return owners.length === 1 ? owners[0] : undefined;
+}
+
+type RemovalTarget = NonNullable<ReturnType<typeof findRemovalTarget>>;
+
+function readInitialRemovalOwner(
+    target: RemovalTarget,
+    recordedRedo: HandlerValidationContext['recordedRedo'],
+    context?: HandlerValidationContext
+) {
+    if (
+        recordedRedo ||
+        context?.executionMode === 'isolated-preview' ||
+        (context?.actions.length ?? 1) !== 1 ||
+        target.device.type !== 'grinder'
+    ) {
+        return null;
+    }
+    return getDevicePatchOwnerIncarnation({ trackId: target.track.id, deviceId: target.device.id });
+}
+
+function describeRestoreDevice(
+    target: RemovalTarget,
+    deviceId: string,
+    removedOwner: DeviceOwnerIncarnation | null
+): RestoreDeviceAction {
+    const payload: RestoreDeviceAction['payload'] = {
+        trackId: target.track.id,
+        deviceSnapshot: structuredClone(target.device),
+        deviceIndex: target.deviceIndex,
+    };
+    if (removedOwner) {
+        payload.removedOwner = removedOwner;
+    }
+    payload.expectedDeviceIds = target.track.devices
+        .filter((device) => device.id !== deviceId)
+        .map((device) => device.id);
+    return { type: 'restoreDevice', payload };
 }
 
 export const handleRemoveDevice = createHandler<'removeDevice'>({
@@ -162,42 +212,17 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
                 recordedRedo,
             });
         }
-        const state = getTrackStoreState();
-        const owners = (state?.tracks ?? []).flatMap((track) => {
-            const deviceIndex = track.devices.findIndex((device) => device.id === action.payload.deviceId);
-            if (deviceIndex < 0) {
-                return [];
-            }
-            return [{ track, deviceIndex, device: track.devices[deviceIndex]! }];
-        });
-        const target = owners.length === 1 ? owners[0] : undefined;
+        const target = findRemovalTarget(action.payload.deviceId);
         if (!target) {
             return { label: 'Remove device', inverseAction: null };
         }
-        const removedOwner =
-            !recordedRedo &&
-            context?.executionMode !== 'isolated-preview' &&
-            (context?.actions.length ?? 1) === 1 &&
-            target.device.type === 'grinder'
-                ? getDevicePatchOwnerIncarnation({ trackId: target.track.id, deviceId: target.device.id })
-                : null;
+        const removedOwner = readInitialRemovalOwner(target, recordedRedo, context);
         if (removedOwner) {
             pendingRemovals.set(action, { trackId: target.track.id, owner: removedOwner });
         }
         return {
             label: `Remove ${target.device.name}`,
-            inverseAction: {
-                type: 'restoreDevice',
-                payload: {
-                    trackId: target.track.id,
-                    deviceSnapshot: structuredClone(target.device),
-                    deviceIndex: target.deviceIndex,
-                    ...(removedOwner ? { removedOwner } : {}),
-                    expectedDeviceIds: target.track.devices
-                        .filter((device) => device.id !== action.payload.deviceId)
-                        .map((device) => device.id),
-                },
-            },
+            inverseAction: describeRestoreDevice(target, action.payload.deviceId, removedOwner),
         };
     },
     previewExecution: 'isolated-project',
