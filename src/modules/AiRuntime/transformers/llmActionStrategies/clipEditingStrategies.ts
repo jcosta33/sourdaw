@@ -16,6 +16,8 @@ import { type ClipCallName, type ClipStrategyDefinition } from './clipStrategyTy
 type ClipEditingCallName = Extract<
     ClipCallName,
     | 'removeClip'
+    | 'detachPatternInstance'
+    | 'reverseClip'
     | 'renameClip'
     | 'trimClipStart'
     | 'trimClipEnd'
@@ -139,6 +141,38 @@ function isRejectedCrossfadeOverlap(
 }
 
 export const clipEditingStrategyDefinitions = [
+    {
+        name: 'detachPatternInstance',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            const source = findClip(context, args.clipId);
+            if (!hasExactKeys(args, ['clipId']) || !source || source.clip.locked === true) {
+                return rejection(index, call.name, 'Expected only an available unlocked clipId');
+            }
+            return { type: 'detachPatternInstance', payload: { clipId: source.clip.id } };
+        },
+    },
+    {
+        name: 'reverseClip',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            const source = findClip(context, args.clipId);
+            if (
+                !hasExactKeys(args, ['clipId']) ||
+                !source ||
+                source.clip.type !== 'audio' ||
+                source.clip.locked === true ||
+                source.track.frozen === true
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected only an available unlocked audio clipId on an unfrozen track'
+                );
+            }
+            return { type: 'reverseClip', payload: { clipId: source.clip.id } };
+        },
+    },
     {
         name: 'removeClip',
         transform: ({ call, context, index }) => {

@@ -11,6 +11,7 @@ type ClipPlacementCallName = Extract<
     | 'addClip'
     | 'moveClip'
     | 'duplicateClipAt'
+    | 'createPatternInstance'
     | 'drawClip'
     | 'moveClips'
     | 'splitClip'
@@ -144,6 +145,38 @@ export const clipPlacementStrategyDefinitions = [
             return {
                 type: 'duplicateClipAt',
                 payload: { clipId: source.clip.id, destinationTrackId: destination.id, startBeat: args.startBeat },
+            };
+        },
+    },
+    {
+        name: 'createPatternInstance',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            const source = findClip(context, args.sourceClipId);
+            const destination = findTrack(context, args.targetTrackId);
+            if (
+                !hasExactKeys(args, ['sourceClipId', 'targetTrackId', 'startBeat']) ||
+                !source ||
+                source.clip.type !== 'midi' ||
+                !destination ||
+                destination.kind !== 'midi' ||
+                destination.frozen === true ||
+                !isFiniteNumber(args.startBeat) ||
+                args.startBeat < 0
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected one existing MIDI clip, one existing unfrozen MIDI track, and a finite non-negative startBeat'
+                );
+            }
+            return {
+                type: 'createPatternInstance',
+                payload: {
+                    sourceClipId: source.clip.id,
+                    targetTrackId: destination.id,
+                    startBeat: args.startBeat,
+                },
             };
         },
     },

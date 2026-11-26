@@ -191,7 +191,6 @@ export const presetMayEmitByActionType: { readonly [Type in RuntimeActionType]: 
     toggleControlRoomMono: true,
     toggleControlRoomDim: true,
     switchMonitor: true,
-    createCompGroup: true,
     togglePunchRecording: true,
     toggleLoopRecord: true,
     triggerScene: true,

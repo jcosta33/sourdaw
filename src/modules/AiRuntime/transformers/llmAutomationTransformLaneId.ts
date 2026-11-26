@@ -191,7 +191,6 @@ const automationTransformLaneIdByActionType: AutomationLaneLookup = {
     connectPush: noAutomationLane,
     createAdjustmentLayer: noAutomationLane,
     addAdjustmentRegion: noAutomationLane,
-    createCompGroup: noAutomationLane,
     createPatternInstance: noAutomationLane,
     createVcaGroup: noAutomationLane,
     deleteMacro: noAutomationLane,

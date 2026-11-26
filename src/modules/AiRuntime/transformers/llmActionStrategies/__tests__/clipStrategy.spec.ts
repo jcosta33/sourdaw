@@ -193,6 +193,96 @@ describe('clipStrategy', () => {
         });
     });
 
+    describe('pattern instance and reverse commands', () => {
+        const PATTERN_INSTANCE_REASON =
+            'Expected one existing MIDI clip, one existing unfrozen MIDI track, and a finite non-negative startBeat';
+        const DETACH_REASON = 'Expected only an available unlocked clipId';
+        const REVERSE_REASON = 'Expected only an available unlocked audio clipId on an unfrozen track';
+        const lockedContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-b' ? { ...clip, locked: true } : clip)),
+            })),
+        };
+        const lockedAudioContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-audio-a' ? { ...clip, locked: true } : clip)),
+            })),
+        };
+        const frozenContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({ ...track, frozen: true })),
+        };
+        const bridge = (name: string, args: Record<string, unknown>, context = projectContext) =>
+            bridgeClipToolCall({ call: { name, arguments: args }, context, index: 0 });
+
+        it('bridges each command to its exact payload', () => {
+            expect(
+                bridge('createPatternInstance', {
+                    sourceClipId: 'clip-midi-a',
+                    targetTrackId: 'track-midi',
+                    startBeat: 16,
+                })
+            ).toEqual({
+                type: 'createPatternInstance',
+                payload: { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 16 },
+            });
+            expect(bridge('detachPatternInstance', { clipId: 'clip-midi-a' })).toEqual({
+                type: 'detachPatternInstance',
+                payload: { clipId: 'clip-midi-a' },
+            });
+            expect(bridge('reverseClip', { clipId: 'clip-audio-a' })).toEqual({
+                type: 'reverseClip',
+                payload: { clipId: 'clip-audio-a' },
+            });
+        });
+
+        it.each([
+            ['an audio source clip', { sourceClipId: 'clip-audio-a', targetTrackId: 'track-midi', startBeat: 0 }],
+            ['an audio destination track', { sourceClipId: 'clip-midi-a', targetTrackId: 'track-audio', startBeat: 0 }],
+            ['a missing source clip', { sourceClipId: 'ghost', targetTrackId: 'track-midi', startBeat: 0 }],
+            ['a missing destination track', { sourceClipId: 'clip-midi-a', targetTrackId: 'ghost', startBeat: 0 }],
+            ['a negative start beat', { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: -1 }],
+            ['a string start beat', { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: '4' }],
+            [
+                'an unexpected key',
+                { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 0, targetClipId: 'forced' },
+            ],
+        ])('createPatternInstance refuses %s', (_name, args) => {
+            expect(bridge('createPatternInstance', args)).toEqual({
+                index: 0,
+                name: 'createPatternInstance',
+                reason: PATTERN_INSTANCE_REASON,
+            });
+        });
+
+        it('createPatternInstance refuses a frozen destination track', () => {
+            expect(
+                bridge(
+                    'createPatternInstance',
+                    { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 0 },
+                    frozenContext
+                )
+            ).toEqual({ index: 0, name: 'createPatternInstance', reason: PATTERN_INSTANCE_REASON });
+        });
+
+        it.each([
+            ['detachPatternInstance', { clipId: 'ghost' }, projectContext, DETACH_REASON],
+            ['detachPatternInstance', { clipId: 'clip-midi-b' }, lockedContext, DETACH_REASON],
+            ['detachPatternInstance', { clipId: 'clip-midi-a', extra: true }, projectContext, DETACH_REASON],
+            ['reverseClip', { clipId: 'ghost' }, projectContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-midi-a' }, projectContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-audio-a' }, frozenContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-audio-a' }, lockedAudioContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-audio-a', reversedBufferId: 'forced' }, projectContext, REVERSE_REASON],
+        ])('%s refuses %j', (name, args, context, reason) => {
+            expect(bridge(name, args, context)).toEqual({ index: 0, name, reason });
+        });
+    });
+
     it('drawClip draws a new clip matching the destination track kind', () => {
         expect(
             bridgeClipToolCall({

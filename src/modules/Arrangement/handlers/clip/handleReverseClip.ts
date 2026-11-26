@@ -2,15 +2,20 @@ import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { captureClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
 import { captureClipAudioSource } from '../../useCases/clipEditing/clipAudioSourceFields';
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
 import { reversedClipAudioOffsetBeats } from '../../useCases/clipEditing/reversedClipAudioOffsetBeats';
 import { reversedClipAudioSource } from '../../useCases/clipEditing/reversedClipAudioSource';
+import { collectAudioBufferIdFields } from '../../useCases/collectAudioBufferIdFields';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { liveTempoTimeline } from '../../useCases/liveTempoTimeline';
+import { readUndoHistoryAudioBufferIds } from '../../useCases/readUndoHistoryAudioBufferIds';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+import { isReverseClipSessionEntry } from './isReverseClipSessionEntry';
 
 function findAudioClip(clipId: string) {
     for (const track of getTrackStoreState()?.tracks ?? []) {
@@ -55,7 +60,62 @@ function captureBeatAlias(value: number | undefined): { present: false } | { pre
     return { present: true, value };
 }
 
+/** The batch is a singleton, so the live stores are the state this action plans against. */
+function findRefusal(action: Extract<AppAction, { type: 'reverseClip' }>): string | null {
+    const { clipId } = action.payload;
+    const owner = getTrackStoreState()?.tracks.find((track) =>
+        track.clips.some((candidate) => candidate.id === clipId)
+    );
+    const clip = owner?.clips.find((candidate) => candidate.id === clipId);
+    if (!owner || !clip) {
+        return `Clip "${clipId}" does not exist`;
+    }
+    if (clip.type !== 'audio' || !clip.audioBufferId) {
+        return `Clip "${clipId}" is not an audio clip with audio to reverse`;
+    }
+    if (clip.locked) {
+        return `Clip "${clipId}" is locked`;
+    }
+    if (owner.frozen === true) {
+        return `Track "${owner.id}" is frozen`;
+    }
+    return findAudioRefusal(clip, action.payload.reversedBufferId);
+}
+
+/**
+ * The reverse caches its mirrored audio under its minted id, so an id the cache, any clip of the project
+ * or any undo entry already names, the clip's own among them, would overwrite audio a clip or a later
+ * undo replay still needs. The cache is bounded, so it alone cannot say an id is free.
+ */
+function isAudioBufferInUse(bufferId: string): boolean {
+    return (
+        getCachedAudioBuffer({ bufferId }) !== null ||
+        collectAudioBufferIdFields(getTrackStoreState()).includes(bufferId) ||
+        readUndoHistoryAudioBufferIds().has(bufferId)
+    );
+}
+
+function findAudioRefusal(clip: Clip, reversedBufferId: string | undefined): string | null {
+    if (!clip.audioBufferId || !getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
+        return `The audio of clip "${clip.id}" is not loaded`;
+    }
+    if (reversedBufferId !== undefined && reversedBufferId.trim() === '') {
+        return 'The reversed buffer ID must not be blank';
+    }
+    if (reversedBufferId !== undefined && isAudioBufferInUse(reversedBufferId)) {
+        return `Audio buffer "${reversedBufferId}" already exists, so it cannot hold the reversed audio`;
+    }
+    if (resolveReversedSource(clip).audioSource === null) {
+        return `Clip "${clip.id}" cannot be mirrored while it loops; bounce it to audio first`;
+    }
+    return null;
+}
+
 export const handleReverseClip = createHandler<'reverseClip'>({
+    batchExecution: 'singleton',
+    validate: (action) => findRefusal(action) === null,
+    validationRefusalReason: findRefusal,
+    validateSessionEntry: isReverseClipSessionEntry,
     execute: (alpha) => {
         const didWrite = reverseClip(alpha.payload.clipId, alpha.payload.reversedBufferId);
         return toHandlerExecutionResult(didWrite);

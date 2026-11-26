@@ -175,7 +175,6 @@ export const unawaitedAiActionByActionType: { readonly [Type in RuntimeActionTyp
     connectPush: false,
     createAdjustmentLayer: false,
     addAdjustmentRegion: false,
-    createCompGroup: false,
     createPatternInstance: false,
     createVcaGroup: false,
     deleteMacro: false,

@@ -487,6 +487,58 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'createPatternInstance',
+        risk: 'bounded-reversible',
+        description:
+            'Place a linked instance of an existing MIDI clip on an existing unfrozen MIDI track at an absolute start beat; the instance starts with the source clip notes and stays linked to it.',
+        intentPhrases: ['pattern instance', 'instance of the pattern', 'linked copy', 'linked instance'],
+        targetRules: [
+            { argument: 'sourceClipId', capability: 'clip' },
+            { argument: 'targetTrackId', capability: 'track', allowBatchLocal: false },
+        ],
+        valueRules: [
+            {
+                argument: 'startBeat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
+        parameters: {
+            properties: {
+                sourceClipId: { type: 'string', description: 'Existing MIDI clip ID to instance' },
+                targetTrackId: { type: 'string', description: 'Existing unfrozen MIDI track ID to host the instance' },
+                startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+            },
+            required: ['sourceClipId', 'targetTrackId', 'startBeat'],
+        },
+    },
+    {
+        actionType: 'detachPatternInstance',
+        risk: 'bounded-reversible',
+        description:
+            'Break the link between a pattern instance and its parent pattern so the clip becomes an independent MIDI clip; a clip with no link is left as it is.',
+        intentPhrases: ['detach pattern instance', 'detach instance', 'unlink instance', 'make independent'],
+        targetRules: editableClipTargetRules,
+        parameters: {
+            properties: { clipId: { type: 'string', description: 'Existing unlocked pattern instance clip ID' } },
+            required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'reverseClip',
+        risk: 'destructive-reversible',
+        description:
+            'Reverse one unlocked audio clip so it plays back to front, mirroring its fades and offset; undo restores the original audio.',
+        intentPhrases: ['reverse clip', 'reverse the clip', 'reverse'],
+        targetRules: editableAudioClipTargetRules,
+        parameters: {
+            properties: { clipId: { type: 'string', description: 'Existing unlocked audio clip ID' } },
+            required: ['clipId'],
+        },
+    },
+    {
         actionType: 'moveClips',
         risk: 'bounded-reversible',
         description: 'Move several existing clips to explicit tracks and absolute start beats in one step.',
@@ -3245,6 +3297,11 @@ export const executableAppActionMutationIdentityRulesByType = {
     slipClipContent: CLIP_MUTATION_IDENTITY,
     drawClip: TRACK_RESOURCE_REFERENCE_IDENTITY,
     duplicateClipAt: CLIP_MUTATION_IDENTITY,
+    createPatternInstance: [
+        { arguments: [{ argument: 'targetTrackId' }], resourceFamily: 'track', resourceReferenceOnly: true },
+    ],
+    detachPatternInstance: CLIP_MUTATION_IDENTITY,
+    reverseClip: CLIP_MUTATION_IDENTITY,
     moveClips: MANY_CLIP_PLACEMENTS_MUTATION_IDENTITY,
     setClipGain: CLIP_MUTATION_IDENTITY,
     muteClip: CLIP_MUTATION_IDENTITY,
@@ -3368,6 +3425,9 @@ export const executableAppActionMutationIdempotenceByType = {
     slipClipContent: false,
     drawClip: false,
     duplicateClipAt: false,
+    createPatternInstance: false,
+    detachPatternInstance: true,
+    reverseClip: false,
     moveClips: false,
     setClipGain: true,
     muteClip: true,

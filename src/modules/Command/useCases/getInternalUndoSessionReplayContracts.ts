@@ -171,5 +171,9 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('deleteGrooveTemplate'),
         // The guarded inverse of applyGroove; the application's own entry validator binds it.
         createInternalReplayContract('restoreGrooveAssignment'),
+        // The guarded inverse and redo of detachPatternInstance; each names the link state it expects.
+        createInternalReplayContract('restorePatternInstanceLink'),
+        // The guarded inverse and redo of reverseClip; each names the buffer it expects the clip to hold.
+        createInternalReplayContract('restoreReversedClip'),
     ];
 }

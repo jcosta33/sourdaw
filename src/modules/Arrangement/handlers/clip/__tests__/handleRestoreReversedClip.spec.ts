@@ -223,4 +223,53 @@ describe('handleRestoreReversedClip', () => {
         expect(mockedUpdateClip).not.toHaveBeenCalled();
         expect(mockedRestoreAnalysis).not.toHaveBeenCalled();
     });
+
+    describe('validation', () => {
+        const restore = {
+            type: 'restoreReversedClip' as const,
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'reversed-1',
+                audioBufferId: 'buffer-1',
+                name: 'Verse',
+            },
+        };
+        const reverse = {
+            type: 'reverseClip' as const,
+            payload: { clipId: 'c1', reversedBufferId: 'reversed-1' },
+        };
+
+        it('admits a restore only while the clip holds the buffer it expects', () => {
+            setClip(makeClip({ audioBufferId: 'reversed-1' }));
+            expect(handleRestoreReversedClip.validate?.(restore, { actions: [restore], actionIndex: 0 })).toBe(true);
+
+            setClip(makeClip({ audioBufferId: 'someone-else' }));
+            expect(handleRestoreReversedClip.validate?.(restore, { actions: [restore], actionIndex: 0 })).toBe(false);
+            expect(
+                handleRestoreReversedClip.canReapplyAfterDivergence?.(restore, { actions: [restore], actionIndex: 0 })
+            ).toBe(false);
+        });
+
+        it('admits the restore that follows its own reverse while the clip still holds the buffer it puts back', () => {
+            const context = { actions: [reverse, restore], actionIndex: 1 };
+
+            setClip(makeClip({ audioBufferId: 'buffer-1' }));
+            expect(handleRestoreReversedClip.canReapplyAfterDivergence?.(restore, context)).toBe(true);
+
+            setClip(makeClip({ audioBufferId: 'someone-else' }));
+            expect(handleRestoreReversedClip.canReapplyAfterDivergence?.(restore, context)).toBe(false);
+        });
+
+        it('does not treat a reverse that minted another buffer as the one it inverts', () => {
+            const other = { ...reverse, payload: { ...reverse.payload, reversedBufferId: 'reversed-2' } };
+            setClip(makeClip({ audioBufferId: 'buffer-1' }));
+
+            expect(
+                handleRestoreReversedClip.canReapplyAfterDivergence?.(restore, {
+                    actions: [other, restore],
+                    actionIndex: 1,
+                })
+            ).toBe(false);
+        });
+    });
 });

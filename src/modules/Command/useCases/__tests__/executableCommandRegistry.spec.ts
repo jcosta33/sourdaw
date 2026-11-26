@@ -270,6 +270,34 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'createPatternInstance',
+        'Place a linked instance of an existing MIDI clip on an existing unfrozen MIDI track at an absolute start beat; the instance starts with the source clip notes and stays linked to it.',
+        {
+            sourceClipId: { type: 'string', description: 'Existing MIDI clip ID to instance' },
+            targetTrackId: { type: 'string', description: 'Existing unfrozen MIDI track ID to host the instance' },
+            startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+        },
+        ['sourceClipId', 'targetTrackId', 'startBeat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'detachPatternInstance',
+        'Break the link between a pattern instance and its parent pattern so the clip becomes an independent MIDI clip; a clip with no link is left as it is.',
+        { clipId: { type: 'string', description: 'Existing unlocked pattern instance clip ID' } },
+        ['clipId'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'reverseClip',
+        'Reverse one unlocked audio clip so it plays back to front, mirroring its fades and offset; undo restores the original audio.',
+        { clipId: { type: 'string', description: 'Existing unlocked audio clip ID' } },
+        ['clipId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'moveClips',
         'Move several existing clips to explicit tracks and absolute start beats in one step.',
         {
@@ -1876,6 +1904,35 @@ const EXPECTED_GROUNDING = [
             { argument: 'destinationTrackId', capability: 'track', allowBatchLocal: false, promptRole: 'destination' },
         ],
         valueRules: [{ argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' }],
+    },
+    {
+        actionType: 'createPatternInstance',
+        intentPhrases: ['pattern instance', 'instance of the pattern', 'linked copy', 'linked instance'],
+        targetRules: [
+            { argument: 'sourceClipId', capability: 'clip' },
+            { argument: 'targetTrackId', capability: 'track', allowBatchLocal: false },
+        ],
+        valueRules: [
+            {
+                argument: 'startBeat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
+    },
+    {
+        actionType: 'detachPatternInstance',
+        intentPhrases: ['detach pattern instance', 'detach instance', 'unlink instance', 'make independent'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'reverseClip',
+        intentPhrases: ['reverse clip', 'reverse the clip', 'reverse'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
+        valueRules: [],
     },
     {
         actionType: 'moveClips',

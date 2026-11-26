@@ -797,4 +797,105 @@ describe('handleReverseClip', () => {
             expect(description.redoAction?.payload).not.toHaveProperty('audioSource');
         });
     });
+
+    describe('validation', () => {
+        const action = {
+            type: 'reverseClip' as const,
+            payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+        };
+        const context = { actions: [action], actionIndex: 0 };
+        const baseClip = {
+            id: 'c1',
+            type: 'audio',
+            name: 'Verse',
+            audioBufferId: 'buffer-1',
+            startBeat: 0,
+            endBeat: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+
+        function seed(clip: Record<string, unknown> | null, track: Record<string, unknown> = {}): void {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: clip ? [{ ...baseClip, ...clip }] : [], ...track }],
+            });
+        }
+
+        beforeEach(() => {
+            // Only the clip's own buffer and another clip's are cached; the id this reverse mints is not.
+            mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                bufferId === 'buffer-1' || bufferId === 'foreign-buffer' ? { length: 32, sampleRate: 8 } : null
+            );
+        });
+
+        it('admits an unlocked audio clip whose audio is loaded', () => {
+            seed({});
+
+            expect(handleReverseClip.validate?.(action, context)).toBe(true);
+            expect(handleReverseClip.validationRefusalReason?.(action, context)).toBeNull();
+        });
+
+        it.each(['', '   '])('refuses a blank supplied reversed buffer id %j', (id) => {
+            seed({});
+            const supplied = { ...action, payload: { clipId: 'c1', reversedBufferId: id } };
+            const batch = { actions: [supplied], actionIndex: 0 };
+
+            expect(handleReverseClip.validate?.(supplied, batch)).toBe(false);
+            expect(handleReverseClip.validationRefusalReason?.(supplied, batch)).toBe(
+                'The reversed buffer ID must not be blank'
+            );
+        });
+
+        it.each(['buffer-1', 'foreign-buffer'])(
+            'refuses a supplied reversed buffer id %s that is already cached',
+            (id) => {
+                seed({});
+                const supplied = { ...action, payload: { clipId: 'c1', reversedBufferId: id } };
+
+                expect(handleReverseClip.validate?.(supplied, { actions: [supplied], actionIndex: 0 })).toBe(false);
+                expect(
+                    handleReverseClip.validationRefusalReason?.(supplied, { actions: [supplied], actionIndex: 0 })
+                ).toBe(`Audio buffer "${id}" already exists, so it cannot hold the reversed audio`);
+            }
+        );
+
+        it.each([
+            ['a clip that does not exist', null, {}, 'Clip "c1" does not exist'],
+            ['a MIDI clip', { type: 'midi' }, {}, 'Clip "c1" is not an audio clip with audio to reverse'],
+            [
+                'an audio clip with no audio',
+                { audioBufferId: undefined },
+                {},
+                'Clip "c1" is not an audio clip with audio to reverse',
+            ],
+            ['a locked clip', { locked: true }, {}, 'Clip "c1" is locked'],
+            ['a clip on a frozen track', {}, { frozen: true }, 'Track "t1" is frozen'],
+            [
+                'a looping clip the source clock cannot mirror',
+                { loopEnabled: true, endBeat: 4, loopLength: 2, audioOffsetSeconds: 0.5 },
+                {},
+                'Clip "c1" cannot be mirrored while it loops; bounce it to audio first',
+            ],
+        ])('refuses %s', (_name, clip, track, reason) => {
+            seed(clip, track);
+
+            expect(handleReverseClip.validate?.(action, context)).toBe(false);
+            expect(handleReverseClip.validationRefusalReason?.(action, context)).toBe(reason);
+        });
+
+        it('refuses a clip whose audio is not loaded', () => {
+            seed({});
+            mocks.getCachedAudioBuffer.mockReturnValue(undefined);
+
+            expect(handleReverseClip.validationRefusalReason?.(action, context)).toBe(
+                'The audio of clip "c1" is not loaded'
+            );
+        });
+
+        it('describes no inverse and no redo for a clip that does not exist', () => {
+            seed(null);
+
+            expect(handleReverseClip.describe(action, context)).toEqual({ label: 'Reverse clip', inverseAction: null });
+        });
+    });
 });

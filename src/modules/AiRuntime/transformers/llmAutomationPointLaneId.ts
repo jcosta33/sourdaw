@@ -180,7 +180,6 @@ export const automationPointLaneIdByActionType: AutomationPointLaneLookup = {
     connectPush: noAutomationPointLane,
     createAdjustmentLayer: noAutomationPointLane,
     addAdjustmentRegion: noAutomationPointLane,
-    createCompGroup: noAutomationPointLane,
     createPatternInstance: noAutomationPointLane,
     createVcaGroup: noAutomationPointLane,
     deleteMacro: noAutomationPointLane,

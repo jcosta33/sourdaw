@@ -101,4 +101,25 @@ describe('handleDetachPatternInstance', () => {
         mocks.detachPatternInstance.mockReturnValue(false);
         expect(handleDetachPatternInstance.execute(action)).toEqual({ status: 'no-write' });
     });
+
+    describe('isNoop', () => {
+        it('treats a clip that carries no link as already detached', () => {
+            mocks.getLink.mockReturnValue({
+                trackId: 'track',
+                state: { parentClipId: { present: false }, overrides: { present: false } },
+            });
+
+            expect(handleDetachPatternInstance.isNoop?.(action)).toBe(true);
+        });
+
+        it('treats a linked clip as still to detach', () => {
+            expect(handleDetachPatternInstance.isNoop?.(action)).toBe(false);
+        });
+
+        it('treats a clip that is not there as no no-op, leaving validation to refuse it', () => {
+            mocks.getLink.mockReturnValue(null);
+
+            expect(handleDetachPatternInstance.isNoop?.(action)).toBe(false);
+        });
+    });
 });

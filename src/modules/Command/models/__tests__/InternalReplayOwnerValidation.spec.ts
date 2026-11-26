@@ -23,6 +23,8 @@ describe('internalReplayOwnerValidationByActionType', () => {
             'restoreClipMoves',
             'restoreDrawnClip',
             'restoreGrooveAssignment',
+            'restorePatternInstanceLink',
+            'restoreReversedClip',
             'restoreTrackHeights',
         ]);
     });
