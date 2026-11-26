@@ -3189,3 +3189,87 @@ describe('#5385 a "not" opening a coordinated part protects what it names', () =
         );
     });
 });
+
+describe('#5393 an instruction naming no track reads back one whole antecedent', () => {
+    function gainItems(tracks: readonly ProjectTrack[], arguments_: Record<string, unknown>): CompiledItem[] {
+        return tracks.map((track) => trackItem('setTrackGain', track, arguments_));
+    }
+
+    it.each([
+        [
+            'Mute Vocals and Keys, then pan them left',
+            [trackItem('setTrackPan', mixVocals, { pan: -50 }), trackItem('setTrackPan', mixKeys, { pan: -50 })],
+            [mixVocals.id, mixKeys.id],
+        ],
+        [
+            'Solo Vocals and Keys, then turn down their volume by 3 dB',
+            gainItems([mixVocals, mixKeys], { deltaDb: -3 }),
+            [mixVocals.id, mixKeys.id],
+        ],
+        [
+            '1. Bass\n2. Drums\nTurn down both by 3 dB',
+            gainItems([mixBass, mixDrums], { deltaDb: -3 }),
+            [mixBass.id, mixDrums.id],
+        ],
+        [
+            '1) Bass\n2) Drums\nSet volume to 75%',
+            gainItems([mixBass, mixDrums], { gain: 0.75 }),
+            [mixBass.id, mixDrums.id],
+        ],
+        [
+            'Bass & Drums\nKeys\nset volume to 75%',
+            gainItems([mixBass, mixDrums, mixKeys], { gain: 0.75 }),
+            [mixBass.id, mixDrums.id, mixKeys.id],
+        ],
+        // The colon follows words other than names, so it closes no header and the instruction reads back.
+        [
+            'Mute Vocals, then set volume at 1:30 to 75%',
+            [trackItem('muteTrack', mixVocals, { muted: true }), ...gainItems([mixVocals], { gain: 0.75 })],
+            [mixVocals.id, mixVocals.id],
+        ],
+    ])('grounds "%s"', (prompt, items, expected) => {
+        const result = compileMix(prompt, items);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+
+    it('refuses the backing vocals a vocal-family pan reaches for "turn down the lead vocal by 3 dB and pan it 20% left"', () => {
+        const result = compileAndBridge(
+            'turn down the lead vocal by 3 dB and pan it 20% left',
+            [
+                roleItem(
+                    'setTrackGain',
+                    { deltaDb: -3 },
+                    { targetArgument: 'trackId', entity: 'track', match: { all: [{ role: 'lead vocal' }] } },
+                    1
+                ),
+                roleItem(
+                    'setTrackPan',
+                    { pan: -20 },
+                    { targetArgument: 'trackId', entity: 'track', match: { all: [{ roleFamily: 'vocal' }] } },
+                    3
+                ),
+            ],
+            [],
+            roleContext
+        );
+
+        expect(targetsOf(result)).not.toContain(backingVoxOne.id);
+        expect(targetsOf(result)).not.toContain(backingVoxTwo.id);
+        expect(authorityRefusals(result)).not.toEqual([]);
+    });
+});
+
+describe('#5378 a fragment starts a word at a capital opening a lowercase run after capitals', () => {
+    it.each([
+        ['turn down the vox by 3 dB', 'vox', ['BGVox']],
+        ['turn down the reverb by 3 dB', 'reverb', ['FXReverb']],
+    ])('grounds "%s" with a "%s" fragment for %j', (prompt, fragment, names) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(prompt, [nameFragmentItem(fragment, names.length)], [], context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(names.map((name) => track(name).id));
+    });
+});

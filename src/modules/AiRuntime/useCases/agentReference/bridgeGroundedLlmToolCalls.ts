@@ -2986,13 +2986,6 @@ function getSendLaneBusId(groundedArguments: Record<string, unknown>): string | 
         : undefined;
 }
 
-/**
- * The decibel figures a scope naming several tracks binds to this call's own track, or `undefined`
- * when the scope names fewer than two and every figure it states is this call's. The call's track
- * is its first grounded non-destination target; tracks the call's other targets name, such as the
- * bus a send feeds, are not candidates.
- */
-
 /** The track a call acts on and every track its scope names beside it, when the scope names two or more. */
 function getAnchorReferences(
     actionScope: ActionPromptScope,
@@ -3026,6 +3019,12 @@ function getAnchorReferences(
     return { anchorId, references };
 }
 
+/**
+ * The decibel figures a scope naming several tracks binds to this call's own track, or `undefined`
+ * when the scope names fewer than two and every figure it states is this call's. The call's track
+ * is its first grounded non-destination target; tracks the call's other targets name, such as the
+ * bus a send feeds, are not candidates.
+ */
 function getReferenceBoundDecibelFigures(
     actionScope: ActionPromptScope,
     targetRules: GroundingRules['targetRules'],

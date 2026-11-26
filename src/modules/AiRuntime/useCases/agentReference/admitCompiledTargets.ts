@@ -3,11 +3,11 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
 import {
+    SEMANTIC_COMMAND_LIST_ROLE_FAMILIES,
     type SemanticCommandListMatch,
     type SemanticCommandListRoleFamily,
     type SemanticCommandListSelector,
 } from '../../models/SemanticCommandList';
-import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
 
 import {
     findAgentReferenceNameSpans,
@@ -15,6 +15,7 @@ import {
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
+import { findNarrowerRoleSpans } from './findNarrowerRoleSpans';
 import { findSentenceEnd } from './findSentenceEnd';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
@@ -27,6 +28,7 @@ import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
 import { holdsFragmentAtWordStart } from './holdsFragmentAtWordStart';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
+import { readTextLines } from './readTextLines';
 import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 import { scopeToInstruction } from './scopeToInstruction';
@@ -65,9 +67,10 @@ import { scopeToInstruction } from './scopeToInstruction';
  * asks for the call's change, the clause the direct route grounds that action in, less the request's
  * restrictions and the values any call of the batch writes, so another instruction's name never
  * picks its target ("set Vocals volume to 75% and mute Keys" states no Keys gain). An instruction that
- * names no track of its own, or none before it refers back with "it", "its" or "that track", also reads
- * the nearest earlier clause naming one with the run of names leading into it ("turn Vocals down and
- * pan it left", "On Vocals, set volume to 75%", "Vocals\nKeys\nset volume to 75%"); a call no clause
+ * names no track or narrower role of its own, or none before it refers back with "it", "them" or "that
+ * track", also reads one earlier unit naming one: the run of list lines leading into its line ("1.
+ * Bass\n2. Drums\nTurn down both"), else the nearest earlier instruction, taken whole, or statement
+ * ("Mute Vocals and Keys, then pan them left", "On Vocals, set volume to 75%"); a call no clause
  * grounds reads the whole request. A selection reference ("this track", "the selected track", "it" or "its"
  * outside every object name for the selected track) that resolves to the picked objects states those
  * picks only when the text names no object of that kind, by name, id or, for a track, position, or
@@ -477,11 +480,24 @@ function namesTrack(text: string, context: ProjectContext): boolean {
     return namesObjectByName(text, 'track', context) || readTrackPosition(text) !== undefined;
 }
 
-/** Where the instruction first refers back with "it", "its" or "that track", outside every object name. */
+/** Whether the text names a narrower role of any family, outside every object name: "the lead vocal". */
+function namesNarrowerRole(text: string, context: ProjectContext): boolean {
+    return findNarrowerRoleSpans(maskObjectNames(text, context), SEMANTIC_COMMAND_LIST_ROLE_FAMILIES).length > 0;
+}
+
+/** "them", "their" or "those", which refer back to the tracks an earlier instruction states. */
+const PLURAL_BACK_REFERENCE = /\b(?:them|their|those)\b/iu;
+
+/**
+ * Where the instruction first refers back with "it", "its", "them", "their", "those" or "that track",
+ * outside every object name.
+ */
 function findBackReference(instruction: string, context: ProjectContext): number | undefined {
-    const pronoun = SELECTION_PRONOUN.exec(maskObjectNames(instruction, context))?.index;
+    const masked = maskObjectNames(instruction, context);
+    const pronoun = SELECTION_PRONOUN.exec(masked)?.index;
+    const plural = PLURAL_BACK_REFERENCE.exec(masked)?.index;
     const demonstrative = DEMONSTRATIVE_TRACK_REFERENCE.exec(normalizeAgentReferenceText(instruction))?.index;
-    const positions = [pronoun, demonstrative].filter((position) => position !== undefined);
+    const positions = [pronoun, plural, demonstrative].filter((position) => position !== undefined);
     return positions.length === 0 ? undefined : Math.min(...positions);
 }
 
@@ -510,9 +526,10 @@ function getEvidenceText(
         clauses: request.clauses,
         instruction,
         reader: {
-            namesTrack: (text) => namesTrack(text, context),
+            namesTracks: (text) => namesTrack(text, context) || namesNarrowerRole(text, context),
             findBackReference: (text) => findBackReference(text, context),
             givesInstruction: (masked) => resolveClauseActionIntent(masked, catalog) !== null,
+            extendInstruction: (clause) => extendInstruction(request, clause, catalog),
         },
     });
 }
@@ -539,11 +556,11 @@ function extendOverListLines(request: MaskedRequest, end: number, catalog: Groun
         return end;
     }
     let listEnd = end;
-    for (const line of request.maskedPrompt.slice(end).matchAll(/[^\n]+/gu)) {
-        if (resolveClauseActionIntent(line[0], catalog) !== null) {
+    for (const line of readTextLines(request.maskedPrompt, { start: end, end: request.maskedPrompt.length })) {
+        if (resolveClauseActionIntent(request.maskedPrompt.slice(line.start, line.end), catalog) !== null) {
             break;
         }
-        listEnd = end + line.index + line[0].length;
+        listEnd = line.end;
     }
     return listEnd;
 }
@@ -757,16 +774,6 @@ function getFamilyPicks(input: RequestReadingInput): SemanticCommandListRoleFami
     return predicates.flatMap((predicate) => ('roleFamily' in predicate ? [predicate.roleFamily] : []));
 }
 
-/** The canonical roles of a family whose phrase holds the family's own word in a longer phrase: "lead vocal". */
-function getNarrowerRoles(family: SemanticCommandListRoleFamily): string[] {
-    return CANONICAL_ROLE_OPTIONS.filter(
-        (role) =>
-            CANONICAL_ROLE_TO_RECIPE_ROLE[role] === family &&
-            role.includes(' ') &&
-            findNamedRoleFamilies(role, [family]).named.includes(family)
-    );
-}
-
 /**
  * The narrower roles the text names a family through, when it names the family only that way: "turn
  * down the lead vocal" names the lead vocal, never every vocal. Empty when the text names the family
@@ -779,9 +786,7 @@ function readStatedNarrowerRoles(
     context: ProjectContext
 ): ReadonlySet<string> {
     const masked = maskObjectNames(text, context);
-    const roleSpans = getNarrowerRoles(family).flatMap((role) =>
-        findAgentReferenceNameSpans(masked, role, NAME_FORMS, []).map((span) => ({ ...span, role }))
-    );
+    const roleSpans = findNarrowerRoleSpans(masked, [family]);
     const outsideRoles = roleSpans.reduce(blankRange, masked);
     if (roleSpans.length === 0 || findNamedRoleFamilies(outsideRoles, [family]).named.includes(family)) {
         return new Set();

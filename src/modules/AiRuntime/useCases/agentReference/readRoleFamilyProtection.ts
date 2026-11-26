@@ -131,8 +131,8 @@ function readFamilyPredicate(members: readonly Token[]): { roleFamily: SemanticC
 }
 
 /**
- * A whole role phrase, with a kind noun of its family after it ("the backing vocals", "the kick
- * track"), which keeps the tracks of that role alone. A phrase written as a name ("the Kick track"
+ * A whole role phrase, with or without a kind noun of its family after it ("the backing vocals", "the
+ * kick track"), which keeps the tracks of that role alone. A phrase written as a name ("the Kick track"
  * with no such object) is left to the object forms' unbound refusal.
  */
 function readRolePredicate(members: readonly Token[]): { role: string } | null {

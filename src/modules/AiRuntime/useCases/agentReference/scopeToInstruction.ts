@@ -1,15 +1,18 @@
 import { type AgentReferenceTextRange } from './findAgentReferenceNameSpans';
 import { findSentenceEnd } from './findSentenceEnd';
 import { PROJECT_REFERENCE_MASK_GLYPH } from './groundingStrategies/maskProjectReferences';
+import { readTextLines } from './readTextLines';
 
-/** How the scope reads the request: the track names it states and the instructions it gives. */
+/** How the scope reads the request: the tracks it names and the instructions it gives. */
 export type InstructionReader = {
-    /** Whether the text names a track by whole name, id or position. */
-    namesTrack: (text: string) => boolean;
-    /** Where the text first refers back with "it", "its" or "that track". */
+    /** Whether the text names a track by whole name, id or position, or a narrower role ("the lead vocal"). */
+    namesTracks: (text: string) => boolean;
+    /** Where the text first refers back to tracks stated before it: "it", "them", "that track". */
     findBackReference: (text: string) => number | undefined;
-    /** Whether the masked clause gives an instruction of its own. */
+    /** Whether the masked clause or line gives an instruction of its own. */
     givesInstruction: (masked: string) => boolean;
+    /** The whole instruction a clause giving one opens, as the instruction reading extends it. */
+    extendInstruction: (clause: AgentReferenceTextRange) => AgentReferenceTextRange;
 };
 
 type Clause = AgentReferenceTextRange & { masked: string };
@@ -22,89 +25,111 @@ export type InstructionScopeInput = {
     reader: InstructionReader;
 };
 
-/** What a list of names holds besides its masked names: joiners, "the", "track", punctuation and bullets. */
-const NAME_LIST_FILLER = new RegExp(
-    String.raw`\b(?:and|or|the|tracks?)\b|[\s,:\-*•${PROJECT_REFERENCE_MASK_GLYPH}]`,
+/** A stretch of the request before the instruction: a whole earlier instruction, or a statement giving none. */
+type Unit = AgentReferenceTextRange & { givesInstruction: boolean };
+
+/** What a header of names holds besides its masked names: joiners, "the", "track", punctuation and bullets. */
+const NAME_HEADER_FILLER = new RegExp(
+    String.raw`\b(?:and|or|the|tracks?)\b|[\s,&\-*•${PROJECT_REFERENCE_MASK_GLYPH}]`,
     'giu'
 );
 
-/** Whether the masked text is nothing but a list of project names: "Vocals and Keys", "- Bass". */
-function listsNamesOnly(masked: string): boolean {
-    return masked.includes(PROJECT_REFERENCE_MASK_GLYPH) && masked.replaceAll(NAME_LIST_FILLER, '') === '';
-}
-
-/** Where the instruction's body starts past a leading header of names it closes with a colon: "Vocals and Keys: set ...". */
+/**
+ * Where the instruction's body starts past a leading header of names it closes with a colon ("Vocals
+ * and Keys: set ..."); a colon after any other word ("at 1:30") closes no header.
+ */
 function getHeaderEnd(maskedInstruction: string): number {
     const colon = maskedInstruction.indexOf(':');
-    return colon >= 0 && listsNamesOnly(maskedInstruction.slice(0, colon)) ? colon + 1 : 0;
+    if (colon < 0) {
+        return 0;
+    }
+    const header = maskedInstruction.slice(0, colon);
+    const namesOnly = header.includes(PROJECT_REFERENCE_MASK_GLYPH) && header.replaceAll(NAME_HEADER_FILLER, '') === '';
+    return namesOnly ? colon + 1 : 0;
 }
 
 /**
- * Whether the earlier clause runs on into the next as one statement of names: it gives no
- * instruction, and it is a line or header of names or shares the next one's sentence ("For Vocals
- * and Keys, ...", "Vocals\nKeys").
+ * The lines right before the instruction's own line that give no instruction, when the instruction
+ * opens its line: a list of names it reads whole ("1. Bass\n2. Drums\nTurn down both by 3 dB").
  */
-function joinsAntecedent(input: InstructionScopeInput, previous: Clause, next: Clause): boolean {
-    if (input.reader.givesInstruction(previous.masked)) {
-        return false;
-    }
-    return (
-        listsNamesOnly(previous.masked) ||
-        findSentenceEnd(input.maskedPrompt.slice(previous.end, next.start)) === undefined
-    );
-}
-
-/**
- * Where among the earlier clauses the instruction's tracks are named: the nearest clause naming one,
- * or, for an instruction a header of names opens, the clause right before it when it lists names
- * only. -1 when there is none.
- */
-function findAntecedentIndex(
-    input: InstructionScopeInput,
-    earlier: readonly Clause[],
-    opensWithHeader: boolean
-): number {
-    if (!opensWithHeader) {
-        return earlier.findLastIndex((clause) => input.reader.namesTrack(input.text.slice(clause.start, clause.end)));
-    }
-    const last = earlier.at(-1);
-    if (last === undefined || !listsNamesOnly(last.masked)) {
-        return -1;
-    }
-    return earlier.length - 1;
-}
-
-/**
- * The earlier clauses an instruction naming no track of its own before it refers back, or at all,
- * reads its tracks from: the nearest earlier clause naming one, with the run of names leading into it
- * ("pan it left" after "set Vocals volume to 50%", "set volume to 75%" after "Vocals\nKeys"). An
- * instruction a header of names opens reads only the names listed right before it.
- */
-function getAntecedentRange(input: InstructionScopeInput): AgentReferenceTextRange | undefined {
-    const { text, maskedPrompt, clauses, instruction, reader } = input;
-    const header = getHeaderEnd(maskedPrompt.slice(instruction.start, instruction.end));
-    const body = text.slice(instruction.start + header, instruction.end);
-    if (reader.namesTrack(body.slice(0, reader.findBackReference(body)))) {
+function getListRun({ maskedPrompt, instruction, reader }: InstructionScopeInput): AgentReferenceTextRange | undefined {
+    const lineStart = maskedPrompt.lastIndexOf('\n', instruction.start - 1) + 1;
+    if (lineStart === 0 || maskedPrompt.slice(lineStart, instruction.start).trim() !== '') {
         return undefined;
     }
-    const earlier = clauses.filter((clause) => clause.end <= instruction.start);
-    const antecedent = findAntecedentIndex(input, earlier, header > 0);
-    const antecedentClause = earlier[antecedent];
-    if (antecedentClause === undefined) {
-        return undefined;
-    }
-    let first = antecedentClause;
-    for (const previous of earlier.slice(0, antecedent).reverse()) {
-        if (!joinsAntecedent(input, previous, first)) {
+    let start = lineStart;
+    for (const line of readTextLines(maskedPrompt, { start: 0, end: lineStart }).reverse()) {
+        if (reader.givesInstruction(maskedPrompt.slice(line.start, line.end))) {
             break;
         }
-        first = previous;
+        start = line.start;
     }
-    return { start: first.start, end: antecedentClause.end };
+    return start === lineStart ? undefined : { start, end: lineStart };
 }
 
 /**
- * The text with everything outside the instruction blanked, except the earlier clauses it reads its
+ * The request before `end` read as units: each instruction whole, as the instruction reading extends
+ * it, and each run of clauses within one sentence that gives none ("On Vocals and Keys, ...").
+ */
+function getEarlierUnits({ maskedPrompt, clauses, reader }: InstructionScopeInput, end: number): Unit[] {
+    const units: Unit[] = [];
+    for (const clause of clauses.filter((candidate) => candidate.end <= end)) {
+        const last = units.at(-1);
+        if (last !== undefined && clause.start < last.end) {
+            continue;
+        }
+        if (reader.givesInstruction(clause.masked)) {
+            const extended = reader.extendInstruction(clause);
+            units.push({ start: clause.start, end: Math.min(extended.end, end), givesInstruction: true });
+        } else if (
+            last !== undefined &&
+            !last.givesInstruction &&
+            findSentenceEnd(maskedPrompt.slice(last.end, clause.start)) === undefined
+        ) {
+            units[units.length - 1] = { ...last, end: clause.end };
+        } else {
+            units.push({ start: clause.start, end: clause.end, givesInstruction: false });
+        }
+    }
+    return units;
+}
+
+/** Whether the request names a track within the range. */
+function namesTracksIn({ text, reader }: InstructionScopeInput, { start, end }: AgentReferenceTextRange): boolean {
+    return reader.namesTracks(text.slice(start, end));
+}
+
+/**
+ * The one earlier unit an instruction naming no track of its own, or none before it refers back,
+ * reads its tracks from: the run of list lines leading into its line when it names any, else the
+ * nearest earlier instruction or statement naming one ("pan them left" after "Mute Vocals and Keys").
+ * An instruction a header of names opens reads only a statement leading into it on its sentence.
+ */
+function getAntecedentRange(input: InstructionScopeInput): AgentReferenceTextRange | undefined {
+    const { text, maskedPrompt, instruction, reader } = input;
+    const header = getHeaderEnd(maskedPrompt.slice(instruction.start, instruction.end));
+    const body = text.slice(instruction.start + header, instruction.end);
+    if (reader.namesTracks(body.slice(0, reader.findBackReference(body)))) {
+        return undefined;
+    }
+    const listRun = getListRun(input);
+    if (listRun !== undefined && namesTracksIn(input, listRun)) {
+        return listRun;
+    }
+    const units = getEarlierUnits(input, listRun?.start ?? instruction.start);
+    if (header === 0) {
+        return units.findLast((unit) => namesTracksIn(input, unit));
+    }
+    const leading = units.at(-1);
+    const leadsIn =
+        leading !== undefined &&
+        !leading.givesInstruction &&
+        findSentenceEnd(maskedPrompt.slice(leading.end, instruction.start)) === undefined;
+    return leadsIn && namesTracksIn(input, leading) ? leading : undefined;
+}
+
+/**
+ * The text with everything outside the instruction blanked, except the earlier unit it reads its
  * tracks from when it names none of its own.
  */
 export function scopeToInstruction(input: InstructionScopeInput): string {
