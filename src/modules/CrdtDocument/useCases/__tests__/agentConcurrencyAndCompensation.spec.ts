@@ -16,6 +16,7 @@ import {
     captureCommandTargetFingerprints,
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
+    configureCommandBatchIdempotency,
     createVersionedCommandEnvelope,
     executeAppAction,
     executeVersionedCommandBatch,
@@ -249,6 +250,13 @@ function prepareTargetCommand() {
 
 describe('agent concurrency and compensation', () => {
     beforeEach(() => {
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        configureCommandBatchIdempotency({ canExecute: () => true });
         clearHandlerRegistry();
         clearUndoHistory();
         automergeRepository.reset();
@@ -283,6 +291,8 @@ describe('agent concurrency and compensation', () => {
         agentProjectInspectionPort.setProvider(null);
         agentProjectRepairStateStore.set(null);
         automergeRepository.reset();
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
+        vi.unstubAllGlobals();
     });
 
     it('classifies every AC-016 divergence shape without treating every new head as a conflict', () => {

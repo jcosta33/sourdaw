@@ -64,9 +64,6 @@ export async function getVersionedCommandBatchCommitDisposition(
     if (projectCheckpoint.status !== 'missing') {
         return 'unknown';
     }
-    if (!commandBatchIdempotencyPort.isConfigured()) {
-        return 'unknown';
-    }
     try {
         const repositoryReceipt = await commandBatchIdempotencyPort.lookup(proof);
         return repositoryReceipt.status === 'complete'

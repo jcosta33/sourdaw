@@ -29,6 +29,10 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry } from '../../stores';
 import { undoStore } from '../../stores/undoStore';
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
@@ -225,6 +229,8 @@ function registerProductionHandlers(): void {
 describe('processing-only parameter policy', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        resetUnwiredProjectCommandBatchLedger();
+        registerInMemoryCommandBatchIdempotency();
         // The project stores are CRDT-backed and no document is wired here, so
         // the seeded project lives only in the optimistic pending write this
         // fixture makes. jsdom's animation frame is a 16ms timer: were it to fire

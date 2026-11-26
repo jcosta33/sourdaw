@@ -1,10 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../../models/VersionedCommandBatchEnvelope';
+import {
+    registerInMemoryCommandBatchIdempotency,
+    resetUnwiredProjectCommandBatchLedger,
+} from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
@@ -148,6 +152,11 @@ function splitBatchReceipt(result: Awaited<ReturnType<typeof executeVersionedCom
 }
 
 describe('command batch contract', () => {
+    beforeEach(() => {
+        resetUnwiredProjectCommandBatchLedger();
+        registerInMemoryCommandBatchIdempotency();
+    });
+
     afterEach(() => {
         clearHandlerRegistry();
         commandProjectRevisionPort.setProvider(null);

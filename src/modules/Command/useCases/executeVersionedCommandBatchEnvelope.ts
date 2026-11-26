@@ -134,7 +134,6 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
     const batchContentHash = await getCommandBatchContentHash(parsed.envelope);
-    const requiresDurableExecutionAuthority = commandBatchIdempotencyPort.isConfigured();
     let observedBaseRevision: string | null = null;
     const receiptWarnings: string[] = [];
     try {
@@ -148,8 +147,6 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             `Observed base revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
         );
     }
-    const idempotencyContentHash = requiresDurableExecutionAuthority ? batchContentHash : null;
-    let mayReclaimPendingClaim = false;
     const projectCommitRecovery: {
         receipt: ReturnType<typeof createVerifiedBatchReceipt> | null;
         preparation: ProjectCommitRecoveryPreparation | null;
@@ -157,11 +154,37 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         preparation: null,
         receipt: null,
     };
-    if (requiresDurableExecutionAuthority) {
-        if (!commandBatchExecutionAuthorityPort.canExecute()) {
+    if (!commandBatchExecutionAuthorityPort.canExecute()) {
+        const result = {
+            status: 'rejected' as const,
+            reason: 'Only the authoritative collaboration host can execute a durable command batch',
+            actions: [] as [],
+        };
+        return {
+            ...result,
+            receipt: createVerifiedBatchReceipt({
+                contentHash: batchContentHash,
+                envelope: resolvedEnvelope,
+                observedBaseRevision,
+                receiptWarnings,
+                resultingRevision: observedBaseRevision,
+                result,
+            }),
+        };
+    }
+    try {
+        const activeClaimId = `${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`;
+        const projectCheckpoint = activeIdempotencyClaims.has(activeClaimId)
+            ? { status: 'missing' as const }
+            : getProjectCommandBatchIdempotencyCheckpoint({
+                  projectId: parsed.envelope.projectId,
+                  idempotencyKey: parsed.envelope.idempotencyKey,
+                  contentHash: batchContentHash,
+              });
+        if (projectCheckpoint.status === 'unsupported-schema') {
             const result = {
                 status: 'rejected' as const,
-                reason: 'Only the authoritative collaboration host can execute a durable command batch',
+                reason: 'Project idempotency ledger schema is unsupported',
                 actions: [] as [],
             };
             return {
@@ -176,145 +199,79 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 }),
             };
         }
-        try {
-            const activeClaimId = `${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`;
-            const projectCheckpoint = activeIdempotencyClaims.has(activeClaimId)
-                ? { status: 'missing' as const }
-                : getProjectCommandBatchIdempotencyCheckpoint({
-                      projectId: parsed.envelope.projectId,
-                      idempotencyKey: parsed.envelope.idempotencyKey,
-                      contentHash: batchContentHash,
-                  });
-            if (projectCheckpoint.status === 'unsupported-schema') {
-                const result = {
+        if (projectCheckpoint.status === 'conflict') {
+            const result = {
+                status: 'rejected' as const,
+                reason: 'Idempotency key was already used for different batch content',
+                actions: [] as [],
+            };
+            return {
+                ...result,
+                receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
+                    envelope: resolvedEnvelope,
+                    observedBaseRevision,
+                    receiptWarnings,
+                    resultingRevision: observedBaseRevision,
+                    result,
+                }),
+            };
+        }
+        if (projectCheckpoint.status === 'complete') {
+            const receipt = parseStoredVerifiedBatchReceipt({
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                commands: parsed.envelope.commands,
+                contentHash: batchContentHash,
+                runId: parsed.envelope.runId,
+                serializedReceipt: projectCheckpoint.serializedReceipt,
+            });
+            if (!receipt) {
+                return {
                     status: 'rejected' as const,
-                    reason: 'Project idempotency ledger schema is unsupported',
+                    reason: 'Stored project idempotency receipt is invalid',
                     actions: [] as [],
                 };
-                return {
-                    ...result,
-                    receipt: createVerifiedBatchReceipt({
-                        contentHash: batchContentHash,
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings,
-                        resultingRevision: observedBaseRevision,
-                        result,
-                    }),
-                };
             }
-            if (projectCheckpoint.status === 'conflict') {
-                const result = {
+            return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+        }
+        if (projectCheckpoint.status === 'pending') {
+            const receipt = parseStoredVerifiedBatchReceipt({
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                commands: parsed.envelope.commands,
+                contentHash: batchContentHash,
+                runId: parsed.envelope.runId,
+                serializedReceipt: projectCheckpoint.serializedReceipt,
+            });
+            if (!receipt) {
+                return {
                     status: 'rejected' as const,
-                    reason: 'Idempotency key was already used for different batch content',
+                    reason: 'Stored project idempotency receipt is invalid',
                     actions: [] as [],
                 };
+            }
+            const recoveryLeaseAcquired = await commandBatchIdempotencyPort.tryAcquireRecoveryLease({
+                projectId: parsed.envelope.projectId,
+                idempotencyKey: parsed.envelope.idempotencyKey,
+                contentHash: batchContentHash,
+            });
+            if (recoveryLeaseAcquired !== true) {
                 return {
-                    ...result,
-                    receipt: createVerifiedBatchReceipt({
-                        contentHash: batchContentHash,
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings,
-                        resultingRevision: observedBaseRevision,
-                        result,
-                    }),
+                    status: 'ambiguous' as const,
+                    reason: 'Command batch external-effect recovery is already in progress',
+                    actions: [] as [],
+                    receipt,
                 };
             }
-            if (projectCheckpoint.status === 'complete') {
-                const receipt = parseStoredVerifiedBatchReceipt({
-                    baseRevision: parsed.envelope.baseRevision,
-                    batchId: parsed.envelope.batchId,
-                    commands: parsed.envelope.commands,
-                    contentHash: batchContentHash,
-                    runId: parsed.envelope.runId,
-                    serializedReceipt: projectCheckpoint.serializedReceipt,
-                });
-                if (!receipt) {
-                    return {
-                        status: 'rejected' as const,
-                        reason: 'Stored project idempotency receipt is invalid',
-                        actions: [] as [],
-                    };
-                }
-                return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
-            }
-            if (projectCheckpoint.status === 'pending') {
-                const receipt = parseStoredVerifiedBatchReceipt({
-                    baseRevision: parsed.envelope.baseRevision,
-                    batchId: parsed.envelope.batchId,
-                    commands: parsed.envelope.commands,
-                    contentHash: batchContentHash,
-                    runId: parsed.envelope.runId,
-                    serializedReceipt: projectCheckpoint.serializedReceipt,
-                });
-                if (!receipt) {
-                    return {
-                        status: 'rejected' as const,
-                        reason: 'Stored project idempotency receipt is invalid',
-                        actions: [] as [],
-                    };
-                }
-                const recoveryLeaseAcquired = await commandBatchIdempotencyPort.tryAcquireRecoveryLease({
+            try {
+                const recoveryCheckpoint = getProjectCommandBatchIdempotencyCheckpoint({
                     projectId: parsed.envelope.projectId,
                     idempotencyKey: parsed.envelope.idempotencyKey,
                     contentHash: batchContentHash,
                 });
-                if (recoveryLeaseAcquired !== true) {
-                    return {
-                        status: 'ambiguous' as const,
-                        reason: 'Command batch external-effect recovery is already in progress',
-                        actions: [] as [],
-                        receipt,
-                    };
-                }
-                try {
-                    const recoveryCheckpoint = getProjectCommandBatchIdempotencyCheckpoint({
-                        projectId: parsed.envelope.projectId,
-                        idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: batchContentHash,
-                    });
-                    if (recoveryCheckpoint.status === 'complete') {
-                        const completedReceipt = parseStoredVerifiedBatchReceipt({
-                            baseRevision: parsed.envelope.baseRevision,
-                            batchId: parsed.envelope.batchId,
-                            commands: parsed.envelope.commands,
-                            contentHash: batchContentHash,
-                            runId: parsed.envelope.runId,
-                            serializedReceipt: recoveryCheckpoint.serializedReceipt,
-                        });
-                        if (!completedReceipt) {
-                            return {
-                                status: 'rejected' as const,
-                                reason: 'Stored project idempotency receipt is invalid',
-                                actions: [] as [],
-                            };
-                        }
-                        return { status: 'idempotent-replay' as const, actions: [] as [], receipt: completedReceipt };
-                    }
-                    if (recoveryCheckpoint.status === 'unsupported-schema') {
-                        return {
-                            status: 'rejected' as const,
-                            reason: 'Project idempotency ledger schema is unsupported',
-                            actions: [] as [],
-                        };
-                    }
-                    if (recoveryCheckpoint.status === 'conflict') {
-                        return {
-                            status: 'rejected' as const,
-                            reason: 'Idempotency key was already used for different batch content',
-                            actions: [] as [],
-                        };
-                    }
-                    if (recoveryCheckpoint.status === 'missing') {
-                        return {
-                            status: 'ambiguous' as const,
-                            reason: 'Project idempotency checkpoint disappeared during external-effect recovery',
-                            actions: [] as [],
-                            receipt,
-                        };
-                    }
-                    const recoveryReceipt = parseStoredVerifiedBatchReceipt({
+                if (recoveryCheckpoint.status === 'complete') {
+                    const completedReceipt = parseStoredVerifiedBatchReceipt({
                         baseRevision: parsed.envelope.baseRevision,
                         batchId: parsed.envelope.batchId,
                         commands: parsed.envelope.commands,
@@ -322,73 +279,110 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         runId: parsed.envelope.runId,
                         serializedReceipt: recoveryCheckpoint.serializedReceipt,
                     });
-                    if (!recoveryReceipt) {
+                    if (!completedReceipt) {
                         return {
                             status: 'rejected' as const,
                             reason: 'Stored project idempotency receipt is invalid',
                             actions: [] as [],
                         };
                     }
+                    return { status: 'idempotent-replay' as const, actions: [] as [], receipt: completedReceipt };
+                }
+                if (recoveryCheckpoint.status === 'unsupported-schema') {
+                    return {
+                        status: 'rejected' as const,
+                        reason: 'Project idempotency ledger schema is unsupported',
+                        actions: [] as [],
+                    };
+                }
+                if (recoveryCheckpoint.status === 'conflict') {
+                    return {
+                        status: 'rejected' as const,
+                        reason: 'Idempotency key was already used for different batch content',
+                        actions: [] as [],
+                    };
+                }
+                if (recoveryCheckpoint.status === 'missing') {
                     return {
                         status: 'ambiguous' as const,
+                        reason: 'Project idempotency checkpoint disappeared during external-effect recovery',
                         actions: [] as [],
-                        reason: PROJECT_EFFECT_RECOVERY_REQUIRES_EXACT_CHECKPOINT_REVISION,
-                        receipt: recoveryReceipt,
+                        receipt,
                     };
-                } finally {
-                    try {
-                        await commandBatchIdempotencyPort.release({
-                            projectId: parsed.envelope.projectId,
-                            idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: batchContentHash,
-                        });
-                    } catch {
-                        // The recovery outcome remains authoritative; repository release is best effort.
-                    }
                 }
-            }
-            mayReclaimPendingClaim = true;
-            const prior = await commandBatchIdempotencyPort.lookup({
-                projectId: parsed.envelope.projectId,
-                idempotencyKey: parsed.envelope.idempotencyKey,
-                contentHash: batchContentHash,
-            });
-            if (prior?.status === 'complete') {
-                const receipt = parseStoredVerifiedBatchReceipt({
+                const recoveryReceipt = parseStoredVerifiedBatchReceipt({
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
                     contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
-                    serializedReceipt: prior.serializedReceipt,
+                    serializedReceipt: recoveryCheckpoint.serializedReceipt,
                 });
-                if (!receipt) {
+                if (!recoveryReceipt) {
                     return {
                         status: 'rejected' as const,
-                        reason: 'Stored idempotency receipt is invalid',
+                        reason: 'Stored project idempotency receipt is invalid',
                         actions: [] as [],
                     };
                 }
-                return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+                return {
+                    status: 'ambiguous' as const,
+                    actions: [] as [],
+                    reason: PROJECT_EFFECT_RECOVERY_REQUIRES_EXACT_CHECKPOINT_REVISION,
+                    receipt: recoveryReceipt,
+                };
+            } finally {
+                try {
+                    await commandBatchIdempotencyPort.release({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: batchContentHash,
+                    });
+                } catch {
+                    // The recovery outcome remains authoritative; repository release is best effort.
+                }
             }
-        } catch (error) {
-            const result = {
-                status: 'rejected' as const,
-                reason: `Command batch idempotency admission failed: ${error instanceof Error ? error.message : String(error)}`,
-                actions: [] as [],
-            };
-            return {
-                ...result,
-                receipt: createVerifiedBatchReceipt({
-                    contentHash: batchContentHash,
-                    envelope: resolvedEnvelope,
-                    observedBaseRevision,
-                    receiptWarnings,
-                    resultingRevision: observedBaseRevision,
-                    result,
-                }),
-            };
         }
+        const prior = await commandBatchIdempotencyPort.lookup({
+            projectId: parsed.envelope.projectId,
+            idempotencyKey: parsed.envelope.idempotencyKey,
+            contentHash: batchContentHash,
+        });
+        if (prior?.status === 'complete') {
+            const receipt = parseStoredVerifiedBatchReceipt({
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                commands: parsed.envelope.commands,
+                contentHash: batchContentHash,
+                runId: parsed.envelope.runId,
+                serializedReceipt: prior.serializedReceipt,
+            });
+            if (!receipt) {
+                return {
+                    status: 'rejected' as const,
+                    reason: 'Stored idempotency receipt is invalid',
+                    actions: [] as [],
+                };
+            }
+            return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+        }
+    } catch (error) {
+        const result = {
+            status: 'rejected' as const,
+            reason: `Command batch idempotency admission failed: ${error instanceof Error ? error.message : String(error)}`,
+            actions: [] as [],
+        };
+        return {
+            ...result,
+            receipt: createVerifiedBatchReceipt({
+                contentHash: batchContentHash,
+                envelope: resolvedEnvelope,
+                observedBaseRevision,
+                receiptWarnings,
+                resultingRevision: observedBaseRevision,
+                result,
+            }),
+        };
     }
     if (!input.approvalBinding) {
         const result = {
@@ -408,73 +402,35 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             }),
         };
     }
-    if (idempotencyContentHash !== null) {
-        try {
-            const claim = await commandBatchIdempotencyPort.claim({
-                projectId: parsed.envelope.projectId,
-                idempotencyKey: parsed.envelope.idempotencyKey,
-                contentHash: idempotencyContentHash,
-                reclaimPending: mayReclaimPendingClaim,
+    try {
+        const claim = await commandBatchIdempotencyPort.claim({
+            projectId: parsed.envelope.projectId,
+            idempotencyKey: parsed.envelope.idempotencyKey,
+            contentHash: batchContentHash,
+            reclaimPending: true,
+        });
+        if (claim?.status === 'complete') {
+            const receipt = parseStoredVerifiedBatchReceipt({
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                commands: parsed.envelope.commands,
+                contentHash: batchContentHash,
+                runId: parsed.envelope.runId,
+                serializedReceipt: claim.serializedReceipt,
             });
-            if (claim?.status === 'complete') {
-                const receipt = parseStoredVerifiedBatchReceipt({
-                    baseRevision: parsed.envelope.baseRevision,
-                    batchId: parsed.envelope.batchId,
-                    commands: parsed.envelope.commands,
-                    contentHash: batchContentHash,
-                    runId: parsed.envelope.runId,
-                    serializedReceipt: claim.serializedReceipt,
-                });
-                if (!receipt) {
-                    return {
-                        status: 'rejected' as const,
-                        reason: 'Stored idempotency receipt is invalid',
-                        actions: [] as [],
-                    };
-                }
-                return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
-            }
-            if (claim?.status === 'conflict') {
-                const result = {
+            if (!receipt) {
+                return {
                     status: 'rejected' as const,
-                    reason: 'Idempotency key was already used for different batch content',
+                    reason: 'Stored idempotency receipt is invalid',
                     actions: [] as [],
                 };
-                return {
-                    ...result,
-                    receipt: createVerifiedBatchReceipt({
-                        contentHash: batchContentHash,
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings,
-                        resultingRevision: observedBaseRevision,
-                        result,
-                    }),
-                };
             }
-            if (claim?.status === 'pending') {
-                const result = {
-                    status: 'ambiguous' as const,
-                    reason: 'An identical command batch is already in progress',
-                    actions: [] as [],
-                };
-                return {
-                    ...result,
-                    receipt: createVerifiedBatchReceipt({
-                        contentHash: batchContentHash,
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings,
-                        resultingRevision: observedBaseRevision,
-                        result,
-                    }),
-                };
-            }
-            activeIdempotencyClaims.add(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
-        } catch (error) {
+            return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+        }
+        if (claim?.status === 'conflict') {
             const result = {
                 status: 'rejected' as const,
-                reason: `Command batch idempotency admission failed: ${error instanceof Error ? error.message : String(error)}`,
+                reason: 'Idempotency key was already used for different batch content',
                 actions: [] as [],
             };
             return {
@@ -489,6 +445,42 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 }),
             };
         }
+        if (claim?.status === 'pending') {
+            const result = {
+                status: 'ambiguous' as const,
+                reason: 'An identical command batch is already in progress',
+                actions: [] as [],
+            };
+            return {
+                ...result,
+                receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
+                    envelope: resolvedEnvelope,
+                    observedBaseRevision,
+                    receiptWarnings,
+                    resultingRevision: observedBaseRevision,
+                    result,
+                }),
+            };
+        }
+        activeIdempotencyClaims.add(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
+    } catch (error) {
+        const result = {
+            status: 'rejected' as const,
+            reason: `Command batch idempotency admission failed: ${error instanceof Error ? error.message : String(error)}`,
+            actions: [] as [],
+        };
+        return {
+            ...result,
+            receipt: createVerifiedBatchReceipt({
+                contentHash: batchContentHash,
+                envelope: resolvedEnvelope,
+                observedBaseRevision,
+                receiptWarnings,
+                resultingRevision: observedBaseRevision,
+                result,
+            }),
+        };
     }
     let result: Awaited<ReturnType<typeof executeVersionedCommandBatch>>;
     const callerShouldExecute = input.options?.shouldExecute;
@@ -514,8 +506,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 },
                 groupId: parsed.envelope.batchId,
                 shouldExecute: () =>
-                    (!requiresDurableExecutionAuthority || commandBatchExecutionAuthorityPort.canExecute()) &&
-                    (callerShouldExecute?.() ?? true),
+                    commandBatchExecutionAuthorityPort.canExecute() && (callerShouldExecute?.() ?? true),
                 onCommitted: (actions) => {
                     try {
                         if (!commandProjectRevisionPort.isConfigured()) {
@@ -531,40 +522,37 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     callerOnCommitted?.(actions);
                 },
                 onProjectCommitPrepared: (committedResult) => {
-                    if (idempotencyContentHash !== null) {
-                        const recoveryResult = {
-                            status: 'committed-with-warning' as const,
-                            actions: committedResult.actions,
-                            warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                            warningDetails: [
-                                { kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING },
-                                ...committedResult.pendingEffects.map((pendingEffect) => ({
-                                    kind: 'external-effect' as const,
-                                    commandId: pendingEffect.commandId,
-                                    message: pendingEffect.reason,
-                                    pendingEffect,
-                                })),
-                            ],
-                        };
-                        projectCommitRecovery.receipt = createVerifiedBatchReceipt({
-                            contentHash: batchContentHash,
-                            envelope: resolvedEnvelope,
-                            observedBaseRevision,
-                            receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
-                            resultingRevision: null,
-                            result: recoveryResult,
-                        });
-                        recordProjectCommandBatchIdempotencyCheckpoint({
-                            projectId: parsed.envelope.projectId,
-                            idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: idempotencyContentHash,
-                            state: 'effects-pending',
-                            serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
-                        });
-                        projectCommitRecovery.preparation =
-                            input.options?.onProjectCommitCheckpoint?.({ receipt: projectCommitRecovery.receipt }) ??
-                            null;
-                    }
+                    const recoveryResult = {
+                        status: 'committed-with-warning' as const,
+                        actions: committedResult.actions,
+                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                        warningDetails: [
+                            { kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING },
+                            ...committedResult.pendingEffects.map((pendingEffect) => ({
+                                kind: 'external-effect' as const,
+                                commandId: pendingEffect.commandId,
+                                message: pendingEffect.reason,
+                                pendingEffect,
+                            })),
+                        ],
+                    };
+                    projectCommitRecovery.receipt = createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
+                        envelope: resolvedEnvelope,
+                        observedBaseRevision,
+                        receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                        resultingRevision: null,
+                        result: recoveryResult,
+                    });
+                    recordProjectCommandBatchIdempotencyCheckpoint({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: batchContentHash,
+                        state: 'effects-pending',
+                        serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
+                    });
+                    projectCommitRecovery.preparation =
+                        input.options?.onProjectCommitCheckpoint?.({ receipt: projectCommitRecovery.receipt }) ?? null;
                     input.onProjectCommitPrepared?.();
                 },
                 prepareValidation: ({ allowCompatibleProjectDivergence }) =>
@@ -573,27 +561,23 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             },
         });
     } catch (error) {
-        if (idempotencyContentHash !== null) {
-            settlePreparedProjectCommitRecovery({
-                preparation: projectCommitRecovery.preparation,
-                envelope: {
-                    baseRevision: parsed.envelope.baseRevision,
-                    batchId: parsed.envelope.batchId,
-                    commands: parsed.envelope.commands,
-                    contentHash: idempotencyContentHash,
-                    idempotencyKey: parsed.envelope.idempotencyKey,
-                    projectId: parsed.envelope.projectId,
-                    runId: parsed.envelope.runId,
-                },
-            });
-        }
-        if (idempotencyContentHash !== null) {
-            await commandBatchIdempotencyPort.release({
-                projectId: parsed.envelope.projectId,
+        settlePreparedProjectCommitRecovery({
+            preparation: projectCommitRecovery.preparation,
+            envelope: {
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                commands: parsed.envelope.commands,
+                contentHash: batchContentHash,
                 idempotencyKey: parsed.envelope.idempotencyKey,
-                contentHash: idempotencyContentHash,
-            });
-        }
+                projectId: parsed.envelope.projectId,
+                runId: parsed.envelope.runId,
+            },
+        });
+        await commandBatchIdempotencyPort.release({
+            projectId: parsed.envelope.projectId,
+            idempotencyKey: parsed.envelope.idempotencyKey,
+            contentHash: batchContentHash,
+        });
         activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
         throw error;
     }
@@ -632,137 +616,133 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             result,
         }),
     };
-    if (idempotencyContentHash !== null) {
-        if (result.status === 'committed' || result.status === 'committed-with-warning') {
-            let finalizationEvidenceError: unknown = null;
-            let finalProjectReceipt: ReturnType<typeof createVerifiedBatchReceipt> | null = null;
-            let projectCheckpointPersistenceError: unknown = null;
-            try {
-                if (input.options?.shouldFinalizeProjectCommit?.() === false) {
-                    finalizationEvidenceError = new Error(
-                        'The project changed outside the confirmed command before finalization evidence was recorded.'
-                    );
-                }
-            } catch (error) {
-                finalizationEvidenceError = error;
+    if (result.status === 'committed' || result.status === 'committed-with-warning') {
+        let finalizationEvidenceError: unknown = null;
+        let finalProjectReceipt: ReturnType<typeof createVerifiedBatchReceipt> | null = null;
+        let projectCheckpointPersistenceError: unknown = null;
+        try {
+            if (input.options?.shouldFinalizeProjectCommit?.() === false) {
+                finalizationEvidenceError = new Error(
+                    'The project changed outside the confirmed command before finalization evidence was recorded.'
+                );
             }
+        } catch (error) {
+            finalizationEvidenceError = error;
+        }
+        try {
+            const hasPendingExternalEffect =
+                result.status === 'committed-with-warning' &&
+                result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
+            const projectReceipt = createVerifiedBatchReceipt({
+                contentHash: batchContentHash,
+                envelope: resolvedEnvelope,
+                observedBaseRevision,
+                receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                resultingRevision: null,
+                result,
+            });
+            persistProjectCommandBatchIdempotencyCheckpoint({
+                projectId: parsed.envelope.projectId,
+                idempotencyKey: parsed.envelope.idempotencyKey,
+                contentHash: batchContentHash,
+                state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
+                serializedReceipt: JSON.stringify(projectReceipt),
+            });
+            finalProjectReceipt = projectReceipt;
+            finalized = { ...finalized, receipt: projectReceipt };
+        } catch (error) {
+            projectCheckpointPersistenceError = error;
+            if (projectCommitRecovery.receipt) {
+                finalized = {
+                    status: 'committed-with-warning' as const,
+                    actions: result.actions,
+                    warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                    warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                    receipt: projectCommitRecovery.receipt,
+                };
+            }
+        }
+        if (finalizationEvidenceError !== null) {
+            reportUnavailableProjectCommitFinalization(input.options, finalizationEvidenceError);
+        } else if (projectCheckpointPersistenceError !== null || finalProjectReceipt === null) {
+            reportUnavailableProjectCommitFinalization(
+                input.options,
+                projectCheckpointPersistenceError ??
+                    new Error('The durable project checkpoint could not be persisted for finalization evidence.')
+            );
+        } else {
             try {
-                const hasPendingExternalEffect =
-                    result.status === 'committed-with-warning' &&
-                    result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
-                const projectReceipt = createVerifiedBatchReceipt({
-                    contentHash: batchContentHash,
-                    envelope: resolvedEnvelope,
-                    observedBaseRevision,
-                    receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
-                    resultingRevision: null,
-                    result,
-                });
-                persistProjectCommandBatchIdempotencyCheckpoint({
+                const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
                     projectId: parsed.envelope.projectId,
                     idempotencyKey: parsed.envelope.idempotencyKey,
-                    contentHash: idempotencyContentHash,
-                    state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
-                    serializedReceipt: JSON.stringify(projectReceipt),
-                });
-                finalProjectReceipt = projectReceipt;
-                finalized = { ...finalized, receipt: projectReceipt };
-            } catch (error) {
-                projectCheckpointPersistenceError = error;
-                if (projectCommitRecovery.receipt) {
-                    finalized = {
-                        status: 'committed-with-warning' as const,
-                        actions: result.actions,
-                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                        warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
-                        receipt: projectCommitRecovery.receipt,
-                    };
-                }
-            }
-            if (finalizationEvidenceError !== null) {
-                reportUnavailableProjectCommitFinalization(input.options, finalizationEvidenceError);
-            } else if (projectCheckpointPersistenceError !== null || finalProjectReceipt === null) {
-                reportUnavailableProjectCommitFinalization(
-                    input.options,
-                    projectCheckpointPersistenceError ??
-                        new Error('The durable project checkpoint could not be persisted for finalization evidence.')
-                );
-            } else {
-                try {
-                    const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
-                        projectId: parsed.envelope.projectId,
-                        idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
-                    });
-                    if (checkpoint.status !== 'complete' && checkpoint.status !== 'pending') {
-                        throw new Error('The durable project checkpoint is unavailable for finalization evidence.');
-                    }
-                    const serializedFinalReceipt = JSON.stringify(finalProjectReceipt);
-                    if (checkpoint.serializedReceipt !== serializedFinalReceipt) {
-                        throw new Error('The durable project checkpoint does not contain the exact finalized receipt.');
-                    }
-                    const durableFinalReceipt = parseStoredVerifiedBatchReceipt({
-                        baseRevision: parsed.envelope.baseRevision,
-                        batchId: parsed.envelope.batchId,
-                        commands: parsed.envelope.commands,
-                        contentHash: idempotencyContentHash,
-                        runId: parsed.envelope.runId,
-                        serializedReceipt: checkpoint.serializedReceipt,
-                    });
-                    if (!durableFinalReceipt) {
-                        throw new Error('The durable project checkpoint receipt is invalid for finalization evidence.');
-                    }
-                    if (exactStorageCommitRevision === undefined) {
-                        throw (
-                            storageCommitRevisionError ?? new Error('The exact storage-commit revision is unavailable.')
-                        );
-                    }
-                    input.options?.onProjectCommitFinalized?.({
-                        receipt: durableFinalReceipt,
-                        revision: exactStorageCommitRevision,
-                    });
-                } catch (error) {
-                    reportUnavailableProjectCommitFinalization(input.options, error);
-                }
-            }
-        }
-        settlePreparedProjectCommitRecovery({
-            preparation: projectCommitRecovery.preparation,
-            envelope: {
-                baseRevision: parsed.envelope.baseRevision,
-                batchId: parsed.envelope.batchId,
-                commands: parsed.envelope.commands,
-                contentHash: idempotencyContentHash,
-                idempotencyKey: parsed.envelope.idempotencyKey,
-                projectId: parsed.envelope.projectId,
-                runId: parsed.envelope.runId,
-            },
-        });
-        try {
-            await commandBatchIdempotencyPort.complete({
-                projectId: parsed.envelope.projectId,
-                idempotencyKey: parsed.envelope.idempotencyKey,
-                contentHash: idempotencyContentHash,
-                serializedReceipt: JSON.stringify(finalized.receipt),
-            });
-        } catch (error) {
-            activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
-            if (result.status === 'committed' || result.status === 'committed-with-warning') {
-                return finalized;
-            }
-            const warning = `Verified idempotency receipt could not be persisted: ${error instanceof Error ? error.message : String(error)}.`;
-            return {
-                ...finalized,
-                receipt: createVerifiedBatchReceipt({
                     contentHash: batchContentHash,
-                    envelope: resolvedEnvelope,
-                    observedBaseRevision,
-                    receiptWarnings: [...receiptWarnings, warning],
-                    resultingRevision,
-                    result,
-                }),
-            };
+                });
+                if (checkpoint.status !== 'complete' && checkpoint.status !== 'pending') {
+                    throw new Error('The durable project checkpoint is unavailable for finalization evidence.');
+                }
+                const serializedFinalReceipt = JSON.stringify(finalProjectReceipt);
+                if (checkpoint.serializedReceipt !== serializedFinalReceipt) {
+                    throw new Error('The durable project checkpoint does not contain the exact finalized receipt.');
+                }
+                const durableFinalReceipt = parseStoredVerifiedBatchReceipt({
+                    baseRevision: parsed.envelope.baseRevision,
+                    batchId: parsed.envelope.batchId,
+                    commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
+                    runId: parsed.envelope.runId,
+                    serializedReceipt: checkpoint.serializedReceipt,
+                });
+                if (!durableFinalReceipt) {
+                    throw new Error('The durable project checkpoint receipt is invalid for finalization evidence.');
+                }
+                if (exactStorageCommitRevision === undefined) {
+                    throw storageCommitRevisionError ?? new Error('The exact storage-commit revision is unavailable.');
+                }
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: durableFinalReceipt,
+                    revision: exactStorageCommitRevision,
+                });
+            } catch (error) {
+                reportUnavailableProjectCommitFinalization(input.options, error);
+            }
         }
+    }
+    settlePreparedProjectCommitRecovery({
+        preparation: projectCommitRecovery.preparation,
+        envelope: {
+            baseRevision: parsed.envelope.baseRevision,
+            batchId: parsed.envelope.batchId,
+            commands: parsed.envelope.commands,
+            contentHash: batchContentHash,
+            idempotencyKey: parsed.envelope.idempotencyKey,
+            projectId: parsed.envelope.projectId,
+            runId: parsed.envelope.runId,
+        },
+    });
+    try {
+        await commandBatchIdempotencyPort.complete({
+            projectId: parsed.envelope.projectId,
+            idempotencyKey: parsed.envelope.idempotencyKey,
+            contentHash: batchContentHash,
+            serializedReceipt: JSON.stringify(finalized.receipt),
+        });
+    } catch (error) {
+        activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
+        if (result.status === 'committed' || result.status === 'committed-with-warning') {
+            return finalized;
+        }
+        const warning = `Verified idempotency receipt could not be persisted: ${error instanceof Error ? error.message : String(error)}.`;
+        return {
+            ...finalized,
+            receipt: createVerifiedBatchReceipt({
+                contentHash: batchContentHash,
+                envelope: resolvedEnvelope,
+                observedBaseRevision,
+                receiptWarnings: [...receiptWarnings, warning],
+                resultingRevision,
+                result,
+            }),
+        };
     }
     activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
     return finalized;

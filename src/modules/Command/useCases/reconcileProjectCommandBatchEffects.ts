@@ -183,16 +183,8 @@ export async function reconcileProjectCommandBatchEffects(
                 }
             }
         }
-    } catch {
-        for (const effect of receipt.pendingEffects) {
-            if (runtimeRepairCommandIds.has(effect.commandId)) {
-                continue;
-            }
-            if (effect.kind !== 'runtime-graph') {
-                return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
-            }
-            runtimeRepairCommandIds.add(effect.commandId);
-        }
+    } catch (error) {
+        return { status: 'failed', reason: `Idempotency recovery live preview failed: ${failureReason(error)}` };
     } finally {
         currentWorkspace?.release();
     }

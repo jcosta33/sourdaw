@@ -198,7 +198,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts",
-                    "digest": "2db6f773f11bb4f45fe7d37cb69138161dfa2099023d52a4306e9ee8c81c2969"
+                    "digest": "7604cee4c29bdcdbf4ae3bb844f306a0c9eb6c95efc81fc1514966a8e3ed2f31"
                 }
             ]
         },
@@ -210,7 +210,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts",
-                    "digest": "261cecb55aba3f46627e6fe27ea7a7b41a1ae1434fc9028237a1c8cd694743c3"
+                    "digest": "7dc8f0e5cda6d5593aa9e6d4500935ee2802715de49e18014500984c75ddde77"
                 }
             ]
         },
@@ -222,7 +222,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts",
-                    "digest": "ce7ef27906b7a6ec262c0556f0b14f8e8caf4c2166fdc3b38de1eed81a0774eb"
+                    "digest": "e70d87cdd99ed037b67370e6beddfe2180b22577a18fff34a165392e273d9c84"
                 }
             ]
         },
@@ -258,7 +258,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
-                    "digest": "6354512f2c7f9a7873623b205723c6e8bab227065223b7cc3d49ef85b9542f3e"
+                    "digest": "077d9db10ba1af9eb672f7d8b2c3d5a68945b213f3369cf00d49006344df0697"
                 }
             ]
         },
@@ -270,7 +270,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
-                    "digest": "259a8b0ea7822e6f65e5b4e2f39775fdd6826c0b1320959a78cfd607fbe8f27e"
+                    "digest": "4b1544ba4ee7740f3f2361f1378410446050b39390c80146c5f5181e56f09574"
                 }
             ]
         },
@@ -282,7 +282,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
-                    "digest": "0540f4390cd22327b8db5a63e54970b52ba693d6e0577148bc5b9b692dfd57dd"
+                    "digest": "0b792dde40cf1a3760a1fcc1e081c53a1de0851be78d81572e5ea15f89516518"
                 }
             ]
         },
@@ -310,7 +310,7 @@
                 },
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandApprovalBoundary.spec.ts",
-                    "digest": "babd3c7b604cc1f0d69dba9118c0a9b165ff5b400db23e5f8758d74df1fcc14b"
+                    "digest": "5a211c8c7c26df320dd6aacf41ee3398ba6a67522fe1201f6b46775310f7d2fb"
                 }
             ]
         },
@@ -866,7 +866,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
-                    "digest": "3042e8c88d92ed4c1e8a6df513b8afb295cd049a1a2308407702f23ad1a6c1e0"
+                    "digest": "038cabcdb053d753692947a6d6a7c5938a43ca4b8404064e34876fa1d66527a2"
                 }
             ]
         },

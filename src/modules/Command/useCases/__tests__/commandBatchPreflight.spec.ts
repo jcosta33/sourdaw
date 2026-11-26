@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
+import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
@@ -45,6 +46,8 @@ function expectNonAppliedReceipt(
 }
 
 describe('command batch preflight', () => {
+    beforeEach(registerInMemoryCommandBatchIdempotency);
+
     afterEach(() => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);

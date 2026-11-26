@@ -18,8 +18,7 @@ function readRepository(caller: string): CommandBatchIdempotencyRepository {
 /**
  * Filled from inside Command by `configureCommandBatchIdempotency`, which the
  * composition root (`#/app/bootstrap`) calls once at boot. A read before that
- * throws. `isConfigured()` still lets a caller run a batch without the durable
- * ledger when nothing is registered, which production never does (#7280).
+ * throws, so a batch can never run without the durable ledger.
  */
 export const commandBatchIdempotencyPort = {
     lookup(input: {
@@ -57,13 +56,6 @@ export const commandBatchIdempotencyPort = {
     },
     release(input: { projectId: string; idempotencyKey: string; contentHash: string }): Promise<void> | null {
         return readRepository('commandBatchIdempotencyPort.release').release?.(input) ?? null;
-    },
-    /**
-     * Whether a repository is registered. A batch without one runs without a durable
-     * ledger; production always registers one at boot.
-     */
-    isConfigured(): boolean {
-        return registeredRepository !== null;
     },
     setRepository(nextRepository: CommandBatchIdempotencyRepository): void {
         registeredRepository = nextRepository;

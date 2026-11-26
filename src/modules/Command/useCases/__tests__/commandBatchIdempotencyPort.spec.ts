@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { COMMAND_BATCH_IDEMPOTENCY_REGISTRAR } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
 
 const key = { projectId: 'project-1', idempotencyKey: 'key-1', contentHash: 'hash-1' };
@@ -16,24 +17,19 @@ const repository = {
 // order: the unfilled reads first, then the fill.
 describe('commandBatchIdempotencyPort', () => {
     it('throws on each read before registration, naming the registrar', () => {
-        expect(() => commandBatchIdempotencyPort.lookup(key)).toThrow('configureCommandBatchIdempotency');
-        expect(() => commandBatchIdempotencyPort.claim(key)).toThrow('configureCommandBatchIdempotency');
-        expect(() => commandBatchIdempotencyPort.release(key)).toThrow('configureCommandBatchIdempotency');
+        expect(() => commandBatchIdempotencyPort.lookup(key)).toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
+        expect(() => commandBatchIdempotencyPort.claim(key)).toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
+        expect(() => commandBatchIdempotencyPort.release(key)).toThrow(COMMAND_BATCH_IDEMPOTENCY_REGISTRAR);
         expect(() => commandBatchIdempotencyPort.complete({ ...key, serializedReceipt: '{}' })).toThrow(
-            'configureCommandBatchIdempotency'
+            COMMAND_BATCH_IDEMPOTENCY_REGISTRAR
         );
         expect(() => commandBatchIdempotencyPort.tryAcquireRecoveryLease(key)).toThrow(
-            'configureCommandBatchIdempotency'
+            COMMAND_BATCH_IDEMPOTENCY_REGISTRAR
         );
-    });
-
-    it('reports no repository before registration', () => {
-        expect(commandBatchIdempotencyPort.isConfigured()).toBe(false);
     });
 
     it('serves the registered repository', async () => {
         commandBatchIdempotencyPort.setRepository(repository);
-        expect(commandBatchIdempotencyPort.isConfigured()).toBe(true);
 
         await expect(commandBatchIdempotencyPort.lookup(key)).resolves.toEqual({ status: 'missing' });
         expect(lookup).toHaveBeenCalledWith(key);

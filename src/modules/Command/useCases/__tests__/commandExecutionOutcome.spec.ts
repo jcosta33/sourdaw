@@ -17,6 +17,7 @@ import {
 import { type ActionHandler, type AppAction, type HandlerAfterCommit } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { registerInMemoryCommandBatchIdempotency } from '../../testing/registerInMemoryCommandBatchIdempotency';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandBatchPreviewPort } from '../commandBatchPreviewPort';
 import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
@@ -561,6 +562,7 @@ describe('command execution outcome vocabulary', () => {
         beforeEach(() => {
             vi.clearAllMocks();
             clearHandlerRegistry();
+            registerInMemoryCommandBatchIdempotency();
             projectDocument = { trackGain: { value: 1 } };
             projectRevision = BASE_REVISION;
             configureAutomergeStoragePort({

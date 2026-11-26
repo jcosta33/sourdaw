@@ -12,6 +12,7 @@ import {
     commandProjectRevisionPort,
     compilePartialCommandBatchAcceptance,
     compileVersionedCommandBatchEnvelope,
+    configureCommandBatchIdempotency,
     createVersionedCommandEnvelope,
     executeVersionedCommandBatchEnvelope,
     issueCommandApprovalBinding,
@@ -53,6 +54,13 @@ function statedLinearGain(payload: { gain?: number }): number {
 
 describe('previewCommandBatch', () => {
     beforeEach(() => {
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        configureCommandBatchIdempotency({ canExecute: () => true });
         automergeRepository.reset();
         automergeRepository.createProject('preview');
         automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
@@ -497,6 +505,8 @@ describe('previewCommandBatch', () => {
         commandDeviceVersionsPort.setDeviceTypeResolver(null);
         commandDeviceVersionsPort.setResolver(null);
         commandProjectRevisionPort.setProvider(null);
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
+        vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
 

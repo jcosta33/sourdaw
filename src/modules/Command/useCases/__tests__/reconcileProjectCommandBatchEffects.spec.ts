@@ -280,6 +280,34 @@ describe('reconcileProjectCommandBatchEffects exact retry against the live proje
         expect(currentWorkspace.release).toHaveBeenCalledOnce();
     });
 
+    it('fails a runtime-graph retry effect whose live preview throws instead of repairing it', async () => {
+        commandBatchPreviewPort.setProvider(() => {
+            throw new Error('preview provider is not wired');
+        });
+
+        await expect(reconcileBatch({ kind: 'runtime-graph', remediation: 'retry' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Idempotency recovery live preview failed: preview provider is not wired',
+        });
+
+        expect(repairRuntime).not.toHaveBeenCalled();
+        expect(reconcile).not.toHaveBeenCalled();
+    });
+
+    it('fails a runtime-graph retry effect whose live handler throws instead of repairing it', async () => {
+        currentBehavior = () => {
+            throw new Error('handler exploded');
+        };
+
+        await expect(reconcileBatch({ kind: 'runtime-graph', remediation: 'retry' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Idempotency recovery live preview failed: handler exploded',
+        });
+
+        expect(repairRuntime).not.toHaveBeenCalled();
+        expect(currentWorkspace.release).toHaveBeenCalledOnce();
+    });
+
     it('routes a runtime-graph effect to runtime repair when the live handler cannot preview exactly', async () => {
         const runtimeHandler: ActionHandler = { ...createIsolatedHandler(), executionKind: 'runtime' };
         afterRecoveryWorkspaceReleased = () => replaceHandler(runtimeHandler);
