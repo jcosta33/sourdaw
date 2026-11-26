@@ -314,9 +314,11 @@ fn a_refused_layout_is_published_once_and_again_when_the_slot_recovers() {
         "the refusal wakes the service visit"
     );
 
-    let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
-        panic!("a standing refusal is published as out of service");
-    };
+    let reason = match wrapper.take_service_change() {
+        Some(ServiceChange::OutOfService { reason }) => Some(reason),
+        _ => None,
+    }
+    .expect("a standing refusal is published as out of service");
     assert!(
         reason.contains("Sourdaw Harness Fx Reconfiguring")
             && reason.contains("main output bus runs 6 channels")
@@ -363,9 +365,11 @@ fn a_refused_start_of_processing_is_published_once() {
         take_pending_service_change_signal(),
         "the refused start wakes the service visit"
     );
-    let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
-        panic!("a refused start is published as out of service");
-    };
+    let reason = match wrapper.take_service_change() {
+        Some(ServiceChange::OutOfService { reason }) => Some(reason),
+        _ => None,
+    }
+    .expect("a refused start is published as out of service");
     assert!(
         reason.contains("refused to start processing")
             && reason.ends_with("its blocks pass through unprocessed"),
