@@ -103,6 +103,7 @@ export const plannedOwnerProjectorByActionType: {
     setGrandBouleDeviceState: projectEveryOwner,
     setToasterFactoryKit: projectCapturedPatchUnsupported,
     setBacteriaFactoryPatch: projectCapturedPatchUnsupported,
+    setCrustFactoryPreset: projectCapturedPatchUnsupported,
     setGlutenFactoryPreset: projectCapturedPatchUnsupported,
     setProofPatchSelection: projectCapturedPatchUnsupported,
     createBus: projectMaterializedTrack,

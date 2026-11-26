@@ -225,6 +225,7 @@ export const macroReplayRemapByActionType: {
     setGrandBouleDeviceState: leaveReferencesUnmapped,
     setToasterFactoryKit: leaveReferencesUnmapped,
     setBacteriaFactoryPatch: leaveReferencesUnmapped,
+    setCrustFactoryPreset: leaveReferencesUnmapped,
     setGlutenFactoryPreset: leaveReferencesUnmapped,
     setProofPatchSelection: leaveReferencesUnmapped,
     createBus: leaveReferencesUnmapped,

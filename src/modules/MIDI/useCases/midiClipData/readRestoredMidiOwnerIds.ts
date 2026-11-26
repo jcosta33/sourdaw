@@ -100,6 +100,7 @@ const restoredMidiOwnerIdsByActionType: {
     setGrandBouleDeviceState: noOwnerIds,
     setToasterFactoryKit: noOwnerIds,
     setBacteriaFactoryPatch: noOwnerIds,
+    setCrustFactoryPreset: noOwnerIds,
     setGlutenFactoryPreset: noOwnerIds,
     setProofPatchSelection: noOwnerIds,
     createBus: noOwnerIds,

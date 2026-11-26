@@ -247,6 +247,7 @@ const plannedSendByActionType: {
     setGrandBouleDeviceState: unchangedSend,
     setToasterFactoryKit: unchangedSend,
     setBacteriaFactoryPatch: unchangedSend,
+    setCrustFactoryPreset: unchangedSend,
     setGlutenFactoryPreset: unchangedSend,
     setProofPatchSelection: unchangedSend,
     createBus: unchangedSend,
