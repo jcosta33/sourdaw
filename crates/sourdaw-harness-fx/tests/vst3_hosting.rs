@@ -417,6 +417,7 @@ fn a_write_made_while_out_of_service_lands_once_the_slot_recovers() {
     let level = HostParameterUpdate {
         param_id: LEVEL_PARAM_ID,
         value: 0.5,
+        sample_offset: 0,
     };
     let inputs: [&[f32]; 2] = [&left, &right];
     let (mut skipped_left, mut skipped_right) =
@@ -574,6 +575,7 @@ fn a_write_in_a_block_the_plugin_refused_to_start_lands_on_its_first_processed_b
         &[HostParameterUpdate {
             param_id: GAIN_PARAM_ID,
             value: 0.25,
+            sample_offset: 0,
         }],
     );
     assert_ne!(

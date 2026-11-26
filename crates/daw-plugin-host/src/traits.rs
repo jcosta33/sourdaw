@@ -224,10 +224,19 @@ pub enum ProcessMode {
 }
 
 /// One host-side parameter write waiting to reach a plugin.
+///
+/// `sample_offset` is the sample inside the block the write applies at, as
+/// [`HostMidiEvent::frame_offset`] is for a note: automation played from the
+/// timeline carries the offset of the frame it was written for, and a write
+/// with no timeline position — an edit from the UI or a control call — lands
+/// at the head of the block, offset 0. A slice of updates handed to one
+/// process call is non-decreasing in `sample_offset`, and several updates for
+/// one parameter in that slice are points of one ramp, delivered in order.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HostParameterUpdate {
     pub param_id: u32,
     pub value: f64,
+    pub sample_offset: u32,
 }
 
 /// One MIDI note event handed to a plugin with a block.

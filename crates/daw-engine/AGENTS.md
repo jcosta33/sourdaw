@@ -30,6 +30,15 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   drains once per callback over the whole buffer and its stamps run from the callback's. Notes
   scheduled for one frame reach the instrument in the order their producers stored them, which is
   the only order a producer can express for a pair that sounds on one sample.
+- **Automation reaches a hosted plugin on the sample it was written for**: a hosted parameter stamp
+  is handed to the plugin at the offset of its frame inside the span that renders it, measured in
+  that same frame of reference, and several stamps for one parameter in one span all arrive, in
+  stamp order — the points of one ramp, not newer values replacing older ones. A stamp the
+  playhead has passed, and a write with no timeline position (an edit from the UI), land at the
+  head of the block. Parameter values and notes share the plugin's one time-ordered event list,
+  and at one sample a parameter value comes first, so a note sounds with the value written for
+  its own sample. Splitting the process call at each point instead would change the block sizes a
+  plugin sees, which is what both formats' per-event offsets exist to avoid.
 - **A stop, a locate, a loop wrap, and a clear release every note the store has sounded**: each of
   them leaves the frame a sounding note's note-off was written for behind — the playhead stands
   still, moves away from it, turns back before reaching it, or the clear takes that frame out of the

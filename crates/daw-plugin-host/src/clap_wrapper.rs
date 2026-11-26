@@ -226,6 +226,10 @@ pub struct ClapWrapper {
     midi_scratch: Vec<clap_event_note>,
     /// Preallocated parameter event scratch list. Cleared + refilled each block, never reallocated.
     parameter_scratch: Vec<clap_event_param_value>,
+    /// The block's input list in time order, as indexes into the two scratch
+    /// lists above (see [`merge_event_order`]). Preallocated at both lists'
+    /// capacities together; cleared and refilled each block, never reallocated.
+    event_order_scratch: Vec<u32>,
     /// Where the plugin's *own* parameter events land — the mirror of
     /// `parameter_scratch`, which carries host writes the other way.
     ///
@@ -1387,6 +1391,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
@@ -1439,6 +1444,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             command_fixture: Some(EngineOwnedCommandFixture {
                 state,
@@ -2637,6 +2643,12 @@ impl ClapWrapper {
     /// RT-safe: reuses preallocated MIDI and parameter scratch vectors. Values beyond
     /// the fixed capacities are ignored by this block; the engine-side pending queue
     /// is sized to this same bound, so accepted parameter updates fit here.
+    ///
+    /// Each update's `sample_offset` becomes its event's `time`, and the plugin
+    /// reads parameter values and notes as one list in non-decreasing time, as
+    /// CLAP requires of `in_events`. Both slices arrive in non-decreasing time
+    /// already; at one time a parameter value is listed ahead of a note, so a
+    /// note sounds with the value written for its own sample.
     pub fn process_with_midi_and_parameters(
         &mut self,
         inputs: &[&[f32]],
@@ -2665,7 +2677,7 @@ impl ClapWrapper {
             self.parameter_scratch.push(clap_event_param_value {
                 header: clap_event_header {
                     size: mem::size_of::<clap_event_param_value>() as u32,
-                    time: 0,
+                    time: update.sample_offset,
                     space_id: CLAP_CORE_EVENT_SPACE_ID,
                     type_: CLAP_EVENT_PARAM_VALUE,
                     flags: 0,
@@ -2679,6 +2691,11 @@ impl ClapWrapper {
                 value: update.value,
             });
         }
+        merge_event_order(
+            &mut self.event_order_scratch,
+            &self.parameter_scratch,
+            &self.midi_scratch,
+        );
 
         // Raw pointer into the scratch vec — safe because process_audio_internal
         // does not touch event scratch (it only uses input_scratch/output_scratch/plugin).
@@ -2686,12 +2703,16 @@ impl ClapWrapper {
         let midi_events_count = self.midi_scratch.len() as u32;
         let parameter_events_ptr: *const clap_event_param_value = self.parameter_scratch.as_ptr();
         let parameter_events_count = self.parameter_scratch.len() as u32;
+        let event_order_ptr: *const u32 = self.event_order_scratch.as_ptr();
 
         struct EventListCtx {
             midi_events: *const clap_event_note,
             midi_count: u32,
             parameter_events: *const clap_event_param_value,
             parameter_count: u32,
+            /// `midi_count + parameter_count` entries, each naming an event by
+            /// the unmerged index: parameters first, then notes.
+            order: *const u32,
         }
 
         unsafe extern "C" fn event_list_size(list: *const clap_input_events) -> u32 {
@@ -2715,7 +2736,21 @@ impl ClapWrapper {
             let ctx = unsafe { (*list).ctx } as *const EventListCtx;
             // SAFETY: that list's `ctx` is the stack `EventListCtx` below, which
             // outlives the `process` call.
-            if index < unsafe { (*ctx).parameter_count } {
+            let parameter_count = unsafe { (*ctx).parameter_count };
+            // SAFETY: as above — the live stack `EventListCtx`.
+            let midi_count = unsafe { (*ctx).midi_count };
+            if index >= parameter_count + midi_count {
+                return ptr::null();
+            }
+            // SAFETY: as above — the live stack `EventListCtx`.
+            let order = unsafe { (*ctx).order };
+            // SAFETY: `order` is `event_order_scratch.as_ptr()`, filled with
+            // exactly `parameter_count + midi_count` entries, and `index` is below that.
+            let entry = unsafe { order.add(index as usize) };
+            // SAFETY: `entry` points at an initialised element of
+            // `event_order_scratch`, untouched while `process` runs.
+            let index = unsafe { *entry };
+            if index < parameter_count {
                 // SAFETY: as above — the live stack `EventListCtx`.
                 let parameter_events = unsafe { (*ctx).parameter_events };
                 // SAFETY: `parameter_events` is `parameter_scratch.as_ptr()` with
@@ -2726,10 +2761,8 @@ impl ClapWrapper {
                 return unsafe { &(*event).header as *const clap_event_header };
             }
 
-            // SAFETY: as above — the live stack `EventListCtx`.
-            let midi_index = index - unsafe { (*ctx).parameter_count };
-            // SAFETY: as above — the live stack `EventListCtx`.
-            if midi_index >= unsafe { (*ctx).midi_count } {
+            let midi_index = index - parameter_count;
+            if midi_index >= midi_count {
                 return ptr::null();
             }
             // SAFETY: as above — the live stack `EventListCtx`.
@@ -2747,6 +2780,7 @@ impl ClapWrapper {
             midi_count: midi_events_count,
             parameter_events: parameter_events_ptr,
             parameter_count: parameter_events_count,
+            order: event_order_ptr,
         };
         let input_events = clap_input_events {
             ctx: &mut ctx as *mut EventListCtx as *mut c_void,
@@ -3336,6 +3370,39 @@ fn empty_transport_event() -> clap_event_transport {
         flags: 0,
     };
     transport
+}
+
+/// Refill `order` with the block's input list in non-decreasing time: a stable
+/// merge of the parameter values and the notes, each already in time order,
+/// naming an event by its unmerged index — parameter `i` as `i`, note `j` as
+/// `parameters.len() + j`. At one time the parameter value goes first, so a
+/// note sounds with the value written for its own sample. `order` was reserved
+/// at both lists' capacities together, so the pushes never reallocate.
+fn merge_event_order(
+    order: &mut Vec<u32>,
+    parameters: &[clap_event_param_value],
+    notes: &[clap_event_note],
+) {
+    order.clear();
+    let (mut parameter, mut note) = (0, 0);
+    while parameter < parameters.len() || note < notes.len() {
+        let parameter_first = note == notes.len()
+            || (parameter < parameters.len()
+                && parameters[parameter].header.time <= notes[note].header.time);
+        if parameter_first {
+            order.push(parameter as u32);
+            parameter += 1;
+        } else {
+            order.push((parameters.len() + note) as u32);
+            note += 1;
+        }
+    }
+}
+
+/// An empty merge-order scratch reserved for a full block of parameter values
+/// and notes, so `merge_event_order` never grows it on the audio thread.
+fn event_order_scratch() -> Vec<u32> {
+    Vec::with_capacity(MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK)
 }
 
 /// Refill the block's note scratch from the host's events.
@@ -4423,6 +4490,7 @@ mod tests {
             .map(|param_id| HostParameterUpdate {
                 param_id: 1_000 + param_id,
                 value: 0.5,
+                sample_offset: 0,
             })
             .collect();
 
@@ -4434,6 +4502,85 @@ mod tests {
             .collect();
         expected.extend(expected_notes(&notes));
         assert_eq!(*read_events(), expected);
+    }
+
+    /// A parameter update's sample offset becomes its header's `time`, and
+    /// parameter values and notes are merged into one list in non-decreasing
+    /// time, as CLAP requires of `in_events`. At one time a parameter value is
+    /// read ahead of a note, so a note sounds with the value written for its
+    /// own sample. Two points for one parameter both reach the plugin, in order.
+    #[test]
+    fn parameter_values_and_notes_reach_the_plugin_merged_in_time_order() {
+        let _guard = event_read_test_guard();
+        let mut wrapper = event_reading_wrapper();
+        let notes = [
+            host_note(60, 100, 0, true, 10),
+            host_note(60, 0, 0, false, 100),
+        ];
+        let updates = [
+            HostParameterUpdate {
+                param_id: 4,
+                value: 0.2,
+                sample_offset: 10,
+            },
+            HostParameterUpdate {
+                param_id: 4,
+                value: 0.8,
+                sample_offset: 200,
+            },
+        ];
+
+        process_events(&mut wrapper, &notes, &updates);
+
+        assert_eq!(
+            *read_events(),
+            vec![
+                (CLAP_EVENT_PARAM_VALUE, 10, 4),
+                (CLAP_EVENT_NOTE_ON, 10, 60),
+                (CLAP_EVENT_NOTE_OFF, 100, 60),
+                (CLAP_EVENT_PARAM_VALUE, 200, 4),
+            ]
+        );
+    }
+
+    /// Merging a full block of parameter values and notes into one time-ordered
+    /// list fills the order scratch to its bound, and it was reserved when the
+    /// wrapper was built: the block allocates nothing. Measured with the
+    /// crate's per-thread counting allocator over the first `process` call.
+    /// Mutation: build the wrapper with a zero-capacity `event_order_scratch`
+    /// — the merge allocates on the audio thread.
+    #[test]
+    fn a_full_merged_block_performs_no_heap_allocation() {
+        let _guard = event_read_test_guard();
+        let mut wrapper = event_reading_wrapper();
+        let notes = full_block_of_notes();
+        let updates: Vec<HostParameterUpdate> = (0..MAX_PARAMETER_EVENTS as u32)
+            .map(|param_id| HostParameterUpdate {
+                param_id: 1_000 + param_id,
+                value: 0.5,
+                sample_offset: (param_id * 3) % 256,
+            })
+            .collect();
+        // The stub's own log grows with the events it reads; reserving it here
+        // keeps that growth out of the count without a warm-up block, which
+        // would also grow the order scratch and hide an unreserved one.
+        read_events().reserve(MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK);
+
+        let before = crate::allocation_counter::allocation_count();
+        process_events(&mut wrapper, &notes, &updates);
+        let after = crate::allocation_counter::allocation_count();
+
+        assert_eq!(
+            read_events().len(),
+            MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK,
+            "the measured block was not the full one"
+        );
+        assert_eq!(
+            after - before,
+            0,
+            "the merged block allocated {} times",
+            after - before
+        );
     }
 
     // ── Latency query + change notification (PH-4) ──────────────────────
@@ -4606,6 +4753,7 @@ mod tests {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
@@ -8420,6 +8568,7 @@ mod tests {
                 &[HostParameterUpdate {
                     param_id: 8,
                     value: 0.44,
+                    sample_offset: 0,
                 }],
             );
 
@@ -8467,6 +8616,7 @@ mod tests {
                 &[HostParameterUpdate {
                     param_id: 8,
                     value: 0.44,
+                    sample_offset: 0,
                 }],
             );
 
