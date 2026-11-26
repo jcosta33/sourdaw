@@ -3029,6 +3029,38 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
         expect(targetsOf(result)).toEqual([mixVocals.id, mixDrums.id]);
     });
 
+    it('grounds Vocals for "set Vocals volume to 75%, Reverb to 30%", whose Reverb is a device parameter, never a track', () => {
+        const vocalsWithReverb = createTrack({
+            id: mixVocals.id,
+            name: mixVocals.name,
+            devices: [
+                ...mixVocals.devices,
+                {
+                    id: 'device-mix-vocals-reverb',
+                    type: 'builtin-reverb',
+                    bypassed: false,
+                    parameters: [
+                        { id: 'mix', name: 'Reverb', type: 'float', value: 0.2, minValue: 0, maxValue: 1 },
+                    ],
+                },
+            ],
+        });
+        const reverbContext: ProjectContext = {
+            ...mixContext,
+            tracks: mixContext.tracks.map((track) => (track.id === mixVocals.id ? vocalsWithReverb : track)),
+        };
+
+        const result = compileAndBridge(
+            'set Vocals volume to 75%, Reverb to 30%',
+            [trackItem('setTrackGain', vocalsWithReverb, { gain: 0.75 })],
+            [],
+            reverbContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id]);
+    });
+
     it('refuses Drums for "set Vocals volume to 75%, Drums to 60% of Bass", which says more than a level', () => {
         const result = compileMix('set Vocals volume to 75%, Drums to 60% of Bass', [
             trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
