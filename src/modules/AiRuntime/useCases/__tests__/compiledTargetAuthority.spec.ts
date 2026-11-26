@@ -2980,6 +2980,53 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
         expect(targetsOf(result)).toEqual([mixVocals.id, mixDrums.id]);
     });
 
+    it.each([
+        ['set the volume to 75% on Vocals, Drums to 60%'],
+        ['set the volume to 75% on Vocals, Drums to 60%, Keys to 50%'],
+    ])('refuses Drums at the 75%% "%s" gives Vocals', (prompt) => {
+        const result = compileMix(prompt, [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('setTrackGain', mixDrums, { gain: 0.75 }),
+        ]);
+
+        expect(targetsOf(result)).toEqual([mixVocals.id]);
+        expect(result.rejections).toHaveLength(1);
+    });
+
+    it('refuses Drums at the 75% Vocals takes in a continued scope that opens after another instruction', () => {
+        const result = compileMix('Mute Bass, then set the volume to 75% on Vocals, Drums to 60%', [
+            trackItem('muteTrack', mixBass, { muted: true }),
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('setTrackGain', mixDrums, { gain: 0.75 }),
+        ]);
+
+        expect(targetsOf(result)).toEqual([mixBass.id, mixVocals.id]);
+        expect(result.rejections).toHaveLength(1);
+    });
+
+    it.each([
+        ['set Vocals volume to 75%, the Drums to 60%', 0.6],
+        ['set Vocals volume to 75%, Drums at 60%', 0.6],
+        ['set Vocals volume to 75%, Drums to .5%', 0.005],
+    ])('grounds the Drums continuation of "%s"', (prompt, drumsGain) => {
+        const result = compileMix(prompt, [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('setTrackGain', mixDrums, { gain: drumsGain }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixDrums.id]);
+    });
+
+    it('refuses Drums for "set Vocals volume to 75%, Drums to 60% of Bass", which says more than a level', () => {
+        const result = compileMix('set Vocals volume to 75%, Drums to 60% of Bass', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+            trackItem('setTrackGain', mixDrums, { gain: 0.6 }),
+        ]);
+
+        expect(targetsOf(result)).not.toContain(mixDrums.id);
+    });
+
     it('refuses Drums at 60% for "set Vocals volume to -6 dB, Drums to 60%", which continues no percent level', () => {
         const result = compileMix('set Vocals volume to -6 dB, Drums to 60%', [
             trackItem('setTrackGain', mixVocals, { gainDb: -6 }),
