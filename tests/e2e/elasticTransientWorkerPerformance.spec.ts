@@ -1282,7 +1282,11 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     expect(detected.raw).toHaveLength(ATTACKS.length);
     expect(detected.projected).toEqual(detected.raw);
     expect(detected.pcm).toEqual(before.pcm);
-    await expect.poll(readNamedSnapshot, { timeout: 25_000 }).toEqual({
+    // The autosave may retry its preparation after Detect's write, for up to the preparation deadline
+    // (SAVE_PREPARATION_TIMEOUT_MS in buildPreparedProjectSaveData.ts), and then still performs its durable writes.
+    const savePreparationDeadlineMs = 30_000;
+    const saveDurableWritesMs = 25_000;
+    await expect.poll(readNamedSnapshot, { timeout: savePreparationDeadlineMs + saveDurableWritesMs }).toEqual({
         markers: detected.raw,
         trackName: 'History edit 2047',
     });
