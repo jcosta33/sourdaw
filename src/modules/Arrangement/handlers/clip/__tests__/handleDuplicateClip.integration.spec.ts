@@ -27,9 +27,9 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { seedStretchMode } from '../../../__tests__/warpStateSeed';
 import { getEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { getWarpState, setWarpState, warpStates } from '../../../stores/warpStates';
-import { setStretchMode } from '../../../useCases';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -443,7 +443,7 @@ describe('handleDuplicateClip atomic integration', () => {
         // setWarpState stores default values as absent, so by the system's own
         // definition (hasNonDefaultWarpState) the copy still carries no warp
         // state, and the captured satellite guard must still match so undo runs.
-        setStretchMode(duplicated.id, 'repitch');
+        seedStretchMode(duplicated.id, 'repitch');
         expect(warpStates.has(duplicated.id)).toBe(false);
 
         await undo();

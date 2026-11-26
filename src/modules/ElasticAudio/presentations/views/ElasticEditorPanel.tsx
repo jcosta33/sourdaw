@@ -18,7 +18,6 @@ import {
 } from '#/modules/Arrangement/stores';
 import {
     addManualWarpMarker,
-    commitWarpMarkerBeatDrag,
     getStretchModeInfo,
     removeWarpMarker,
     removeWarpMarkers,
@@ -42,6 +41,7 @@ import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticM
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { quantizeTransients } from '../../useCases/quantizeTransients';
+import { useMarkerDragPreview } from '../hooks/useMarkerDragPreview';
 
 type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
@@ -74,52 +74,6 @@ type WarpStateView = {
     stretchMode: StretchMode;
     originalTempo: number | null;
 };
-
-type MarkerPreview = {
-    clipId: string;
-    markerId: string;
-    /** Each beat the gesture has moved so far (Alt chooses which one a move drives); an unmoved beat keeps its stored value. */
-    originalBeat?: number;
-    warpedBeat?: number;
-};
-
-type MovedBeats = { originalBeat?: number; warpedBeat?: number };
-
-function mergeMarkerPreview(
-    previous: MarkerPreview | null,
-    clipId: string,
-    markerId: string,
-    moved: MovedBeats
-): MarkerPreview {
-    if (previous?.clipId === clipId && previous.markerId === markerId) {
-        return { ...previous, ...moved };
-    }
-    return { clipId, markerId, ...moved };
-}
-
-/** A preview belongs to the clip it was dragged on; switching clips leaves it behind unused. */
-function withMarkerPreview<State extends { markers: WarpMarkerView[] }>(
-    state: State,
-    preview: MarkerPreview | null,
-    clipId: string | null
-): State {
-    if (preview === null || preview.clipId !== clipId) {
-        return state;
-    }
-    return {
-        ...state,
-        markers: state.markers.map((marker) => {
-            if (marker.id !== preview.markerId) {
-                return marker;
-            }
-            return {
-                ...marker,
-                originalBeat: preview.originalBeat ?? marker.originalBeat,
-                warpedBeat: preview.warpedBeat ?? marker.warpedBeat,
-            };
-        }),
-    };
-}
 
 type DragState = {
     markerId: string;
@@ -164,15 +118,12 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const storedWarpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
     // A marker drag previews here and writes the document once, on release.
-    const [markerPreview, setMarkerPreview] = useState<MarkerPreview | null>(null);
-    // The latest preview, held beside the drag so a release that lands before the next render still commits it.
-    const previewRef = useRef<MarkerPreview | null>(null);
-    const warpState = withMarkerPreview(storedWarpState, markerPreview, clipId);
+    const markerDrag = useMarkerDragPreview(clipId);
+    const warpState = markerDrag.overlay(storedWarpState);
     const [detectionStatus, setDetectionStatus] = useState('');
     const detectRequest = useRef(0);
     useEffect(() => {
         setDetectionStatus('');
-        previewRef.current = null;
         return () => {
             detectRequest.current++;
             if (clipId) {
@@ -381,15 +332,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         const beatRaw = Math.max(0, x / beatWidth);
         const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, timelineEditing.snapValue ?? 1) : beatRaw;
         const movesOriginal = drag.altKey || event.altKey;
-        const moved: MovedBeats = movesOriginal ? { originalBeat: beat } : { warpedBeat: beat };
-        const preview = mergeMarkerPreview(previewRef.current, clipId, drag.markerId, moved);
-        previewRef.current = preview;
-        setMarkerPreview(preview);
-    };
-
-    const clearMarkerPreview = (): void => {
-        previewRef.current = null;
-        setMarkerPreview(null);
+        markerDrag.move(drag.markerId, movesOriginal ? { originalBeat: beat } : { warpedBeat: beat });
     };
 
     const finishMarkerDrag = (): void => {
@@ -398,25 +341,13 @@ export const ElasticEditorPanel = (): ReactElement => {
             return;
         }
         dragRef.current = null;
-        const preview = previewRef.current;
-        previewRef.current = null;
-        if (preview === null || preview.clipId !== clipId || preview.markerId !== drag.markerId) {
-            clearMarkerPreview();
-            return;
-        }
-        // The preview stays drawn until its commit settles, unless a newer drag has replaced it by then.
-        void commitWarpMarkerBeatDrag({
-            clipId,
-            markerId: drag.markerId,
-            originalBeat: preview.originalBeat,
-            warpedBeat: preview.warpedBeat,
-        }).finally(() => setMarkerPreview((current) => (current === preview ? null : current)));
+        markerDrag.release(drag.markerId);
     };
 
     // A cancelled gesture leaves the document untouched.
     const cancelMarkerDrag = (): void => {
         dragRef.current = null;
-        clearMarkerPreview();
+        markerDrag.cancel();
     };
 
     const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {

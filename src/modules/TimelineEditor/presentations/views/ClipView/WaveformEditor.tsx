@@ -31,7 +31,6 @@ import {
     getStretchModeInfo,
     STRETCH_MODES,
     removeWarpMarker,
-    commitWarpMarkerBeatDrag,
     addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
@@ -49,6 +48,8 @@ import { cn } from '#/utils/Styles/cn';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
+import { useWarpMarkerDragPreview } from '../../hooks/useWarpMarkerDragPreview';
+
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
 // Structurally compatible with the value returned by `getWarpState`.
 type WarpMarkerView = { id: string; originalBeat: number; warpedBeat: number };
@@ -58,24 +59,6 @@ type WarpState = {
     stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
     originalTempo: number | null;
 };
-
-type MarkerPreview = { clipId: string; id: string; warpedBeat: number };
-
-/** A preview belongs to the clip it was dragged on; switching clips leaves it behind unused. */
-function withMarkerPreview(state: WarpState, preview: MarkerPreview | null, clipId: string): WarpState {
-    if (preview === null || preview.clipId !== clipId) {
-        return state;
-    }
-    return {
-        ...state,
-        markers: state.markers.map((marker) => {
-            if (marker.id !== preview.id) {
-                return marker;
-            }
-            return { ...marker, warpedBeat: preview.warpedBeat };
-        }),
-    };
-}
 
 // Stretch modes selectable today: only those with a live executor.
 // `phase-vocoder` and `wsola` are reserved for the in-house streaming engine,
@@ -242,10 +225,8 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     const [bufferVersion, setBufferVersion] = useState(0);
     const storedWarpState: WarpState = getWarpState(clipId);
     // A marker drag previews here and writes the document once, on release.
-    const [markerPreview, setMarkerPreview] = useState<MarkerPreview | null>(null);
-    // The latest preview, held beside the drag so a release that lands before the next render still commits it.
-    const previewRef = useRef<MarkerPreview | null>(null);
-    const warpState = withMarkerPreview(storedWarpState, markerPreview, clipId);
+    const markerDrag = useWarpMarkerDragPreview(clipId);
+    const warpState = markerDrag.overlay(storedWarpState);
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
@@ -268,7 +249,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     useEffect(() => {
         didDragRef.current = false;
         draggingMarkerRef.current = null;
-        previewRef.current = null;
     }, [clipId]);
 
     const handleToggleWarp = () => {
@@ -424,9 +404,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         }
         if (didDragRef.current) {
             const newBeat = Math.max(0, x / beatWidth);
-            const preview: MarkerPreview = { clipId, id: draggingMarkerRef.current.id, warpedBeat: newBeat };
-            previewRef.current = preview;
-            setMarkerPreview(preview);
+            markerDrag.move(draggingMarkerRef.current.id, newBeat);
         }
     };
 
@@ -435,14 +413,9 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         setIsDraggingMarker(false);
     };
 
-    const clearMarkerPreview = (): void => {
-        previewRef.current = null;
-        setMarkerPreview(null);
-    };
-
     // The pointer's cancelled gesture leaves the document untouched.
     const cancelMarkerDrag = (): void => {
-        clearMarkerPreview();
+        markerDrag.cancel();
         endMarkerDrag();
     };
 
@@ -451,17 +424,8 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         if (!drag) {
             return;
         }
-        const preview = previewRef.current;
-        previewRef.current = null;
         endMarkerDrag();
-        if (preview === null || preview.clipId !== clipId || preview.id !== drag.id) {
-            clearMarkerPreview();
-            return;
-        }
-        // The preview stays drawn until its commit settles, unless a newer drag has replaced it by then.
-        void commitWarpMarkerBeatDrag({ clipId, markerId: drag.id, warpedBeat: preview.warpedBeat }).finally(() =>
-            setMarkerPreview((current) => (current === preview ? null : current))
-        );
+        markerDrag.release(drag.id);
     };
 
     const handlePointerUp = () => {

@@ -6,6 +6,7 @@ import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { seedStretchMode, seedWarpEnabled, seedWarpMarker } from '../../../__tests__/warpStateSeed';
 import { handleRestoreClipGlueState } from '../../../handlers/clip/handleRestoreClipGlueState';
 import { isGeneratedMidiStateCurrent } from '../../../handlers/isGeneratedMidiStateCurrent';
 import { type Clip } from '../../../models/Track';
@@ -14,9 +15,6 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { removeWarpState, setWarpState, warpStates } from '../../../stores/warpStates';
 import { duplicateClipCore } from '../../clip/duplicateClipCore';
-import { addManualWarpMarker } from '../../warp/addManualWarpMarker';
-import { enableWarp } from '../../warp/enableWarp';
-import { setStretchMode } from '../../warp/setStretchMode';
 import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
 import { hasClipGlueDependencies } from '../hasClipGlueDependencies';
@@ -531,11 +529,10 @@ describe('glueClips MIDI state integration', () => {
     });
 
     it('does not count a clip whose warp state was written but is content-identical to default as carrying satellite state', () => {
-        // A real write path — not a poke at the store — that leaves the clip's
-        // warp state value-identical to `defaultWarpState`: the clip has no
-        // prior entry, and `repitch` is already `defaultWarpState.stretchMode`,
-        // so `setWarpState` stores nothing.
-        setStretchMode('clip-a', 'repitch');
+        // The store's own writer leaves the clip's warp state value-identical to
+        // `defaultWarpState`: the clip has no prior entry, and `repitch` is already
+        // `defaultWarpState.stretchMode`, so `setWarpState` stores nothing.
+        seedStretchMode('clip-a', 'repitch');
         expect(warpStates.has('clip-a')).toBe(false);
 
         // `hasClipGlueDependencies` must not block gluing a clip whose only
@@ -571,23 +568,23 @@ describe('glueClips MIDI state integration', () => {
         // the glue. `isGeneratedMidiStateCurrent` guards a different question
         // (is a previously generated MIDI snapshot still fresh) and keeps
         // treating real warp state as disqualifying it.
-        addManualWarpMarker({ clipId: 'clip-a', beat: 1 });
+        seedWarpMarker('clip-a', 1);
         expect(isCurrent()).toBe(false);
         removeWarpState('clip-a');
 
-        enableWarp('clip-a');
+        seedWarpEnabled('clip-a');
         expect(isCurrent()).toBe(false);
         removeWarpState('clip-a');
 
-        setStretchMode('clip-a', 'phase-vocoder');
+        seedStretchMode('clip-a', 'phase-vocoder');
         expect(isCurrent()).toBe(false);
     });
 
     it('sweeps the consumed source clips warp state when a glue with a content-default entry commits', () => {
-        // Real write path, not a store poke: `repitch` is `defaultWarpState.stretchMode`,
-        // so this is exactly the regression scenario above — a semantic no-op stored
-        // as absent, which the content-aware gate still lets through.
-        setStretchMode('clip-a', 'repitch');
+        // `repitch` is `defaultWarpState.stretchMode`, so this is exactly the regression
+        // scenario above — a semantic no-op stored as absent, which the content-aware gate
+        // still lets through.
+        seedStretchMode('clip-a', 'repitch');
         expect(warpStates.has('clip-a')).toBe(false);
 
         expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
@@ -605,7 +602,7 @@ describe('glueClips MIDI state integration', () => {
         // `defaultWarpState.stretchMode` would plan no migration at all and
         // every `warpStates.has` assertion below would pass or fail for reasons
         // unrelated to the round trip this test names.
-        setStretchMode('clip-a', 'phase-vocoder');
+        seedStretchMode('clip-a', 'phase-vocoder');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;
@@ -639,7 +636,7 @@ describe('glueClips MIDI state integration', () => {
     });
 
     it('rejects rather than clobbers a satellite-tracked id that drifted from the captured plan (regression #2108)', () => {
-        setStretchMode('clip-a', 'phase-vocoder');
+        seedStretchMode('clip-a', 'phase-vocoder');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;
