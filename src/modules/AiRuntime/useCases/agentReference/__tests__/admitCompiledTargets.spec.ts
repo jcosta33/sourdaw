@@ -294,6 +294,20 @@ describe('a compiled pick reads the request less the other instructions that nam
             ).toEqual(UNAUTHORIZED);
         });
 
+        it('refuses the choir for "set Keys volume to 75% and mute the choir", a fragment no role states', () => {
+            const choirMix = createProjectContext([keys, createTrack('track-warm-choir', 'Warm Choir')]);
+            const choirFragment: CompiledSelectorTerms = {
+                targetArgument: 'trackId',
+                match: { all: [{ nameIncludes: 'choir' }] },
+            };
+
+            expect(
+                admitPick('set Keys volume to 75% and mute the choir', 'set Keys volume to 75%', (instruction) =>
+                    pickTerms(choirFragment, ['track-warm-choir'], instruction, choirMix)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
         it('admits the pad for "set the pad to 60% and mute Keys"', () => {
             expect(
                 admitPick('set the pad to 60% and mute Keys', 'set the pad to 60%', (instruction) =>
@@ -449,6 +463,14 @@ describe('a role-family pick needs its family stated in its own instruction', ()
             ).toEqual(UNAUTHORIZED);
         }
     );
+
+    it('refuses the kick for "set Keys volume to 75% and mute the drum tracks", whose family word modifies its noun', () => {
+        expect(
+            admitPick('set Keys volume to 75% and mute the drum tracks', 'set Keys volume to 75%', (instruction) =>
+                pickTerms(drumFamily('all'), ['track-kick'], instruction, kit)
+            )
+        ).toEqual(UNAUTHORIZED);
+    });
 
     it('refuses the kick as a member of "create VCA group for Keys and mute the drums"', () => {
         expect(
