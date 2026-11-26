@@ -52,11 +52,11 @@ import {
     SPLIT_VERB_HEAD,
     SPLIT_VERB_HEAD_WORD,
     SPLIT_VERB_PARTICLE,
-    UNMEASURED_COMPARATIVE,
     WORD_END,
 } from './constraintDirections';
 import { normalizeObjectName } from './normalizeObjectName';
 import { nounConstraintId } from './nounConstraintId';
+import { describeSkippedMembers, UNMEASURED_MEMBERS } from './readSkippedTerms';
 
 /**
  * One object's holds inside a clause: the holds it states, its object and where that object's words
@@ -68,8 +68,19 @@ export type HoldPart = {
     object: string | null;
     unreadable: string | null;
 };
-/** A clause a measured-hold reader consumed: its own words, the span it covers and its parts. */
-export type HoldClause = { clause: string; start: number; end: number; parts: HoldPart[] };
+/** The members a direction list ends on that name no measured quality: why they hold nothing, and where they end. */
+export type SkippedMembers = { reason: string; end: number };
+/**
+ * A clause a measured-hold reader consumed: its own words, the span it covers and its parts, and the
+ * unmeasured members its list ended on, which it bounds nothing for.
+ */
+export type HoldClause = {
+    clause: string;
+    start: number;
+    end: number;
+    parts: HoldPart[];
+    skipped: SkippedMembers | null;
+};
 
 const LIST_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+${OBJECT_LIST})?`;
 /** The state a held noun may be kept in after it: "keep the level the same". */
@@ -92,11 +103,8 @@ const NOUN_IN_LIST = new RegExp(
     String.raw`(?:(?<pre>${PRE_LIST})\s+)?${QUALIFIED}(?<noun>${HOLD_NOUN_WORD})\b`,
     'dgiu'
 );
-/**
- * List members naming no measured quality that end the clause, after the directions it bounds: the "or
- * harsher" of "without making it louder or harsher", which bounds nothing the application measures.
- */
-const UNMEASURED_LIST_END = String.raw`(?=(?:${LIST_JOIN}${UNMEASURED_COMPARATIVE})+${JOINED_CLAUSE_END})`;
+const UNMEASURED_LIST_END = String.raw`(?=${UNMEASURED_MEMBERS})`;
+const SKIPPED_MEMBERS = new RegExp(UNMEASURED_MEMBERS, 'dyiu');
 /**
  * Where a direction clause ends: at a clause end, where a later object with its own direction joins it,
  * so the "or" in "don't make the vocal brighter or the mix wider" lists the next member rather than
@@ -315,11 +323,21 @@ function withContinuations(match: RegExpExecArray, continuation: RegExp | null, 
     return matches;
 }
 
+/** The unmeasured members the clause's list ended on, which no hold or bound covers, or none. */
+function readSkippedMembers(masked: string, end: number, prompt: string): SkippedMembers | null {
+    SKIPPED_MEMBERS.lastIndex = end;
+    const tail = SKIPPED_MEMBERS.exec(masked);
+    if (tail === null) {
+        return null;
+    }
+    return { reason: describeSkippedMembers(prompt.slice(end, end + tail[0].length)), end: end + tail[0].length };
+}
+
 /**
  * Every part reads under the opening match's verb, which a continuation never restates. A
  * continuation with no object of its own shares the object before it ("the level and, the width").
  */
-function readHoldMatch(matches: readonly RegExpExecArray[], prompt: string): HoldClause {
+function readHoldMatch(matches: readonly RegExpExecArray[], masked: string, prompt: string): HoldClause {
     const [first] = matches;
     const last = matches.at(-1);
     const start = first?.index ?? 0;
@@ -332,11 +350,11 @@ function readHoldMatch(matches: readonly RegExpExecArray[], prompt: string): Hol
         const inherited = parts.at(-1);
         parts.push(part.object === null && inherited !== undefined ? { ...part, object: inherited.object } : part);
     }
-    return { clause, start, end, parts };
+    return { clause, start, end, parts, skipped: readSkippedMembers(masked, end, prompt) };
 }
 
-function readUnreadableDirection(match: RegExpExecArray, prompt: string): HoldClause {
-    const hold = readHoldMatch([match], prompt);
+function readUnreadableDirection(match: RegExpExecArray, masked: string, prompt: string): HoldClause {
+    const hold = readHoldMatch([match], masked, prompt);
     const object = spanText(prompt, match.indices?.groups?.object) ?? '';
     return {
         ...hold,
@@ -363,11 +381,11 @@ export function readHoldClauses(masked: string, prompt: string): HoldClause[] {
     }
     const readable = HOLD_PATTERNS.flatMap(({ pattern, continuation }) =>
         Array.from(masked.matchAll(pattern), (match) =>
-            readHoldMatch(withContinuations(match, continuation, masked), prompt)
+            readHoldMatch(withContinuations(match, continuation, masked), masked, prompt)
         )
     );
     const unreadable = Array.from(masked.matchAll(UNREADABLE_DIRECTION), (match) =>
-        readUnreadableDirection(match, prompt)
+        readUnreadableDirection(match, masked, prompt)
     );
     // No readable clause opens or ends inside a fallback object, so the two overlap only by sharing a
     // start, where the stable sort keeps the readable clause, which comes first.

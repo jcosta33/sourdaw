@@ -2412,10 +2412,44 @@ describe('reading wishes, level verbs, subject-led "without", stressed negations
             [],
             [unread("make sure the vocal isn't louder in the chorus", NET_REASON)],
         ],
-        // a list may end on a comparative naming no measured quality
+        // a list ending on comparatives naming no measured quality bounds the rest and records the clause unsupported
         [
             'make the vocal brighter without making the mix louder or harsher',
             [measured('loudness-not-raised-v1', 'without making the mix louder', MIX)],
+            [unread('without making the mix louder or harsher', unmeasured('harsher'))],
+        ],
+        [
+            "don't make it louder or punchier",
+            [measured('loudness-not-raised-v1', "don't make it louder", MIX)],
+            [unread("don't make it louder or punchier", unmeasured('punchier'))],
+        ],
+        [
+            "don't make it louder, punchier or harsher",
+            [measured('loudness-not-raised-v1', "don't make it louder", MIX)],
+            [
+                unread(
+                    "don't make it louder, punchier or harsher",
+                    'No measurement the application takes shows that “punchier” and “harsher” holds.'
+                ),
+            ],
+        ],
+        [
+            'without making the mix louder or harsher',
+            [measured('loudness-not-raised-v1', 'without making the mix louder', MIX)],
+            [unread('without making the mix louder or harsher', unmeasured('harsher'))],
+        ],
+        [
+            'keep the mix from getting brighter or harsher',
+            [measured('brightness-not-raised-v1', 'keep the mix from getting brighter or harsher', MIX)],
+            [unread('keep the mix from getting brighter or harsher', unmeasured('harsher'))],
+        ],
+        // a list whose every member is measured records nothing unsupported
+        [
+            "don't make it louder or brighter",
+            [
+                measured('loudness-not-raised-v1', "don't make it louder or brighter", MIX),
+                measured('brightness-not-raised-v1', "don't make it louder or brighter", MIX),
+            ],
             [],
         ],
         [

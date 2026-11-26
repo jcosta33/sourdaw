@@ -65,6 +65,7 @@ import { readAcrossBrackets } from './readAcrossBrackets';
 import { type QualifiedText, readClauseQualifier } from './readClauseQualifier';
 import { type HoldClause, type HoldPart, readHoldClauses } from './readHoldClauses';
 import { readInnerAsides } from './readInnerAsides';
+import { describeSkippedMembers, UNMEASURED_MEMBER_TAIL } from './readSkippedTerms';
 import { type ConsumedSpan, readUnreadConstraintClauses, type UnreadClause } from './readUnreadConstraintClauses';
 import { HYPHEN_OR_SPACE, words } from './words';
 
@@ -294,11 +295,17 @@ function pushMeasuredHolds(reader: RequestReader, clause: ReadClause, hold: Hold
     }
 }
 
+/** A hold's list ending on members that name no measured quality: the bounds before them stand, the clause is unsupported. */
 function pushHoldClauses(reader: RequestReader, clauses: readonly HoldClause[]) {
     for (const hold of clauses) {
         const clause = { text: hold.clause, span: { start: hold.start, end: hold.end } };
+        const before = reader.unsupported.length;
         for (const part of hold.parts) {
             pushMeasuredHolds(reader, clause, part);
+        }
+        if (hold.skipped !== null && reader.unsupported.length === before) {
+            const whole = readClauseOf({ start: hold.start, end: hold.skipped.end }, reader.prompt);
+            pushUnsupported(reader, whole, hold.skipped.reason);
         }
     }
 }
@@ -439,7 +446,13 @@ function readQualityPart(match: RegExpExecArray, prompt: string, termPattern: Re
 }
 
 /** A kept move's object, read from the prompt, or the object of the part it continues. */
-type MovePart = { start: number; object: string | null; constraintIds: MeasuredConstraintId[] };
+type MovePart = {
+    start: number;
+    object: string | null;
+    constraintIds: MeasuredConstraintId[];
+    /** Why the unmeasured members its direction list ended on hold nothing, or null when it ended on none. */
+    skipped: string | null;
+};
 
 /** A kept quality, a quality a keep, stop or prevent names as the move it prevents, or a kept move. */
 type KeepPart =
@@ -449,12 +462,12 @@ type KeepPart =
 
 /** "keep the mix from getting louder": a keep, stop or prevent naming the move it prevents. */
 const KEPT_MOVE = new RegExp(
-    String.raw`${PREVENTING_VERB}\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${JOINED_CLAUSE_END}`,
+    String.raw`${PREVENTING_VERB}\s+${OBJECT_LIST}\s+${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}(?:${UNMEASURED_MEMBER_TAIL}|${JOINED_CLAUSE_END})`,
     'dgiu'
 );
 /** A later move under the same keep, its object its own or the one before: "and the drums from getting louder", ", from getting brighter". */
 const KEPT_MOVE_CONTINUATION = new RegExp(
-    String.raw`${AND_JOIN}(?:${OBJECT_LIST}\s+)?${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}${JOINED_CLAUSE_END}`,
+    String.raw`${AND_JOIN}(?:${OBJECT_LIST}\s+)?${FROM}\s+${DIRECTION_LEAD}${DIRECTION_LIST}(?:${UNMEASURED_MEMBER_TAIL}|${JOINED_CLAUSE_END})`,
     'dyiu'
 );
 
@@ -470,7 +483,9 @@ function moveObjectOf(match: RegExpExecArray, prompt: string, before: KeepPart |
 function readMovePart(match: RegExpExecArray, prompt: string, before: KeepPart | undefined): KeepPart {
     const object = moveObjectOf(match, prompt, before);
     const constraintIds = directionConstraintIds(match.groups?.direction ?? '');
-    return { kind: 'move', part: { start: match.index, object, constraintIds } };
+    const tail = match.groups?.skipped;
+    const skipped = tail === undefined ? null : describeSkippedMembers(tail);
+    return { kind: 'move', part: { start: match.index, object, constraintIds, skipped } };
 }
 
 /** A keep part and where it ends in the text. */
@@ -564,7 +579,11 @@ function pushKeepPart(
     descriptorOf: QualityPattern['descriptorOf']
 ) {
     if (keep.kind === 'move') {
+        const before = reader.unsupported.length;
         pushMeasuredHolds(reader, clause, { ...keep.part, unreadable: null });
+        if (keep.part.skipped !== null && reader.unsupported.length === before) {
+            pushUnsupported(reader, clause, keep.part.skipped);
+        }
         return;
     }
     // A measured hold verifies a quality kept, never one prevented, so a prevented quality is never measured.
