@@ -3,7 +3,9 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { type MidiNotesSnapshot } from '../../events/midiAppActions';
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { humanizeMidiNotes } from '../../transformers/humanizeMidiNotes';
 import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
+import { mapMidiVelocitiesByCurve } from '../../transformers/mapMidiVelocitiesByCurve';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -32,6 +34,25 @@ function projectAddNotes(action: ActionOf<'addNotes'>, notesByClipId: Record<str
         ...(notesByClipId[action.payload.clipId] ?? []),
         ...action.payload.notes.map((note) => ({ ...note })),
     ];
+}
+
+function projectScaleVelocities(action: ActionOf<'scaleVelocities'>, notesByClipId: Record<string, MidiNote[]>): void {
+    const notes = notesByClipId[action.payload.clipId];
+    if (!notes) {
+        return;
+    }
+    const { curve, minVelocity = 1, maxVelocity = 127 } = action.payload;
+    notesByClipId[action.payload.clipId] = mapMidiVelocitiesByCurve({ notes, curve, minVelocity, maxVelocity });
+}
+
+/** A humanize whose seed is not yet minted draws unpredictably, so it projects no change; its describe mints the seed first. */
+function projectHumanizeNotes(action: ActionOf<'humanizeNotes'>, notesByClipId: Record<string, MidiNote[]>): void {
+    const notes = notesByClipId[action.payload.clipId];
+    const { amount, velocityAmount = amount, seed } = action.payload;
+    if (!notes || seed === undefined) {
+        return;
+    }
+    notesByClipId[action.payload.clipId] = humanizeMidiNotes(notes, amount, velocityAmount, seed);
 }
 
 function projectRestoreTrack(action: ActionOf<'restoreTrack'>, notesByClipId: Record<string, MidiNote[]>): void {
@@ -210,10 +231,10 @@ const notesProjectionByActionType: {
     restoreMidiClipNotes: projectRestoreMidiClipNotes,
     quantizeNoteLengths: noNotesProjection,
     transposeNotes: noNotesProjection,
-    humanizeNotes: noNotesProjection,
+    humanizeNotes: projectHumanizeNotes,
     invertNotes: noNotesProjection,
     retrogradeNotes: noNotesProjection,
-    scaleVelocities: noNotesProjection,
+    scaleVelocities: projectScaleVelocities,
     scaleAllVelocities: noNotesProjection,
     setAllVelocities: noNotesProjection,
     setTrackGain: noNotesProjection,

@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
 import { humanizeMidiNotes } from '../../transformers/humanizeMidiNotes';
@@ -11,7 +11,7 @@ import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
 type HumanizeNotesAction = Extract<AppAction, { type: 'humanizeNotes' }>;
 
-function prepareHumanizeNotes(action: HumanizeNotesAction) {
+function prepareHumanizeNotes(action: HumanizeNotesAction, context?: HandlerValidationContext) {
     // describe runs before execute, so the seed is minted here when absent and
     // captured into the payload — execute then draws with the same seed and
     // the previewed transform matches the write exactly.
@@ -20,6 +20,7 @@ function prepareHumanizeNotes(action: HumanizeNotesAction) {
     }
     const seed = action.payload.seed;
     return prepareMidiNoteTransformUndo({
+        context,
         clipId: action.payload.clipId,
         label: 'Humanize notes',
         transform: (notes) => {
@@ -50,7 +51,8 @@ export const handleHumanizeNotes = createHandler<'humanizeNotes'>({
         action.payload.seed = usedSeed;
         return { status: 'written' };
     },
-    describe: (action) => prepareHumanizeNotes(action).description,
+    validate: (action, context) => getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) !== null,
+    describe: (action, context) => prepareHumanizeNotes(action, context).description,
     isNoop: (action) => prepareHumanizeNotes(action).isNoop,
     validateSessionEntry: (entry) => {
         const { action } = entry;

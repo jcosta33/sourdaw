@@ -1,14 +1,17 @@
-import { type HandlerDescribeResult } from '#/utils/handlerContract';
+import { type HandlerDescribeResult, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../models/MidiNote';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot';
+import { projectMidiNotesByClipIdThroughRestores } from '../../useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores';
 import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 type PrepareMidiNoteTransformUndoInput = {
     clipId: string;
     label: string;
     transform: (notes: readonly MidiNote[]) => MidiNote[];
+    /** When given, the notes are read as the batch's earlier actions leave them, not as the store holds them. */
+    context?: HandlerValidationContext;
 };
 
 type PrepareMidiNoteTransformUndoOutput = {
@@ -16,12 +19,18 @@ type PrepareMidiNoteTransformUndoOutput = {
     isNoop: boolean;
 };
 
+function readProjectedNotes(clipId: string, context: HandlerValidationContext): MidiNote[] | null {
+    const projected = projectMidiNotesByClipIdThroughRestores(context.actions.slice(0, context.actionIndex));
+    return projected[clipId] ?? null;
+}
+
 export function prepareMidiNoteTransformUndo({
     clipId,
     label,
     transform,
+    context,
 }: PrepareMidiNoteTransformUndoInput): PrepareMidiNoteTransformUndoOutput {
-    const notes = getMidiClipNotesSnapshot(clipId);
+    const notes = context ? readProjectedNotes(clipId, context) : getMidiClipNotesSnapshot(clipId);
     if (!notes || notes.length === 0) {
         return { description: { label }, isNoop: true };
     }
@@ -30,7 +39,7 @@ export function prepareMidiNoteTransformUndo({
     if (midiNotesEqual(notes, expectedNotes)) {
         return { description: { label }, isNoop: true };
     }
-    const noteTransformReplayGuard = getWritableMidiClipReplayGuardForBatch(clipId);
+    const noteTransformReplayGuard = getWritableMidiClipReplayGuardForBatch(clipId, context);
     if (!noteTransformReplayGuard) {
         return { description: { label }, isNoop: false };
     }

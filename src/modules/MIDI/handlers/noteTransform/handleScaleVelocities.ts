@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../models/MidiNote';
 import { mapMidiVelocitiesByCurve } from '../../transformers/mapMidiVelocitiesByCurve';
@@ -16,8 +16,9 @@ function transformNotes(action: ScaleVelocitiesAction, notes: readonly MidiNote[
     return mapMidiVelocitiesByCurve({ notes, curve, minVelocity, maxVelocity });
 }
 
-function prepareScaleVelocities(action: ScaleVelocitiesAction) {
+function prepareScaleVelocities(action: ScaleVelocitiesAction, context?: HandlerValidationContext) {
     return prepareMidiNoteTransformUndo({
+        context,
         clipId: action.payload.clipId,
         label: `Scale velocities (${action.payload.curve})`,
         transform: (notes) => transformNotes(action, notes),
@@ -37,7 +38,8 @@ export const handleScaleVelocities = createHandler<'scaleVelocities'>({
         );
         return { status: written ? 'written' : 'no-write' };
     },
-    describe: (action) => prepareScaleVelocities(action).description,
+    validate: (action, context) => getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) !== null,
+    describe: (action, context) => prepareScaleVelocities(action, context).description,
     isNoop: (action) => prepareScaleVelocities(action).isNoop,
     validateSessionEntry: (entry) => {
         const { action } = entry;
