@@ -3,6 +3,7 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
 import { type Track } from '../stores/trackStore';
+import { planClipNudge } from '../useCases/clipEditing/planClipNudge';
 import { planStartTrim } from '../useCases/clipEditing/planStartTrim';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
@@ -61,9 +62,19 @@ export function projectClipNudge(action: ActionOf<'nudgeClip'>, projected: Track
     if (!clip) {
         return;
     }
-    const applied = nudgeAppliedBeats(clip, action.payload.beats);
-    clip.startBeat += applied;
-    clip.endBeat += applied;
+    const placement = planClipNudge(clip, action.payload.beats, action.payload.placement);
+    clip.startBeat = placement.startBeat;
+    clip.endBeat = placement.endBeat;
+    if (placement.loopOriginBeat === undefined) {
+        delete clip.loopOriginBeat;
+    } else {
+        clip.loopOriginBeat = placement.loopOriginBeat;
+    }
+    if (placement.audioLoopPassOriginBeat === undefined) {
+        delete clip.audioLoopPassOriginBeat;
+    } else {
+        clip.audioLoopPassOriginBeat = placement.audioLoopPassOriginBeat;
+    }
 }
 
 export function projectClipSlip(action: ActionOf<'slipClipContent'>, projected: Track): void {
@@ -98,14 +109,6 @@ export function trimmedStartBeat(clip: Clip, newStartBeat: number): number {
         return clip.startBeat;
     }
     return plan.clip.startBeat;
-}
-
-/** The distance a nudge moves a clip: a locked clip stays, and the start clamps at beat 0. */
-export function nudgeAppliedBeats(clip: Clip, beats: number): number {
-    if (clip.locked || !Number.isFinite(beats)) {
-        return 0;
-    }
-    return Math.max(0, clip.startBeat + beats) - clip.startBeat;
 }
 
 export function projectMidiClipStart(action: ActionOf<'trimClipStart'>, projected: Track): void {

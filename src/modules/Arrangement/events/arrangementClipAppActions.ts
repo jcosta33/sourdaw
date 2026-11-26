@@ -520,7 +520,25 @@ export type ArrangementClipAppAction =
               replacement: ClipGlueActionSnapshot;
           };
       }
-    | { type: 'nudgeClip'; payload: { clipId: string; beats: number; expectedStartBeat?: number } }
+    | {
+          type: 'nudgeClip';
+          payload: {
+              clipId: string;
+              beats: number;
+              /** The start a recorded inverse or redo requires before it writes. Only recorded replays set it. */
+              expectedStartBeat?: number;
+              /**
+               * The exact beats a recorded inverse or redo writes, so undo and redo restore them bit-for-bit
+               * instead of re-deriving them from `beats`. An absent anchor means the clip carries none.
+               */
+              placement?: {
+                  startBeat: number;
+                  endBeat: number;
+                  loopOriginBeat?: number;
+                  audioLoopPassOriginBeat?: number;
+              };
+          };
+      }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats?: number } }
     | {
           type: 'restoreCrossfadeClips';

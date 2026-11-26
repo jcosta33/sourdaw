@@ -1,8 +1,9 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { nudgeClip } from '../../useCases/clipEditing/nudgeClip';
+import { planClipNudge } from '../../useCases/clipEditing/planClipNudge';
+import { readClipPlacement } from '../../useCases/clipEditing/readClipPlacement';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { nudgeAppliedBeats } from '../projectClipFieldActions';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { readPlannedClip } from './readPlannedClip';
@@ -25,6 +26,11 @@ export const handleNudgeClip = createHandler<'nudgeClip'>({
         ) {
             return { status: 'conflict' };
         }
+        if (alpha.payload.placement) {
+            return toHandlerExecutionResult(
+                nudgeClip(alpha.payload.clipId, alpha.payload.beats, alpha.payload.placement)
+            );
+        }
         return toHandlerExecutionResult(nudgeClip(alpha.payload.clipId, alpha.payload.beats));
     },
     describe: (alpha, context) => {
@@ -35,18 +41,21 @@ export const handleNudgeClip = createHandler<'nudgeClip'>({
                 return { label, inverseAction: null };
             }
             // The forward nudge clamps at beat 0 and shifts MIDI notes/automation by
-            // the applied delta, so the inverse must negate the applied post-clamp
-            // delta — not the requested one — or undo/redo drift the notes off the
-            // clip rectangle. A locked clip is not moved, so its applied delta is zero.
-            const applied = nudgeAppliedBeats(clip, alpha.payload.beats);
+            // the applied delta, so the recorded legs carry the exact placement they
+            // write: undo restores the prior beats bit-for-bit and each leg expects
+            // exactly the start the other wrote, whatever the float rounding of a
+            // relative delta. A locked clip is not moved, so both placements are equal.
+            const before = readClipPlacement(clip);
+            const after = planClipNudge(clip, alpha.payload.beats, alpha.payload.placement);
             return {
                 label,
                 inverseAction: {
                     type: 'nudgeClip',
                     payload: {
                         clipId: alpha.payload.clipId,
-                        beats: applied === 0 ? 0 : -applied,
-                        expectedStartBeat: clip.startBeat + applied,
+                        beats: before.startBeat - after.startBeat,
+                        expectedStartBeat: after.startBeat,
+                        placement: before,
                     },
                 },
                 redoAction: {
@@ -54,7 +63,8 @@ export const handleNudgeClip = createHandler<'nudgeClip'>({
                     payload: {
                         clipId: alpha.payload.clipId,
                         beats: alpha.payload.beats,
-                        expectedStartBeat: clip.startBeat,
+                        expectedStartBeat: before.startBeat,
+                        placement: after,
                     },
                 },
             };

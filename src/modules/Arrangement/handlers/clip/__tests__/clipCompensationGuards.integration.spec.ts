@@ -342,6 +342,127 @@ describe('clip edit compensation guards', () => {
         });
     });
 
+    describe('each side of a fade guards its own undo and redo', () => {
+        const fadeSeed = { fadeInBeats: 0, fadeOutBeats: 0 };
+        const fade: AppAction = {
+            type: 'setClipFade',
+            payload: { clipId: 'clip-1', fadeInBeats: 1, fadeOutBeats: 2 },
+        };
+        const sides = [
+            {
+                side: 'fade-in',
+                whileDone: () => setClipFade('clip-1', 3, 2),
+                whileUndone: () => setClipFade('clip-1', 3, 0),
+            },
+            {
+                side: 'fade-out',
+                whileDone: () => setClipFade('clip-1', 1, 3),
+                whileUndone: () => setClipFade('clip-1', 0, 3),
+            },
+        ];
+
+        it.each(sides)('refuses the undo after a divergent $side edit alone', async ({ whileDone }) => {
+            registerHandlers();
+            seedClip(fadeSeed);
+            await executeAppActionBatch([fade], { source: 'prompt', requireCompensation: true });
+            whileDone();
+            const diverged = structuredClone(currentClip());
+
+            await undo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toHaveLength(0);
+        });
+
+        it.each(sides)('refuses the redo after a divergent $side edit alone while undone', async ({ whileUndone }) => {
+            registerHandlers();
+            seedClip(fadeSeed);
+            await executeAppActionBatch([fade], { source: 'prompt', requireCompensation: true });
+            await undo();
+            whileUndone();
+            const diverged = structuredClone(currentClip());
+
+            await redo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(1);
+        });
+    });
+
+    describe('a recorded slip carries its own guard before anything runs', () => {
+        const slipExpecting = (expectedOffset: number): AppAction => ({
+            type: 'slipClipContent',
+            payload: { clipId: 'clip-1', clipType: 'midi', offset: 2, expectedOffset },
+        });
+
+        async function authorizationsUntilVerdict(action: AppAction): Promise<{ status: string; calls: number }> {
+            registerHandlers();
+            seedClip({ type: 'midi', startBeat: 0, endBeat: 8, audioOffsetBeats: 0, midiOffsetBeats: 0 });
+            let calls = 0;
+            const result = await executeAppActionBatch([action], {
+                source: 'prompt',
+                shouldExecute: () => {
+                    calls += 1;
+                    return true;
+                },
+            });
+            return { status: result.status, calls };
+        }
+
+        it('refuses a stale expected offset at validation, before any handler is authorized to execute', async () => {
+            const held = await authorizationsUntilVerdict(slipExpecting(0));
+            const stale = await authorizationsUntilVerdict(slipExpecting(5));
+
+            expect(held.status).toBe('committed');
+            expect(stale.status).toBe('conflicted');
+            expect(stale.calls).toBeLessThan(held.calls);
+        });
+    });
+
+    describe('a nudge restores its start bit-for-bit', () => {
+        it.each([
+            { start: 0.0371, beats: 0.25 },
+            { start: 0.1, beats: 0.2 },
+            { start: 3.3, beats: -1.1 },
+            { start: 1 / 3, beats: 0.7 },
+            { start: 2.675, beats: 0.005 },
+            { start: 0.0371, beats: -0.5 },
+        ])(
+            'nudge $beats from $start: undo and redo never conflict and every step is exact',
+            async ({ start, beats }) => {
+                registerHandlers();
+                const duration = 4.1;
+                seedClip({
+                    startBeat: start,
+                    endBeat: start + duration,
+                    loopOriginBeat: start - 0.0123,
+                    audioLoopPassOriginBeat: start + 0.0456,
+                });
+                const prior = structuredClone(currentClip());
+
+                const result = await executeAppActionBatch(
+                    [{ type: 'nudgeClip', payload: { clipId: 'clip-1', beats } }],
+                    {
+                        source: 'prompt',
+                        requireCompensation: true,
+                    }
+                );
+                expect(result.status).toBe('committed');
+                const nudged = structuredClone(currentClip());
+
+                for (let round = 0; round < 3; round += 1) {
+                    await undo();
+                    expect(currentClip()).toEqual(prior);
+                    await redo();
+                    expect(currentClip()).toEqual(nudged);
+                }
+                expect(notifications).toEqual([]);
+            }
+        );
+    });
+
     describe('a clip edited more than once in one batch', () => {
         const midiSeed: Partial<Clip> = {
             type: 'midi',
