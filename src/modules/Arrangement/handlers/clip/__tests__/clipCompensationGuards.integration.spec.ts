@@ -207,15 +207,25 @@ function seedClip(overrides: Partial<Clip>): void {
     flushAutomergeStorageWrites();
 }
 
+type DescribableHandler = {
+    describe: (action: AppAction, context?: unknown) => { inverseAction?: AppAction | null };
+};
+
+function isDescribableHandler(value: unknown): value is DescribableHandler {
+    return typeof value === 'object' && value !== null && 'describe' in value && typeof value.describe === 'function';
+}
+
 function registerHandlers(describeOverride?: { type: AppAction['type']; strip: string[] }): void {
     clearHandlerRegistry();
     const handlers = getArrangementHandlers();
     if (!describeOverride) {
         registerHandlerMap(handlers);
     } else {
-        const original = handlers[describeOverride.type as keyof typeof handlers] as {
-            describe: (action: AppAction, context?: unknown) => { inverseAction?: AppAction | null };
-        };
+        const handlersByType: Record<string, unknown> = handlers;
+        const original = handlersByType[describeOverride.type];
+        if (!isDescribableHandler(original)) {
+            throw new Error(`Expected a handler with describe for ${describeOverride.type}`);
+        }
         const unguarded = {
             ...original,
             describe: (action: AppAction, context?: unknown) => {

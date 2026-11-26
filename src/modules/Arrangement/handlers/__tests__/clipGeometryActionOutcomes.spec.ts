@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type HandlerValidationContext } from '#/utils/handlerContract';
+
 import { type Clip, type StretchMode, type Track } from '../../models/Track';
 import { handleNudgeClip } from '../clip/handleNudgeClip';
 import { handleTrimClipEnd } from '../clip/handleTrimClipEnd';
@@ -289,6 +291,22 @@ const descriptionCases = [
     },
 ] as const;
 
+const unguardedValidationCases = [
+    {
+        name: 'nudgeClip',
+        validate: (context: HandlerValidationContext) =>
+            handleNudgeClip.validate?.({ type: 'nudgeClip', payload: { clipId: 'clip-1', beats: 2 } }, context),
+    },
+    {
+        name: 'trimClipStart',
+        validate: (context: HandlerValidationContext) =>
+            handleTrimClipStart.validate?.(
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } },
+                context
+            ),
+    },
+] as const;
+
 describe('clip geometry action outcomes', () => {
     let currentClip: Clip;
 
@@ -335,6 +353,15 @@ describe('clip geometry action outcomes', () => {
             expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
             expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(unguardedValidationCases)(
+        'unguarded $name validates without reading the live clip when the track state is malformed',
+        ({ validate }) => {
+            mocks.getTrackStoreState.mockReturnValue(malformedTrackStateCases[0].createState());
+
+            expect(validate({ actions: [], actionIndex: 0 })).toBe(true);
         }
     );
 

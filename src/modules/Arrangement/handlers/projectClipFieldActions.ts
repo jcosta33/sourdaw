@@ -3,6 +3,7 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
 import { type Track } from '../stores/trackStore';
+import { assignClipLoopAnchors } from '../useCases/clipEditing/assignClipLoopAnchors';
 import { planClipNudge } from '../useCases/clipEditing/planClipNudge';
 import { planEndTrim } from '../useCases/clipEditing/planEndTrim';
 import { planStartTrim } from '../useCases/clipEditing/planStartTrim';
@@ -67,16 +68,7 @@ export function projectClipNudge(action: ActionOf<'nudgeClip'>, projected: Track
     const placement = planClipNudge(clip, action.payload.beats, action.payload.placement);
     clip.startBeat = placement.startBeat;
     clip.endBeat = placement.endBeat;
-    if (placement.loopOriginBeat === undefined) {
-        delete clip.loopOriginBeat;
-    } else {
-        clip.loopOriginBeat = placement.loopOriginBeat;
-    }
-    if (placement.audioLoopPassOriginBeat === undefined) {
-        delete clip.audioLoopPassOriginBeat;
-    } else {
-        clip.audioLoopPassOriginBeat = placement.audioLoopPassOriginBeat;
-    }
+    assignClipLoopAnchors(clip, placement);
 }
 
 export function projectClipSlip(action: ActionOf<'slipClipContent'>, projected: Track): void {
