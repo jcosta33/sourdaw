@@ -1,5 +1,7 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { logger } from '#/infra/logger/appLogger';
 import {
@@ -21,12 +23,15 @@ import {
     createCrdtDoc,
     getCrdtDoc,
     markActionHistoryEntryReverted,
+    projectCrdtToStores,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { defaultTransportState, recordingStartStore, transportStore } from '#/modules/Transport/stores';
 import {
     setNotificationEventBus,
     type ConfirmPayload,
@@ -36,9 +41,11 @@ import {
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Track } from '../../../models/Track';
+import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { captureFreezeStateSnapshot } from '../../../useCases/freezeBounce/freezeStateSnapshot';
 import { activeFreezeTasks } from '../../../useCases/freezeBounce/freezeTrack';
+import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE } from '../../../useCases/freezeBounce/isFreezeRefusedWhileRecording';
 import { type renderTrackOffline } from '../../../useCases/freezeBounce/renderOffline';
 import { settledBeforeFreeze } from '../../../useCases/freezeBounce/settledBeforeFreeze';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -79,8 +86,74 @@ function rawTrack(): Track {
     return track;
 }
 
+function rawTrackById(id: string): Track {
+    const track = getCrdtDoc<{ tracks: { tracks: Track[] } }>('root')?.tracks.tracks.find(
+        (candidate) => candidate.id === id
+    );
+    if (!track) {
+        throw new Error(`Expected raw track ${id}`);
+    }
+    return track;
+}
+
+function projectedTrackById(id: string): Track {
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === id);
+    if (!track) {
+        throw new Error(`Expected projected track ${id}`);
+    }
+    return track;
+}
+
 function freeze(): Promise<void> {
     return executeAppAction({ type: 'freezeTrack', payload: { trackId: 'freeze-track' } });
+}
+
+type RootDocument = { tracks: { tracks: Track[] } };
+
+// A collaborator's change reaching this client: merged into the local document as the sync route does,
+// then projected to the stores. It runs no local action, so nothing cancels a running freeze.
+function applyInboundChange(change: (tracks: Track[]) => void): void {
+    const current = getCrdtDoc<RootDocument>('root');
+    if (!current) {
+        throw new Error('Expected the root document');
+    }
+    const peer = Automerge.change(Automerge.clone(current), (draft) => {
+        change(draft.tracks.tracks);
+    });
+    replaceCrdtDocInLineage({ id: 'root', doc: Automerge.merge(Automerge.clone(current), peer) });
+    projectCrdtToStores();
+}
+
+function inboundTrack(tracks: Track[], id: string): Track {
+    const track = tracks.find((candidate) => candidate.id === id);
+    if (!track) {
+        throw new Error(`Expected inbound track ${id}`);
+    }
+    return track;
+}
+
+function seedTracks(tracks: Track[]): void {
+    trackStore.set({ tracks, selectedTrackId: tracks[0]?.id ?? null, ghostClips: [] });
+    flushAutomergeStorageWrites();
+}
+
+const STALE_TAKE = {
+    frozen: true,
+    frozenBufferId: 'old-take',
+    freezeState: {
+        status: 'stale',
+        freezeId: 'old-freeze',
+        frozenBufferId: 'old-take',
+        sourceContentHash: 'old-hash',
+        compensationSeconds: 0.02,
+    },
+} satisfies Partial<Track>;
+
+function seedStaleTrack(): void {
+    seedTracks([
+        TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }),
+        TrackDummy.create({ id: 'other-track', name: 'Other' }),
+    ]);
 }
 
 function seedTrack(track: Track): void {
@@ -113,12 +186,18 @@ async function freezeOverRunningFreeze(): Promise<void> {
 }
 
 describe('freezeTrack started over a running freeze', () => {
+    let notices: NotifyPayload[] = [];
+
     beforeEach(() => {
         const bus = createEventBus<{
             'ui.notify': NotifyPayload;
             'ui.confirm': ConfirmPayload;
             'ui.prompt': PromptPayload;
         }>();
+        notices = [];
+        bus.on('ui.notify', (payload) => {
+            notices.push(payload);
+        });
         setNotificationEventBus(bus);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Freeze over running freeze');
@@ -156,6 +235,8 @@ describe('freezeTrack started over a running freeze', () => {
         clearHandlerRegistry();
         activeFreezeTasks.clear();
         settledBeforeFreeze.clear();
+        transportStore.set(defaultTransportState);
+        recordingStartStore.set(false);
     });
 
     it('undoes a plain freeze to unfrozen and redoes it to the rendered take', async () => {
@@ -282,6 +363,360 @@ describe('freezeTrack started over a running freeze', () => {
             expect(track.frozenBufferId).toBeUndefined();
         }
         expect(render.mock.calls[0]?.[3]?.abortSignal?.aborted).toBe(true);
+    });
+
+    // Not a sync: these write the store directly. They pin the commit guard against any departure from
+    // the freezing state, whatever route wrote it.
+    const unfrozenInStore: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+    };
+    const refrozenInStore: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+        frozen: true,
+        frozenBufferId: 'remote-take',
+        freezeState: { status: 'frozen', freezeId: 'remote-freeze', frozenBufferId: 'remote-take' },
+    };
+    const failedInStore: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+        frozen: false,
+        freezeState: { status: 'error', errorMessage: 'remote failure' },
+    };
+    it.each([
+        { name: 'an unfreeze', written: unfrozenInStore },
+        { name: 'a different freeze take', written: refrozenInStore },
+        { name: 'a failure', written: failedInStore },
+    ])('keeps a store write of $name when the local render finishes after it', async ({ written }) => {
+        seedStaleTrack();
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        expect(projectedTrack().freezeState.status).toBe('freezing');
+        updateTrack('freeze-track', ({ frozenBufferId: _carried, ...time }) => ({ ...time, ...written }));
+        flushAutomergeStorageWrites();
+        expect(activeFreezeTasks.has('freeze-track')).toBe(true);
+        first.release();
+        await running;
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState).toEqual(written.freezeState);
+            expect(track.frozen).toBe(written.frozen);
+            expect(track.frozenBufferId).toBe(written.frozenBufferId);
+        }
+        expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+        expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
+    });
+
+    it('reports the recording refusal, not a silent exit, when a recording starts as the freezing state is overwritten', async () => {
+        seedTrack(TrackDummy.create({ id: 'freeze-track', armed: true, ...STALE_TAKE }));
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        updateTrack('freeze-track', ({ frozenBufferId: _carried, ...time }) => ({ ...time, ...unfrozenInStore }));
+        flushAutomergeStorageWrites();
+        recordingStartStore.set(true);
+        first.release();
+        await running;
+        expect(notices).toEqual([{ message: FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, level: 'warning' }]);
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState).toEqual({ status: 'unfrozen' });
+            expect(track.frozen).toBe(false);
+            expect(track.frozenBufferId).toBeUndefined();
+        }
+    });
+
+    it('still commits a render whose progress ticked while the track stayed freezing', async () => {
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        render.mock.calls[0]?.[3]?.onProgress?.(0.5);
+        expect(projectedTrack().freezeState.renderProgress).toBe(0.5);
+        first.release();
+        await running;
+        expect(projectedTrack().freezeState.status).toBe('frozen');
+        expect(projectedTrack().frozenBufferId).toBeDefined();
+    });
+
+    describe('with a collaborator change arriving while the render runs', () => {
+        beforeEach(() => {
+            registerProjectSlotProjections();
+        });
+
+        it('commits the take after an inbound edit to another track', async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                inboundTrack(tracks, 'other-track').name = 'Renamed by a collaborator';
+            });
+            expect(projectedTrack().freezeState.status).toBe('stale');
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).toBeDefined();
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+            expect(trackStore.value?.tracks[1]?.name).toBe('Renamed by a collaborator');
+        });
+
+        it.each([
+            {
+                name: 'deletes the track above it',
+                change: (tracks: Track[]) => {
+                    tracks.splice(0, 1);
+                },
+            },
+            {
+                name: 'moves it to the top',
+                change: (tracks: Track[]) => {
+                    // A collaborator's move writes the row anew from the settled values it holds.
+                    tracks.splice(1, 1);
+                    tracks.unshift(TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }));
+                },
+            },
+        ])('commits the take after a collaborator $name', async ({ change }) => {
+            seedTracks([
+                TrackDummy.create({ id: 'above', name: 'Above' }),
+                TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }),
+            ]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange(change);
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+        });
+
+        it('commits the take after a local move of the freezing track', async () => {
+            seedTracks([
+                TrackDummy.create({ id: 'above', name: 'Above' }),
+                TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }),
+            ]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            await executeAppAction({ type: 'reorderTrack', payload: { trackId: 'freeze-track', newIndex: 0 } });
+            expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['freeze-track', 'above']);
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+        });
+
+        it('commits the take after a local rename of another track', async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: 'other-track', name: 'Renamed here' } });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+        });
+
+        it("keeps a collaborator's unfreeze that arrives with a delete of the track above, committing no take", async () => {
+            seedTracks([TrackDummy.create({ id: 'above', name: 'Above' }), TrackDummy.create({ id: 'freeze-track' })]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+                tracks.splice(0, 1);
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+        });
+
+        it("keeps a collaborator's unfreeze that lands after a local move and a progress tick, committing no take", async () => {
+            seedTracks([TrackDummy.create({ id: 'above', name: 'Above' }), TrackDummy.create({ id: 'freeze-track' })]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            await executeAppAction({ type: 'reorderTrack', payload: { trackId: 'freeze-track', newIndex: 0 } });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.5);
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrackById('freeze-track'), projectedTrackById('freeze-track')]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+        });
+
+        it('commits no take after the document is rolled back to before the freeze started', async () => {
+            const beforeFreeze = Automerge.getHeads(getCrdtDoc<RootDocument>('root')!);
+            seedTracks([TrackDummy.create({ id: 'freeze-track' }), TrackDummy.create({ id: 'other-track' })]);
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            const current = getCrdtDoc<RootDocument>('root')!;
+            replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(Automerge.view(current, beforeFreeze)) });
+            projectCrdtToStores();
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).not.toBe('frozen');
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+        });
+
+        it("commits the take after a collaborator writes another track's freeze fields", async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const other = inboundTrack(tracks, 'other-track');
+                other.freezeState = { status: 'error', errorMessage: 'remote failure' };
+            });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.5);
+            expect(projectedTrack().freezeState.renderProgress).toBe(0.5);
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+            expect(rawTrackById('other-track').freezeState).toEqual({
+                status: 'error',
+                errorMessage: 'remote failure',
+            });
+        });
+
+        it('commits the take after an inbound edit to another field of the same track', async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                inboundTrack(tracks, 'freeze-track').name = 'Renamed by a collaborator';
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+                expect(track.name).toBe('Renamed by a collaborator');
+            }
+        });
+
+        it.each([
+            {
+                name: 'an unfreeze',
+                change: (track: Track) => {
+                    track.frozen = false;
+                    delete track.frozenBufferId;
+                    track.freezeState = { status: 'unfrozen' };
+                },
+                expected: { frozen: false, freezeState: { status: 'unfrozen' } },
+            },
+            {
+                name: 'a failure',
+                change: (track: Track) => {
+                    track.freezeState = { status: 'error', errorMessage: 'remote failure' };
+                },
+                expected: {
+                    frozen: true,
+                    frozenBufferId: 'old-take',
+                    freezeState: { status: 'error', errorMessage: 'remote failure' },
+                },
+            },
+        ])("keeps the collaborator's $name and commits no take", async ({ change, expected }) => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                change(inboundTrack(tracks, 'freeze-track'));
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState).toEqual(expected.freezeState);
+                expect(track.frozen).toBe(expected.frozen);
+                expect(track.frozenBufferId).toBe(expected.frozenBufferId);
+            }
+            expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+            expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
+        });
+
+        it('keeps the collaborator unfreeze of a track that was unfrozen before the freeze, committing no take', async () => {
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+                expect(track.frozen).toBe(false);
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+            expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+        });
+
+        it("writes no render progress over a collaborator's unfreeze of a track that was unfrozen before the freeze", async () => {
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.7);
+            // The store still holds the freeze's own uncommitted freezing write, which the rebase keeps
+            // because the collaborator's value equals the one that write started from; the tick must not land.
+            expect(projectedTrack().freezeState.renderProgress).toBe(0);
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+            }
+        });
+
+        it("writes no render progress over the collaborator's state after it departs from freezing", async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.7);
+            expect(projectedTrack().freezeState).toEqual({ status: 'unfrozen' });
+            first.release();
+            await running;
+        });
     });
 
     it('unfreezes a committed frozen track as before, with nothing running', async () => {

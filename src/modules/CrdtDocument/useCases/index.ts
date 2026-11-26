@@ -6,6 +6,8 @@ export { captureCheckpointRoot } from './captureCheckpointRoot';
 export { captureProjectIdentity } from './captureProjectIdentity';
 export { captureProjectRootIdentity } from './captureProjectRootIdentity';
 export { captureProjectRevision } from './captureProjectRevision';
+export { captureRootDocumentHeads } from './captureRootDocumentHeads';
+export { readRootListItemWritesSince } from './readRootListItemWritesSince';
 export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
 export { projectRevisionMatchesLiveIgnoringSaveWrites } from './projectRevisionMatchesLiveIgnoringSaveWrites';

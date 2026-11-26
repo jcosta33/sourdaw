@@ -2,6 +2,7 @@ import {
     type Doc,
     type ChangeFn,
     type Heads,
+    type ObjID,
     init,
     load,
     save,
@@ -14,6 +15,9 @@ import {
     getMissingDeps,
     view,
     getHeads,
+    hasHeads,
+    getObjectId,
+    decodeChange,
     clone,
     getActorId,
     getAuthor,
@@ -33,6 +37,7 @@ import {
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { type EncodedIncremental, type EncodedIncrementalFrames } from '../models/IncrementalPersistenceEncoding';
+import { type ListItemWritesSince } from '../models/ListItemWritesSince';
 import {
     BOUNDED_NATIVE_SEQUENCE_POLICY,
     type ProspectiveMutationWorkerResult,
@@ -113,6 +118,38 @@ function createSnapshotTransactionOverlapError(id: DocId): Error {
 
 function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>): boolean {
     return retainsActiveFrontier(replacement, getHeads(previous));
+}
+
+type DocumentRecord = Record<string, unknown>;
+
+function isDocumentRecord(value: unknown): value is DocumentRecord {
+    return typeof value === 'object' && value !== null;
+}
+
+function findListItemById(doc: unknown, listPath: readonly string[], itemId: string): DocumentRecord | undefined {
+    let list: unknown = doc;
+    for (const key of listPath) {
+        list = isDocumentRecord(list) ? list[key] : undefined;
+    }
+    if (!Array.isArray(list)) {
+        return undefined;
+    }
+    return list.find((item): item is DocumentRecord => isDocumentRecord(item) && item.id === itemId);
+}
+
+/** Maps every document object at or below `value` to its path. Scalars carry no object id. */
+function collectObjectPaths(value: unknown, path: string[], into: Map<ObjID, string[]>): void {
+    if (!isDocumentRecord(value)) {
+        return;
+    }
+    const objectId = getObjectId(value);
+    if (!objectId) {
+        return;
+    }
+    into.set(objectId, path);
+    for (const [key, child] of Object.entries(value)) {
+        collectObjectPaths(child, [...path, key], into);
+    }
 }
 
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
@@ -1787,6 +1824,57 @@ class AutomergeRepository {
             return [];
         }
         return getChanges(view(doc, heads), doc);
+    }
+
+    /**
+     * The keys written since `heads` to the item whose `id` is `itemId` in the list at `listPath`,
+     * limited to `keys` and everything nested under them. The item is found by id at `heads` and in
+     * the live document, so a list edit elsewhere never shifts it. Writes are read from the changes
+     * themselves, so a write whose value equals the earlier one still counts.
+     */
+    getListItemWritesSince(
+        id: DocId,
+        {
+            heads,
+            listPath,
+            itemId,
+            keys,
+        }: { heads: Heads; listPath: readonly string[]; itemId: string; keys: readonly string[] }
+    ): ListItemWritesSince {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return { status: 'absent' };
+        }
+        if (!hasHeads(doc, heads)) {
+            return { status: 'unknown' };
+        }
+        const earlier = view(doc, heads);
+        const earlierItem = findListItemById(earlier, listPath, itemId);
+        const liveItem = findListItemById(doc, listPath, itemId);
+        if (!earlierItem || !liveItem) {
+            return { status: 'absent' };
+        }
+        const itemObjectId = getObjectId(liveItem);
+        if (!itemObjectId || getObjectId(earlierItem) !== itemObjectId) {
+            return { status: 'reinserted' };
+        }
+        // A nested map replaced since `heads` is written through the item's key; writes inside the
+        // replaced map land on its old or its new object, so both are mapped back to their key.
+        const pathsByObjectId = new Map<ObjID, string[]>();
+        for (const key of keys) {
+            collectObjectPaths(earlierItem[key], [key], pathsByObjectId);
+            collectObjectPaths(liveItem[key], [key], pathsByObjectId);
+        }
+        const writtenPaths = getChanges(earlier, doc)
+            .flatMap((encoded) => decodeChange(encoded).ops)
+            .flatMap((op) => {
+                if (op.obj === itemObjectId) {
+                    return keys.includes(op.key) ? [[op.key]] : [];
+                }
+                const objectPath = pathsByObjectId.get(op.obj);
+                return objectPath ? [[...objectPath, op.key]] : [];
+            });
+        return { status: 'present', writtenPaths };
     }
 
     /** Get the current heads of a document (for sync protocol). */

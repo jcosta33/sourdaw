@@ -10,6 +10,7 @@ import {
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
+    captureRootDocumentHeads,
     captureProjectRootIdentity,
     projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
@@ -20,6 +21,7 @@ import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
@@ -30,6 +32,7 @@ import { captureFreezeRender, type FreezeRender } from './captureFreezeRender';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
+import { freezeFieldsWrittenSince } from './freezeFieldsWrittenSince';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
@@ -38,6 +41,7 @@ import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreCancelledFreeze } from './restoreCancelledFreeze';
 import { settledBeforeFreeze } from './settledBeforeFreeze';
+import { showsFreezeTaskState } from './showsFreezeTaskState';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -46,13 +50,23 @@ type FreezeTaskIdentity = {
     projectId: number;
     rootIdentity: string;
     trackId: string;
+    /** The freezing state this task wrote; null when the track vanished before it could be read. */
+    pendingFreeze: FreezeStateSnapshot | null;
+    /** The settled state the document still holds when a rebase drops the freezing write. */
+    previousFreeze: FreezeStateSnapshot;
+    /**
+     * The root document's heads as of this task's last accepted write; a freeze-field write after them
+     * is someone else's. Moved forward after each progress write, so a move of the track the task
+     * already accepted stops hiding later field writes behind the row it reinserted.
+     */
+    documentHeads: string[];
 };
 
 function isEligibleActiveProjectTrack({
     projectId,
     rootIdentity,
     trackId,
-}: Omit<FreezeTaskIdentity, 'abortController'>): boolean {
+}: Pick<FreezeTaskIdentity, 'projectId' | 'rootIdentity' | 'trackId'>): boolean {
     const activeProject = projectStore.value;
     const activeState = trackStore.value;
     if (
@@ -71,8 +85,38 @@ function isEligibleActiveProjectTrack({
     );
 }
 
-function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
+function isRegisteredFreezeTask(task: FreezeTaskIdentity): boolean {
     return activeFreezeTasks.get(task.trackId) === task.abortController && isEligibleActiveProjectTrack(task);
+}
+
+/**
+ * Gates every write that lands after an await. A synced write from a collaborator runs no local
+ * action, so it never cancels this task: the live track must still show the freezing state this task
+ * wrote (or, once an inbound change rebased that write away, the settled state it started from), and
+ * any other freeze state, local or remote, stops the write. So does any write to the track's freeze
+ * fields found in the document since the task's last own write, even one whose value equals the
+ * settled state: the document records who wrote, a value cannot. The source-edit refusal and the failure
+ * path use `isRegisteredFreezeTask` instead, so a local edit that reset the track still reports why.
+ */
+function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
+    if (!isRegisteredFreezeTask(task) || !task.pendingFreeze) {
+        return false;
+    }
+    const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === task.trackId);
+    return (
+        liveTrack !== undefined &&
+        !freezeFieldsWrittenSince(task.documentHeads, task.trackId) &&
+        showsFreezeTaskState(liveTrack, { pendingFreeze: task.pendingFreeze, previousFreeze: task.previousFreeze })
+    );
+}
+
+/**
+ * Whether the finished render must not commit. The recording refusal runs first because it reports
+ * why a recording start reset the track; any other departure from the freezing state, a
+ * collaborator's unfreeze included, ends the task silently.
+ */
+function refuseLateFreezeCommit(task: FreezeTaskIdentity): boolean {
+    return refuseFreezeCommit(task.trackId, () => isRegisteredFreezeTask(task)) || !isCurrentFreezeTask(task);
 }
 
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
@@ -93,7 +137,7 @@ function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortControl
  */
 async function readFreezeTailSeconds(freezeRender: FreezeRender, task: FreezeTaskIdentity): Promise<number | null> {
     await refreshExternalPluginTails();
-    if (!isCurrentFreezeTask(task)) {
+    if (!isRegisteredFreezeTask(task)) {
         return null;
     }
     const { target, source } = freezeRender;
@@ -140,12 +184,8 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     }
     const abortController = new AbortController();
     activeFreezeTasks.set(trackId, abortController);
-    const taskIdentity = {
-        abortController,
-        projectId: project.createdAt,
-        rootIdentity: captureProjectRootIdentity(),
-        trackId,
-    };
+    const projectId = project.createdAt;
+    const rootIdentity = captureProjectRootIdentity();
     const sourceRevision = captureProjectRevision();
 
     updateTrack(trackId, (time) => ({
@@ -153,6 +193,15 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
     }));
     const pendingFreeze = captureLiveFreezeState(trackId);
+    const taskIdentity: FreezeTaskIdentity = {
+        abortController,
+        projectId,
+        rootIdentity,
+        trackId,
+        pendingFreeze,
+        previousFreeze,
+        documentHeads: captureRootDocumentHeads(),
+    };
 
     try {
         // One synchronous read of everything the render reads, signed as it is read. The render
@@ -191,10 +240,11 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
                         freezeState: { ...time.freezeState, renderProgress: param },
                     }));
                 });
+                taskIdentity.documentHeads = captureRootDocumentHeads();
             },
         });
 
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        if (!isRegisteredFreezeTask(taskIdentity)) {
             return false;
         }
 
@@ -229,9 +279,9 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
         // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
         assertFreezeSourceUnchangedUnlessRecording(trackId, freezeRender.signature, () =>
-            isCurrentFreezeTask(taskIdentity)
+            isRegisteredFreezeTask(taskIdentity)
         );
-        if (refuseFreezeCommit(trackId, () => isCurrentFreezeTask(taskIdentity))) {
+        if (refuseLateFreezeCommit(taskIdentity)) {
             return false;
         }
 
@@ -312,7 +362,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             const current = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
             return (
                 !abortController.signal.aborted &&
-                isCurrentFreezeTask(taskIdentity) &&
+                isRegisteredFreezeTask(taskIdentity) &&
                 projectRevisionMatchesLiveIgnoringSaveWrites(sourceRevision) &&
                 current !== undefined &&
                 valuesEqual(captureFreezeStateSnapshot(current), snapshot)

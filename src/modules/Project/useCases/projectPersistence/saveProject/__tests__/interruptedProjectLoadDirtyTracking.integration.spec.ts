@@ -256,6 +256,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${documentIdentity.epoch}`),
     readOwnedProjectPublications: vi.fn(() => []),
+    captureRootDocumentHeads: vi.fn(() => []),
+    readRootListItemWritesSince: vi.fn(() => ({ status: 'absent' as const })),
     captureProjectRevision: vi.fn(),
     compactProject: mockCompactProject,
     createCrdtDoc: vi.fn(),
