@@ -1,29 +1,50 @@
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type Clip } from '../../models/Track';
 import { nudgeClip } from '../../useCases/clipEditing/nudgeClip';
 import { planClipNudge } from '../../useCases/clipEditing/planClipNudge';
-import { readClipPlacement } from '../../useCases/clipEditing/readClipPlacement';
+import { type ClipPlacement, readClipPlacement } from '../../useCases/clipEditing/readClipPlacement';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { readPlannedClip } from './readPlannedClip';
 
-function liveStartBeat(clipId: string): number | undefined {
+type NudgePayload = Extract<AppAction, { type: 'nudgeClip' }>['payload'];
+
+function liveClip(clipId: string): Clip | undefined {
     return getTrackStoreState()
         ?.tracks.flatMap((track) => track.clips)
-        .find((candidate) => candidate.id === clipId)?.startBeat;
+        .find((candidate) => candidate.id === clipId);
+}
+
+/** Whether two placements hold the same beats; an absent anchor equals only an absent anchor. */
+function isSamePlacement(a: ClipPlacement, b: ClipPlacement): boolean {
+    return (
+        a.startBeat === b.startBeat &&
+        a.endBeat === b.endBeat &&
+        a.loopOriginBeat === b.loopOriginBeat &&
+        a.audioLoopPassOriginBeat === b.audioLoopPassOriginBeat
+    );
+}
+
+/** Whether the clip is where a recorded leg expects it: the whole placement, else the start alone, else anywhere. */
+function holdsExpectedPlacement(payload: NudgePayload, clip: Clip | undefined): boolean {
+    if (payload.expectedPlacement !== undefined) {
+        return clip !== undefined && isSamePlacement(readClipPlacement(clip), payload.expectedPlacement);
+    }
+    if (payload.expectedStartBeat !== undefined) {
+        return clip?.startBeat === payload.expectedStartBeat;
+    }
+    return true;
 }
 
 export const handleNudgeClip = createHandler<'nudgeClip'>({
-    canReapplyAfterDivergence: (alpha) => alpha.payload.expectedStartBeat !== undefined,
-    validate: (alpha, context) =>
-        alpha.payload.expectedStartBeat === undefined ||
-        readPlannedClip(alpha.payload.clipId, context)?.startBeat === alpha.payload.expectedStartBeat,
+    canReapplyAfterDivergence: (alpha) =>
+        alpha.payload.expectedPlacement !== undefined || alpha.payload.expectedStartBeat !== undefined,
+    validate: (alpha, context) => holdsExpectedPlacement(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
     execute: (alpha) => {
-        if (
-            alpha.payload.expectedStartBeat !== undefined &&
-            liveStartBeat(alpha.payload.clipId) !== alpha.payload.expectedStartBeat
-        ) {
+        if (!holdsExpectedPlacement(alpha.payload, liveClip(alpha.payload.clipId))) {
             return { status: 'conflict' };
         }
         if (alpha.payload.placement) {
@@ -54,7 +75,7 @@ export const handleNudgeClip = createHandler<'nudgeClip'>({
                     payload: {
                         clipId: alpha.payload.clipId,
                         beats: before.startBeat - after.startBeat,
-                        expectedStartBeat: after.startBeat,
+                        expectedPlacement: after,
                         placement: before,
                     },
                 },
@@ -63,7 +84,7 @@ export const handleNudgeClip = createHandler<'nudgeClip'>({
                     payload: {
                         clipId: alpha.payload.clipId,
                         beats: alpha.payload.beats,
-                        expectedStartBeat: before.startBeat,
+                        expectedPlacement: before,
                         placement: after,
                     },
                 },

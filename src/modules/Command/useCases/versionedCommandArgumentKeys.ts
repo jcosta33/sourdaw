@@ -3549,6 +3549,7 @@ const schemaDefinitions = [
         properties: {
             beats: 0,
             clipId: 1,
+            expectedPlacement: 453,
             expectedStartBeat: 0,
             placement: 453,
         },

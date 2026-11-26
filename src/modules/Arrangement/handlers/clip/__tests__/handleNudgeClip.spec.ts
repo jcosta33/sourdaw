@@ -62,7 +62,7 @@ describe('handleNudgeClip', () => {
             payload: {
                 clipId: 'c1',
                 beats: -1.5,
-                expectedStartBeat: 3.5,
+                expectedPlacement: { startBeat: 3.5, endBeat: 7.5 },
                 placement: { startBeat: 2, endBeat: 6 },
             },
         });
@@ -85,7 +85,7 @@ describe('handleNudgeClip', () => {
             payload: {
                 clipId: 'c1',
                 beats: 0.5,
-                expectedStartBeat: 0,
+                expectedPlacement: { startBeat: 0, endBeat: 4 },
                 placement: { startBeat: 0.5, endBeat: 4.5 },
             },
         });

@@ -525,8 +525,19 @@ export type ArrangementClipAppAction =
           payload: {
               clipId: string;
               beats: number;
-              /** The start a recorded inverse or redo requires before it writes. Only recorded replays set it. */
+              /** The start a recorded replay requires before it writes. A payload without `expectedPlacement` guards the start alone. */
               expectedStartBeat?: number;
+              /**
+               * The whole placement a recorded inverse or redo requires before it writes, the one the other leg
+               * wrote, so a peer edit of the end or of a loop anchor refuses the replay. An absent anchor means
+               * the clip carries none. Only recorded replays set it.
+               */
+              expectedPlacement?: {
+                  startBeat: number;
+                  endBeat: number;
+                  loopOriginBeat?: number;
+                  audioLoopPassOriginBeat?: number;
+              };
               /**
                * The exact beats a recorded inverse or redo writes, so undo and redo restore them bit-for-bit
                * instead of re-deriving them from `beats`. An absent anchor means the clip carries none.

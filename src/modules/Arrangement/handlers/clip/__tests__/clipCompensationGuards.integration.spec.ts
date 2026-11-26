@@ -36,6 +36,7 @@ import {
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
+import { updateClip } from '../../../repositories/track/updateClip';
 import { lockClip } from '../../../useCases/clipEditing/lockClip';
 import { muteClip } from '../../../useCases/clipEditing/muteClip';
 import { nudgeClip } from '../../../useCases/clipEditing/nudgeClip';
@@ -119,7 +120,7 @@ const cases: GuardCase[] = [
         after: 2,
         foreignWrite: () => nudgeClip('clip-1', 1),
         foreign: 3,
-        expectedKeys: ['expectedStartBeat'],
+        expectedKeys: ['expectedStartBeat', 'expectedPlacement'],
     },
     {
         type: 'slipClipContent',
@@ -464,6 +465,92 @@ describe('clip edit compensation guards', () => {
         );
     });
 
+    describe('a nudge guards the whole placement its undo and redo expect', () => {
+        const seed: Partial<Clip> = {
+            startBeat: 4,
+            endBeat: 8,
+            loopOriginBeat: 3.5,
+            audioLoopPassOriginBeat: 4.25,
+        };
+        const nudgeBatch: AppAction[] = [{ type: 'nudgeClip', payload: { clipId: 'clip-1', beats: 2 } }];
+        const peerEdits: { name: string; edit: () => void }[] = [
+            { name: 'a trim of the end', edit: () => trimClipEnd('clip-1', 12) },
+            {
+                name: 'a loop origin change alone',
+                edit: () => updateClip('clip-1', (clip) => ({ ...clip, loopOriginBeat: 1 })),
+            },
+            {
+                name: 'an audio loop pass origin change alone',
+                edit: () => updateClip('clip-1', (clip) => ({ ...clip, audioLoopPassOriginBeat: 1 })),
+            },
+        ];
+
+        it.each(peerEdits)('refuses the undo and keeps $name by a peer', async ({ edit }) => {
+            registerHandlers();
+            seedClip(seed);
+            await executeAppActionBatch(nudgeBatch, { source: 'prompt', requireCompensation: true });
+            edit();
+            const diverged = structuredClone(currentClip());
+            const notificationsBefore = notifications.length;
+
+            await undo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toHaveLength(0);
+            expect(notifications.slice(notificationsBefore)).toEqual([
+                expect.objectContaining({ level: 'warning', message: expect.stringContaining('Cannot undo') }),
+            ]);
+        });
+
+        it.each(peerEdits)('refuses the redo and keeps $name made while undone', async ({ edit }) => {
+            registerHandlers();
+            seedClip(seed);
+            await executeAppActionBatch(nudgeBatch, { source: 'prompt', requireCompensation: true });
+            await undo();
+            edit();
+            const diverged = structuredClone(currentClip());
+            const notificationsBefore = notifications.length;
+
+            await redo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(1);
+            expect(notifications.slice(notificationsBefore)).toEqual([
+                expect.objectContaining({ level: 'warning', message: expect.stringContaining('Cannot redo') }),
+            ]);
+        });
+
+        it('undoes and redoes cleanly when a clip with no anchors is untouched by peers', async () => {
+            registerHandlers();
+            seedClip({ startBeat: 4, endBeat: 8 });
+            const prior = structuredClone(currentClip());
+
+            await executeAppActionBatch(nudgeBatch, { source: 'prompt', requireCompensation: true });
+            const nudged = structuredClone(currentClip());
+            await undo();
+            expect(currentClip()).toEqual(prior);
+            await redo();
+
+            expect(currentClip()).toEqual(nudged);
+            expect(notifications).toEqual([]);
+        });
+
+        it('refuses the undo when a peer adds an anchor the nudged clip did not carry', async () => {
+            registerHandlers();
+            seedClip({ startBeat: 4, endBeat: 8 });
+            await executeAppActionBatch(nudgeBatch, { source: 'prompt', requireCompensation: true });
+            updateClip('clip-1', (clip) => ({ ...clip, loopOriginBeat: 5 }));
+            const diverged = structuredClone(currentClip());
+
+            await undo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+    });
+
     describe('a clip edited more than once in one batch', () => {
         const midiSeed: Partial<Clip> = {
             type: 'midi',
@@ -513,6 +600,44 @@ describe('clip edit compensation guards', () => {
             expect(notifications).toEqual([]);
             expect(currentClip()).toMatchObject({ startBeat: start, midiOffsetBeats: offset });
             expect(undoStore.value?.future).toHaveLength(0);
+        });
+
+        it('plans a nudge of a locked clip as no movement for the guard that follows it in the batch', async () => {
+            registerHandlers();
+            seedClip({ startBeat: 4, endBeat: 8, locked: true });
+            const prior = structuredClone(currentClip());
+            const handler = getArrangementHandlers().nudgeClip;
+            const context = { actions: [nudge(2), nudge(1)], actionIndex: 1 };
+            const realPlacement = { startBeat: 4, endBeat: 8 };
+
+            const description = handler.describe(
+                { type: 'nudgeClip', payload: { clipId: 'clip-1', beats: 1 } },
+                context
+            );
+
+            // The first nudge leaves the locked clip where it is, so the second plans against the real start.
+            expect(description.inverseAction).toEqual({
+                type: 'nudgeClip',
+                payload: { clipId: 'clip-1', beats: 0, expectedPlacement: realPlacement, placement: realPlacement },
+            });
+            expect(description.redoAction).toEqual({
+                type: 'nudgeClip',
+                payload: { clipId: 'clip-1', beats: 1, expectedPlacement: realPlacement, placement: realPlacement },
+            });
+            const guarded: AppAction = {
+                type: 'nudgeClip',
+                payload: { clipId: 'clip-1', beats: 1, expectedPlacement: realPlacement },
+            };
+            expect(handler.validate?.(guarded, context)).toBe(true);
+
+            const result = await executeAppActionBatch([nudge(2), nudge(1)], {
+                source: 'prompt',
+                requireCompensation: true,
+            });
+
+            expect(result.status).toBe('conflicted');
+            expect(currentClip()).toEqual(prior);
+            expect(undoStore.value?.past).toHaveLength(0);
         });
 
         it('rejects a guarded edit planned after an audio trim of the same clip', async () => {
