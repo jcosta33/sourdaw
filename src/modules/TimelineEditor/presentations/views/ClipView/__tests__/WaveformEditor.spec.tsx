@@ -796,6 +796,33 @@ describe('WaveformEditor', () => {
         });
     });
 
+    it('should never commit one marker with the beat another marker was dragged to', async () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [
+                { id: 'm1', originalBeat: 0.5, warpedBeat: 1 },
+                { id: 'm2', originalBeat: 1.5, warpedBeat: 3 },
+            ],
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        const canvas = screen.getByLabelText('Waveform editor');
+        canvas.setPointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+        });
+
+        // A second press while the first drag is unreleased makes the drag track the other marker.
+        fireEvent.pointerDown(canvas, { clientX: 120, pointerId: 8 });
+        await act(async () => {
+            fireEvent.pointerUp(canvas, { pointerId: 8 });
+        });
+
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).not.toHaveBeenCalled();
+    });
+
     it('should write nothing for a click without movement on a second marker after an earlier drag', async () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,

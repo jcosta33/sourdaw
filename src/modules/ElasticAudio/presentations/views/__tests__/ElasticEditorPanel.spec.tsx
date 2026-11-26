@@ -1021,6 +1021,25 @@ describe('ElasticEditorPanel', () => {
         });
     });
 
+    it('never commits one marker with the beat another marker was dragged to', async () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+        });
+
+        // A second press while the first drag is unreleased makes the drag track the other marker.
+        fireEvent.pointerDown(canvas, { clientX: 80, pointerId: 5 });
+        await act(async () => {
+            fireEvent.pointerUp(canvas, { pointerId: 5 });
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag).not.toHaveBeenCalled();
+    });
+
     it('writes nothing for a click without movement on a second marker after an earlier drag', async () => {
         render(<ElasticEditorPanel />);
         const canvas = screen.getByTestId('elastic-waveform-canvas');
