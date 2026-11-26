@@ -14,6 +14,7 @@ vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }
 const exportCachedAudioBuffersMock = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: exportCachedAudioBuffersMock,
+    isMidiTransformDevice: (deviceType: string) => deviceType === 'yeast',
 }));
 const agentProjectRepairStateStoreMock = vi.hoisted((): { value: unknown } => ({ value: null }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({

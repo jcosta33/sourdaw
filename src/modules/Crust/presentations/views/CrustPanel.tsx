@@ -23,11 +23,11 @@ import {
 import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
 import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
 import { crustStore, getCrustState } from '../../stores/crustStore';
-import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
 import { resetCrustPanelMeters } from '../../useCases/resetCrustPanelMeters';
 import { resetCrustTruePeakIndicator } from '../../useCases/resetCrustTruePeakIndicator';
+import { selectCrustFactoryPreset } from '../../useCases/selectCrustFactoryPreset';
 import { setCrustPanelUiLevel } from '../../useCases/setCrustPanelUiLevel';
 import { CrustControlZone } from '../components/CrustControlZone';
 import { CrustGainStrip } from '../components/CrustGainStrip';
@@ -235,7 +235,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     active={preset.patch.name === patch.name}
                                     className="crust-window w-full rounded-[12px]"
                                     onPress={() => {
-                                        loadCrustPatchWithAudio(deviceId, preset.patch);
+                                        void selectCrustFactoryPreset(deviceId, preset.id);
                                         setOpenMenu(null);
                                     }}
                                     role="option"

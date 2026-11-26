@@ -400,6 +400,14 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     {unavailableExternalDeviceIds.has(device.id) ? (
                                         <span className="block text-[9px] text-muted-foreground">Unavailable</span>
                                     ) : null}
+                                    {degradedExternalDeviceMessages.has(device.id) ? (
+                                        <span
+                                            className="block text-[9px] leading-tight text-[var(--color-state-warning)]"
+                                            data-testid={`device-degraded-${device.id}`}
+                                        >
+                                            {degradedExternalDeviceMessages.get(device.id)}
+                                        </span>
+                                    ) : null}
                                 </div>
                             </Row>
                             <Row gap={0.5} shrink={false}>

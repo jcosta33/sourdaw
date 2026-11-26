@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../../models/ProjectContext';
-import { readExplicitProtections } from '../readExplicitProtections';
+import { inertProtectionClauses, readExplicitProtections } from '../readExplicitProtections';
 
 function createTrack(id: string, name: string, overrides: Partial<ProjectContextTrack> = {}): ProjectContextTrack {
     return {
@@ -1089,5 +1089,20 @@ describe('readExplicitProtections', () => {
         it('refuses a control on an unknown name', () => {
             expect(unresolvedIn('turn the Drums down 3 dB and leave the faders on Ghost alone')).toEqual(['Ghost']);
         });
+    });
+});
+
+describe('inertProtectionClauses', () => {
+    it.each([
+        [
+            'turn the Drums down 3 dB; keep the Gain Staging unchanged; leave Bass alone',
+            'keep the Gain Staging unchanged',
+        ],
+        ['turn the Drums down 3 dB and keep it "Warm"; leave Bass alone', 'keep it "Warm"'],
+        ['turn the Drums down 3 dB, keep the Kick level punchy', 'keep the Kick level punchy'],
+    ])('reads the whole inert clause of "%s"', (prompt, clause) => {
+        const start = prompt.indexOf(clause);
+
+        expect(inertProtectionClauses.read(prompt, context)).toEqual([{ start, end: start + clause.length }]);
     });
 });

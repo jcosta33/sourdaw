@@ -168,12 +168,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
-        spec: 'src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts',
-        barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['clipSelectionStore', 'getTrackEligibility', 'markerStore', 'updateClipInStore'],
-        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
-    },
-    {
         spec: 'src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts',
         barrel: '#/modules/Arrangement/stores',
         missingKeys: [
