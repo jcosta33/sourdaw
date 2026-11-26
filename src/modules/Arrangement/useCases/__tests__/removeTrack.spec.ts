@@ -1,6 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import {
+    createCrdtDoc,
+    mutateCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -17,6 +24,7 @@ const ownerUseCases = vi.hoisted(() => ({
     getAllSidechainRoutes: vi.fn().mockReturnValue([]),
     removeSidechainRoute: vi.fn(),
     removeClipSatelliteData: vi.fn(),
+    unloadPluginCarryingLiveState: vi.fn(),
 }));
 
 vi.mock('../../repositories/track/getTrackState', () => ({
@@ -42,6 +50,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     stopTrackInputMonitoring: ownerUseCases.stopTrackInputMonitoring,
     removeBusStrip: ownerUseCases.removeBusStrip,
     setTrackOutput: ownerUseCases.setTrackOutput,
+}));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    unloadPluginCarryingLiveState: ownerUseCases.unloadPluginCarryingLiveState,
 }));
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
@@ -79,6 +91,121 @@ describe('removeTrack', () => {
         ownerUseCases.getAllSidechainRoutes.mockReturnValue([]);
         ownerUseCases.removeSidechainRoute.mockReset();
         ownerUseCases.removeClipSatelliteData.mockReset();
+        ownerUseCases.unloadPluginCarryingLiveState.mockReset();
+        ownerUseCases.unloadPluginCarryingLiveState.mockResolvedValue(undefined);
+    });
+
+    describe('hosted plugin release', () => {
+        function hostedTrack(id: string, instanceIds: readonly string[]) {
+            return {
+                id,
+                name: id,
+                kind: 'audio' as const,
+                clips: [],
+                alternatives: [],
+                outputId: 'master',
+                sends: [],
+                parentId: null,
+                devices: instanceIds.map((instanceId) => ({
+                    id: `${instanceId}-device`,
+                    type: 'external-plugin',
+                    externalInstanceId: instanceId,
+                })),
+            };
+        }
+
+        function stageRemoval(track: ReturnType<typeof hostedTrack>): void {
+            vi.mocked(getTrackState).mockReturnValue({ tracks: [track as never], selectedTrackId: null });
+            vi.mocked(getTrackById).mockReturnValue(track as never);
+        }
+
+        function commitTracksToDocument(tracks: readonly unknown[]): void {
+            mutateCrdtDoc<{ tracks: unknown }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks = { tracks, selectedTrackId: null };
+                },
+            });
+        }
+
+        beforeEach(() => {
+            resetCrdtProjectAuthority('removeTrack plugin release test');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+        });
+
+        afterEach(() => {
+            removeCrdtDoc('root');
+        });
+
+        it('releases the instances of a track removed on the default path once committed truth drops it', async () => {
+            const track = hostedTrack('t1', ['inst-a', 'inst-b']);
+            commitTracksToDocument([track]);
+            stageRemoval(track);
+
+            removeTrack('t1');
+            expect(ownerUseCases.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
+            commitTracksToDocument([]);
+
+            await vi.waitFor(() => {
+                expect(ownerUseCases.unloadPluginCarryingLiveState.mock.calls).toEqual([['inst-a'], ['inst-b']]);
+            });
+        });
+
+        it('releases nothing for a track that has no hosted plugin', async () => {
+            const track = hostedTrack('t1', []);
+            stageRemoval(track);
+
+            removeTrack('t1');
+            await Promise.resolve();
+
+            expect(ownerUseCases.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
+        });
+
+        it('releases a deferred removal only when finalizeRuntimeRemoval runs, and only once', async () => {
+            const track = hostedTrack('t1', ['inst-a']);
+            stageRemoval(track);
+
+            const result = removeTrack('t1', { deferRuntimeEffects: true, suppressRemovedEvent: true });
+            if (!result.removed) {
+                throw new Error('Expected the track removal to be staged');
+            }
+            expect(ownerUseCases.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
+
+            await result.finalizeRuntimeRemoval();
+            await result.finalizeRuntimeRemoval();
+
+            expect(ownerUseCases.unloadPluginCarryingLiveState.mock.calls).toEqual([['inst-a']]);
+        });
+
+        it('keeps the instances loaded while committed truth still holds the track', async () => {
+            const track = hostedTrack('t1', ['inst-a']);
+            commitTracksToDocument([track]);
+            stageRemoval(track);
+
+            const result = removeTrack('t1', { deferRuntimeEffects: true, suppressRemovedEvent: true });
+            if (!result.removed) {
+                throw new Error('Expected the track removal to be staged');
+            }
+            await result.finalizeRuntimeRemoval();
+
+            expect(ownerUseCases.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
+        });
+
+        it('rejects finalizeRuntimeRemoval with the unload failure and still tears the strip down', async () => {
+            const track = hostedTrack('t1', ['inst-a']);
+            stageRemoval(track);
+            ownerUseCases.unloadPluginCarryingLiveState.mockRejectedValueOnce(new Error('host gone'));
+
+            const result = removeTrack('t1', { deferRuntimeEffects: true, suppressRemovedEvent: true });
+            if (!result.removed) {
+                throw new Error('Expected the track removal to be staged');
+            }
+
+            await expect(result.finalizeRuntimeRemoval()).rejects.toThrow('host gone');
+            expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
+        });
     });
 
     it('should return early when track state is missing', () => {
@@ -106,6 +233,7 @@ describe('removeTrack', () => {
             kind: 'audio' as const,
             clips: [{ id: 'c1' }],
             outputId: 'master',
+            devices: [],
             sends: [],
             alternatives: [
                 { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }, { id: 'c2' }] },
@@ -144,6 +272,7 @@ describe('removeTrack', () => {
             kind: 'midi' as const,
             clips: [{ id: 'kept', trackId: 'a' }],
             outputId: 'master',
+            devices: [],
             sends: [],
             activeAlternativeId: 'alt-1',
             alternatives: [
@@ -164,6 +293,7 @@ describe('removeTrack', () => {
             kind: 'midi' as const,
             clips: [{ id: 'x', trackId: 'b' }],
             outputId: 'master',
+            devices: [],
             sends: [],
             activeAlternativeId: '',
             alternatives: [],
@@ -180,7 +310,7 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeClipSatelliteData).toHaveBeenCalledWith(['kept', 'inactive']);
     });
 
-    it('can defer live-engine teardown until after the owning transaction commits', () => {
+    it('can defer live-engine teardown until after the owning transaction commits', async () => {
         const track = {
             id: 't1',
             name: 'One',
@@ -188,6 +318,7 @@ describe('removeTrack', () => {
             clips: [],
             alternatives: [],
             outputId: 'master',
+            devices: [],
             sends: [],
             parentId: null,
         };
@@ -210,13 +341,13 @@ describe('removeTrack', () => {
             throw new Error('Expected the track removal to be staged');
         }
 
-        result.finalizeRuntimeRemoval();
+        await result.finalizeRuntimeRemoval();
 
         expect(ownerUseCases.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
         expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
     });
 
-    it('attempts dependent runtime reconciliation when strip teardown fails', () => {
+    it('attempts dependent runtime reconciliation when strip teardown fails', async () => {
         const failure = new Error('strip teardown failed');
         const removed = {
             id: 'bus-a',
@@ -225,6 +356,7 @@ describe('removeTrack', () => {
             clips: [],
             alternatives: [],
             outputId: 'master',
+            devices: [],
             sends: [],
             parentId: null,
         };
@@ -234,6 +366,7 @@ describe('removeTrack', () => {
             kind: 'audio' as const,
             clips: [],
             outputId: 'bus-a',
+            devices: [],
             sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
@@ -245,7 +378,12 @@ describe('removeTrack', () => {
             throw failure;
         });
 
-        expect(() => removeTrack('bus-a')).toThrow(failure);
+        const result = removeTrack('bus-a', { deferRuntimeEffects: true, suppressRemovedEvent: true });
+        if (!result.removed) {
+            throw new Error('Expected the track removal to be staged');
+        }
+
+        await expect(result.finalizeRuntimeRemoval()).rejects.toBe(failure);
 
         expect(ownerUseCases.removeBusStrip).toHaveBeenCalledWith('bus-a');
         expect(ownerUseCases.setTrackOutput).toHaveBeenCalledWith('audio-1', 'master');
@@ -308,6 +446,7 @@ describe('removeTrack', () => {
             clips: [],
             alternatives: [],
             outputId: 'master',
+            devices: [],
             sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
@@ -339,6 +478,7 @@ describe('removeTrack', () => {
             kind: 'master' as const,
             clips: [],
             outputId: 'hw_out',
+            devices: [],
             sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
@@ -411,6 +551,7 @@ describe('removeTrack', () => {
             clips: [{ id: 'legacy-clip' }],
             alternatives: [],
             outputId: 'master',
+            devices: [],
             sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
@@ -433,6 +574,7 @@ describe('removeTrack', () => {
             clips: [],
             alternatives: [],
             outputId: 'master',
+            devices: [],
             sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
@@ -467,6 +609,7 @@ describe('removeTrack', () => {
             clips: [],
             alternatives: [],
             outputId: 'master',
+            devices: [],
             sends: [],
         };
         const busA = {
@@ -476,6 +619,7 @@ describe('removeTrack', () => {
             clips: [],
             alternatives: [],
             outputId: 'busB',
+            devices: [],
             sends: [],
         };
 
@@ -497,6 +641,7 @@ describe('removeTrack', () => {
                 kind: 'audio' as const,
                 clips: [],
                 outputId: 'busA',
+                devices: [],
                 sends: [],
             };
             vi.mocked(getTrackState).mockReturnValue({
@@ -520,6 +665,7 @@ describe('removeTrack', () => {
                 kind: 'audio' as const,
                 clips: [],
                 outputId: 'master',
+                devices: [],
                 sends: [
                     { busId: 'busA', level: 0.5, preFader: false },
                     { busId: 'busB', level: 0.25, preFader: true },
@@ -547,6 +693,7 @@ describe('removeTrack', () => {
                 clips: [],
                 alternatives: [],
                 outputId: 'deleted-earlier',
+                devices: [],
                 sends: [],
             };
             const dependent = {
@@ -555,6 +702,7 @@ describe('removeTrack', () => {
                 kind: 'audio' as const,
                 clips: [],
                 outputId: 'busA',
+                devices: [],
                 sends: [],
             };
             vi.mocked(getTrackState).mockReturnValue({
@@ -576,6 +724,7 @@ describe('removeTrack', () => {
                 kind: 'audio' as const,
                 clips: [],
                 outputId: 'busB',
+                devices: [],
                 sends: [{ busId: 'busB', level: 0.4, preFader: false }],
             };
             vi.mocked(getTrackState).mockReturnValue({
@@ -610,6 +759,7 @@ describe('removeTrack', () => {
                     kind: 'audio' as const,
                     clips: [],
                     outputId: 'busA',
+                    devices: [],
                     sends: [],
                 };
                 const loopedBus = {
@@ -619,6 +769,7 @@ describe('removeTrack', () => {
                     clips: [],
                     alternatives: [],
                     outputId: 'kick',
+                    devices: [],
                     sends: [],
                 };
                 vi.mocked(getTrackState).mockReturnValue({
@@ -646,6 +797,7 @@ describe('removeTrack', () => {
                     clips: [],
                     alternatives: [],
                     outputId: 'busB',
+                    devices: [],
                     sends: [],
                 };
                 const busB = {
@@ -655,6 +807,7 @@ describe('removeTrack', () => {
                     clips: [],
                     alternatives: [],
                     outputId: 'busC',
+                    devices: [],
                     sends: [],
                 };
                 const busC = {
@@ -664,6 +817,7 @@ describe('removeTrack', () => {
                     clips: [],
                     alternatives: [],
                     outputId: 'busA',
+                    devices: [],
                     sends: [],
                 };
                 vi.mocked(getTrackState).mockReturnValue({
@@ -690,6 +844,7 @@ describe('removeTrack', () => {
                     kind: 'bus' as const,
                     clips: [],
                     outputId: 'master',
+                    devices: [],
                     sends: [],
                 };
                 const busA = {
@@ -699,6 +854,7 @@ describe('removeTrack', () => {
                     clips: [],
                     alternatives: [],
                     outputId: 'busB',
+                    devices: [],
                     sends: [],
                 };
                 const dependent = {
@@ -707,6 +863,7 @@ describe('removeTrack', () => {
                     kind: 'audio' as const,
                     clips: [],
                     outputId: 'busA',
+                    devices: [],
                     sends: [],
                 };
                 vi.mocked(getTrackState).mockReturnValue({

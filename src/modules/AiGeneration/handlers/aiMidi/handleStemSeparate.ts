@@ -1,17 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
-import {
-    addClip,
-    addTrack,
-    captureRemovedTrackPluginRelease,
-    getTrackStoreState,
-    removeTrack,
-} from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, getTrackStoreState, removeTrack } from '#/modules/Arrangement/useCases';
 import { isStemSeparationAvailable, separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { audioBufferToWav } from '#/modules/AudioRendering/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { runAllAsyncEffects } from '#/utils/runEffects';
 
 /** Targets `separateStems` accepts. The `stemSeparate` AppAction payload types
  *  `stems` as a bare `string[]` (see `src/utils/handlerContract.ts`), so
@@ -69,7 +62,6 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
             const stemResults = await doSeparateStems(wavData, stems);
 
             const durationBeats = clip.endBeat - clip.startBeat;
-            const pluginReleases: Array<() => Promise<void>> = [];
             for (const [stemName, stemBuffer] of Object.entries(stemResults)) {
                 const stemTrackName = `${clip.name} — ${stemName}`;
 
@@ -79,10 +71,6 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
                 // separation on the same clip accumulates duplicate tracks.
                 const existingStemTracks = (getTrackStoreState()?.tracks ?? []).filter(
                     (existing) => existing.name === stemTrackName
-                );
-                // Read before removeTrack: a replaced track's hosted instances are unreachable once it leaves the store.
-                pluginReleases.push(
-                    captureRemovedTrackPluginRelease(existingStemTracks.map((existing) => existing.id))
                 );
                 for (const existing of existingStemTracks) {
                     removeTrack(existing.id);
@@ -104,12 +92,7 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
             }
 
             logger.info(`[Audio AI] Separated into ${String(Object.keys(stemResults).length)} stems`);
-            const releaseReplacedPlugins = () => runAllAsyncEffects(pluginReleases);
-            return {
-                status: 'written',
-                afterCommit: releaseReplacedPlugins,
-                afterAmbiguousCommit: releaseReplacedPlugins,
-            };
+            return { status: 'written' };
         } catch (error) {
             logger.warn(`[Audio AI] Stem separation failed: ${String(error)}`);
             notifyUser(`Stem separation failed: ${String(error)}`, 'error');

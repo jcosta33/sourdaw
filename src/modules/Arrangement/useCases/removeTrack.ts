@@ -8,7 +8,7 @@ import {
 import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
 import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
-import { runAllEffects } from '#/utils/runEffects';
+import { runAllAsyncEffects, runAllEffects } from '#/utils/runEffects';
 
 import { getHeldClips } from '../models/TrackAlternativeClips';
 import { getTrackById } from '../repositories/track/getTrackById';
@@ -21,6 +21,8 @@ import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { ArrangementEventBus } from './arrangementEventBus';
 import { captureTrackRemovalRuntimeAuthority } from './captureTrackRemovalRuntimeAuthority';
 import { removeClipSatelliteData } from './clip/removeClipSatelliteData';
+import { collectHostedPluginInstances } from './device/collectHostedPluginInstances';
+import { unloadDiscardedHostedPlugins } from './device/unloadDiscardedHostedPlugins';
 import { finalizeCommittedTrackRuntimeRemoval } from './finalizeCommittedTrackRuntimeRemoval';
 import { refreshToasterPadBindings } from './refreshToasterPadBindings';
 
@@ -33,7 +35,7 @@ type RemoveTrackResult =
     | { removed: false }
     | {
           removed: true;
-          finalizeRuntimeRemoval: () => void;
+          finalizeRuntimeRemoval: () => Promise<void>;
       };
 
 export const removeTrack = inject({ eventBus: ArrangementEventBus })(
@@ -49,6 +51,8 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 return { removed: false };
             }
             const removedTrack = track;
+            // Read before the row leaves the store: the instances are unreachable afterwards.
+            const hostedInstances = collectHostedPluginInstances(track);
             const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
 
             // The clips the track holds now. The active alternative's stored
@@ -113,10 +117,12 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             // which sweeps sends targeting the bus. Both engine methods no-op
             // when the node is absent.
             let runtimeRemovalFinalized = false;
-            function finalizeRuntimeRemoval(): void {
+            async function finalizeRuntimeRemoval(): Promise<void> {
                 if (runtimeRemovalFinalized || !runtimeAuthority.isCurrent()) {
                     return;
                 }
+                // Latched before the first await so a second call cannot release the same instances again.
+                runtimeRemovalFinalized = true;
                 const effects: Array<() => void> = [...deferredSidechainRuntimeEffects];
                 effects.push(() => stopTrackInputMonitoring(trackId));
                 if (shouldCreateLiveTrackStrip(removedTrack)) {
@@ -140,8 +146,12 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                         void eventBus.emit('track.removed', { trackId });
                     });
                 }
-                runAllEffects(effects.map((effect) => runtimeAuthority.guardAbsent(trackId, effect)));
-                runtimeRemovalFinalized = true;
+                // The engine and event effects run synchronously, as they always have; only the release of the
+                // hosted plugins, which stripping the node leaves loaded, is awaited after them.
+                await runAllAsyncEffects([
+                    () => runAllEffects(effects.map((effect) => runtimeAuthority.guardAbsent(trackId, effect))),
+                    runtimeAuthority.guardAbsent(trackId, () => unloadDiscardedHostedPlugins(hostedInstances)),
+                ]);
             }
             if (!options.deferRuntimeEffects) {
                 finalizeCommittedTrackRuntimeRemoval(trackId, finalizeRuntimeRemoval, runtimeAuthority.isCurrent);
