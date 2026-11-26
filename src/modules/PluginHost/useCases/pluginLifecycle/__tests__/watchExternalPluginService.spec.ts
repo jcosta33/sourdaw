@@ -20,8 +20,8 @@ vi.mock('../../../repositories/pluginBridge/onPluginServiceChanged', () => ({
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
-const REASON = "'Reverb' refused to start processing; its blocks pass through unprocessed";
-const MESSAGE = `vendor.reverb is out of service: ${REASON}.`;
+const REASON = 'it refused to start processing; its blocks pass through unprocessed';
+const MESSAGE = `Out of service: ${REASON}.`;
 
 /** The watcher holds one process-wide subscription, so it is started once and its handler kept. */
 let push: (change: PluginServiceChange) => void = () => {};
@@ -73,7 +73,7 @@ describe('watchExternalPluginService', () => {
         push({ instance_id: 'inst-1', out_of_service_reason: REASON });
 
         expect(slot('inst-1')).toEqual({ status: 'active', message: MESSAGE });
-        expect(notifyUser).toHaveBeenCalledWith(MESSAGE, 'warning');
+        expect(notifyUser).toHaveBeenCalledWith(`vendor.reverb: ${MESSAGE}`, 'warning');
     });
 
     it('clears the slot when the instance is back in service', () => {

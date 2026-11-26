@@ -109,7 +109,7 @@ describe('activateExternalPlugin', () => {
     });
 
     it('keeps an out-of-service message the host published while the load was in flight', async () => {
-        const message = 'p is out of service: refused to start processing.';
+        const message = 'Out of service: it refused to start processing.';
         mocks.loadPluginRepo.mockImplementation(() => {
             // The watcher published this once, between the host's answer and the
             // activation writing its slot.

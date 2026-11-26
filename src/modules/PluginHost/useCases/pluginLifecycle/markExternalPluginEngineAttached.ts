@@ -1,8 +1,11 @@
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
+    type ExternalPluginActivationStatus,
 } from '../../stores/externalPluginActivationStore';
 import { markExternalPluginParameterSnapshotAttached } from '../../stores/externalPluginParameterStore';
+
+import { externalPluginServiceMessages } from './externalPluginServiceMessages';
 
 type MarkExternalPluginEngineAttachedInput = {
     instanceId: string;
@@ -36,9 +39,19 @@ export function markExternalPluginEngineAttached({ instanceId }: MarkExternalPlu
         if (entry?.status !== 'active' || entry.message === undefined) {
             return current;
         }
+        // The out-of-service message the host raised for this instance outlives
+        // the attach: each change is published once, so it is not republished.
+        const serviceMessage = externalPluginServiceMessages.get(instanceId);
+        if (entry.message === serviceMessage) {
+            return current;
+        }
+        const slot: ExternalPluginActivationStatus = { status: 'active' };
+        if (serviceMessage !== undefined) {
+            slot.message = serviceMessage;
+        }
         return {
             ...current,
-            byInstanceId: { ...current.byInstanceId, [instanceId]: { status: 'active' } },
+            byInstanceId: { ...current.byInstanceId, [instanceId]: slot },
         };
     });
 }

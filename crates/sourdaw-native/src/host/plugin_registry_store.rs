@@ -778,7 +778,8 @@ impl PluginRegistryStore {
     /// plugin's last-known location, and joins `plugin_registry` too when it is
     /// not quarantined, in this process's view or the file's, and its plugin
     /// file is still the one the row recorded. A key in `entries_touched` is
-    /// left alone: a decision made here and not yet written outranks the file.
+    /// left alone: a decision made here and not yet written outranks the file,
+    /// and so does a completed scan here whose removals cover the row's path.
     /// When the file has no row, nothing changes.
     pub fn adopt_entry_written_elsewhere(
         &self,
@@ -803,9 +804,15 @@ impl PluginRegistryStore {
         if stored.entries_touched.contains(plugin_id) {
             return;
         }
-        stored.entries.insert(plugin_id.to_string(), entry.clone());
         let quarantined = stored.quarantine.contains_key(&entry.plugin.path)
             || document.quarantine.contains_key(&entry.plugin.path);
+        // A completed scan here found this plugin gone and the file does not
+        // say so yet; persist removes the row, so adopting it now would undo
+        // the scan. A quarantined row survives a scan, as in `persist`.
+        if !quarantined && !stored.pending_removals.keeps(Path::new(&entry.plugin.path)) {
+            return;
+        }
+        stored.entries.insert(plugin_id.to_string(), entry.clone());
         if quarantined || !entry_is_still_the_scanned_file(entry, scan_policy) {
             return;
         }
@@ -2465,6 +2472,101 @@ mod tests {
 
         assert!(session.last_known_entry("aaaa1111").is_none());
         assert!(session_registry.lock().expect("registry lock").is_empty());
+    }
+
+    /// The removal reaches a row the scan process wrote after this one hydrated
+    /// when it persists, so a miss before that persist must not adopt the same
+    /// row back: it would put a plugin the scan found gone into the registry.
+    #[test]
+    fn a_row_the_scan_process_wrote_after_hydration_is_not_adopted_once_a_completed_scan_here_removed_it(
+    ) {
+        let test_root = TestRegistryRoot::create("registry-adopt-removed-unheld");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let session = test_root.store();
+        let session_registry = Mutex::new(HashMap::new());
+        session.hydrate_into(&session_registry, &test_root.scan_policy());
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+        session.apply_completed_scan_removals(removing_every_row_under(&test_root));
+
+        session.adopt_entry_written_elsewhere(
+            &session_registry,
+            &test_root.scan_policy(),
+            "aaaa1111",
+        );
+
+        assert!(session.last_known_entry("aaaa1111").is_none());
+        assert!(session_registry.lock().expect("registry lock").is_empty());
+    }
+
+    /// A partial scan owns only the paths it scanned: a row under a root it did
+    /// not scan survives it, in memory, in the file and for adoption.
+    #[test]
+    fn a_partial_scan_here_keeps_every_row_at_a_path_it_did_not_scan() {
+        let test_root = TestRegistryRoot::create("registry-partial-scan-keeps");
+        let scanned_path = test_root.write_plugin_file("Scanned.clap", b"clap-bytes-scanned");
+        let unscanned_path = test_root.write_plugin_file("Unscanned.clap", b"clap-bytes-unscanned");
+        let other_process = test_root.store();
+        other_process.persist(&one_row(&scanned_path, "aaaa1111"));
+        other_process.persist(&one_row(&unscanned_path, "bbbb2222"));
+        let session = test_root.store();
+        let session_registry = Mutex::new(HashMap::new());
+        session.hydrate_into(&session_registry, &test_root.scan_policy());
+        let late_path = test_root.write_plugin_file("Late.clap", b"clap-bytes-late");
+        other_process.persist(&one_row(&late_path, "cccc3333"));
+
+        session.apply_completed_scan_removals(CompletedScanScope::new(
+            false,
+            Vec::new(),
+            vec![scanned_path.clone()],
+        ));
+        session.adopt_entry_written_elsewhere(
+            &session_registry,
+            &test_root.scan_policy(),
+            "cccc3333",
+        );
+        session.persist(&[]);
+
+        assert!(session.last_known_entry("aaaa1111").is_none());
+        assert!(session.last_known_entry("bbbb2222").is_some());
+        assert!(
+            session.last_known_entry("cccc3333").is_some(),
+            "a row at a path the partial scan did not scan is still adopted"
+        );
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(next_launch.last_known_entry("aaaa1111").is_none());
+        assert!(next_launch.last_known_entry("bbbb2222").is_some());
+        assert!(next_launch.last_known_entry("cccc3333").is_some());
+    }
+
+    /// A partial scan of one root leaves the rows under the roots it did not
+    /// scan, though a complete scan of a different root was applied earlier.
+    #[test]
+    fn a_partial_scan_after_a_complete_one_removes_only_what_each_owns() {
+        let test_root = TestRegistryRoot::create("registry-partial-after-complete");
+        let first_root = test_root.root.join("plugins");
+        let kept_path = test_root.write_plugin_file("Kept.clap", b"clap-bytes-kept");
+        let other_process = test_root.store();
+        other_process.persist(&one_row(&kept_path, "aaaa1111"));
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        session.apply_completed_scan_removals(CompletedScanScope::new(
+            true,
+            vec![first_root.join("elsewhere")],
+            Vec::new(),
+        ));
+        session.apply_completed_scan_removals(removing_nothing());
+        session.persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.last_known_entry("aaaa1111").is_some(),
+            "neither scan covered this plugin's path"
+        );
     }
 
     /// A targeted rescan persists from the session process. Writing that

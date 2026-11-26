@@ -41,7 +41,7 @@ function slotIsOurs(instanceId: string, remembered: string | undefined): boolean
 
 function takeOutOfService(instanceId: string, reason: string): void {
     const pluginId = loadedExternalInstancePluginIds.get(instanceId) ?? instanceId;
-    const message = pluginOutOfServiceMessage(pluginId, reason);
+    const message = pluginOutOfServiceMessage(reason);
     // 'active' with a message is the slot's degraded rendering: the editor stays
     // openable, so the musician can undo whatever caused it. 'error' would hide it.
     const remembered = externalPluginServiceMessages.get(instanceId);
@@ -50,7 +50,7 @@ function takeOutOfService(instanceId: string, reason: string): void {
         setSlot(instanceId, { status: 'active', message });
     }
     logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
-    notifyUser(message, 'warning');
+    notifyUser(`${pluginId}: ${message}`, 'warning');
 }
 
 function putBackInService(instanceId: string): void {

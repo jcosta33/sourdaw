@@ -572,7 +572,7 @@ describe('TrackDevicesSection', () => {
     });
 
     it('shows the reason an out-of-service plugin is degraded on its slot, beside a failed editor open, and keeps the editor control', () => {
-        const reason = 'Out CLAP is out of service: it refused to start processing.';
+        const reason = 'Out of service: it refused to start processing.';
         mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
         mockScanState.mockReturnValue({
             scannedPlugins: [{ id: 'path-hash', name: 'Out CLAP', format: 'clap', has_custom_ui: true }],
@@ -592,6 +592,7 @@ describe('TrackDevicesSection', () => {
         );
 
         expect(screen.getByTestId('device-degraded-external-slot')).toHaveTextContent(reason);
+        expect(screen.getByTestId('device-degraded-external-slot')).toHaveClass('text-[length:var(--text-nano)]');
         // The editor failure keeps the hover title; the reason is not hidden by it.
         expect(screen.getByTestId('choice-card')).toHaveAttribute('title', 'Plugin GUI is already open');
         expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();

@@ -10,6 +10,7 @@ import {
     writeExternalPluginParameterSnapshot,
     type ExternalPluginParameter,
 } from '../../../stores/externalPluginParameterStore';
+import { externalPluginServiceMessages } from '../externalPluginServiceMessages';
 import { markExternalPluginEngineAttached } from '../markExternalPluginEngineAttached';
 
 /**
@@ -42,6 +43,7 @@ describe('markExternalPluginEngineAttached', () => {
     beforeEach(() => {
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
+        externalPluginServiceMessages.clear();
     });
 
     it('records the attachment and clears the degraded note', () => {
@@ -90,5 +92,26 @@ describe('markExternalPluginEngineAttached', () => {
             status: 'error',
             message: 'the plugin crashed on load',
         });
+    });
+
+    it('keeps the out-of-service message when the attach report lands after the service event', () => {
+        const message = 'Out of service: it refused to start processing.';
+        writeExternalPluginParameterSnapshot('inst-1', { engineAttached: true, parameters: [PARAMETER] });
+        externalPluginServiceMessages.set('inst-1', message);
+        externalPluginActivationStore.set({ byInstanceId: { 'inst-1': { status: 'active', message } } });
+
+        markExternalPluginEngineAttached({ instanceId: 'inst-1' });
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active', message });
+    });
+
+    it('replaces the no-engine note with the remembered out-of-service message', () => {
+        const message = 'Out of service: it refused to start processing.';
+        seedDormantInstance('inst-1');
+        externalPluginServiceMessages.set('inst-1', message);
+
+        markExternalPluginEngineAttached({ instanceId: 'inst-1' });
+
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active', message });
     });
 });
