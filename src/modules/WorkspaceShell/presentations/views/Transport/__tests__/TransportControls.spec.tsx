@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
     toggleMetronome: vi.fn(),
     setMetronomeVolume: vi.fn(),
     toggleRecording: vi.fn(),
-    toggleCountIn: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -28,7 +27,6 @@ vi.mock('#/modules/Transport/useCases', () => ({
     toggleMetronome: mocks.toggleMetronome,
     setMetronomeVolume: mocks.setMetronomeVolume,
     toggleRecording: mocks.toggleRecording,
-    toggleCountIn: mocks.toggleCountIn,
 }));
 
 const countInBarsAction = (bars: number): { type: 'setCountInBars'; payload: { bars: number } } => ({
@@ -177,10 +175,11 @@ describe('TransportControls', () => {
             expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         });
 
-        it('routes count-in toggle to toggleCountIn', () => {
+        it('dispatches a bare toggleCountIn action from the count-in button', () => {
             renderWithTooltip(<TransportControls {...defaultProps} />);
             fireEvent.click(screen.getByLabelText('Count-in'));
-            expect(mocks.toggleCountIn).toHaveBeenCalledTimes(1);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleCountIn' });
         });
     });
 
@@ -219,7 +218,7 @@ describe('TransportControls', () => {
                 type: 'setPunchEnabled',
                 payload: { enabled: true },
             });
-            expect(mocks.toggleCountIn).toHaveBeenCalledTimes(1);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleCountIn' });
             expect(mocks.setMetronomeVolume).toHaveBeenCalled();
             expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
                 type: 'setCountInBars',

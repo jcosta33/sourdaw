@@ -18,7 +18,6 @@ import {
     toggleMetronome,
     setMetronomeVolume,
     toggleRecording,
-    toggleCountIn,
 } from '#/modules/Transport/useCases';
 import { cn } from '#/utils/Styles/cn';
 
@@ -190,6 +189,9 @@ export const TransportControls = ({
     };
     const setPunchEnabled = (): void => {
         dispatchTransportAction({ type: 'setPunchEnabled', payload: { enabled: !punchInEnabled } });
+    };
+    const toggleCountIn = (): void => {
+        dispatchTransportAction({ type: 'toggleCountIn' });
     };
     const cycleCountInBars = (): void => {
         let next: number;

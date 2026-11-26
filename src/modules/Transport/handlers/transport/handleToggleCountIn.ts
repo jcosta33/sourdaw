@@ -10,6 +10,8 @@ const NO_TRANSPORT_REASON = 'Transport state is not available';
 export const handleToggleCountIn = createHandler<'toggleCountIn'>({
     // Only a restore guarded by the state it expects can be replayed after divergence.
     canReapplyAfterDivergence: (action) => action.payload?.expectedEnabled !== undefined,
+    // Conflicts when `expectedEnabled` no longer matches the live count-in; proven by the `canReportConflict` registry honesty spec.
+    canReportConflict: true,
     validate: () => getTransportState() !== null,
     validationRefusalReason: () => (getTransportState() === null ? NO_TRANSPORT_REASON : null),
     execute: (action) => {
