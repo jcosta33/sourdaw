@@ -133,15 +133,15 @@ function planArrangement(
 }
 
 /**
- * Abort the returned signal once a project change has made this Save's inputs stale. A Worker round trip
- * over a dense project takes seconds, and the Save only discovers a concurrent edit when it returns, so the
- * retry would otherwise start that much later (#7500).
+ * Abort the returned signal once a change has made this Save's inputs stale. A Worker round trip over a
+ * dense project takes seconds, and the Save only discovers a concurrent edit when it returns, so the retry
+ * would otherwise start that much later (#7500).
  *
- * Every input the currency check reads (the project, arrangements and snapshot stores, and the document
- * revision) is CRDT-backed, and the repository notifies its listeners in the turn that publishes a commit,
- * so one CRDT subscription sees every edit, including those of stores this module does not know about,
- * such as Detect's warp states. A notification fires for any document change, so each is judged by the
- * Save's own currency check rather than treated as an edit.
+ * CRDT change notifications fire in the turn a commit publishes, so they cover every CRDT-backed input,
+ * including stores this module does not know about, such as Detect's warp states. The project store also
+ * holds keys that are not CRDT-backed (dirty, loading, identity), so it is watched directly. Changes to the
+ * load-failure and repair-state stores are left to the check after the request; they end the Save without
+ * a retry anyway. A notification does not mean an edit, so each is judged by the Save's own currency check.
  */
 function abortWhenSaveInputsGoStale(
     signal: AbortSignal,
@@ -158,9 +158,14 @@ function abortWhenSaveInputsGoStale(
             controller.abort(new ProjectSavePreparationStaleError());
         }
     }
+    const unsubscribers = [subscribeToCrdtChanges(abortIfStale), projectStore.subscribe(abortIfStale)];
     return {
         signal: AbortSignal.any([signal, controller.signal]),
-        stop: subscribeToCrdtChanges(abortIfStale),
+        stop: () => {
+            for (const unsubscribe of unsubscribers) {
+                unsubscribe();
+            }
+        },
     };
 }
 

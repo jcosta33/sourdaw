@@ -217,23 +217,31 @@ async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequ
     return { signals, attempts: () => attempts, materializedAttempts: () => materializedAttempts };
 }
 
-/** Counts the live CRDT change subscriptions, which is how a save's preparation watches for edits. */
+/** Counts the live subscriptions a save's preparation holds to watch for edits: CRDT changes and the project store. */
 async function countCrdtChangeSubscriptions() {
-    const crdtModule = await import('#/modules/CrdtDocument/useCases');
-    const subscribe = crdtModule.subscribeToCrdtChanges;
+    const [crdtModule, { projectStore }] = await Promise.all([
+        import('#/modules/CrdtDocument/useCases'),
+        import('../../../../stores/projectStore'),
+    ]);
     let live = 0;
-    vi.spyOn(crdtModule, 'subscribeToCrdtChanges').mockImplementation((listener) => {
-        live += 1;
-        const unsubscribe = subscribe(listener);
-        let released = false;
-        return () => {
-            if (!released) {
-                released = true;
-                live -= 1;
-            }
-            unsubscribe();
+    function counted<Listener>(subscribe: (listener: Listener) => () => void): (listener: Listener) => () => void {
+        return (listener) => {
+            live += 1;
+            const unsubscribe = subscribe(listener);
+            let released = false;
+            return () => {
+                if (!released) {
+                    released = true;
+                    live -= 1;
+                }
+                unsubscribe();
+            };
         };
-    });
+    }
+    const subscribeToCrdtChanges = counted(crdtModule.subscribeToCrdtChanges);
+    const subscribeToProject = counted(projectStore.subscribe.bind(projectStore));
+    vi.spyOn(crdtModule, 'subscribeToCrdtChanges').mockImplementation(subscribeToCrdtChanges);
+    vi.spyOn(projectStore, 'subscribe').mockImplementation(subscribeToProject);
     return { active: (): number => live };
 }
 
@@ -629,7 +637,39 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
-        'holds one CRDT change subscription while the Worker request is open, and releases it after',
+        'abandons the Worker request in the next task when only a project key outside the document changes',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const workerFinished = Promise.withResolvers<void>();
+            let abortedOneTaskLater: boolean | undefined;
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    // `dirty` is not stored in the document, so no document change announces this edit.
+                    const current = opened.projectStore.value!;
+                    opened.projectStore.set({ ...current, dirty: !current.dirty });
+                    afterTask(() => {
+                        abortedOneTaskLater = signal.aborted;
+                    });
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await vi.waitFor(() => expect(abortedOneTaskLater).toBeDefined());
+            workerFinished.resolve();
+
+            expect(abortedOneTaskLater).toBe(true);
+            expect(await saving).toBe(true);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
+            expect(opened.persistenceFailures()).toEqual([]);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'holds the CRDT and project store subscriptions while the Worker request is open, and releases them after',
         async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
@@ -643,7 +683,7 @@ describe('saveProject snapshot continuation', () => {
 
             expect(await opened.project.saveProject()).toBe(false);
 
-            expect(heldDuringRequest).toBe(before + 1);
+            expect(heldDuringRequest).toBe(before + 2);
             expect(subscriptions.active()).toBe(before);
         },
         CASE_TIMEOUT_MS
