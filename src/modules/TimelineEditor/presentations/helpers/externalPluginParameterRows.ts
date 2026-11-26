@@ -69,6 +69,16 @@ function formatNumber(value: number, kind: ExternalPluginParameterControlKind, s
     return value.toFixed(fractionDigitsForSpan(span));
 }
 
+function formatPlainValue(
+    row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'stepCount' | 'valuesAreNormalized'>,
+    value: number
+): string {
+    if (row.valuesAreNormalized && row.kind !== 'continuous' && row.stepCount > 0) {
+        return String(Math.round(value * row.stepCount));
+    }
+    return formatNumber(value, row.kind, row.max - row.min);
+}
+
 /**
  * A value of this row as a plain number, with the unit the row carries when it has one. A normalized
  * stepped value is shown as its step index; rounding the 0..1 value itself would show 0 or 1.
@@ -77,10 +87,7 @@ export function formatExternalPluginParameterValue(
     row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'unit' | 'stepCount' | 'valuesAreNormalized'>,
     value: number
 ): string {
-    const steppedNormalized = row.valuesAreNormalized && row.kind !== 'continuous' && row.stepCount > 0;
-    const text = steppedNormalized
-        ? String(Math.round(value * row.stepCount))
-        : formatNumber(value, row.kind, row.max - row.min);
+    const text = formatPlainValue(row, value);
     return row.unit === '' ? text : `${text} ${row.unit}`;
 }
 

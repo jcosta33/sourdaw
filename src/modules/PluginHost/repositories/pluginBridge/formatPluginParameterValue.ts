@@ -12,5 +12,6 @@ export async function formatPluginParameterValue(
     if (!isDesktopRuntime()) {
         return null;
     }
-    return desktopInvoke('format_plugin_parameter_value', { instanceId, paramId, value }) as Promise<string | null>;
+    const text: unknown = await desktopInvoke('format_plugin_parameter_value', { instanceId, paramId, value });
+    return typeof text === 'string' ? text : null;
 }
