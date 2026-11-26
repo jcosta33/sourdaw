@@ -18,7 +18,10 @@
 //! No editor call holds the audio access seam across that crossing. The seam is
 //! claimed once the call has landed on the shell's thread and let go when the
 //! plugin call returns, so a shell busy with something else delays the editor,
-//! never the plugin's audio.
+//! never the plugin's audio. Landed, the call makes one non-blocking try: the
+//! shell's thread never waits for the seam, whatever the audio thread is doing.
+//! A busy seam sends the call back to this worker, which holds the gate, backs
+//! off and hops again until the editor control timeout, then refuses.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -901,11 +904,21 @@ const ATTACH_TRANSIT_WAIT: std::time::Duration = std::time::Duration::from_secs(
 /// editor from a window that no longer exists.
 const SHELL_EDITOR_DETACH_DEADLINE: std::time::Duration = std::time::Duration::from_millis(5_000);
 
+const fn max_millis(first: std::time::Duration, second: std::time::Duration) -> u128 {
+    let (first, second) = (first.as_millis(), second.as_millis());
+    if first > second {
+        first
+    } else {
+        second
+    }
+}
+
 const _: () = assert!(
-    ATTACH_TRANSIT_WAIT.as_millis() + EDITOR_UI_THREAD_DEADLINE.as_millis()
+    ATTACH_TRANSIT_WAIT.as_millis() + max_millis(EDITOR_UI_THREAD_DEADLINE, EDITOR_CONTROL_TIMEOUT)
         < SHELL_EDITOR_DETACH_DEADLINE.as_millis(),
-    "a close's wait for an attach and its hop to the shell's thread must both fit inside the \
-     shell's detach deadline"
+    "a close's wait for an attach and its visit — the hop to the shell's thread, or the wait \
+     for a busy audio seam across re-hops, whichever is longer — must fit inside the shell's \
+     detach deadline"
 );
 
 /// The runtime behind an instance, from whichever store holds it: command-owned

@@ -44,11 +44,14 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   worker holds the instance's control gate while it waits, and the call claims the seam only once
   it has landed (`ControlVisit::on_ui_thread`), for the plugin call itself: every block the seam is
   held is a block the audio thread skips, and the wait for the shell's thread is bounded by the
-  shell, not by the plugin. A caller serving every instance on a timer (the editor drains) also
-  bounds the hop to its tick's budget, so a stalled shell thread costs that budget rather than the
-  hop deadline, and retries an unreached instance at doubling intervals with one log line per run
-  of failures (`EditorDrainRetry`), because every attempt spends the tick that carries every
-  plugin's parameter events.
+  shell, not by the plugin. The UI thread never waits for the seam either: a landed call makes one
+  non-blocking try and, when the audio thread holds the seam (a plugin block that hangs holds it
+  indefinitely), hands the call back unrun. The worker, still holding the gate, backs off and
+  hops again until its own control timeout, then refuses with `TimedOut`. A caller serving every
+  instance on a timer (the editor drains) also bounds the hop to its tick's budget, so a stalled
+  shell thread costs that budget rather than the hop deadline, and retries an unreached instance at
+  doubling intervals with one log line per run of failures (`EditorDrainRetry`), because every
+  attempt spends the tick that carries every plugin's parameter events.
 - A hosted plugin processes only the audio the engine renders, on the engine's own callback, and no
   command relays audio across the process boundary for it. There is one clock: never reintroduce a
   path that feeds a plugin from the app at a cadence the callback does not set.
