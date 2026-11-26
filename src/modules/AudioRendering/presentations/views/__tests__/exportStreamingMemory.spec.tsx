@@ -585,6 +585,15 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         commitPitchEdit: vi.fn(),
+        captureOfflineRenderSessionSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        describeSubgraphPrintInput: vi.fn(),
+        readLiveOfflineRenderProjectModels: vi.fn(),
+        readLiveOfflineRenderSessionModels: vi.fn(),
+        selectSubgraphPrintInput: vi.fn(),
+        subgraphPrintInputsMatch: vi.fn(() => true),
+        subscribeSubgraphPrintInputStores: vi.fn(() => () => undefined),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,
@@ -632,6 +641,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         },
         getAudioContext: mocks.getAudioContext,
         getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
+        engineSampleRateOf: vi.fn(() => null),
         isExportActive: mocks.isExportActive,
         renderOffline: mocks.renderOffline,
         restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,

@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { captureDevicePatchCommitValidation } from '#/modules/Arrangement/useCases';
 import {
     describeAppActionRefusal,
     executeAppAction,
@@ -6,11 +7,15 @@ import {
     isAppActionConflictError,
 } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { valuesEqual } from '#/utils/structuralEquality';
 
-import { type GrandBoulePersistedState, toGrandBouleDeviceState } from '../models/GrandBouleDeviceState';
+import {
+    type GrandBoulePersistedState,
+    readGrandBouleDeviceState,
+    toGrandBouleDeviceState,
+} from '../models/GrandBouleDeviceState';
 
 import { findGrandBouleDevice } from './findGrandBouleDevice';
-import { projectGrandBoulePersistedState } from './projectGrandBoulePersistedState';
 import { reconcileGrandBouleDeviceStateFromProject } from './reconcileGrandBouleDeviceStateFromProject';
 
 /**
@@ -21,25 +26,40 @@ import { reconcileGrandBouleDeviceStateFromProject } from './reconcileGrandBoule
  * state and needs no notice. Any other failure is logged.
  */
 export function commitGrandBouleDeviceState(deviceId: string, state: GrandBoulePersistedState): void {
-    if (!findGrandBouleDevice(deviceId)) {
+    const target = findGrandBouleDevice(deviceId);
+    if (!target) {
         return;
     }
-    const before = toGrandBouleDeviceState(projectGrandBoulePersistedState(deviceId));
-    const after = toGrandBouleDeviceState(state);
-    if (JSON.stringify(before) === JSON.stringify(after)) {
+    const before = target.device.deviceState ?? null;
+    if (valuesEqual(readGrandBouleDeviceState(before), state)) {
         reconcileGrandBouleDeviceStateFromProject(deviceId);
         return;
     }
-    void executeAppAction({ type: 'setGrandBouleDeviceState', payload: { deviceId, before, after } }).catch(
-        (error: unknown) => {
-            reconcileGrandBouleDeviceStateFromProject(deviceId);
-            if (isAppActionAdmissionRefusal(error)) {
-                notifyUser(describeAppActionRefusal('setGrandBouleDeviceState'), 'warning');
-                return;
-            }
-            if (!isAppActionConflictError(error)) {
-                logger.error(new Error('Grand Boule edit commit failed', { cause: error }));
-            }
+    // A peer can replace the device during Command's snapshot wait while reusing its ID and state.
+    const authority = captureDevicePatchCommitValidation({
+        deviceId,
+        trackId: target.trackId,
+        parameterIds: [],
+        requireCurrentProjection: true,
+    });
+    const encoded = toGrandBouleDeviceState(state);
+    const after = { ...encoded, data: { ...structuredClone(before?.data), ...encoded.data } };
+    void executeAppAction(
+        {
+            type: 'setGrandBouleDeviceState',
+            payload: { deviceId, trackId: target.trackId, before: structuredClone(before), after },
+        },
+        {
+            authorizeFirstHandler: () => (authority?.isCurrent() ? null : 'Grand Boule changed before the edit began'),
         }
-    );
+    ).catch((error: unknown) => {
+        reconcileGrandBouleDeviceStateFromProject(deviceId);
+        if (isAppActionAdmissionRefusal(error)) {
+            notifyUser(describeAppActionRefusal('setGrandBouleDeviceState'), 'warning');
+            return;
+        }
+        if (!isAppActionConflictError(error)) {
+            logger.error(new Error('Grand Boule edit commit failed', { cause: error }));
+        }
+    });
 }

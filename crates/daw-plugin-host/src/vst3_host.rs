@@ -208,6 +208,7 @@ impl ParameterGestureQueue {
             out[count] = HostParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Relaxed)),
+                sample_offset: 0,
             };
             count += 1;
             slot.state.store(SLOT_EMPTY, Ordering::Release);
@@ -242,6 +243,7 @@ impl ParameterGestureQueue {
             out[count] = HostParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Acquire)),
+                sample_offset: 0,
             };
             count += 1;
         }
@@ -1395,7 +1397,8 @@ mod tests {
             drained(&state),
             vec![HostParameterUpdate {
                 param_id: 2,
-                value: 0.3
+                value: 0.3,
+                sample_offset: 0,
             }],
             "the processor is owed the value the user landed on"
         );
@@ -1422,7 +1425,8 @@ mod tests {
             drained(&state),
             vec![HostParameterUpdate {
                 param_id: 6,
-                value: 0.42
+                value: 0.42,
+                sample_offset: 0,
             }]
         );
         assert!(observed_events(&state).is_empty());
@@ -1441,7 +1445,8 @@ mod tests {
             drained(&state),
             vec![HostParameterUpdate {
                 param_id: 7,
-                value: 0.25
+                value: 0.25,
+                sample_offset: 0,
             }]
         );
         assert!(
@@ -1487,11 +1492,13 @@ mod tests {
             vec![
                 HostParameterUpdate {
                     param_id: 3,
-                    value: 0.499
+                    value: 0.499,
+                    sample_offset: 0,
                 },
                 HostParameterUpdate {
                     param_id: 4,
-                    value: 1.0
+                    value: 1.0,
+                    sample_offset: 0,
                 },
             ]
         );
