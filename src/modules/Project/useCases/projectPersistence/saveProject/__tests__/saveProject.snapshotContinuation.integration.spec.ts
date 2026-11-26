@@ -408,7 +408,7 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
-        'requests the storage lock only after a held preparation is released, however long the hold lasts',
+        'requests the storage lock only once a preparation held past the retired one-second poll window is released',
         async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
@@ -418,7 +418,10 @@ describe('saveProject snapshot continuation', () => {
                 const save = startSaveBeforeItsLockRequest(opened);
                 await preparation.requested;
                 const requestsWhileHeld = lockManager.requestedNames.length;
+                const retiredWindowElapsed = vi.fn();
+                setTimeout(retiredWindowElapsed, RETIRED_POLL_WINDOW_MS + 1);
                 await vi.advanceTimersByTimeAsync(RETIRED_POLL_WINDOW_MS * 2);
+                expect(retiredWindowElapsed).toHaveBeenCalledOnce();
                 expect(lockManager.requestedNames).toHaveLength(requestsWhileHeld);
                 // The save's later yields wait on real timers; fake time only spans the held window.
                 vi.useRealTimers();
