@@ -1,6 +1,7 @@
 {
   "workflowFileInventory": [
     "cargo-dependency-seed.yml",
+    "desktop-package-smoke.yml",
     "health-gates.yml",
     "heavy-gates.yml",
     "nightly-evidence-report.yml",
@@ -1355,6 +1356,13 @@
               "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
+          },
+          {
+            "name": "Test scanning canonical Windows paths",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
+            "run": "cargo test --locked --package daw-plugin-host --lib scanner::tests::scan_directory_accepts_a_canonicalized_windows_root -- --exact"
           }
         ]
       },
@@ -3355,6 +3363,159 @@
           {
             "name": "Test the native crate",
             "run": "cargo test --package sourdaw-native --features napi-addon"
+          }
+        ]
+      }
+    }
+  },
+  "desktop-package-smoke.yml": {
+    "name": "Desktop package smoke",
+    "on": {
+      "pull_request": {
+        "paths": [
+          ".cargo/**",
+          ".github/workflows/desktop-package-smoke.yml",
+          ".github/actions/setup-pnpm/**",
+          "build/**",
+          "crates/**",
+          "Cargo.lock",
+          "Cargo.toml",
+          "electron/**",
+          "electron-builder.yml",
+          "package.json",
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
+          "public/legal/**",
+          "public/samples/**",
+          "rust-toolchain.toml",
+          "scripts/aptWithoutMicrosoftFeed.sh",
+          "scripts/buildElectronPreload.ts",
+          "scripts/buildNativeAddon.ts",
+          "scripts/desktopLatencyDiagnostics.ts",
+          "scripts/desktopLatencyLaunch.ts",
+          "scripts/electronRuntimeContract.ts",
+          "scripts/flipElectronFuses.ts",
+          "scripts/installHarnessPlugin.ts",
+          "scripts/packagedAppSession.ts",
+          "scripts/setupPnpm.ts",
+          "scripts/smokeDesktopPackage.ts",
+          "scripts/verifyPackagedNativeArtifacts.ts",
+          "vite.config.ts"
+        ]
+      },
+      "workflow_dispatch": null
+    },
+    "permissions": {
+      "contents": "read"
+    },
+    "jobs": {
+      "packages": {
+        "name": "Desktop packages (${{ matrix.label }})",
+        "runs-on": "${{ matrix.runner }}",
+        "timeout-minutes": 90,
+        "strategy": {
+          "fail-fast": false,
+          "matrix": {
+            "include": [
+              {
+                "runner": "macos-15",
+                "label": "macOS ARM64",
+                "format": "dmg"
+              },
+              {
+                "runner": "windows-2025",
+                "label": "Windows x64",
+                "format": "nsis"
+              },
+              {
+                "runner": "ubuntu-22.04",
+                "label": "Linux x64",
+                "format": "appimage"
+              }
+            ]
+          }
+        },
+        "env": {
+          "SOURDAW_PACKAGE_HEAD": "${{ github.event.pull_request.head.sha || github.sha }}",
+          "CSC_IDENTITY_AUTO_DISCOVERY": "false"
+        },
+        "steps": [
+          {
+            "name": "Checkout the package source revision",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ env.SOURDAW_PACKAGE_HEAD }}",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "./.github/actions/setup-pnpm"
+          },
+          {
+            "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+            "with": {
+              "node-version": "26.13.1",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Install Linux audio and display prerequisites",
+            "if": "runner.os == 'Linux'",
+            "run": "sudo env \"PATH=$PATH\" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev xvfb xauth'\n"
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install the real CLAP fixture",
+            "run": "pnpm harness:plugin:install"
+          },
+          {
+            "name": "Build the desktop packages",
+            "id": "build-packages",
+            "env": {
+              "CSC_FOR_PULL_REQUEST": "${{ runner.os == 'macOS' && 'true' || 'false' }}"
+            },
+            "run": "pnpm desktop:build"
+          },
+          {
+            "name": "Launch the macOS DMG or installed Windows package and scan the fixture",
+            "if": "runner.os != 'Linux'",
+            "env": {
+              "PACKAGE_FORMAT": "${{ matrix.format }}"
+            },
+            "shell": "bash",
+            "run": "node scripts/smokeDesktopPackage.ts \"$PACKAGE_FORMAT\" \"$RUNNER_TEMP/desktop-package-smoke\""
+          },
+          {
+            "name": "Launch the extracted macOS ZIP and scan the fixture",
+            "if": "${{ !cancelled() && runner.os == 'macOS' && steps.build-packages.outcome == 'success' }}",
+            "run": "node scripts/smokeDesktopPackage.ts zip \"$RUNNER_TEMP/desktop-package-smoke\""
+          },
+          {
+            "name": "Launch the AppImage payload under Xvfb and scan the fixture",
+            "if": "runner.os == 'Linux'",
+            "run": "xvfb-run --auto-servernum node scripts/smokeDesktopPackage.ts appimage \"$RUNNER_TEMP/desktop-package-smoke\""
+          },
+          {
+            "name": "Upload package smoke receipts",
+            "if": "${{ !cancelled() && steps.build-packages.outcome == 'success' }}",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "desktop-package-smoke-${{ matrix.format }}-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/desktop-package-smoke/*.json",
+              "retention-days": 7,
+              "if-no-files-found": "error"
+            }
           }
         ]
       }

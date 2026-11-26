@@ -987,6 +987,11 @@ jobs:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
+      - name: Test scanning canonical Windows paths
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
+        run: cargo test --locked --package daw-plugin-host --lib scanner::tests::scan_directory_accepts_a_canonicalized_windows_root -- --exact
+
   native-parity:
     name: Native parity (macOS)
     needs: decide
