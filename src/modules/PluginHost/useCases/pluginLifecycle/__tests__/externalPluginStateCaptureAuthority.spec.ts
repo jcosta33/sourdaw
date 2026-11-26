@@ -40,6 +40,7 @@ describe('external plugin state capture authority', () => {
             latency_samples: 0,
             latency_ms: 0,
             tail_samples: 0,
+            tail_sequence: 0,
             engine_plugin_id: 1,
         });
         mocks.setPluginState.mockResolvedValue(undefined);

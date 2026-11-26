@@ -12,13 +12,13 @@ import {
     observeProofInstance,
 } from './desktopEditorFamilyDrive.ts';
 import {
-    pausePreservesProgress,
-    renderedPlayheadBeat,
     type EditorWorkspaceDrive,
     type Rectangle,
     type WorkspaceObservation,
     type WorkspaceStage,
 } from './desktopEditorWorkspaceEvidence.ts';
+import { heldPlayhead, pauseAtClick, playhead } from './desktopEditorWorkspacePlayhead.ts';
+import { changeScale, observedClick, scaleStep, viewport } from './desktopEditorWorkspaceScale.ts';
 import { launchEditorSession, quitEditorSession, readyWorkspace } from './desktopFermenterDrive.ts';
 import { FermenterDriveError } from './desktopFermenterEvidence.ts';
 import { STEP_TIMEOUT_MS, step } from './packagedAppSession.ts';
@@ -249,27 +249,6 @@ async function titleDrag(dialog: Locator, row: WorkspaceObservation): Promise<vo
     }
 }
 
-async function viewport(page: Page): Promise<[number, number, number]> {
-    return await page.evaluate(() => [innerWidth, innerHeight, devicePixelRatio]);
-}
-
-async function changeScale(page: Page, percent: number): Promise<void> {
-    await page.getByRole('button', { name: 'Open Preferences', exact: true }).click();
-    const preferences = page.getByRole('dialog', { name: 'Preferences', exact: true });
-    await exactButton(preferences, 'Appearance').click();
-    const slider = preferences.getByRole('slider', { name: 'UI Scale', exact: true });
-    // A fresh isolated profile starts at 100%; each Arrow commits a real preference change.
-    const old = Number(await slider.getAttribute('aria-valuenow'));
-    assert(old === 100 || old === 125);
-    const key = percent > old ? 'ArrowRight' : 'ArrowLeft';
-    for (let current = old; current !== percent; current += percent > old ? 5 : -5) {
-        await slider.press(key);
-    }
-    assert.equal(Number(await slider.getAttribute('aria-valuenow')), percent);
-    await exactButton(preferences, 'Done').click();
-    await preferences.waitFor({ state: 'detached' });
-}
-
 async function scaleRefit(page: Page, dialog: Locator, original: Locator, row: WorkspaceObservation): Promise<void> {
     await pointerDrag(exactButton(dialog, 'Move Fermenter panel'), -3000, -3000);
     const host = await box(dialog.locator('../..'));
@@ -293,89 +272,39 @@ async function scaleRefit(page: Page, dialog: Locator, original: Locator, row: W
     await waitRectangle(dialog, { width: scaledHost.width - 32, height: scaledHost.height - 32 });
     const shrunk = await fitted(dialog, row);
     assert(shrunk.width < preferred.width && shrunk.height < preferred.height);
-    await exactButton(dialog, 'Move Fermenter panel').click();
-    // This real click must reach Close through the scaled renderer's hit testing.
-    await exactButton(dialog, 'Close Fermenter').click();
-    await dialog.waitFor({ state: 'detached' });
-    await original.getByText('Fermenter', { exact: true }).click();
-    await dialog.waitFor({ state: 'visible' });
-    await changeScale(page, 100);
-    const restored = await until(
-        () => viewport(page),
-        (value) =>
-            Math.abs(value[0] - before[0]) < 2 &&
-            Math.abs(value[1] - before[1]) < 2 &&
-            Math.abs(value[2] - before[2]) < 0.02
-    );
-    row.values.push({ width: restored[0], height: restored[1], dpr: restored[2], scale: 100 });
-    await waitRectangle(dialog, preferred);
-    const after = await fitted(dialog, row);
-    near(after.x, preferred.x);
-    near(after.y, preferred.y);
-    near(after.width, preferred.width);
-    near(after.height, preferred.height);
-}
-
-async function playhead(page: Page): Promise<number> {
-    const text = await page.getByTestId('transport-playhead').textContent();
-    const beat = renderedPlayheadBeat(text ?? '');
-    assert(beat !== null, 'missing rendered bars beats ticks');
-    return beat;
-}
-
-async function heldPlayhead(page: Page, expected: number): Promise<void> {
-    // Observe every animation frame for a bounded stability window, rather than one immediate reading.
-    const values = await page.getByTestId('transport-playhead').evaluate(async (element) => {
-        const readings: string[] = [];
-        const started = performance.now();
-        do {
-            readings.push(element.textContent);
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        } while (performance.now() - started < 400);
-        return readings;
+    await observedClick(exactButton(dialog, 'Move Fermenter panel'), row, 'title-click');
+    await observedClick(exactButton(dialog, 'Close Fermenter'), row, 'close-click');
+    await scaleStep(row, 'detachment', () => dialog.waitFor({ state: 'detached' }));
+    await observedClick(original.getByText('Fermenter', { exact: true }), row, 'original-reopen-click');
+    await scaleStep(row, 'original-reopen-visible', () => dialog.waitFor({ state: 'visible' }));
+    await changeScale(page, 100, row);
+    await scaleStep(row, 'restore-viewport', async () => {
+        const restored = await until(
+            () => viewport(page),
+            (value) =>
+                Math.abs(value[0] - before[0]) < 2 &&
+                Math.abs(value[1] - before[1]) < 2 &&
+                Math.abs(value[2] - before[2]) < 0.02
+        );
+        row.values.push({ width: restored[0], height: restored[1], dpr: restored[2], scale: 100 });
     });
-    assert(values.length > 1 && values.every((value) => value === values[0]));
-    assert.equal(await playhead(page), expected);
+    await scaleStep(row, 'restore-geometry', async () => {
+        await waitRectangle(dialog, preferred);
+        const after = await fitted(dialog, row);
+        near(after.x, preferred.x);
+        near(after.y, preferred.y);
+        near(after.width, preferred.width);
+        near(after.height, preferred.height);
+    });
 }
 
-async function pauseAtClick(
+async function transport(
     page: Page,
-    playback: Locator,
-    advanced: number,
-    samples: Record<string, number>
-): Promise<number> {
-    const pause = exactButton(playback, 'Pause');
-    const capture = await pause.evaluateHandle((button) => {
-        const witness: { readout: string | null } = { readout: null };
-        function sample(): void {
-            witness.readout = document.querySelector('[data-testid="transport-playhead"]')?.textContent ?? null;
-        }
-        // Native target capture runs before React's delegated bubble action changes transport state.
-        button.addEventListener('click', sample, { capture: true, once: true });
-        return { witness, cleanup: () => button.removeEventListener('click', sample, true) };
-    });
-    try {
-        await pause.click();
-        const clickReadout = await capture.evaluate(({ witness }) => witness.readout);
-        const clicked = renderedPlayheadBeat(clickReadout ?? '');
-        if (clicked !== null) {
-            samples.pauseClick = clicked;
-        }
-        await exactButton(playback, 'Play').waitFor({ state: 'visible' });
-        const paused = await playhead(page);
-        samples.paused = paused;
-        assert(pausePreservesProgress(advanced, clickReadout, paused), 'Pause did not park at its click position');
-        return paused;
-    } finally {
-        try {
-            await capture.evaluate(({ cleanup }) => cleanup());
-        } finally {
-            await capture.dispose();
-        }
-    }
-}
-
-async function transport(page: Page, dialog: Locator, original: Locator, row: WorkspaceObservation): Promise<void> {
+    dialog: Locator,
+    original: Locator,
+    deviceId: string,
+    row: WorkspaceObservation
+): Promise<void> {
     await minimumSize(dialog, row);
     await pointerDrag(exactButton(dialog, 'Move Fermenter panel'), 3000, 3000);
     assert.equal(
@@ -391,7 +320,12 @@ async function transport(page: Page, dialog: Locator, original: Locator, row: Wo
     const rulerBox = await box(ruler);
     const before = await playhead(page);
     const samples: Record<string, number> = { before };
-    row.values.push(samples);
+    const timeline: NonNullable<WorkspaceObservation['timeline']> = {
+        samples,
+        trackBefore: trackId,
+        deviceBefore: deviceId,
+    };
+    row.timeline = timeline;
     const read = async (): Promise<number> => {
         const value = await playhead(page);
         samples.current = value;
@@ -409,18 +343,22 @@ async function transport(page: Page, dialog: Locator, original: Locator, row: Wo
     samples.advancing = advancing;
     samples.advanced = advanced;
     const paused = await pauseAtClick(page, playback, advanced, samples);
-    await heldPlayhead(page, paused);
+    samples.pauseHold = await heldPlayhead(page, paused);
     await exactButton(playback, 'Stop').click();
-    await until(read, (value) => value === 0);
-    await heldPlayhead(page, 0);
-    samples.stopped = 0;
-    assert.equal(await selected.getAttribute('data-track-id'), trackId);
+    samples.stopped = await until(read, (value) => value === 0);
+    samples.stopHold = await heldPlayhead(page, 0);
+    timeline.trackAfter = (await selected.getAttribute('data-track-id')) ?? undefined;
+    assert.equal(timeline.trackAfter, trackId);
     await original.waitFor({ state: 'visible' });
     await dialog.waitFor({ state: 'visible' });
     // Reopening the exact surviving row identifies the same rendered instance after transport.
     await exactButton(dialog, 'Close Fermenter').click();
+    await dialog.waitFor({ state: 'detached' });
     await original.getByText('Fermenter', { exact: true }).click();
     await dialog.getByRole('button', { name: 'Show patch A', exact: true }).waitFor({ state: 'visible' });
+    const reopenedId = (await original.getAttribute('data-testid'))?.match(/^device-card-([a-zA-Z0-9_-]{1,80})$/u)?.[1];
+    timeline.deviceAfter = reopenedId;
+    assert.equal(reopenedId, deviceId);
     await exactButton(dialog, 'Close Fermenter').click();
     await dialog.waitFor({ state: 'detached' });
 }
@@ -510,6 +448,18 @@ async function removeInstance(
 
 type ObserveStage = (name: WorkspaceStage, action: (row: WorkspaceObservation) => Promise<void>) => Promise<void>;
 
+async function openFermenter(page: Page, browser: Locator, inspector: Locator): Promise<{ id: string; card: Locator }> {
+    await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('button', { name: /^Fermenter\b/u }).click();
+    await deviceEditor(page, 'Fermenter').waitFor({ state: 'visible' });
+    const original = devicesNamed(inspector, 'Fermenter');
+    await original.waitFor({ state: 'visible' });
+    const testId = await original.getAttribute('data-testid');
+    const id = testId?.match(/^device-card-([a-zA-Z0-9_-]{1,80})$/u)?.[1];
+    assert(id);
+    return { id, card: inspector.getByTestId(`device-card-${id}`) };
+}
+
 async function observeFermenterWorkspace(
     page: Page,
     browser: Locator,
@@ -519,14 +469,9 @@ async function observeFermenterWorkspace(
     const dialog = deviceEditor(page, 'Fermenter');
     let original: Locator = devicesNamed(inspector, 'Fermenter');
     await stage('initial-placement', async (row) => {
-        await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
-        await browser.getByRole('button', { name: /^Fermenter\b/u }).click();
-        await dialog.waitFor({ state: 'visible' });
-        await original.waitFor({ state: 'visible' });
-        const testId = await original.getAttribute('data-testid');
-        const id = testId?.match(/^device-card-([a-zA-Z0-9_-]{1,80})$/u)?.[1];
-        assert(id);
-        original = inspector.getByTestId(`device-card-${id}`);
+        const opened = await openFermenter(page, browser, inspector);
+        original = opened.card;
+        const { id } = opened;
         row.instanceIds.push(id);
         const host = await box(dialog.locator('../..'));
         await waitRectangle(dialog, {
@@ -543,12 +488,30 @@ async function observeFermenterWorkspace(
     await stage('keyboard-resize', (row) => keyboardResize(dialog, row));
     await stage('title-drag', (row) => titleDrag(dialog, row));
     await stage('scale-refit', (row) => scaleRefit(page, dialog, original, row));
-    await stage('timeline-transport', (row) => transport(page, dialog, original, row));
+}
+
+type WorkspaceGroup = 'geometry' | 'timeline' | 'nested-escape' | 'remove-instance';
+
+export async function runWorkspaceGroups(
+    run: (name: WorkspaceGroup) => Promise<void>,
+    canContinue: () => boolean
+): Promise<boolean> {
+    let failed = false;
+    for (const name of ['geometry', 'timeline', 'nested-escape', 'remove-instance'] as const) {
+        if (!canContinue()) {
+            break;
+        }
+        try {
+            await run(name);
+        } catch {
+            failed = true;
+        }
+    }
+    return failed;
 }
 
 export const driveDesktopEditorWorkspace: EditorWorkspaceDrive = async (binary, observations) => {
     const sessions: { acquired: number; allQuit: boolean } = { acquired: 0, allQuit: true };
-    let observationFailed = false;
     async function stage(name: WorkspaceStage, action: (row: WorkspaceObservation) => Promise<void>): Promise<void> {
         const row = observations.stages.find((candidate) => candidate.stage === name);
         assert(row);
@@ -585,40 +548,35 @@ export const driveDesktopEditorWorkspace: EditorWorkspaceDrive = async (binary, 
     const ready = observations.stages.find(({ stage: name }) => name === 'workspace-ready');
     assert(ready);
     ready.outcome = 'failed';
-    try {
-        await session(async (page, browser, inspector) => {
-            // The ready stage passes before its dependent geometry and transport observations.
-            ready.outcome = 'passed';
-            await observeFermenterWorkspace(page, browser, inspector, stage);
-        });
-    } catch {
-        observationFailed = true;
-        // The failed stage remains explicit; its dependent rows remain not-reached.
-        // Independent lifecycle groups below receive fresh isolated profiles.
-    }
-    for (const name of ['nested-escape', 'remove-instance'] as const) {
-        if (!sessions.allQuit) {
-            break;
-        }
-        const row = observations.stages.find(({ stage: stageName }) => stageName === name);
-        assert(row);
-        row.outcome = 'failed';
-        try {
-            await session(async (page, browser, inspector) => {
-                await stage(name, async (observation) => {
-                    if (name === 'nested-escape') {
-                        await nestedEscape(page, browser, inspector, observation);
-                    } else {
-                        await addEffectTrack(page);
-                        await removeInstance(page, browser, inspector, observation);
-                    }
+    const observationFailed = await runWorkspaceGroups(
+        async (name) => {
+            if (name === 'geometry') {
+                await session(async (page, browser, inspector) => {
+                    ready.outcome = 'passed';
+                    await observeFermenterWorkspace(page, browser, inspector, stage);
                 });
-            });
-        } catch {
-            observationFailed = true;
-            // The failed lifecycle stage is retained; the other session remains independently observable.
-        }
-    }
+            } else {
+                const stageName = name === 'timeline' ? 'timeline-transport' : name;
+                const row = observations.stages.find(({ stage: candidate }) => candidate === stageName);
+                assert(row);
+                row.outcome = 'failed';
+                await session(async (page, browser, inspector) => {
+                    await stage(stageName, async (observation) => {
+                        if (name === 'timeline') {
+                            const { card, id } = await openFermenter(page, browser, inspector);
+                            await transport(page, deviceEditor(page, 'Fermenter'), card, id, observation);
+                        } else if (name === 'nested-escape') {
+                            await nestedEscape(page, browser, inspector, observation);
+                        } else {
+                            await addEffectTrack(page);
+                            await removeInstance(page, browser, inspector, observation);
+                        }
+                    });
+                });
+            }
+        },
+        () => sessions.allQuit
+    );
     observations.appQuit = sessions.acquired > 0 && sessions.allQuit;
     if (sessions.acquired === 0) {
         throw new FermenterDriveError('launch-unavailable');
