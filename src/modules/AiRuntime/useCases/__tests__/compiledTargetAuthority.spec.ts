@@ -1902,6 +1902,38 @@ describe('an owner-track pick answers to a request that names or selects a track
     });
 });
 
+describe('an instruction naming no track takes no selected owner once another instruction names one', () => {
+    const vocalsSelected: ProjectContext = { ...mixContext, selectedTrackId: mixVocals.id };
+
+    it.each(['Mute Keys. Bypass the EQ.', 'Mute Keys and bypass the EQ.'])(
+        'refuses the selected Vocals EQ and mutes Keys for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [trackItem('muteTrack', mixKeys, { muted: true }), bypassItem(mixVocalsEq, mixVocals.id)],
+                [],
+                vocalsSelected
+            );
+
+            expect(payloadTargets(result)).toEqual([mixKeys.id]);
+            expect(result.rejections).toEqual([
+                {
+                    index: 1,
+                    name: 'bypassDevice',
+                    reason: 'Compiled target deviceId is not authorized by the user request',
+                },
+            ]);
+        }
+    );
+
+    it('grounds the selected Vocals EQ for "Bypass the EQ."', () => {
+        const result = compileAndBridge('Bypass the EQ.', [bypassItem(mixVocalsEq, mixVocals.id)], [], vocalsSelected);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id]);
+    });
+});
+
 describe('a selection reference stands for no track once the request names one', () => {
     it.each(['set Vocals volume to 75% so it sits better', 'set Vocals volume to 75% to match this track'])(
         'refuses a Keys name selector for "%s" with Keys selected',
@@ -2444,6 +2476,27 @@ describe('a device name fragment picks only on the track the request names as ow
             reason: 'Compiled target deviceId is not authorized by the user request',
         });
     });
+
+    it.each(['Mute Keys. Bypass the EQ.', 'Mute Keys and bypass the EQ.'])(
+        'refuses every EQ when only another instruction of "%s" names a track',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [trackItem('muteTrack', ownedKeys, { muted: true }), bypassEqs],
+                [],
+                ownedContext
+            );
+
+            expect(payloadTargets(result)).toEqual([ownedKeys.id]);
+            expect(result.rejections).toEqual(
+                [1, 2].map((index) => ({
+                    index,
+                    name: 'bypassDevice',
+                    reason: 'Compiled target deviceId is not authorized by the user request',
+                }))
+            );
+        }
+    );
 
     it.each(['bypass the EQs on Vocals and Keys', 'bypass the Vocals and Keys EQs', 'bypass every EQ'])(
         'grounds both EQs for "%s"',

@@ -351,22 +351,30 @@ function picksByNameAlone(terms: CompiledSelectorTerms | undefined): boolean {
 }
 
 /**
- * The track-owned objects the text can refer to: every object on a track the text names, by whole
- * name or id in any phrasing ("the Vocals EQ", "the EQ of Vocals", "Vocals' EQ", "the EQ on Vocals"),
- * and on the selected track when the text refers to it. Null when a dependency already fixes the owner,
- * when the selector also picks by something other than a name fragment, or when the text names and
- * selects no track, which leaves every owner open.
+ * The call's own instruction and the whole request. Which targets a pick reaches is read from the
+ * instruction; whether the request names or selects any track at all is read from the whole request,
+ * so another instruction's track never leaves this one's owner open to the selection.
  */
-function readReachableOwnedIds(text: string, input: RequestReadingInput): ReadonlySet<string> | null {
+type EvidenceTexts = { scoped: string; whole: string };
+
+/**
+ * The track-owned objects the instruction can refer to: every object on a track it names, by whole
+ * name or id in any phrasing ("the Vocals EQ", "the EQ of Vocals", "Vocals' EQ", "the EQ on Vocals"),
+ * and on the selected track when it refers to it. Null when a dependency already fixes the owner, when
+ * the selector also picks by something other than a name fragment, or when the whole request names and
+ * selects no track, which leaves every owner open; once any instruction names one, an instruction
+ * naming none reaches no owner ("Mute Keys. Bypass the EQ.").
+ */
+function readReachableOwnedIds(texts: EvidenceTexts, input: RequestReadingInput): ReadonlySet<string> | null {
     const { context, dependencyId } = input;
     if (dependencyId !== undefined || !picksByNameAlone(input.selectorTerms)) {
         return null;
     }
-    const namedTrackIds = readStatedIds(text, 'track', context);
-    const selectsTrack = refersToSelectedTrack(text, context);
-    if (namedTrackIds.length === 0 && !selectsTrack) {
+    if (readStatedIds(texts.whole, 'track', context).length === 0 && !refersToSelectedTrack(texts.whole, context)) {
         return null;
     }
+    const namedTrackIds = readStatedIds(texts.scoped, 'track', context);
+    const selectsTrack = refersToSelectedTrack(texts.scoped, context);
     const selectedTrackIds = selectsTrack && context.selectedTrackId !== null ? [context.selectedTrackId] : [];
     return new Set(
         [...namedTrackIds, ...selectedTrackIds].flatMap((trackId) => getTrackOwnedObjectIds(trackId, context))
@@ -719,21 +727,23 @@ type RequestReading = {
     familyStatements: () => ReadonlyArray<{ pick: FamilyPick; statement: FamilyStatement }>;
 };
 
-function readEvidence(input: RequestReadingInput, picks: NamePicks, text: string): EvidenceReading {
+function readEvidence(input: RequestReadingInput, picks: NamePicks, texts: EvidenceTexts): EvidenceReading {
     const { capability, context, dependencyId } = input;
     const objectNames = getProjectObjectNames(context);
+    const text = texts.scoped;
     return {
         text,
         statedIds:
             picks.names.length > 0 ? readWithNamedOwners(readStatedIds, text, capability, context, dependencyId) : [],
         nameRanges: readNaming(text, capability, context, dependencyId).nameRanges,
-        reachableIds: readReachableOwnedIds(text, input),
+        reachableIds: readReachableOwnedIds(texts, input),
         fragments: picks.fragments.map((fragment) => ({
             fragment,
             occurrences: findAgentReferenceNameSpans(text, fragment, NAME_FORMS, objectNames),
         })),
         statesTrackPicks:
-            picks.trackIds.every((trackId) => statesTrack(text, trackId, context)) || !refersToAnyTrack(text, context),
+            picks.trackIds.every((trackId) => statesTrack(text, trackId, context)) ||
+            !refersToAnyTrack(texts.whole, context),
         readsSelectionReference: readOnce(() => readsSelectionReference(text, capability, context)),
     };
 }
@@ -773,7 +783,7 @@ function readRequest(input: RequestReadingInput): RequestReading {
     return {
         ...getProtectedIds(input, request, restrictionRanges),
         picks,
-        evidence: readOnce(() => readEvidence(input, picks, text())),
+        evidence: readOnce(() => readEvidence(input, picks, { scoped: text(), whole: requestText() })),
         familyStatements: readOnce(() =>
             getFamilyPicks(input).map((pick) => ({
                 pick,
