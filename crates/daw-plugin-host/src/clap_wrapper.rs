@@ -226,6 +226,9 @@ pub struct ClapWrapper {
     midi_scratch: Vec<clap_event_note>,
     /// Preallocated parameter event scratch list. Cleared + refilled each block, never reallocated.
     parameter_scratch: Vec<clap_event_param_value>,
+    /// Host writes from blocks the plugin refused to process, carried to the
+    /// head of the first block it does.
+    held_host_writes: HeldHostWrites,
     /// The block's input list in time order, as indexes into the two scratch
     /// lists above (see [`merge_event_order`]). Preallocated at both lists'
     /// capacities together; cleared and refilled each block, never reallocated.
@@ -560,6 +563,89 @@ impl BlockHostWrites {
         }
         // SAFETY: non-empty, so this function's own contract holds for the parts.
         unsafe { std::slice::from_raw_parts(self.events, self.count) }
+    }
+}
+
+/// Host parameter writes from blocks the plugin refused to process, waiting
+/// for the first block it does.
+///
+/// The engine drains a block's writes from its pending queue before handing
+/// them over, so a refused block is the only place they exist. Held here they
+/// land at the head of the next processed block, each parameter on the last
+/// value it was written, which is what the VST3 half does with its gesture
+/// queue. Notes are not held: one that sounds blocks after it was played is
+/// wrong, not late.
+///
+/// Touched only through the wrapper's `&mut self` — by the thread that runs
+/// its blocks, or by a state load holding it exclusively — so it needs no
+/// atomics. Allocated once at load and never grown. It never overflows: it is
+/// refilled only from a block's parameter scratch, which already carries every
+/// held write and is itself `MAX_PARAMETER_EVENTS` long.
+struct HeldHostWrites {
+    writes: Box<[HostParameterUpdate; MAX_PARAMETER_EVENTS]>,
+    count: usize,
+}
+
+impl HeldHostWrites {
+    fn new() -> Self {
+        Self {
+            writes: Box::new([HostParameterUpdate::default(); MAX_PARAMETER_EVENTS]),
+            count: 0,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// Hold one value, replacing the one already held for its parameter.
+    fn hold(&mut self, param_id: u32, value: f64) {
+        let held = &mut self.writes[..self.count];
+        if let Some(write) = held.iter_mut().find(|write| write.param_id == param_id) {
+            write.value = value;
+            return;
+        }
+        if self.count == MAX_PARAMETER_EVENTS {
+            return;
+        }
+        self.writes[self.count] = HostParameterUpdate {
+            param_id,
+            value,
+            sample_offset: 0,
+        };
+        self.count += 1;
+    }
+
+    /// Move every held write into `scratch`, at the head of the block.
+    fn drain_into(&mut self, scratch: &mut Vec<clap_event_param_value>) {
+        for write in &self.writes[..self.count] {
+            scratch.push(host_parameter_event(write));
+        }
+        self.count = 0;
+    }
+
+    fn clear(&mut self) {
+        self.count = 0;
+    }
+}
+
+/// One host write as the CLAP input event that carries it, at its offset.
+fn host_parameter_event(update: &HostParameterUpdate) -> clap_event_param_value {
+    clap_event_param_value {
+        header: clap_event_header {
+            size: mem::size_of::<clap_event_param_value>() as u32,
+            time: update.sample_offset,
+            space_id: CLAP_CORE_EVENT_SPACE_ID,
+            type_: CLAP_EVENT_PARAM_VALUE,
+            flags: 0,
+        },
+        param_id: update.param_id,
+        cookie: ptr::null_mut(),
+        note_id: -1,
+        port_index: -1,
+        channel: -1,
+        key: -1,
+        value: update.value,
     }
 }
 
@@ -1391,6 +1477,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            held_host_writes: HeldHostWrites::new(),
             event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
@@ -1444,6 +1531,7 @@ impl ClapWrapper {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            held_host_writes: HeldHostWrites::new(),
             event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             command_fixture: Some(EngineOwnedCommandFixture {
@@ -2658,6 +2746,11 @@ impl ClapWrapper {
     /// CLAP requires of `in_events`. Both slices arrive in non-decreasing time
     /// already; at one time a parameter value is listed ahead of a note, so a
     /// note sounds with the value written for its own sample.
+    ///
+    /// Writes held from blocks the plugin refused to process lead the list at
+    /// time 0, ahead of this block's own, which are newer. Together they share
+    /// the one `MAX_PARAMETER_EVENTS` capacity, and this block's writes past it
+    /// are ignored like any others.
     pub fn process_with_midi_and_parameters(
         &mut self,
         inputs: &[&[f32]],
@@ -2668,7 +2761,9 @@ impl ClapWrapper {
     ) {
         if !self.activated
             || self.plugin.is_null()
-            || (midi_events.is_empty() && parameter_updates.is_empty())
+            || (midi_events.is_empty()
+                && parameter_updates.is_empty()
+                && self.held_host_writes.is_empty())
         {
             self.process_audio_internal(
                 inputs,
@@ -2682,23 +2777,11 @@ impl ClapWrapper {
 
         fill_note_scratch(&mut self.midi_scratch, midi_events);
         self.parameter_scratch.clear();
-        for update in parameter_updates.iter().take(MAX_PARAMETER_EVENTS) {
-            self.parameter_scratch.push(clap_event_param_value {
-                header: clap_event_header {
-                    size: mem::size_of::<clap_event_param_value>() as u32,
-                    time: update.sample_offset,
-                    space_id: CLAP_CORE_EVENT_SPACE_ID,
-                    type_: CLAP_EVENT_PARAM_VALUE,
-                    flags: 0,
-                },
-                param_id: update.param_id,
-                cookie: ptr::null_mut(),
-                note_id: -1,
-                port_index: -1,
-                channel: -1,
-                key: -1,
-                value: update.value,
-            });
+        self.held_host_writes
+            .drain_into(&mut self.parameter_scratch);
+        let room = MAX_PARAMETER_EVENTS - self.parameter_scratch.len();
+        for update in parameter_updates.iter().take(room) {
+            self.parameter_scratch.push(host_parameter_event(update));
         }
         merge_event_order(
             &mut self.event_order_scratch,
@@ -2940,6 +3023,7 @@ impl ClapWrapper {
                 self.processing_start_refused = true;
                 signal_pending_service_change();
             }
+            self.hold_host_writes(host_writes);
             copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
         }
@@ -3102,6 +3186,18 @@ impl ClapWrapper {
             copy_inputs_to_outputs(inputs, outputs, num_samples);
         } else {
             read_output_scratch(&self.audio, outputs, n_samp);
+        }
+    }
+
+    /// Keep the writes of a block the plugin is not handed for the next one it
+    /// is. `host_writes` already leads with whatever was held before, and in
+    /// list order a later value for one parameter replaces an earlier one.
+    fn hold_host_writes(&mut self, host_writes: BlockHostWrites) {
+        // SAFETY: `host_writes` describes `parameter_scratch` or nothing, and
+        // the loop below writes only `held_host_writes`, never the scratch.
+        let written = unsafe { host_writes.as_slice() };
+        for write in written {
+            self.held_host_writes.hold(write.param_id, write.value);
         }
     }
 
@@ -3760,17 +3856,51 @@ impl ClapWrapper {
     fn host_callback_state(&self) -> &HostCallbackState {
         &self.host_state
     }
+
+    /// Hand the plugin a saved state through `clap.state`'s `load`.
+    fn load_state(&mut self, state_data: &[u8]) -> Result<(), PluginError> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            observe_vendor_call(fixture);
+            fixture.state = state_data.to_vec();
+            return Ok(());
+        }
+
+        if self.state_ext.is_null() || self.plugin.is_null() {
+            return Ok(());
+        }
+
+        // SAFETY: non-null (checked above); `state_ext` is the plugin's own
+        // extension struct from load, valid while the instance `self` owns is alive.
+        let state = unsafe { &*self.state_ext };
+        let load_fn = match state.load {
+            Some(f) => f,
+            None => return Ok(()),
+        };
+
+        let mut cursor = StreamCursor {
+            data: state_data.to_vec(),
+            pos: 0,
+        };
+
+        let istream = clap_istream {
+            ctx: &mut cursor as *mut StreamCursor as *mut c_void,
+            read: Some(istream_read),
+        };
+
+        // SAFETY: the extension's `load`, matched as `Some`, on the live non-null
+        // instance; `istream` and the `cursor` its `ctx` names outlive the call.
+        let loaded = unsafe { load_fn(self.plugin, &istream) };
+        state_load_result(&self.name, loaded)?;
+        Ok(())
+    }
 }
 
 impl AudioPlugin for ClapWrapper {
+    /// Through the event builder even with nothing new to send, so writes held
+    /// from a refused block still reach the plugin.
     fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
-        self.process_audio_internal(
-            inputs,
-            outputs,
-            num_samples,
-            &EMPTY_INPUT_EVENTS,
-            BlockHostWrites::NONE,
-        );
+        self.process_with_midi_and_parameters(inputs, outputs, num_samples, &[], &[]);
     }
 
     fn set_parameter(&mut self, param_id: u32, value: f64) {
@@ -3949,43 +4079,12 @@ impl AudioPlugin for ClapWrapper {
         Ok(buffer)
     }
 
+    /// A loaded state replaces every parameter value, so a write held from
+    /// before it would put a stale value back over the loaded one — the same
+    /// reason the engine's own pending writes are invalidated by a load.
     fn set_state(&mut self, state_data: &[u8]) -> Result<(), PluginError> {
-        #[cfg(feature = "engine-owned-command-fixture")]
-        if let Some(fixture) = self.command_fixture.as_mut() {
-            observe_vendor_call(fixture);
-            fixture.state = state_data.to_vec();
-            return Ok(());
-        }
-
-        if self.state_ext.is_null() || self.plugin.is_null() {
-            return Ok(());
-        }
-
-        {
-            // SAFETY: non-null (checked above); `state_ext` is the plugin's own
-            // extension struct from load, valid while the instance `self` owns is alive.
-            let state = unsafe { &*self.state_ext };
-            let load_fn = match state.load {
-                Some(f) => f,
-                None => return Ok(()),
-            };
-
-            let mut cursor = StreamCursor {
-                data: state_data.to_vec(),
-                pos: 0,
-            };
-
-            let istream = clap_istream {
-                ctx: &mut cursor as *mut StreamCursor as *mut c_void,
-                read: Some(istream_read),
-            };
-
-            // SAFETY: the extension's `load`, matched as `Some`, on the live non-null
-            // instance; `istream` and the `cursor` its `ctx` names outlive the call.
-            let loaded = unsafe { load_fn(self.plugin, &istream) };
-            state_load_result(&self.name, loaded)?;
-        }
-
+        self.load_state(state_data)?;
+        self.held_host_writes.clear();
         Ok(())
     }
 
@@ -4766,6 +4865,7 @@ mod tests {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            held_host_writes: HeldHostWrites::new(),
             event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
@@ -8609,6 +8709,182 @@ mod tests {
                 vec![PluginParameterEvent::value(8, 0.44)]
             );
         }
+    }
+
+    /// Whether the held-write stub below accepts `start_processing`. Its own
+    /// flag, read under `EMIT_TEST_LOCK`, so the processing tests' stub is not
+    /// shared across locks.
+    static HELD_WRITE_START_ACCEPTS: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    /// Every parameter value the held-write stub was handed on `process`, as
+    /// `(time, param_id, value)`, across every block since the last reset.
+    static RECEIVED_PARAMETER_VALUES: std::sync::Mutex<Vec<(u32, u32, f64)>> =
+        std::sync::Mutex::new(Vec::new());
+
+    /// Recovered from a poisoned lock, so one failing case cannot turn the
+    /// next into a poison panic that hides its own result.
+    fn received_parameter_log() -> std::sync::MutexGuard<'static, Vec<(u32, u32, f64)>> {
+        RECEIVED_PARAMETER_VALUES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn received_parameter_values() -> Vec<(u32, u32, f64)> {
+        std::mem::take(&mut *received_parameter_log())
+    }
+
+    fn held_write_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        EMIT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    unsafe extern "C" fn stub_start_processing_once_accepted(_plugin: *const clap_plugin) -> bool {
+        HELD_WRITE_START_ACCEPTS.load(Ordering::Relaxed)
+    }
+
+    /// Record every parameter value the plugin reads off its input list, then
+    /// behave like [`stub_process_echoing_inputs`].
+    unsafe extern "C" fn stub_process_recording_and_echoing_values(
+        plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        // SAFETY: the host hands a live process struct for the length of this call.
+        let in_events = unsafe { (*process).in_events };
+        // SAFETY: and a live, non-null input event list inside it.
+        let events = unsafe { &*in_events };
+        let (Some(size), Some(get)) = (events.size, events.get) else {
+            return CLAP_PROCESS_ERROR;
+        };
+        // SAFETY: the list's own `size`, on the live list.
+        for index in 0..unsafe { size(events) } {
+            // SAFETY: the list's own `get`, on the live list, with `index < size`.
+            let header = unsafe { get(events, index) };
+            // SAFETY: a non-null header the host's list returned is live for the call.
+            if header.is_null() || unsafe { (*header).type_ } != CLAP_EVENT_PARAM_VALUE {
+                continue;
+            }
+            // SAFETY: a PARAM_VALUE header heads a `clap_event_param_value`.
+            let value = unsafe { &*(header as *const clap_event_param_value) };
+            received_parameter_log().push((value.header.time, value.param_id, value.value));
+        }
+        // SAFETY: this function's own arguments, handed on unchanged.
+        unsafe { stub_process_echoing_inputs(plugin, process) }
+    }
+
+    /// A plugin that refuses `start_processing` until the test lets it start.
+    fn start_refusing_recording_wrapper() -> ClapWrapper {
+        // SAFETY: `clap_plugin` is raw pointers and `Option` fn pointers, for which
+        // all-zero bytes are null and `None`.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_once_accepted);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_recording_and_echoing_values);
+        HELD_WRITE_START_ACCEPTS.store(false, Ordering::Relaxed);
+        received_parameter_values();
+        stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin)
+    }
+
+    fn write(param_id: u32, sample_offset: u32, value: f64) -> HostParameterUpdate {
+        HostParameterUpdate {
+            param_id,
+            value,
+            sample_offset,
+        }
+    }
+
+    /// The engine drains a block's writes from its pending queue before it
+    /// hands them over, so a block the plugin refuses to process is the only
+    /// place they exist. They land on the first block the plugin processes, at
+    /// its head, each parameter on the last value it was written — as they do
+    /// for VST3.
+    #[test]
+    fn a_write_in_a_block_a_clap_plugin_refused_to_start_lands_on_its_first_processed_block() {
+        let _guard = held_write_test_guard();
+        stage_emitted_events(Vec::new());
+        let mut wrapper = start_refusing_recording_wrapper();
+
+        // Three refused blocks: the writes, one carrying nothing new, and a
+        // newer value for one of them.
+        process_one_block_with_updates(&mut wrapper, &[write(5, 2, 0.2), write(6, 4, 0.3)]);
+        process_one_block(&mut wrapper);
+        process_one_block_with_updates(&mut wrapper, &[write(5, 6, 0.7)]);
+        assert_eq!(
+            received_parameter_values(),
+            Vec::new(),
+            "a refused block is never handed to the plugin"
+        );
+
+        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+        assert_eq!(
+            received_parameter_values(),
+            vec![(0, 5, 0.7), (0, 6, 0.3)],
+            "the first processed block carries every held write at its head"
+        );
+
+        process_one_block(&mut wrapper);
+        assert_eq!(
+            received_parameter_values(),
+            Vec::new(),
+            "a held write is delivered once"
+        );
+    }
+
+    /// A write made in the first processed block is newer than any held one,
+    /// so it comes after it in the list the plugin reads and is the value the
+    /// parameter ends on.
+    #[test]
+    fn a_write_in_the_first_processed_block_comes_after_the_held_write_it_replaces() {
+        let _guard = held_write_test_guard();
+        stage_emitted_events(Vec::new());
+        let mut wrapper = start_refusing_recording_wrapper();
+
+        process_one_block_with_updates(&mut wrapper, &[write(5, 0, 0.2)]);
+        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block_with_updates(&mut wrapper, &[write(5, 4, 0.9)]);
+
+        assert_eq!(received_parameter_values(), vec![(0, 5, 0.2), (4, 5, 0.9)]);
+    }
+
+    /// A held write is still a host write when it is finally delivered: the
+    /// plugin's echo of it is not an edit the user made.
+    #[test]
+    fn the_echo_of_a_held_write_is_not_reported_as_a_plugin_edit() {
+        let _guard = held_write_test_guard();
+        stage_emitted_events(vec![PluginParameterEvent::value(9, 0.10)]);
+        let mut wrapper = start_refusing_recording_wrapper();
+
+        process_one_block_with_updates(&mut wrapper, &[write(8, 0, 0.44)]);
+        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+
+        assert_eq!(received_parameter_values(), vec![(0, 8, 0.44)]);
+        assert_eq!(
+            captured_events(&wrapper),
+            vec![PluginParameterEvent::value(9, 0.10)],
+            "the held parameter's echo is dropped and an unrelated edit still passes"
+        );
+    }
+
+    /// A state load replaces every parameter value, so a write held from
+    /// before it would put a stale value back over the loaded one.
+    #[test]
+    fn a_state_load_discards_the_writes_held_before_it() {
+        let _guard = held_write_test_guard();
+        stage_emitted_events(Vec::new());
+        let mut wrapper = start_refusing_recording_wrapper();
+
+        process_one_block_with_updates(&mut wrapper, &[write(5, 0, 0.2)]);
+        AudioPlugin::set_state(&mut wrapper, &[]).expect("a stub with no state extension loads");
+        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+
+        assert_eq!(received_parameter_values(), Vec::new());
     }
 
     /// Only a value can be an echo on `process` too. A gesture on an automated
