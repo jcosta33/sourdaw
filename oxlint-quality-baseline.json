@@ -7604,11 +7604,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/freezeBounce/initStalenessDetection.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts": {
         "eslint/complexity": {
             "count": 1

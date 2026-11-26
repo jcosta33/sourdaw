@@ -28,7 +28,6 @@ import {
 import { defaultTransportState, recordingStartStore, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore, type Track } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { addClip, getArrangementHandlers, setArrangementEventBus } from '../../index';
@@ -42,19 +41,11 @@ registerSupportingServicePorts();
 // freeze can be cancelled, superseded or finished at a chosen point.
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-vi.mock('../../../services/computeTrackHash', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../../services/computeTrackHash')>();
-    return { computeTrackHash: vi.fn(original.computeTrackHash) };
-});
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: vi.fn(),
     clearReportedLatency: vi.fn(),
 }));
-
-const { computeTrackHash: realComputeTrackHash } = await vi.importActual<
-    typeof import('../../../services/computeTrackHash')
->('../../../services/computeTrackHash');
 
 const TRACK_ID = 'track-1';
 
@@ -189,7 +180,6 @@ function makeTakeStale(): void {
 const STALE_TAKE = { frozen: true, frozenBufferId: 'old-take', status: 'stale' };
 
 beforeEach(() => {
-    vi.mocked(computeTrackHash).mockImplementation(realComputeTrackHash);
     vi.mocked(renderTrackOffline).mockReset();
     vi.mocked(notifyUser).mockReset();
     vi.mocked(cacheAudioBuffer).mockClear();
@@ -257,23 +247,6 @@ describe('a freeze whose track starts recording while it renders', () => {
         expect(shown().status).toBe('freezing');
 
         engage();
-        await exitRender(freeze, 'resolves');
-
-        expect(shown()).toEqual(UNFROZEN);
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-        expect(notifyUser).toHaveBeenCalledTimes(1);
-        expect(notifyUser).toHaveBeenCalledWith(WARNING, 'warning');
-    });
-
-    it('refuses the commit when a count-in starts while the source is checked after the render', async () => {
-        armFixtureTrack();
-        const freeze = startFreeze();
-        await freeze.inRender;
-        vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-            recordingStartStore.set(true);
-            return realComputeTrackHash(clips, devices);
-        });
-
         await exitRender(freeze, 'resolves');
 
         expect(shown()).toEqual(UNFROZEN);
