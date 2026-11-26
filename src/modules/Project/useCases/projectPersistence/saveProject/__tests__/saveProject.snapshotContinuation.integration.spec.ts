@@ -408,20 +408,33 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
-        'requests the storage lock only once a preparation held past the retired one-second poll window is released',
+        'requests the project audio storage lock only after its Worker preparation settles, however long that takes',
         async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
             const preparation = holdNextNativePreparation();
+            let preparationReached = false;
+            void preparation.requested.then(() => {
+                preparationReached = true;
+                return preparationReached;
+            });
             vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+            const save = startSaveBeforeItsLockRequest(opened);
             try {
-                const save = startSaveBeforeItsLockRequest(opened);
-                await preparation.requested;
+                const firstToHappen = await Promise.race([
+                    preparation.requested.then(() => 'preparation reached' as const),
+                    save.saving.then(
+                        () => 'save settled' as const,
+                        () => 'save settled' as const
+                    ),
+                ]);
+                expect(firstToHappen).toBe('preparation reached');
                 const requestsWhileHeld = lockManager.requestedNames.length;
                 const retiredWindowElapsed = vi.fn();
                 setTimeout(retiredWindowElapsed, RETIRED_POLL_WINDOW_MS + 1);
                 await vi.advanceTimersByTimeAsync(RETIRED_POLL_WINDOW_MS * 2);
                 expect(retiredWindowElapsed).toHaveBeenCalledOnce();
+                expect(preparationReached).toBe(true);
                 expect(lockManager.requestedNames).toHaveLength(requestsWhileHeld);
                 // The save's later yields wait on real timers; fake time only spans the held window.
                 vi.useRealTimers();
@@ -433,6 +446,7 @@ describe('saveProject snapshot continuation', () => {
 
                 expect(await save.saving).toBe(true);
             } finally {
+                save.release();
                 preparation.release();
                 vi.useRealTimers();
             }
