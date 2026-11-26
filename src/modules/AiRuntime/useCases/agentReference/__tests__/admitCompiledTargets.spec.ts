@@ -308,6 +308,17 @@ describe('a compiled pick reads the request less the other instructions that nam
             ).toEqual(UNAUTHORIZED);
         });
 
+        it('refuses Keys for "Mute Keys, then mute the kick, then pan it left", whose "it" is the kick', () => {
+            const kickMix = createProjectContext([keys, roleTrack('track-bd', 'BD', 'kick')]);
+            const prompt = 'Mute Keys, then mute the kick, then pan it left';
+
+            expect(
+                admitPick(prompt, 'pan it left', (instruction) =>
+                    pickTerms(trackNamed('Keys'), ['track-keys'], instruction, kickMix)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
         it('admits the pad for "set the pad to 60% and mute Keys"', () => {
             expect(
                 admitPick('set the pad to 60% and mute Keys', 'set the pad to 60%', (instruction) =>
@@ -479,6 +490,16 @@ describe('a role-family pick needs its family stated in its own instruction', ()
                 argument: 'trackIds',
             }))
         ).toEqual(UNAUTHORIZED);
+    });
+
+    it('admits the kick for "turn down the drum tracks by 3 dB and mute the drums", which states the family itself', () => {
+        const prompt = 'turn down the drum tracks by 3 dB and mute the drums';
+
+        expect(
+            admitPick(prompt, 'turn down the drum tracks by 3 dB', (instruction) =>
+                pickTerms(drumFamily('all'), ['track-kick'], instruction, kit)
+            )
+        ).toEqual(ADMITTED);
     });
 
     it('admits the kick for "turn the drums down 3 dB"', () => {
