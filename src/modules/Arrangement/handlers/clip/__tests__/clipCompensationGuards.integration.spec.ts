@@ -11,6 +11,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
     getMacroHandlers,
     redo,
@@ -74,6 +75,8 @@ type GuardCase = {
     foreignWriteWhileUndone?: () => void;
     /** The expected-state keys the action's recorded inverse carries. */
     expectedKeys: string[];
+    /** A value with two states: a peer's write of the other state equals the value undo or redo would write. */
+    twoState?: true;
 };
 
 const cases: GuardCase[] = [
@@ -144,6 +147,7 @@ const cases: GuardCase[] = [
         foreignWriteWhileUndone: () => muteClip('clip-1', true),
         foreign: false,
         expectedKeys: ['expectedMuted'],
+        twoState: true,
     },
     {
         type: 'setClipColor',
@@ -178,6 +182,7 @@ const cases: GuardCase[] = [
         foreignWriteWhileUndone: () => lockClip('clip-1', true),
         foreign: false,
         expectedKeys: ['expectedLocked'],
+        twoState: true,
     },
 ];
 
@@ -281,6 +286,32 @@ describe('clip edit compensation guards', () => {
             expect(guard.read(currentClip())).toEqual(guard.before);
         });
 
+        it('redoes the new value after an undo', async () => {
+            registerHandlers();
+            seedClip(guard.seed);
+            await executeAppActionBatch([guard.action], { source: 'prompt', requireCompensation: true });
+            await undo();
+
+            await redo();
+
+            expect(guard.read(currentClip())).toEqual(guard.after);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toHaveLength(0);
+        });
+
+        it('stays refused when the recorded inverse carries no expected state', async () => {
+            registerHandlers({ type: guard.type, strip: guard.expectedKeys });
+            seedClip(guard.seed);
+            const prior = structuredClone(currentClip());
+
+            const result = await executeAppActionBatch([guard.action], { source: 'prompt', requireCompensation: true });
+
+            expect(result).toMatchObject({ status: 'rejected', reason: compensationRefusal(guard.type) });
+            expect(currentClip()).toEqual(prior);
+        });
+    });
+
+    describe.each(cases.filter((guard) => guard.twoState !== true))('$type', (guard) => {
         it('refuses the undo and keeps a foreign edit of the same field', async () => {
             registerHandlers();
             seedClip(guard.seed);
@@ -297,19 +328,6 @@ describe('clip edit compensation guards', () => {
             expect(notifications.slice(notificationsBefore)).toEqual([
                 expect.objectContaining({ level: 'warning', message: expect.stringContaining('Cannot undo') }),
             ]);
-        });
-
-        it('redoes the new value after an undo', async () => {
-            registerHandlers();
-            seedClip(guard.seed);
-            await executeAppActionBatch([guard.action], { source: 'prompt', requireCompensation: true });
-            await undo();
-
-            await redo();
-
-            expect(guard.read(currentClip())).toEqual(guard.after);
-            expect(undoStore.value?.past).toHaveLength(1);
-            expect(undoStore.value?.future).toHaveLength(0);
         });
 
         it('refuses the redo and keeps a foreign edit made while undone', async () => {
@@ -329,17 +347,6 @@ describe('clip edit compensation guards', () => {
             expect(notifications.slice(notificationsBefore)).toEqual([
                 expect.objectContaining({ level: 'warning', message: expect.stringContaining('Cannot redo') }),
             ]);
-        });
-
-        it('stays refused when the recorded inverse carries no expected state', async () => {
-            registerHandlers({ type: guard.type, strip: guard.expectedKeys });
-            seedClip(guard.seed);
-            const prior = structuredClone(currentClip());
-
-            const result = await executeAppActionBatch([guard.action], { source: 'prompt', requireCompensation: true });
-
-            expect(result).toMatchObject({ status: 'rejected', reason: compensationRefusal(guard.type) });
-            expect(currentClip()).toEqual(prior);
         });
     });
 
@@ -714,6 +721,52 @@ describe('clip edit compensation guards', () => {
                 reason: 'Action is not compensable inside an atomic batch: trimClipEnd',
             });
             expect(trackStore.value?.tracks).toEqual(priorTracks);
+        });
+    });
+    describe.each([
+        {
+            name: 'muteClip',
+            seed: { muted: false },
+            action: { type: 'muteClip', payload: { clipId: 'clip-1', muted: true } } satisfies AppAction,
+            peerRevert: () => muteClip('clip-1', false),
+            prior: (clip: Clip) => clip.muted,
+            before: false,
+        },
+        {
+            name: 'lockClip',
+            seed: { locked: false },
+            action: { type: 'lockClip', payload: { clipId: 'clip-1', locked: true } } satisfies AppAction,
+            peerRevert: () => lockClip('clip-1', false),
+            prior: (clip: Clip) => clip.locked,
+            before: false,
+        },
+        {
+            name: 'renameClip',
+            seed: {},
+            action: { type: 'renameClip', payload: { clipId: 'clip-1', name: 'Renamed' } } satisfies AppAction,
+            peerRevert: () => renameClip('clip-1', 'Second'),
+            prior: (clip: Clip) => clip.name,
+            before: 'Second',
+        },
+    ])('$name after a peer already restored the value', ({ seed, action, peerRevert, prior, before }) => {
+        it('consumes the entry on undo so the earlier edit is reachable', async () => {
+            registerHandlers();
+            seedClip({ name: 'First', ...seed });
+            await executeAppAction({ type: 'renameClip', payload: { clipId: 'clip-1', name: 'Second' } }, { source: 'prompt' });
+            await executeAppAction(action, { source: 'prompt' });
+            peerRevert();
+            expect(prior(currentClip())).toEqual(before);
+
+            await undo();
+
+            expect(notifications).toEqual([]);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toHaveLength(1);
+
+            await undo();
+
+            expect(currentClip().name).toBe('First');
+            expect(undoStore.value?.past).toHaveLength(0);
         });
     });
 });

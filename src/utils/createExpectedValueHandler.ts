@@ -86,7 +86,8 @@ export function createExpectedValueHandler<ActionType extends AppAction['type'],
         },
         isNoop: (action) => {
             const current = config.read(action);
-            return current !== undefined && satisfiesGuard(action) && sameValue(current, config.requested(action));
+            // A target already holding the value is a no-op whatever the guard says: a peer that wrote the value first leaves nothing to undo.
+            return current !== undefined && sameValue(current, config.requested(action));
         },
         undoable: true,
     });
