@@ -50,6 +50,23 @@ describe('commitWarpMarkerBeatDrag', () => {
         });
     });
 
+    it('keeps a change to the field the drag did not move that landed while the drag was in flight', async () => {
+        // A peer write or an Undo changes originalBeat after the drag started and before it is released.
+        warpStates.set(clipId, {
+            ...BEFORE_DRAG,
+            markers: [{ id: 'm1', originalBeat: 1.5, warpedBeat: 2, origin: 'user' }, BEFORE_DRAG.markers[1]!],
+        });
+
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', warpedBeat: 2.5 });
+
+        expect(getStoredWarpState(clipId)?.markers[0]).toEqual({
+            id: 'm1',
+            originalBeat: 1.5,
+            warpedBeat: 2.5,
+            origin: 'user',
+        });
+    });
+
     it('records no history entry when the marker ends where it started', async () => {
         await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', originalBeat: 1, warpedBeat: 2 });
 

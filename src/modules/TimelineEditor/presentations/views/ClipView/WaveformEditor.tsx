@@ -59,10 +59,11 @@ type WarpState = {
     originalTempo: number | null;
 };
 
-type MarkerPreview = { id: string; warpedBeat: number };
+type MarkerPreview = { clipId: string; id: string; warpedBeat: number };
 
-function withMarkerPreview(state: WarpState, preview: MarkerPreview | null): WarpState {
-    if (preview === null) {
+/** A preview belongs to the clip it was dragged on; switching clips leaves it behind unused. */
+function withMarkerPreview(state: WarpState, preview: MarkerPreview | null, clipId: string): WarpState {
+    if (preview === null || preview.clipId !== clipId) {
         return state;
     }
     return {
@@ -242,7 +243,9 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     const storedWarpState: WarpState = getWarpState(clipId);
     // A marker drag previews here and writes the document once, on release.
     const [markerPreview, setMarkerPreview] = useState<MarkerPreview | null>(null);
-    const warpState = withMarkerPreview(storedWarpState, markerPreview);
+    // The latest preview, held beside the drag so a release that lands before the next render still commits it.
+    const previewRef = useRef<MarkerPreview | null>(null);
+    const warpState = withMarkerPreview(storedWarpState, markerPreview, clipId);
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
@@ -264,6 +267,8 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     // double-clicks arrive from user events, long after flush.
     useEffect(() => {
         didDragRef.current = false;
+        draggingMarkerRef.current = null;
+        previewRef.current = null;
     }, [clipId]);
 
     const handleToggleWarp = () => {
@@ -419,7 +424,9 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         }
         if (didDragRef.current) {
             const newBeat = Math.max(0, x / beatWidth);
-            setMarkerPreview({ id: draggingMarkerRef.current.id, warpedBeat: newBeat });
+            const preview: MarkerPreview = { clipId, id: draggingMarkerRef.current.id, warpedBeat: newBeat };
+            previewRef.current = preview;
+            setMarkerPreview(preview);
         }
     };
 
@@ -428,9 +435,14 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         setIsDraggingMarker(false);
     };
 
+    const clearMarkerPreview = (): void => {
+        previewRef.current = null;
+        setMarkerPreview(null);
+    };
+
     // The pointer's cancelled gesture leaves the document untouched.
     const cancelMarkerDrag = (): void => {
-        setMarkerPreview(null);
+        clearMarkerPreview();
         endMarkerDrag();
     };
 
@@ -439,17 +451,15 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         if (!drag) {
             return;
         }
-        const preview = markerPreview;
+        const preview = previewRef.current;
         endMarkerDrag();
-        if (preview === null) {
+        if (preview === null || preview.clipId !== clipId || preview.id !== drag.id) {
+            clearMarkerPreview();
             return;
         }
-        void commitWarpMarkerBeatDrag({
-            clipId,
-            markerId: drag.id,
-            originalBeat: drag.startOriginalBeat,
-            warpedBeat: preview.warpedBeat,
-        }).finally(() => setMarkerPreview(null));
+        void commitWarpMarkerBeatDrag({ clipId, markerId: drag.id, warpedBeat: preview.warpedBeat }).finally(
+            clearMarkerPreview
+        );
     };
 
     const handlePointerUp = () => {

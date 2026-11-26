@@ -912,7 +912,6 @@ describe('ElasticEditorPanel', () => {
         expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
             clipId: 'c1',
             markerId: 'm1',
-            originalBeat: 1,
             warpedBeat: 1.75,
         });
     });
@@ -943,8 +942,47 @@ describe('ElasticEditorPanel', () => {
             clipId: 'c1',
             markerId: 'm1',
             originalBeat: 1.8,
-            warpedBeat: 1,
         });
+    });
+
+    it('commits the moved beat when pointerup follows pointermove before any re-render', async () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+            fireEvent.pointerUp(canvas, { pointerId: 4 });
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledTimes(1);
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            warpedBeat: 1.725,
+        });
+    });
+
+    it('writes nothing for a click without movement on a second marker after an earlier drag', async () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+            fireEvent.pointerUp(canvas, { pointerId: 4 });
+        });
+        mocks.commitWarpMarkerBeatDrag.mockClear();
+
+        fireEvent.pointerDown(canvas, { clientX: 80, pointerId: 5 });
+        await act(async () => {
+            fireEvent.pointerUp(canvas, { pointerId: 5 });
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag).not.toHaveBeenCalled();
     });
 
     it('writes nothing when the pointer gesture is canceled mid-drag', () => {

@@ -76,16 +76,20 @@ type WarpStateView = {
 };
 
 type MarkerPreview = {
+    clipId: string;
     markerId: string;
-    originalBeat: number;
-    warpedBeat: number;
+    /** The one beat the gesture moves; the other keeps its stored value. */
+    field: 'originalBeat' | 'warpedBeat';
+    beat: number;
 };
 
+/** A preview belongs to the clip it was dragged on; switching clips leaves it behind unused. */
 function withMarkerPreview<State extends { markers: WarpMarkerView[] }>(
     state: State,
-    preview: MarkerPreview | null
+    preview: MarkerPreview | null,
+    clipId: string | null
 ): State {
-    if (preview === null) {
+    if (preview === null || preview.clipId !== clipId) {
         return state;
     }
     return {
@@ -94,7 +98,7 @@ function withMarkerPreview<State extends { markers: WarpMarkerView[] }>(
             if (marker.id !== preview.markerId) {
                 return marker;
             }
-            return { ...marker, originalBeat: preview.originalBeat, warpedBeat: preview.warpedBeat };
+            return { ...marker, [preview.field]: preview.beat };
         }),
     };
 }
@@ -143,11 +147,14 @@ export const ElasticEditorPanel = (): ReactElement => {
     const storedWarpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
     // A marker drag previews here and writes the document once, on release.
     const [markerPreview, setMarkerPreview] = useState<MarkerPreview | null>(null);
-    const warpState = withMarkerPreview(storedWarpState, markerPreview);
+    // The latest preview, held beside the drag so a release that lands before the next render still commits it.
+    const previewRef = useRef<MarkerPreview | null>(null);
+    const warpState = withMarkerPreview(storedWarpState, markerPreview, clipId);
     const [detectionStatus, setDetectionStatus] = useState('');
     const detectRequest = useRef(0);
     useEffect(() => {
         setDetectionStatus('');
+        previewRef.current = null;
         return () => {
             detectRequest.current++;
             if (clipId) {
@@ -356,11 +363,19 @@ export const ElasticEditorPanel = (): ReactElement => {
         const beatRaw = Math.max(0, x / beatWidth);
         const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, timelineEditing.snapValue ?? 1) : beatRaw;
         const movesOriginal = drag.altKey || event.altKey;
-        setMarkerPreview({
+        const preview: MarkerPreview = {
+            clipId,
             markerId: drag.markerId,
-            originalBeat: movesOriginal ? beat : drag.startOriginalBeat,
-            warpedBeat: movesOriginal ? drag.startWarpedBeat : beat,
-        });
+            field: movesOriginal ? 'originalBeat' : 'warpedBeat',
+            beat,
+        };
+        previewRef.current = preview;
+        setMarkerPreview(preview);
+    };
+
+    const clearMarkerPreview = (): void => {
+        previewRef.current = null;
+        setMarkerPreview(null);
     };
 
     const finishMarkerDrag = (): void => {
@@ -369,22 +384,19 @@ export const ElasticEditorPanel = (): ReactElement => {
             return;
         }
         dragRef.current = null;
-        const preview = markerPreview;
-        if (preview === null) {
+        const preview = previewRef.current;
+        if (preview === null || preview.clipId !== clipId || preview.markerId !== drag.markerId) {
+            clearMarkerPreview();
             return;
         }
-        void commitWarpMarkerBeatDrag({
-            clipId,
-            markerId: drag.markerId,
-            originalBeat: preview.originalBeat,
-            warpedBeat: preview.warpedBeat,
-        }).finally(() => setMarkerPreview(null));
+        const moved = preview.field === 'originalBeat' ? { originalBeat: preview.beat } : { warpedBeat: preview.beat };
+        void commitWarpMarkerBeatDrag({ clipId, markerId: drag.markerId, ...moved }).finally(clearMarkerPreview);
     };
 
     // A cancelled gesture leaves the document untouched.
     const cancelMarkerDrag = (): void => {
         dragRef.current = null;
-        setMarkerPreview(null);
+        clearMarkerPreview();
     };
 
     const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {

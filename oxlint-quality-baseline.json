@@ -8044,11 +8044,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/warp/commitWarpMarkerBeatDrag.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        }
-    },
     "src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts": {
         "eslint/complexity": {
             "count": 1

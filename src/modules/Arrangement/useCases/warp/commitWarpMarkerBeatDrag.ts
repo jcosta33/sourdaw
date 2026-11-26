@@ -5,9 +5,9 @@ import { commitClipWarpState } from './commitClipWarpState';
 type CommitWarpMarkerBeatDragInput = {
     clipId: string;
     markerId: string;
-    /** Where the gesture ended; the stored marker still holds where it started. */
-    originalBeat: number;
-    warpedBeat: number;
+    /** Only the fields the gesture moved; the other field keeps whatever the live marker holds. */
+    originalBeat?: number;
+    warpedBeat?: number;
 };
 
 /**
@@ -21,10 +21,15 @@ export async function commitWarpMarkerBeatDrag(input: CommitWarpMarkerBeatDragIn
     }
     await commitClipWarpState(input.clipId, {
         ...current,
-        markers: current.markers.map((marker) =>
-            marker.id === input.markerId
-                ? { ...marker, originalBeat: input.originalBeat, warpedBeat: input.warpedBeat }
-                : marker
-        ),
+        markers: current.markers.map((marker) => {
+            if (marker.id !== input.markerId) {
+                return marker;
+            }
+            return {
+                ...marker,
+                originalBeat: input.originalBeat ?? marker.originalBeat,
+                warpedBeat: input.warpedBeat ?? marker.warpedBeat,
+            };
+        }),
     });
 }
