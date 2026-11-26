@@ -27,6 +27,7 @@ export function captureToasterMasterRuntime(deviceId: string): {
     if (!projectId || !lifetime || !strip || !node || !controls?.ready) {
         return null;
     }
+    const runtime = { strip, node, controls };
     const writeNative = captureNativeBuiltinParameterWriter(trackId, deviceId);
     function isCurrent(): boolean {
         const currentTarget = resolveEligibleDeviceWriteTarget(deviceId);
@@ -36,10 +37,10 @@ export function captureToasterMasterRuntime(deviceId: string): {
             getSettledProjectIdentity()?.projectId === projectId &&
             captureProjectIdentity() === projectIdentity &&
             captureToasterDeviceLifetime(deviceId) === lifetime &&
-            getTrackStrip(trackId) === strip &&
-            findToasterNodeOnStrip({ strip, deviceId }) === node &&
-            node.toasterControls === controls &&
-            controls.ready
+            getTrackStrip(trackId) === runtime.strip &&
+            findToasterNodeOnStrip({ strip: runtime.strip, deviceId }) === runtime.node &&
+            runtime.node.toasterControls === runtime.controls &&
+            runtime.controls.ready
         );
     }
     return {
@@ -51,7 +52,7 @@ export function captureToasterMasterRuntime(deviceId: string): {
             writeToasterKitScalar({
                 trackId,
                 deviceId,
-                controls,
+                controls: runtime.controls,
                 name: 'master_gain',
                 value,
                 native: { kind: 'captured', write: writeNative },
