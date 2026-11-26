@@ -344,7 +344,11 @@ export type ArrangementTrackAppAction =
               replacement: { trackId: string; soloed: boolean }[];
           };
       }
-    | { type: 'setTrackNotes'; payload: { trackId: string; notes: string } }
+    | {
+          type: 'setTrackNotes';
+          /** `expectedNotes` is internal replay metadata: the notes this write expects to find. */
+          payload: { trackId: string; notes: string; expectedNotes?: string };
+      }
     | {
           /** Inverse of `zoomTracksVertical`. Zooming clamps every track's height into a
            *  fixed range, so the opposite delta does not return a track that hit a bound

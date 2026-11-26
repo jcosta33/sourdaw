@@ -5671,11 +5671,6 @@
             "count": 2
         }
     },
-    "src/modules/Arrangement/handlers/track/disableTrack.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 2
-        }
-    },
     "src/modules/Arrangement/handlers/track/discardCreatedTracks.ts": {
         "eslint/complexity": {
             "count": 1

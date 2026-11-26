@@ -138,6 +138,8 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['setTrackPan', 'track', 'Arrangement'],
     ['setTrackColor', 'track', 'Arrangement'],
     ['hideTrack', 'track', 'Arrangement'],
+    ['disableTrack', 'track', 'Arrangement'],
+    ['setTrackNotes', 'track', 'Arrangement'],
     ['foldTrack', 'track', 'Arrangement'],
     ['setTrackHeight', 'track', 'Arrangement'],
     ['clearSolos', 'track', 'Arrangement'],
@@ -358,7 +360,7 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         category: 'track',
         packet: RUNTIME_ACTION_PACKET,
         reason: 'Track-level edits whose handlers carry no executable descriptor, target capability, effect declaration or session replay contract yet.',
-        actionTypes: ['disableTrack', 'setTrackNotes', 'loadTrackTemplate'],
+        actionTypes: ['loadTrackTemplate'],
     },
     {
         kind: 'interim-unsupported',

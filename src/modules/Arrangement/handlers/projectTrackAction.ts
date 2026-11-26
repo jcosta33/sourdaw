@@ -56,6 +56,14 @@ function projectHidden(action: ActionOf<'hideTrack'>, projected: Track): void {
     projected.hidden = action.payload.hidden;
 }
 
+function projectDisabled(action: ActionOf<'disableTrack'>, projected: Track): void {
+    projected.disabled = action.payload.disabled;
+}
+
+function projectNotes(action: ActionOf<'setTrackNotes'>, projected: Track): void {
+    projected.notes = action.payload.notes;
+}
+
 function projectFolded(action: ActionOf<'foldTrack'>, projected: Track): void {
     projected.collapsed = action.payload.folded;
 }
@@ -371,7 +379,7 @@ export const trackProjectionByActionType: {
     removeAutomationPoint: keepTrack,
     setAutomationMode: projectAutomationMode,
     hideTrack: projectHidden,
-    disableTrack: keepTrack,
+    disableTrack: projectDisabled,
     restoreTrackDisabled: keepTrack,
     setTrackHeight: projectTrackHeight,
     setSnapValue: keepTrack,
@@ -432,7 +440,7 @@ export const trackProjectionByActionType: {
     muteClip: keepTrack,
     clearSolos: keepTrack,
     restoreTrackSoloStates: keepTrack,
-    setTrackNotes: keepTrack,
+    setTrackNotes: projectNotes,
     deleteTime: keepTrack,
     insertTime: keepTrack,
     duplicateTimeRange: keepTrack,

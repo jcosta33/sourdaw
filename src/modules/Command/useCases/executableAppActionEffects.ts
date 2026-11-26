@@ -300,6 +300,15 @@ export const executableAppActionEffectsByType = {
         dimensions: ['cosmetic'],
         scope: 'target',
     },
+    // Disabling silences the track as a mute does; notes are saved text no sound or view reads.
+    disableTrack: {
+        dimensions: ['monitoring'],
+        scope: 'target',
+    },
+    setTrackNotes: {
+        dimensions: ['cosmetic'],
+        scope: 'target',
+    },
     foldTrack: {
         dimensions: ['cosmetic'],
         scope: 'target',

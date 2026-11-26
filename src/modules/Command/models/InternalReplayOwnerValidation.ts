@@ -36,6 +36,7 @@ export const internalReplayOwnerValidationByActionType = {
     deleteGrooveTemplate: 'optional',
     restoreGrooveAssignment: 'optional',
     restoreTrackHeights: 'optional',
+    restoreTrackDisabled: 'optional',
 } as const satisfies Readonly<Record<string, InternalReplayOwnerValidation>>;
 
 export type InternalReplayActionType = keyof typeof internalReplayOwnerValidationByActionType;

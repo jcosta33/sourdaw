@@ -57,6 +57,8 @@ describe('projectTrackAction', () => {
                 'setClipGain',
                 'removeSend',
                 'hideTrack',
+                'disableTrack',
+                'setTrackNotes',
                 'foldTrack',
                 'setTrackHeight',
                 'zoomTracksVertical',
@@ -76,8 +78,12 @@ describe('projectTrackAction', () => {
             { type: 'muteTrack', payload: { trackId: 't', muted: true, expectedMuted: false } },
             { type: 'soloTrack', payload: { trackId: 't', soloed: true } },
             { type: 'setTrackOutput', payload: { trackId: 't', outputId: 'out' } },
+            { type: 'disableTrack', payload: { trackId: 't', disabled: true } },
+            { type: 'setTrackNotes', payload: { trackId: 't', notes: 'Re-record the bridge' } },
         ]);
         expect(track).toMatchObject({
+            disabled: true,
+            notes: 'Re-record the bridge',
             name: 'Lead',
             color: '#123456',
             pan: -0.25,

@@ -6922,6 +6922,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            expectedNotes: 1,
             notes: 1,
             trackId: 1,
         },

@@ -138,6 +138,30 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'disableTrack',
+        validPayload: { trackId: 'track-1', disabled: true },
+        invalidPayloads: [
+            { trackId: '', disabled: true },
+            { trackId: 'track-1', disabled: 'yes' },
+            { trackId: 'track-1' },
+            { disabled: true },
+            { trackId: 'track-1', disabled: true, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setTrackNotes',
+        validPayload: { trackId: 'track-1', notes: 'x'.repeat(2000) },
+        invalidPayloads: [
+            { trackId: '', notes: 'a' },
+            { trackId: 'track-1', notes: 5 },
+            { trackId: 'track-1' },
+            { notes: 'a' },
+            { trackId: 'track-1', notes: 'x'.repeat(2001) },
+            { trackId: 'track-1', notes: 'a', expectedNotes: 'b' },
+            { trackId: 'track-1', notes: 'a', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'foldTrack',
         validPayload: { trackId: 'track-1', folded: false },
         invalidPayloads: [

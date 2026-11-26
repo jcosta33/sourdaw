@@ -10,6 +10,7 @@ export type ExecutableAppActionTargetCapability =
     | 'duplicable-track'
     | 'removable-track'
     | 'hideable-track'
+    | 'disableable-track'
     | 'routable-source'
     | 'bus'
     | 'output'

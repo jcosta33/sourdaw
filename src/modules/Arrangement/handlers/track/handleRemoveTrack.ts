@@ -87,9 +87,9 @@ function currentStateMatches(action: RemoveTrackAction): boolean {
 }
 
 /**
- * The track is restored as the earlier actions of its batch left its display state, so a hide, fold
- * or resize the batch made before the removal is not undone by the restore and the inverse of that
- * edit finds the state it guards.
+ * The track is restored as the earlier actions of its batch left its display state, activation and
+ * notes, so a hide, fold, resize, disable or notes edit the batch made before the removal is not
+ * undone by the restore and the inverse of that edit finds the state it guards.
  */
 function withDisplayStateOfBatch(
     snapshot: NonNullable<ReturnType<typeof captureTrackRemovalSnapshot>>,
@@ -99,8 +99,8 @@ function withDisplayStateOfBatch(
     if (!context || !live) {
         return snapshot;
     }
-    const { hidden, collapsed, height } = projectTrackThroughPriorBatchActions(live, context);
-    const trackSnapshot = { ...snapshot.trackSnapshot, hidden, collapsed, height };
+    const { hidden, collapsed, height, disabled, notes } = projectTrackThroughPriorBatchActions(live, context);
+    const trackSnapshot = { ...snapshot.trackSnapshot, hidden, collapsed, height, disabled, notes };
     return { ...snapshot, trackSnapshot };
 }
 

@@ -9,6 +9,10 @@ import { disableTrack } from '../../useCases/toggleTrackState/disableTrack';
  * undoable.
  */
 export const handleRestoreTrackDisabled = createHandler<'restoreTrackDisabled'>({
+    // Every restore names the state it expects and reports a conflict instead of overwriting a newer edit,
+    // so an atomic batch may compensate with it and a replay may reapply it after divergence.
+    canReapplyAfterDivergence: () => true,
+    validate: () => true,
     execute: (action) => {
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (!track || track.disabled !== action.payload.expected) {

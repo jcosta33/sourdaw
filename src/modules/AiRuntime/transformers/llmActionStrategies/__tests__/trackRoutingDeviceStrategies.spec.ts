@@ -127,6 +127,45 @@ describe('trackStrategy', () => {
             });
         });
 
+        const masterContext: ProjectContext = {
+            ...folderContext,
+            tracks: [...folderContext.tracks, { ...folderContext.tracks[0]!, id: 'master', kind: 'master' }],
+        };
+
+        it('bridges disable and enable to their payloads', () => {
+            expect(bridge('disableTrack', { trackId: 'track-vox', disabled: true })).toEqual({
+                type: 'disableTrack',
+                payload: { trackId: 'track-vox', disabled: true },
+            });
+            expect(bridge('disableTrack', { trackId: 'track-drums-folder', disabled: false })).toEqual({
+                type: 'disableTrack',
+                payload: { trackId: 'track-drums-folder', disabled: false },
+            });
+        });
+
+        it('bridges notes to their payload, including empty notes and notes of exactly the limit', () => {
+            expect(bridge('setTrackNotes', { trackId: 'track-vox', notes: 'Re-record the bridge' })).toEqual({
+                type: 'setTrackNotes',
+                payload: { trackId: 'track-vox', notes: 'Re-record the bridge' },
+            });
+            expect(bridge('setTrackNotes', { trackId: 'track-vox', notes: '' })).toEqual({
+                type: 'setTrackNotes',
+                payload: { trackId: 'track-vox', notes: '' },
+            });
+            expect(bridge('setTrackNotes', { trackId: 'track-vox', notes: 'x'.repeat(2000) })).toEqual({
+                type: 'setTrackNotes',
+                payload: { trackId: 'track-vox', notes: 'x'.repeat(2000) },
+            });
+        });
+
+        it('rejects disabling the master track', () => {
+            expect(bridge('disableTrack', { trackId: 'master', disabled: true }, masterContext)).toEqual({
+                index: 0,
+                name: 'disableTrack',
+                reason: 'Expected an available non-master trackId and boolean disabled value',
+            });
+        });
+
         it('leaves zoomTracksVertical to no provider route while it is withdrawn from agent commands', () => {
             expect(bridge('zoomTracksVertical', { delta: -20 })).toBeNull();
         });
@@ -134,8 +173,18 @@ describe('trackStrategy', () => {
         const FOLD_REASON = 'Expected an available folder trackId and boolean folded value';
         const HIDE_REASON = 'Expected an available trackId and boolean hidden value';
         const HEIGHT_REASON = 'Expected an available trackId and a height from 30 through 300';
+        const DISABLE_REASON = 'Expected an available non-master trackId and boolean disabled value';
+        const NOTES_REASON = 'Expected an available trackId and notes text of at most 2000 characters';
 
         it.each([
+            ['disableTrack', { trackId: 'ghost', disabled: true }, DISABLE_REASON],
+            ['disableTrack', { trackId: 'track-vox', disabled: 'yes' }, DISABLE_REASON],
+            ['disableTrack', { trackId: 'track-vox' }, DISABLE_REASON],
+            ['setTrackNotes', { trackId: 'ghost', notes: 'x' }, NOTES_REASON],
+            ['setTrackNotes', { trackId: 'track-vox', notes: 5 }, NOTES_REASON],
+            ['setTrackNotes', { trackId: 'track-vox' }, NOTES_REASON],
+            ['setTrackNotes', { trackId: 'track-vox', notes: 'x'.repeat(2001) }, NOTES_REASON],
+            ['setTrackNotes', { trackId: 'track-vox', notes: 'x', expectedNotes: 'y' }, NOTES_REASON],
             ['hideTrack', { trackId: 'ghost', hidden: true }, HIDE_REASON],
             ['hideTrack', { trackId: 'track-vox', hidden: 'yes' }, HIDE_REASON],
             ['hideTrack', { trackId: 'track-vox' }, HIDE_REASON],
