@@ -445,6 +445,7 @@ describe('Toaster factory kit history through production Command and document st
         seed();
         const action = masterGain({ kind: 'missing-chunk' }, 0.3);
         await executeAppAction(action);
+        expect(undoStore.value?.past).toHaveLength(1);
         const pads = [{ id: 'peer-kick', volume: 0.42 }];
         mutateCrdtDoc<Root>({
             id: 'root',
