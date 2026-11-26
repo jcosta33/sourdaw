@@ -1546,21 +1546,25 @@ describe('ranked candidates and effect gating', () => {
     });
 });
 
+function namedTracksProject(tracks: readonly { id: string; name: string }[]): ProjectContext {
+    const project = createProjectState();
+    const template = project.tracks[0]!;
+    return {
+        ...project,
+        tracks: tracks.map(({ id, name }) => ({ ...template, id, name })),
+        selectedTrackId: null,
+    };
+}
+
+function tracksNamed(names: readonly string[]): ProjectContext {
+    return namedTracksProject(names.map((name, index) => ({ id: `track-named-${index}`, name })));
+}
+
+function trackIdNamed(project: ProjectContext, name: string): string {
+    return project.tracks.find((track) => track.name === name)!.id;
+}
+
 describe('sibling names the prompt states as closely as each other', () => {
-    function namedTracksProject(names: readonly string[]): ProjectContext {
-        const project = createProjectState();
-        const template = project.tracks[0]!;
-        return {
-            ...project,
-            tracks: names.map((name, index) => ({ ...template, id: `track-named-${index}`, name })),
-            selectedTrackId: null,
-        };
-    }
-
-    function trackIdNamed(project: ProjectContext, name: string): string {
-        return project.tracks.find((track) => track.name === name)!.id;
-    }
-
     it.each([
         ['can you mute Lead?', 'Lead', 'Lead?'],
         ['Mute Pad. Then solo Drums', 'Pad', 'Pad.'],
@@ -1579,7 +1583,7 @@ describe('sibling names the prompt states as closely as each other', () => {
         ['mute Pad...please', 'Pad', 'Pad...'],
         ['mute Synth+', 'Synth', 'Synth+'],
     ])('keeps "%s" ambiguous between %s and %s', (prompt, bare, punctuated) => {
-        const project = namedTracksProject([bare, punctuated]);
+        const project = tracksNamed([bare, punctuated]);
         const siblingIds = [trackIdNamed(project, bare), trackIdNamed(project, punctuated)];
 
         for (const assertedId of siblingIds) {
@@ -1603,14 +1607,14 @@ describe('sibling names the prompt states as closely as each other', () => {
         ['mute Kick (In)', ['Kick-In', 'Kick In', 'Kick (In)'], 'Kick (In)'],
         ['mute fine', ['ﬁne', 'fine'], 'fine'],
     ])('resolves "%s" among %j to the name it types, %s', (prompt, names, typed) => {
-        const project = namedTracksProject(names);
+        const project = tracksNamed(names);
         const typedId = trackIdNamed(project, typed);
 
         expect(resolveTrack(prompt, typedId, project)).toEqual(resolvedTo(typedId, typed, 'exact-name'));
     });
 
     it('keeps "mute Café and Cafe" ambiguous when each sibling is typed', () => {
-        const project = namedTracksProject(['Café', 'Cafe']);
+        const project = tracksNamed(['Café', 'Cafe']);
 
         expect(resolveTrack('mute Café and Cafe', trackIdNamed(project, 'Café'), project)).toMatchObject({
             status: 'rejected',
@@ -1643,7 +1647,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     it.each(['mute Bass & Drums', 'mute Bass + Drums', 'mute Bass/Drums', 'mute Bass; Drums', 'mute Bass.\nDrums'])(
         'never reads Bass Drums across the list punctuation of "%s"',
         (prompt) => {
-            const project = namedTracksProject(['Bass', 'Drums', 'Bass Drums']);
+            const project = tracksNamed(['Bass', 'Drums', 'Bass Drums']);
             const listedIds = [trackIdNamed(project, 'Bass'), trackIdNamed(project, 'Drums')];
 
             for (const assertedId of [...listedIds, trackIdNamed(project, 'Bass Drums')]) {
@@ -1663,7 +1667,7 @@ describe('sibling names the prompt states as closely as each other', () => {
         ['mute Guitar L/R', 'Guitar L/R'],
         ['mute Bass & Drums', 'Bass & Drums'],
     ])('reads "%s" as %s across the separator the name itself has', (prompt, name) => {
-        const project = namedTracksProject([name, 'Bass', 'Drums']);
+        const project = tracksNamed([name, 'Bass', 'Drums']);
         const id = trackIdNamed(project, name);
 
         expect(resolveTrack(prompt, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
@@ -1685,7 +1689,7 @@ describe('sibling names the prompt states as closely as each other', () => {
         ['mute Bob`s Bass', ["Bob's Bass", 'Bass'], "Bob's Bass"],
         ['mute Bob′s Bass', ["Bob's Bass", 'Bass'], "Bob's Bass"],
     ])('reads "%s" among %j as %s across a dash, or punctuation no other name follows', (prompt, names, picked) => {
-        const project = namedTracksProject(names);
+        const project = tracksNamed(names);
         const pickedId = trackIdNamed(project, picked);
 
         expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, picked, 'exact-name'));
@@ -1713,7 +1717,7 @@ describe('sibling names the prompt states as closely as each other', () => {
         ['mute Hi/Hat', ['Hi Hat', 'Hat'], 'Hi Hat'],
         ['mute drums, overhead', ['Drums Overhead', 'Overhead'], 'Drums Overhead'],
     ])('reads "%s" among %j as %s, whose words before the punctuation name no other track', (prompt, names, picked) => {
-        const project = namedTracksProject(names);
+        const project = tracksNamed(names);
         const pickedId = trackIdNamed(project, picked);
 
         expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, picked, 'exact-name'));
@@ -1747,7 +1751,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     });
 
     it.each(['ΟΔΟΣ', 'οδος'])('resolves "mute ΟΔΟΣ" to the exact name %s despite its final sigma', (name) => {
-        const project = namedTracksProject([name, 'Bass']);
+        const project = tracksNamed([name, 'Bass']);
         const id = trackIdNamed(project, name);
 
         expect(resolveTrack('mute ΟΔΟΣ', id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
@@ -1756,7 +1760,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     // The okina (U+02BB), the modifier apostrophe (U+02BC) and the modifier prime (U+02B9) are letters
     // that the text reads as an apostrophe, so the name must read them the same way.
     it.each(['Oʻahu', 'Мʼята', 'Oʼahu', 'Oʹahu'])('resolves "mute %s" to the exact name it types', (name) => {
-        const project = namedTracksProject([name, 'Bass']);
+        const project = tracksNamed([name, 'Bass']);
         const id = trackIdNamed(project, name);
 
         expect(resolveTrack(`mute ${name}`, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
@@ -1770,7 +1774,7 @@ describe('sibling names the prompt states as closely as each other', () => {
         ['mute Oʼahu', "O'ahu"],
         ['mute Oʹahu', "O'ahu"],
     ])('resolves "%s" to %s across the apostrophe each types differently', (prompt, name) => {
-        const project = namedTracksProject([name, 'Bass']);
+        const project = tracksNamed([name, 'Bass']);
         const id = trackIdNamed(project, name);
 
         expect(resolveTrack(prompt, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
@@ -1779,7 +1783,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     it.each(['mute Bob’s Bass', 'mute Bob‘s Bass', 'mute Bob`s Bass', 'mute Bob′s Bass'])(
         'reads "%s" as Bob\'s Bass beside the Bob and Bass tracks it names across the apostrophe',
         (prompt) => {
-            const project = namedTracksProject(["Bob's Bass", 'Bob', 'Bass']);
+            const project = tracksNamed(["Bob's Bass", 'Bob', 'Bass']);
             const pickedId = trackIdNamed(project, "Bob's Bass");
 
             expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, "Bob's Bass", 'exact-name'));
@@ -1797,7 +1801,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     it.each(['mute D’Angelo', 'mute D‘Angelo', 'mute D`Angelo', 'mute D′Angelo'])(
         'reads "%s" as D\'Angelo beside the D and Angelo tracks it splits into',
         (prompt) => {
-            const project = namedTracksProject(["D'Angelo", 'D', 'Angelo']);
+            const project = tracksNamed(["D'Angelo", 'D', 'Angelo']);
             const pickedId = trackIdNamed(project, "D'Angelo");
 
             expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, "D'Angelo", 'exact-name'));
@@ -1813,7 +1817,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     it.each(['mute Oʻahu and Other', 'mute Oʻahu Other'])(
         'keeps "%s" ambiguous between the two tracks it names',
         (prompt) => {
-            const project = namedTracksProject(['Oʻahu', 'Other']);
+            const project = tracksNamed(['Oʻahu', 'Other']);
             const namedIds = [trackIdNamed(project, 'Oʻahu'), trackIdNamed(project, 'Other')];
 
             for (const assertedId of namedIds) {
@@ -1827,7 +1831,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     );
 
     it('never reads Bass Drum across the comma of "mute Bass, Drum Bus" beside a Drum Bus', () => {
-        const project = namedTracksProject(['Bass', 'Bass Drum', 'Drum Bus']);
+        const project = tracksNamed(['Bass', 'Bass Drum', 'Drum Bus']);
         const listedIds = [trackIdNamed(project, 'Bass'), trackIdNamed(project, 'Drum Bus')];
 
         for (const assertedId of [...listedIds, trackIdNamed(project, 'Bass Drum')]) {
@@ -1847,7 +1851,7 @@ describe('sibling names the prompt states as closely as each other', () => {
     ])(
         'resolves "%s" among %j to the name it types once dashes and composition are read alike',
         (prompt, names, typed) => {
-            const project = namedTracksProject(names);
+            const project = tracksNamed(names);
             const typedId = trackIdNamed(project, typed);
 
             expect(resolveTrack(prompt, typedId, project)).toEqual(resolvedTo(typedId, typed, 'exact-name'));
@@ -1856,24 +1860,6 @@ describe('sibling names the prompt states as closely as each other', () => {
 });
 
 describe('a name read by the words a user types for it (#5395, #5450)', () => {
-    function namedTracksProject(tracks: readonly { id: string; name: string }[]): ProjectContext {
-        const project = createProjectState();
-        const template = project.tracks[0]!;
-        return {
-            ...project,
-            tracks: tracks.map(({ id, name }) => ({ ...template, id, name })),
-            selectedTrackId: null,
-        };
-    }
-
-    function tracksNamed(names: readonly string[]): ProjectContext {
-        return namedTracksProject(names.map((name, index) => ({ id: `track-named-${index}`, name })));
-    }
-
-    function trackIdNamed(project: ProjectContext, name: string): string {
-        return project.tracks.find((track) => track.name === name)!.id;
-    }
-
     it.each([
         ['mute the kick', ['01 Kick', 'Vocals'], '01 Kick'],
         ['mute Guitar2', ['Guitar 2', 'Vocals'], 'Guitar 2'],
@@ -1892,6 +1878,9 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         ['mute 808Kick', ['808 Kick', 'Vocals'], '808 Kick'],
         ['mute kit/room/snare', ['Kit Room Snare', 'Room', 'Snare'], 'Kit Room Snare'],
         ['set the kick track volume to 75%', ['01 Kick', '02 Snare'], '01 Kick'],
+        ['mute bobs guitar', ["01 Bob's Guitar", 'Vocals'], "01 Bob's Guitar"],
+        ['set 50% kick', ['01 Kick', '02 Snare'], '01 Kick'],
+        ['mute bass guitar/drums/keys', ['Bass Guitar Drums Keys', 'Bass', 'Drums', 'Keys'], 'Bass Guitar Drums Keys'],
     ])('resolves "%s" among %j to %s and no sibling', (prompt, names, picked) => {
         const project = tracksNamed(names);
         const pickedId = trackIdNamed(project, picked);
@@ -2069,4 +2058,100 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
             });
         }
     );
+
+    function resolveTrackWithNumberForms(prompt: string, assertedId: string, project: ProjectContext) {
+        return resolveAgentReference({
+            prompt,
+            assertedId,
+            capability: 'track',
+            context: project,
+            naming: 'with-number-forms',
+        });
+    }
+
+    it.each([
+        ['mute the vocal', ['Vócal', 'Vocals'], 'Vócal'],
+        ['mute the kick', ['01 Kick', 'Kicks'], 'Kicks'],
+    ])('reads "%s" among %j as %s alone where the other name reads it less closely', (prompt, names, picked) => {
+        const project = tracksNamed(names);
+        const pickedId = trackIdNamed(project, picked);
+
+        expect(resolveTrackWithNumberForms(prompt, pickedId, project)).toMatchObject({
+            status: 'resolved',
+            id: pickedId,
+        });
+        for (const sibling of names.filter((name) => name !== picked)) {
+            expect(resolveTrackWithNumberForms(prompt, trackIdNamed(project, sibling), project)).toMatchObject({
+                status: 'rejected',
+            });
+        }
+    });
+
+    it.each([
+        ['mute kick/snare/room', ['Kick Snare Room', 'Kick', 'Snare', 'Room']],
+        ['mute kick/snare top/room', ['Kick Snare Top Room', 'Kick', 'Snare', 'Snare Top', 'Room']],
+    ])('never resolves "%s" to the first of %j, whose other names it lists', (prompt, names) => {
+        const project = tracksNamed(names);
+
+        expect(resolveTrack(prompt, trackIdNamed(project, names[0]!), project)).toMatchObject({
+            status: 'rejected',
+        });
+    });
+
+    it('reads "mute kick/snare room" as Kick Snare beside Room, since no sibling name opens the words after the slash', () => {
+        const project = tracksNamed(['Kick Snare', 'Kick', 'Room']);
+
+        expect(resolveTrack('mute kick/snare room', trackIdNamed(project, 'Kick Snare'), project)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+            candidateIds: [trackIdNamed(project, 'Kick Snare'), trackIdNamed(project, 'Room')],
+        });
+    });
+
+    it('never reads the id x1 in "mute e\u0301x1", where a combining mark runs into it', () => {
+        const project = namedTracksProject([{ id: 'x1', name: 'Bass' }]);
+
+        expect(resolveTrack('mute e\u0301x1', 'x1', project)).toMatchObject({ status: 'rejected' });
+    });
+
+    describe('a literal id beside a device the user named', () => {
+        function devicesOnVocals(devices: ProjectContext['tracks'][number]['devices']): ProjectContext {
+            const project = namedTracksProject([{ id: 'track-vocals', name: 'Vocals' }]);
+            return {
+                ...project,
+                tracks: [{ ...project.tracks[0]!, deviceCount: devices.length, devices }],
+                availableDeviceTypes: [
+                    { id: 'builtin-eq', name: 'EQ' },
+                    { id: 'builtin-compressor', name: 'Compressor' },
+                ],
+            };
+        }
+
+        it('resolves "bypass fix-it" to the device whose id it is, never the EQ the user named Fix It', () => {
+            const context = devicesOnVocals([
+                { id: 'eq-fix', type: 'builtin-eq', name: 'Fix It', bypassed: false },
+                { id: 'fix-it', type: 'builtin-compressor', name: 'Compressor', bypassed: false },
+            ]);
+
+            expect(
+                resolveAgentReference({ prompt: 'bypass fix-it', assertedId: 'fix-it', capability: 'device', context })
+            ).toMatchObject({ status: 'resolved', id: 'fix-it' });
+        });
+
+        it('resolves "bypass the lead vox" to the EQ the user named Lead Vox, never the device whose id is lead', () => {
+            const context = devicesOnVocals([
+                { id: 'eq-lead', type: 'builtin-eq', name: 'Lead Vox', bypassed: false },
+                { id: 'lead', type: 'builtin-compressor', name: 'Compressor', bypassed: false },
+            ]);
+
+            expect(
+                resolveAgentReference({
+                    prompt: 'bypass the lead vox',
+                    assertedId: 'eq-lead',
+                    capability: 'device',
+                    context,
+                })
+            ).toMatchObject({ status: 'resolved', id: 'eq-lead' });
+        });
+    });
 });

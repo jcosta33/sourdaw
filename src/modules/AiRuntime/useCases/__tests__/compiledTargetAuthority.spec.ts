@@ -3005,6 +3005,28 @@ describe('a figure-led word before the words of an indexed name replaces its ind
     });
 });
 
+describe('a name a literal id reads over lists no selection reference beside it', () => {
+    it('refuses the selected track for "set it and keys volume to 50%" where keys is the id of the Lead track', () => {
+        const lead = createTrack({ id: 'keys', name: 'Lead' });
+        const keysTrack = createTrack({ id: 'track-keys-named', name: 'Keys' });
+        const selected = createTrack({ id: 'track-selected', name: 'Vocals' });
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [lead, keysTrack, selected, master],
+            selectedTrackId: selected.id,
+        };
+        const result = compileAndBridge(
+            'set it and keys volume to 50%',
+            [trackItem('setTrackGain', lead, { gain: 0.5 }), trackItem('setTrackGain', selected, { gain: 0.5 })],
+            [],
+            context
+        );
+
+        expect(targetsOf(result)).toEqual([lead.id]);
+        expect(result.rejections).toEqual([{ index: 1, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK }]);
+    });
+});
+
 describe('a user-set device name states that device (#5450)', () => {
     const fixItVocals = createTrack({
         id: 'track-fix-it-vocals',
