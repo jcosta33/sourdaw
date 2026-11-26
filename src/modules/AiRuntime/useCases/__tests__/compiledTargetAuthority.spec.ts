@@ -3061,6 +3061,28 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
         expect(targetsOf(result)).toEqual([mixVocals.id]);
     });
 
+    // A continuation is the track and its figure alone, as a decibel continuation is; a lead word asks.
+    it.each([['set Vocals volume to 75%, plus Drums to 60%'], ['set Vocals volume to 75%, also Drums to 60%']])(
+        'refuses Drums for "%s", whose clause opens on a word no continuation takes',
+        (prompt) => {
+            const result = compileMix(prompt, [
+                trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+                trackItem('setTrackGain', mixDrums, { gain: 0.6 }),
+            ]);
+
+            expect(targetsOf(result)).toEqual([mixVocals.id]);
+            expect(result.rejections.map((rejection) => rejection.index)).toEqual([1]);
+        }
+    );
+
+    it('refuses Vocals at 75% for "set Vocals volume to 75%, Drums to 60%, Vocals to 50%", which states Vocals twice', () => {
+        const result = compileMix('set Vocals volume to 75%, Drums to 60%, Vocals to 50%', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+        ]);
+
+        expect(result.rejections).not.toEqual([]);
+    });
+
     it('refuses Drums for "set Vocals volume to 75%, Drums to 60% of Bass", which says more than a level', () => {
         const result = compileMix('set Vocals volume to 75%, Drums to 60% of Bass', [
             trackItem('setTrackGain', mixVocals, { gain: 0.75 }),

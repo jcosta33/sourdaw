@@ -1297,7 +1297,7 @@ function isPercentLevelContinuationClause(
     if (continuation === null) {
         return false;
     }
-    const start = continuation[1].length;
+    const start = continuation.index + continuation[1].length;
     const end = start + continuation[2].length;
     return getNamedReferenceSpans(clause.text, context.tracks).some(
         (span) => span.start === start && span.end === end

@@ -353,6 +353,44 @@ describe('a compiled pick reads the request less the other instructions that nam
             ).toEqual(verdict);
         });
 
+        it('refuses Keys for "Mute Keys, then pan It left", whose "It" names a track', () => {
+            const itMix = createProjectContext([keys, createTrack('track-it', 'It')]);
+
+            expect(
+                admitPick('Mute Keys, then pan It left', 'pan It left', (instruction) =>
+                    pickTerms(trackNamed('Keys'), ['track-keys'], instruction, itMix)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
+        it('admits Keys for "Mute Keys, then pan the choir like it", whose "choir" starts no word of Bigchoir', () => {
+            const choirMix = createProjectContext([keys, createTrack('track-bigchoir', 'Bigchoir')]);
+
+            expect(
+                admitPick('Mute Keys, then pan the choir like it', 'pan the choir like it', (instruction) =>
+                    pickTerms(trackNamed('Keys'), ['track-keys'], instruction, choirMix)
+                )
+            ).toEqual(ADMITTED);
+        });
+
+        it('admits Keys for the "pan left" call of "Mute Keys, then pan left and it right"', () => {
+            expect(
+                admitPick('Mute Keys, then pan left and it right', 'pan left', (instruction) =>
+                    pickTerms(trackNamed('Keys'), ['track-keys'], instruction)
+                )
+            ).toEqual(ADMITTED);
+        });
+
+        it('refuses Drums for "mute Vocals and Drums, then set Keys volume to 75%", whose mute runs past "and"', () => {
+            const prompt = 'mute Vocals and Drums, then set Keys volume to 75%';
+
+            expect(
+                admitPick(prompt, 'set Keys volume to 75%', (instruction) =>
+                    pickTerms(trackNamed('Drums'), ['track-drums'], instruction)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
         it('admits Vocals for "Mute Vocals, then set the tempo to 120, then pan them left"', () => {
             const prompt = 'Mute Vocals, then set the tempo to 120, then pan them left';
 
@@ -450,6 +488,20 @@ describe('a role-family pick admits only the roles the request narrows the famil
         expect(
             createAdmission('turn down the vocals and the lead vocal')(familyTerms(vocalFamily, ['track-bv']))
         ).toEqual(ADMITTED);
+    });
+
+    it('admits both vocals for "turn down the lead vocal and the backing vocals by 3 dB", which states both roles', () => {
+        expect(
+            createAdmission('turn down the lead vocal and the backing vocals by 3 dB')(
+                familyTerms(vocalFamily, ['track-lead-vox', 'track-bv'])
+            )
+        ).toEqual(ADMITTED);
+    });
+
+    it('refuses the backing vocal for "turn down the lead vocals by 3 dB", the role in its plural', () => {
+        expect(createAdmission('turn down the lead vocals by 3 dB')(familyTerms(vocalFamily, ['track-bv']))).toEqual(
+            UNAUTHORIZED
+        );
     });
 
     it('refuses a track with no canonical role for "turn down the lead vocal"', () => {
