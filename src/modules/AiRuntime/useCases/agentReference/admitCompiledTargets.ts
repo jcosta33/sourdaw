@@ -2,13 +2,21 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
-import { type SemanticCommandListMatch, type SemanticCommandListSelector } from '../../models/SemanticCommandList';
+import {
+    SEMANTIC_COMMAND_LIST_ROLE_FAMILIES,
+    type SemanticCommandListMatch,
+    type SemanticCommandListRoleFamily,
+    type SemanticCommandListSelector,
+} from '../../models/SemanticCommandList';
 
+import { blankRange } from './blankRange';
 import {
     findAgentReferenceNameSpans,
     type AgentReferenceNameForms,
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
+import { findNamedRoleFamilies } from './findNamedRoleFamilies';
+import { findNarrowerRoleSpans } from './findNarrowerRoleSpans';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -17,9 +25,12 @@ import { maskProjectReferences } from './groundingStrategies/maskProjectReferenc
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
+import { holdsFragmentAtWordStart } from './holdsFragmentAtWordStart';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
+import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
+import { scopeToInstruction } from './scopeToInstruction';
 
 /*
  * Compiled target authority (#5295).
@@ -51,19 +62,30 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * Vocals EQ" and "bypass Vocals' EQ" never state the EQ on Keys, nor "mute the Vocals Verse clip" the
  * Verse clip on Keys; a request naming and selecting no track ("bypass every EQ") leaves the owner
  * open, and so does a selector that also picks by kind, role, role family, tag, device type or
- * condition ("bypass the EQ on Vocals and all MIDI tracks"). The text read is the whole request less
- * its restrictions and the values any call of the batch writes, so an instruction may pick by a name
- * an earlier one states ("turn Vocals down and pan it left"). A selection reference ("this track",
- * "the selected track", "it" or "its" outside every object name for the selected track) that resolves
- * to the picked objects states those picks only when the request names no object of that kind or
+ * condition ("bypass the EQ on Vocals and all MIDI tracks"). The text read is the whole request less its
+ * restrictions, the values any call of the batch writes and every other instruction naming its own
+ * tracks, where an instruction is the clause the direct route grounds an action in with the clauses
+ * continuing it, so another instruction's name never picks the call's target ("set Vocals volume to
+ * 75% and mute Keys" states no Keys gain). Text giving no
+ * instruction always counts ("Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums").
+ * An instruction that names no track or narrower role of its own, or none before it refers back with
+ * "it", "them" or "that track", keeps the nearest earlier instruction naming tracks ("Mute Vocals and
+ * Keys, then pan them left"); a call no clause grounds reads the whole request. A selection reference ("this track", "the selected track", "it" or "its"
+ * outside every object name for the selected track) that resolves to the picked objects states those
+ * picks only when the text names no object of that kind, by name, id or, for a track, position, or
  * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
- * volume so it sits better" never stands for the selected Keys, nor "bypass the EQ on Play It".
+ * volume so it sits better" never stands for the selected Keys, nor "set the first track volume so it
+ * sits better", nor "bypass the EQ on Play It". A fragment picks a target only where it starts a
+ * word of the target's name, a camel-case one included, so "guitar" picks Guitar1 and BassGuitar and
+ * "pad" never picks Launchpad.
  *
- * Literal targets, owner-track picks in a request that names and selects no track, and selections
- * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
- * compiler resolved them, subject to the protections above. Supported named prohibitions protect
- * their objects rather than state picks. Remaining named-negation and positional-reference gaps
- * belong to #5385; stricter selector-scope authority remains with #5351 and #5353.
+ * A role-family selection is admitted only for the roles the instruction states: one naming the
+ * family only through a narrower role phrase holding its word ("the lead vocal") admits the tracks of
+ * that role alone. Literal targets, owner-track picks in a request that names and selects no track,
+ * and selections by role, a role family the instruction names, kind, device type, tag, condition or no
+ * filter at all, are taken as the compiler resolved them, subject to the protections above. The
+ * request's protections, named, by role family or by role, read by the shared protection reader,
+ * subtract their objects ("..., not the vocals", "but not the backing vocals", "skip Keys").
  */
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -103,6 +125,8 @@ export type CompiledTargetCallTerms = {
     referenceResolved: boolean;
     /** The selector the call's targets came from, absent when the compiler named every one literally. */
     selectorTerms?: CompiledSelectorTerms;
+    /** Where the request states the instruction asking for this call's change; absent when no clause does. */
+    instruction?: AgentReferenceTextRange | undefined;
     targetIds: readonly string[];
 };
 
@@ -290,10 +314,13 @@ function listsSelectionBesideName(text: string, capability: Capability, context:
 
 /**
  * Whether the text's selection reference may stand for the selection: when the text names no object
- * of the capability, or lists the reference beside one it names.
+ * of the capability, a track by position included ("the first track"), or lists the reference beside
+ * one it names.
  */
 function readsSelectionReference(text: string, capability: Capability, context: ProjectContext): boolean {
-    return !namesObjectByName(text, capability, context) || listsSelectionBesideName(text, capability, context);
+    const namesObject =
+        capability === 'track' ? namesTrack(text, context) : namesObjectByName(text, capability, context);
+    return !namesObject || listsSelectionBesideName(text, capability, context);
 }
 
 /**
@@ -377,10 +404,6 @@ function getRestrictionRanges(request: MaskedRequest, catalog: GroundingCatalog)
     }));
 }
 
-function blankRange(text: string, { start, end }: AgentReferenceTextRange): string {
-    return `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`;
-}
-
 /**
  * The text with the last occurrence of each written value blanked out: the value ("rename Kick to
  * Bass Drum") follows the target it is written to, and "rename Kick to Kick In" keeps the earlier
@@ -447,11 +470,36 @@ function getProtectedIds(
     return { protectedIds, genericRestrictionIds };
 }
 
+/** Whether the text names a track by whole name, id or position. */
+function namesTrack(text: string, context: ProjectContext): boolean {
+    return namesObjectByName(text, 'track', context) || readTrackPosition(text) !== undefined;
+}
+
+/** Whether the text names a narrower role of any family, outside every object name: "the lead vocal". */
+function namesNarrowerRole(text: string, context: ProjectContext): boolean {
+    return findNarrowerRoleSpans(maskObjectNames(text, context), SEMANTIC_COMMAND_LIST_ROLE_FAMILIES).length > 0;
+}
+
+/** "them", "their" or "those", which refer back to the tracks an earlier instruction states. */
+const PLURAL_BACK_REFERENCE = /\b(?:them|their|those)\b/iu;
+
 /**
- * The text the targets are read from: the whole request, so a later instruction may pick by a name
- * an earlier one states ("mute Vocals and bypass the EQ on it"), with its restrictions and the values
- * the batch writes blanked, so a name stated only to protect an object or as a new name is never
- * read as picking a target.
+ * Where the instruction first refers back with "it", "its", "them", "their", "those" or "that track",
+ * outside every object name.
+ */
+function findBackReference(instruction: string, context: ProjectContext): number | undefined {
+    const masked = maskObjectNames(instruction, context);
+    const pronoun = SELECTION_PRONOUN.exec(masked)?.index;
+    const plural = PLURAL_BACK_REFERENCE.exec(masked)?.index;
+    const demonstrative = DEMONSTRATIVE_TRACK_REFERENCE.exec(normalizeAgentReferenceText(instruction))?.index;
+    const positions = [pronoun, plural, demonstrative].filter((position) => position !== undefined);
+    return positions.length === 0 ? undefined : Math.min(...positions);
+}
+
+/**
+ * The text the targets are read from: the whole request with its restrictions, the values the batch
+ * writes and every other instruction naming its own tracks blanked, so a name stated only by another
+ * instruction, to protect an object or as a new name is never read as picking a target.
  */
 function getEvidenceText(
     input: RequestReadingInput,
@@ -459,7 +507,54 @@ function getEvidenceText(
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): string {
     const unrestricted = restrictionRanges.reduce(blankRange, request.prompt);
-    return maskWrittenValues(unrestricted, input.valueTexts, input.context);
+    const unwritten = maskWrittenValues(unrestricted, input.valueTexts, input.context);
+    if (input.instruction === undefined) {
+        return unwritten;
+    }
+    const { context, catalog } = input;
+    const instruction = extendInstruction(request, input.instruction, catalog);
+    return scopeToInstruction({
+        text: unwritten,
+        clauses: request.clauses,
+        instruction,
+        reader: {
+            namesTracks: (text) => namesTrack(text, context) || namesNarrowerRole(text, context),
+            findBackReference: (text) => findBackReference(text, context),
+            givesInstruction: (masked) => resolveClauseActionIntent(masked, catalog) !== null,
+            extendInstruction: (clause) => extendInstruction(request, clause, catalog),
+        },
+    });
+}
+
+/**
+ * The call's clause with every following clause that continues it rather than giving another
+ * instruction: "add an EQ to Vocals and Keys" and "set Vocals volume to 75%, Drums to 60%" run whole.
+ */
+function extendInstruction(
+    request: MaskedRequest,
+    clause: AgentReferenceTextRange,
+    catalog: GroundingCatalog
+): AgentReferenceTextRange {
+    const end = Math.max(clause.end, getInstructionEnd(request, clause.start, catalog));
+    return { start: clause.start, end: extendOverListLines(request, end, catalog) };
+}
+
+/**
+ * Past the lines a clause ending on a colon introduces ("Turn down these tracks by 3 dB:\n- Bass\n-
+ * Drums"), up to the first line that gives an instruction of its own.
+ */
+function extendOverListLines(request: MaskedRequest, end: number, catalog: GroundingCatalog): number {
+    if (!request.prompt.slice(0, end).trimEnd().endsWith(':')) {
+        return end;
+    }
+    let listEnd = end;
+    for (const line of request.maskedPrompt.slice(end).matchAll(/[^\n]+/gu)) {
+        if (resolveClauseActionIntent(line[0], catalog) !== null) {
+            break;
+        }
+        listEnd = end + line.index + line[0].length;
+    }
+    return listEnd;
 }
 
 /** The whole names, name fragments and owner tracks a selector picks its targets by. */
@@ -505,6 +600,15 @@ function getObjectName(id: string, context: ProjectContext): string | undefined 
     return context.adjustmentLayers?.find((candidate) => candidate.id === id)?.name;
 }
 
+/**
+ * Whether the object's name holds the fragment at the start of a word, as the request must state it:
+ * the compiler's candidates match it anywhere, so "pad" also reaches Launchpad.
+ */
+function namesFragmentAsWord(id: string, fragment: string, context: ProjectContext): boolean {
+    const name = getObjectName(id, context);
+    return name === undefined || holdsFragmentAtWordStart(name, fragment);
+}
+
 /** Whether the range reaches past the inner range on either side while covering all of it. */
 function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceTextRange): boolean {
     const covers = range.start <= inner.start && inner.end <= range.end;
@@ -512,13 +616,9 @@ function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceText
 }
 
 /**
- * Whether the text states the fragment for every target it picks: as a whole word, in either number,
- * somewhere no range states a longer whole name of another object, so "Bus" inside "the Drum Bus"
- * states the Drum Bus and never the FX Bus. A whole name read no further than the fragment leaves it
- * standing: "the guitars" states the Guitar track and the "guitar" fragment for Guitar 2 alike. A
- * target a track owns must also sit on a track the text names or selects, when it names or selects
- * any, so "the Vocals EQ" never states the EQ on Keys, nor "the Verse clip on Vocals" the Verse clip
- * on Keys.
+ * Whether the text states the fragment for every target it picks: each target's name holds it at a
+ * word start, the text states it as a word outside any longer name of another object, and a target a
+ * track owns sits on a track the text names or selects, when it names or selects any.
  */
 function statesFragment(
     { fragment, occurrences }: FragmentReading,
@@ -532,6 +632,7 @@ function statesFragment(
     const { nameRanges, reachableIds } = evidence;
     return pickedIds.every(
         (targetId) =>
+            namesFragmentAsWord(targetId, fragment, input.context) &&
             (reachableIds === null || !isTrackOwned(targetId, input.context) || reachableIds.has(targetId)) &&
             occurrences.some((occurrence) =>
                 nameRanges.every((nameRange) => nameRange.id === targetId || !extendsBeyond(nameRange, occurrence))
@@ -619,6 +720,8 @@ type RequestReading = {
     picks: NamePicks;
     /** Read only for a call that must prove its selector's picks. */
     evidence: () => EvidenceReading;
+    /** Per role family the selector picks by, the roles the instruction states it through, when narrower. */
+    statedFamilyRoles: () => ReadonlyArray<ReadonlySet<string>>;
 };
 
 function readOnce<Reading>(read: () => Reading): () => Reading {
@@ -629,14 +732,8 @@ function readOnce<Reading>(read: () => Reading): () => Reading {
     };
 }
 
-function readEvidence(
-    input: RequestReadingInput,
-    picks: NamePicks,
-    request: MaskedRequest,
-    restrictionRanges: readonly AgentReferenceTextRange[]
-): EvidenceReading {
+function readEvidence(input: RequestReadingInput, picks: NamePicks, text: string): EvidenceReading {
     const { capability, context, dependencyId } = input;
-    const text = getEvidenceText(input, request, restrictionRanges);
     const objectNames = getProjectObjectNames(context);
     return {
         text,
@@ -654,15 +751,72 @@ function readEvidence(
     };
 }
 
+/** The role families a selector picks its targets by. */
+function getFamilyPicks(input: RequestReadingInput): SemanticCommandListRoleFamily[] {
+    const terms = input.selectorTerms;
+    if (terms === undefined || terms.targetArgument !== input.argument) {
+        return [];
+    }
+    const predicates = [terms.match?.all, terms.match?.any].flatMap((list) => list ?? []);
+    return predicates.flatMap((predicate) => ('roleFamily' in predicate ? [predicate.roleFamily] : []));
+}
+
+/**
+ * The narrower roles the text names a family through, when it names the family only that way: "turn
+ * down the lead vocal" names the lead vocal, never every vocal. Empty when the text names the family
+ * itself outside every such phrase ("the vocals") or names no narrower role of it, which leaves the
+ * family as the compiler resolved it.
+ */
+function readStatedNarrowerRoles(
+    text: string,
+    family: SemanticCommandListRoleFamily,
+    context: ProjectContext
+): ReadonlySet<string> {
+    const masked = maskObjectNames(text, context);
+    const roleSpans = findNarrowerRoleSpans(masked, [family]);
+    const outsideRoles = roleSpans.reduce(blankRange, masked);
+    if (roleSpans.length === 0 || findNamedRoleFamilies(outsideRoles, [family]).named.includes(family)) {
+        return new Set();
+    }
+    return new Set(roleSpans.map((span) => span.role));
+}
+
+/** The canonical role of a track, or of the track that owns the object. */
+function getOwnerRole(id: string, context: ProjectContext): string | undefined {
+    const owner = context.tracks.find(
+        (track) => track.id === id || getTrackOwnedObjectIds(track.id, context).includes(id)
+    );
+    return owner?.canonicalRole?.role;
+}
+
+function holdsStatedRole(id: string, roles: ReadonlySet<string>, context: ProjectContext): boolean {
+    const role = getOwnerRole(id, context);
+    return role !== undefined && roles.has(role);
+}
+
 function readRequest(input: RequestReadingInput): RequestReading {
     const request = maskRequest(input.prompt, input.context);
     const restrictionRanges = getRestrictionRanges(request, input.catalog);
     const picks = getNamePicks(input);
+    const text = readOnce(() => getEvidenceText(input, request, restrictionRanges));
     return {
         ...getProtectedIds(input, request, restrictionRanges),
         picks,
-        evidence: readOnce(() => readEvidence(input, picks, request, restrictionRanges)),
+        evidence: readOnce(() => readEvidence(input, picks, text())),
+        statedFamilyRoles: readOnce(() =>
+            getFamilyPicks(input).map((family) => readStatedNarrowerRoles(text(), family, input.context))
+        ),
     };
+}
+
+/** Whether every target holds a role the instruction states for each family it names only by narrower roles. */
+function staysWithinStatedRoles(input: CompiledTargetAuthorityInput, reading: RequestReading): boolean {
+    return reading
+        .statedFamilyRoles()
+        .every(
+            (roles) =>
+                roles.size === 0 || input.targetIds.every((targetId) => holdsStatedRole(targetId, roles, input.context))
+        );
 }
 
 function admitTargets(input: CompiledTargetAuthorityInput, reading: RequestReading): CompiledTargetAuthority {
@@ -674,6 +828,9 @@ function admitTargets(input: CompiledTargetAuthorityInput, reading: RequestReadi
     }
     if (input.referenceResolved) {
         return ADMITTED;
+    }
+    if (!staysWithinStatedRoles(input, reading)) {
+        return UNAUTHORIZED;
     }
     const { picks } = reading;
     if (picks.names.length === 0 && picks.fragments.length === 0 && picks.trackIds.length === 0) {
@@ -691,7 +848,9 @@ function readsAlike(left: CompiledTargetCallTerms, right: CompiledTargetCallTerm
         left.selectorTerms === right.selectorTerms &&
         left.argument === right.argument &&
         left.capability === right.capability &&
-        left.dependencyId === right.dependencyId
+        left.dependencyId === right.dependencyId &&
+        left.instruction?.start === right.instruction?.start &&
+        left.instruction?.end === right.instruction?.end
     );
 }
 

@@ -165,3 +165,179 @@ describe('compiled target admission across one batch', () => {
         ]);
     });
 });
+
+const vocals = createTrack('track-vocals', 'Vocals');
+const keys = createTrack('track-keys', 'Keys');
+const drums = createTrack('track-drums', 'Drums');
+const mix = createProjectContext([vocals, keys, drums]);
+
+function roleTrack(id: string, name: string, role: string, devices: ProjectContextTrack['devices'] = []) {
+    return createTrack(id, name, {
+        devices,
+        canonicalRole: { role, source: 'authored', evidence: 'authored-role' },
+    });
+}
+
+const leadVox = roleTrack('track-lead-vox', 'Lead Vox', 'lead vocal', [
+    { id: 'device-lead-eq', name: 'EQ', type: 'builtin-eq', bypassed: false },
+]);
+const backingVox = roleTrack('track-bv', 'BV', 'backing vocal', [
+    { id: 'device-bv-eq', name: 'EQ', type: 'builtin-eq', bypassed: false },
+]);
+const untagged = createTrack('track-untagged', 'Untagged');
+const roles = createProjectContext([leadVox, backingVox, untagged]);
+
+/** Where the prompt states the clause, as the direct route hands a call its instruction. */
+function clauseOf(prompt: string, clause: string): { start: number; end: number } {
+    const start = prompt.indexOf(clause);
+    if (start < 0) {
+        throw new Error(`"${clause}" is not in "${prompt}"`);
+    }
+    return { start, end: start + clause.length };
+}
+
+function trackNamed(name: string): CompiledSelectorTerms {
+    return { targetArgument: 'trackId', where: { name } };
+}
+
+function pickTerms(
+    selectorTerms: CompiledSelectorTerms,
+    targetIds: readonly string[],
+    instruction: { start: number; end: number } | undefined,
+    context: ProjectContext = mix
+): CompiledTargetCallTerms {
+    return {
+        argument: 'trackId',
+        capability: 'track',
+        context,
+        referenceResolved: false,
+        selectorTerms,
+        instruction,
+        targetIds,
+    };
+}
+
+function admitPick(
+    prompt: string,
+    clause: string,
+    terms: (instruction: { start: number; end: number }) => CompiledTargetCallTerms
+) {
+    return createAdmission(prompt)(terms(clauseOf(prompt, clause)));
+}
+
+describe('a compiled pick reads the request less the other instructions that name their own tracks', () => {
+    it('admits Keys for "Mute Vocals. Keys too.", whose second sentence gives no instruction', () => {
+        expect(
+            admitPick('Mute Vocals. Keys too.', 'Mute Vocals', (instruction) =>
+                pickTerms(trackNamed('Keys'), ['track-keys'], instruction)
+            )
+        ).toEqual(ADMITTED);
+    });
+
+    it.each([
+        ['Mute Vocals and Keys, then pan them like Drums', 'pan them like Drums'],
+        ['Mute Vocals and Keys, then lower their volume like Drums', 'lower their volume like Drums'],
+        ['Mute Vocals and Keys, then pan those like Drums', 'pan those like Drums'],
+        ['Mute Keys, then pan it like Drums', 'pan it like Drums'],
+        ['Mute Keys, then pan that track like Drums', 'pan that track like Drums'],
+        ['Mute Vocals and Keys, then pan them like Drums with its width', 'pan them like Drums with its width'],
+    ])('admits Keys for "%s", which refers back before it names Drums', (prompt, clause) => {
+        expect(
+            admitPick(prompt, clause, (instruction) => pickTerms(trackNamed('Keys'), ['track-keys'], instruction))
+        ).toEqual(ADMITTED);
+    });
+
+    it('refuses Keys for "Mute Keys, then pan Drums like it", which names Drums before referring back', () => {
+        expect(
+            admitPick('Mute Keys, then pan Drums like it', 'pan Drums like it', (instruction) =>
+                pickTerms(trackNamed('Keys'), ['track-keys'], instruction)
+            )
+        ).toEqual(UNAUTHORIZED);
+    });
+
+    it('reads each instruction of one batch apart, whatever start or end the two share', () => {
+        const prompt = 'set Vocals volume to 75% and mute Keys';
+        const whole = { start: 0, end: prompt.length };
+        const keysPick = trackNamed('Keys');
+        const vocalsPick = trackNamed('Vocals');
+
+        expect(
+            admitInOneBatch(prompt, [
+                pickTerms(keysPick, ['track-keys'], whole),
+                pickTerms(keysPick, ['track-keys'], clauseOf(prompt, 'set Vocals volume to 75%')),
+            ])
+        ).toEqual([
+            { batch: ADMITTED, fresh: ADMITTED },
+            { batch: UNAUTHORIZED, fresh: UNAUTHORIZED },
+        ]);
+        expect(
+            admitInOneBatch(prompt, [
+                pickTerms(vocalsPick, ['track-vocals'], whole),
+                pickTerms(vocalsPick, ['track-vocals'], { start: prompt.indexOf('mute Keys'), end: prompt.length }),
+            ])
+        ).toEqual([
+            { batch: ADMITTED, fresh: ADMITTED },
+            { batch: UNAUTHORIZED, fresh: UNAUTHORIZED },
+        ]);
+    });
+});
+
+describe('a role-family pick admits only the roles the request narrows the family to', () => {
+    const vocalFamily: CompiledSelectorTerms = { targetArgument: 'trackId', match: { all: [{ roleFamily: 'vocal' }] } };
+
+    function familyTerms(selectorTerms: CompiledSelectorTerms, targetIds: readonly string[], argument = 'trackId') {
+        return { ...pickTerms(selectorTerms, targetIds, undefined, roles), argument };
+    }
+
+    it('refuses a set holding a backing vocal for "group the lead vocal"', () => {
+        expect(
+            createAdmission('group the lead vocal')(familyTerms(vocalFamily, ['track-lead-vox', 'track-bv']))
+        ).toEqual(UNAUTHORIZED);
+    });
+
+    it('admits a backing vocal for "turn down the vocals and the lead vocal", which names the family itself', () => {
+        expect(
+            createAdmission('turn down the vocals and the lead vocal')(familyTerms(vocalFamily, ['track-bv']))
+        ).toEqual(ADMITTED);
+    });
+
+    it('refuses a track with no canonical role for "turn down the lead vocal"', () => {
+        expect(createAdmission('turn down the lead vocal')(familyTerms(vocalFamily, ['track-untagged']))).toEqual(
+            UNAUTHORIZED
+        );
+    });
+
+    it('reads a family any of the match predicates picks by', () => {
+        const anyVocal: CompiledSelectorTerms = {
+            targetArgument: 'trackId',
+            match: { any: [{ roleFamily: 'vocal' }] },
+        };
+
+        expect(createAdmission('turn down the lead vocal')(familyTerms(anyVocal, ['track-bv']))).toEqual(UNAUTHORIZED);
+    });
+
+    it("reads a selector's family only for the argument it resolves", () => {
+        expect(createAdmission('turn down the lead vocal')(familyTerms(vocalFamily, ['track-bv'], 'busId'))).toEqual(
+            ADMITTED
+        );
+    });
+
+    it('reads the role of the track owning a device the family pick reaches', () => {
+        const vocalEqs: CompiledSelectorTerms = {
+            targetArgument: 'deviceId',
+            match: { all: [{ roleFamily: 'vocal' }] },
+        };
+        const eqTerms = (targetId: string): CompiledTargetCallTerms => ({
+            argument: 'deviceId',
+            capability: 'device',
+            context: roles,
+            referenceResolved: false,
+            selectorTerms: vocalEqs,
+            targetIds: [targetId],
+        });
+        const admission = createAdmission('bypass the EQ on the lead vocal');
+
+        expect(admission(eqTerms('device-lead-eq'))).toEqual(ADMITTED);
+        expect(admission(eqTerms('device-bv-eq'))).toEqual(UNAUTHORIZED);
+    });
+});

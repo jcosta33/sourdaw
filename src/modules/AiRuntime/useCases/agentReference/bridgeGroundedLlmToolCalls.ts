@@ -81,6 +81,7 @@ import {
     resolveBatchLocalBindingProducer,
 } from './batchLocalBindingProducers';
 import { type BoundRefinementValue, type RefinementClause } from './bindRefinementFigure';
+import { blankRange } from './blankRange';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
@@ -1278,12 +1279,36 @@ function isLevelContinuationClause(
 }
 
 /**
+ * Whether the clause continues a level the scope before it states in percent onto another track:
+ * "Drums to 60%" after "set Vocals volume to 75%".
+ */
+function isPercentLevelContinuationClause(maskedClause: string, previousScope: ActionPromptScope | undefined): boolean {
+    return (
+        previousScope !== undefined &&
+        /(?:\d|\.\d)%/u.test(previousScope.masked) &&
+        /^\s*(?:(?:the|a|an)\s+)?□+\s+(?:at|to)\s+(?:\d+(?:\.\d+)?|\.\d+)\s*%\s*$/iu.test(maskedClause)
+    );
+}
+
+/** Whether the clause continues the level change before it in decibels or in percent onto another track. */
+function continuesLevelChange(
+    maskedClause: string,
+    decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[],
+    previousScope: ActionPromptScope | undefined
+): boolean {
+    return (
+        isLevelContinuationClause(maskedClause, decibelLevelForms) ||
+        isPercentLevelContinuationClause(maskedClause, previousScope)
+    );
+}
+
+/**
  * The scope extended over a continuation clause. The continuation's reference joins the source
  * side; the destination stays the one the scope already named.
  */
 function mergeLevelContinuation(
     scope: PromptClauseScope,
-    continuation: { end: number },
+    continuation: { start: number; end: number },
     prompt: string,
     maskedPrompt: string
 ): PromptClauseScope {
@@ -1291,8 +1316,10 @@ function mergeLevelContinuation(
         destination: getTargetPromptScope(scope, 'destination'),
         source: getTargetPromptScope(scope, 'source'),
     };
+    const earlierContinuationStarts = scope.continuationStarts ?? [];
     return {
         ...scope,
+        continuationStarts: [...earlierContinuationStarts, continuation.start - scope.start],
         end: continuation.end,
         masked: maskedPrompt.slice(scope.start, continuation.end),
         referenceSlots: (scope.referenceSlots ?? 1) + 1,
@@ -1828,7 +1855,7 @@ function resolveActionPromptScope({
         const previousScope = matchingScopes.at(-1);
         if (
             continuesScope &&
-            isLevelContinuationClause(clause.masked, decibelLevelForms) &&
+            continuesLevelChange(clause.masked, decibelLevelForms, previousScope) &&
             !namesLevelOutsideActionFader(actionName, clause, context)
         ) {
             if (previousScope) {
@@ -2962,19 +2989,13 @@ function getSendLaneBusId(groundedArguments: Record<string, unknown>): string | 
         : undefined;
 }
 
-/**
- * The decibel figures a scope naming several tracks binds to this call's own track, or `undefined`
- * when the scope names fewer than two and every figure it states is this call's. The call's track
- * is its first grounded non-destination target; tracks the call's other targets name, such as the
- * bus a send feeds, are not candidates.
- */
-
-function getReferenceBoundDecibelFigures(
+/** The track a call acts on and every track its scope names beside it, when the scope names two or more. */
+function getAnchorReferences(
     actionScope: ActionPromptScope,
     targetRules: GroundingRules['targetRules'],
     groundedArguments: Record<string, unknown>,
     context: ProjectContext
-): readonly PromptDecibelFigure[] | undefined {
+): { anchorId: string; references: readonly PromptReferenceSpan[] } | undefined {
     const anchorRule = targetRules.find(
         (targetRule) =>
             targetRule.promptRole !== 'destination' && typeof groundedArguments[targetRule.argument] === 'string'
@@ -2998,8 +3019,85 @@ function getReferenceBoundDecibelFigures(
     if (new Set(references.map((reference) => reference.id)).size < 2) {
         return undefined;
     }
+    return { anchorId, references };
+}
+
+/**
+ * The decibel figures a scope naming several tracks binds to this call's own track, or `undefined`
+ * when the scope names fewer than two and every figure it states is this call's. The call's track
+ * is its first grounded non-destination target; tracks the call's other targets name, such as the
+ * bus a send feeds, are not candidates.
+ */
+function getReferenceBoundDecibelFigures(
+    actionScope: ActionPromptScope,
+    targetRules: GroundingRules['targetRules'],
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): readonly PromptDecibelFigure[] | undefined {
+    const anchored = getAnchorReferences(actionScope, targetRules, groundedArguments, context);
+    if (anchored === undefined) {
+        return undefined;
+    }
     const figures = classifyPromptDecibelFigures(actionScope.masked, findPromptNumbers(actionScope.masked));
-    return bindDecibelFiguresToReferences(actionScope.text, references, figures).get(anchorId) ?? [];
+    return bindDecibelFiguresToReferences(actionScope.text, anchored.references, figures).get(anchored.anchorId) ?? [];
+}
+
+/**
+ * The figures a scope gives the call's own track. In a scope that took in continuation clauses each
+ * clause states its own track's figures, wherever they stand in it ("set the volume to 75% on Vocals,
+ * Drums to 60%"), so the anchor reads the figures of the one clause naming it; otherwise a figure
+ * binds to the nearest track named before it.
+ */
+function getAnchorNumbers<Figure extends { index: number }>(
+    actionScope: ActionPromptScope,
+    anchored: { anchorId: string; references: readonly PromptReferenceSpan[] },
+    numbers: readonly Figure[]
+): readonly Figure[] {
+    if (actionScope.continuationStarts === undefined) {
+        return (
+            bindDecibelFiguresToReferences(actionScope.text, anchored.references, numbers).get(anchored.anchorId) ?? []
+        );
+    }
+    const starts = [0, ...actionScope.continuationStarts];
+    const clauses = starts.map((start, index) => ({ start, end: starts[index + 1] ?? actionScope.text.length }));
+    const anchorClauses = clauses.filter((clause) =>
+        anchored.references.some(
+            (reference) =>
+                reference.id === anchored.anchorId && reference.start >= clause.start && reference.end <= clause.end
+        )
+    );
+    const anchorClause = anchorClauses[0];
+    if (anchorClauses.length !== 1 || anchorClause === undefined) {
+        return [];
+    }
+    return numbers.filter((number) => number.index >= anchorClause.start && number.index < anchorClause.end);
+}
+
+/**
+ * The scope a call's values are read from: where the scope names several tracks and gives the call's
+ * own track a figure, the figures it gives the others are blanked, so in "set Vocals volume to 75%,
+ * Drums to 60%" the Drums call reads 60% and never the 75% the request gives Vocals.
+ */
+function getAnchorValueScope(
+    actionScope: ActionPromptScope,
+    targetRules: GroundingRules['targetRules'],
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): ActionPromptScope {
+    const anchored = getAnchorReferences(actionScope, targetRules, groundedArguments, context);
+    if (anchored === undefined) {
+        return actionScope;
+    }
+    const numbers = findPromptNumbers(actionScope.masked);
+    const anchorNumbers = getAnchorNumbers(actionScope, anchored, numbers);
+    if (anchorNumbers.length === 0) {
+        return actionScope;
+    }
+    const otherNumbers = numbers.filter((number) => !anchorNumbers.includes(number));
+    const masked = otherNumbers
+        .map((number) => ({ start: number.index, end: number.end }))
+        .reduce(blankRange, actionScope.masked);
+    return { ...actionScope, masked };
 }
 
 /**
@@ -4185,6 +4283,7 @@ function validateGroundedValues(
         groundedArguments,
         context
     );
+    const valueScope = getAnchorValueScope(actionScope, groundingRules.targetRules, groundedArguments, context);
     for (const valueRule of groundingRules.valueRules) {
         if (statesLevelInAnotherForm(valueRule, groundingRules, groundedArguments)) {
             continue;
@@ -4196,7 +4295,7 @@ function validateGroundedValues(
             valueRejection = validateGroundedValue(
                 valueRule,
                 assertedValue,
-                actionScope,
+                valueScope,
                 groundedArguments,
                 context,
                 admitsCreativeCall,
@@ -4571,6 +4670,16 @@ function getWrittenValueTexts(call: ToolCallResult): string[] {
  */
 function getBatchWrittenValueTexts(calls: readonly ToolCallResult[]): string[] {
     return [...new Set(calls.flatMap(getWrittenValueTexts))];
+}
+
+/** Where the request states the clause a call was grounded in, when that clause has a place in it. */
+function getInstructionRange(
+    scope: (ActionPromptScope & Partial<Pick<PromptClauseScope, 'start'>>) | null
+): { start: number; end: number } | undefined {
+    if (scope?.start === undefined) {
+        return undefined;
+    }
+    return { start: scope.start, end: scope.start + scope.text.length };
 }
 
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
@@ -4989,6 +5098,7 @@ function groundToolCall({
     const actionScope =
         resolvedActionScope ??
         (admitsPlanCreatedObject || admitsCreativeWholePrompt ? buildWholePromptActionScope(prompt, context) : null);
+    const instruction = getInstructionRange(resolvedActionScope);
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
@@ -5175,6 +5285,7 @@ function groundToolCall({
                     context,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
+                    instruction,
                     targetIds: compilerTargetOverride.stableIds,
                 }),
                 targetRule.argument
@@ -5306,6 +5417,7 @@ function groundToolCall({
                       dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
                       referenceResolved: false,
                       selectorTerms: compiledSelectorTerms,
+                      instruction,
                       targetIds: compilerTargetOverride.stableIds,
                   }
                 : null;
