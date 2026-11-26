@@ -17,21 +17,7 @@ import {
 } from './readAgentRunPlanBoundRefusal';
 
 /** The run collections the persistent schema reads back at the shared collection bound; only their length is read. */
-type AgentRunCollectionKey =
-    | 'batches'
-    | 'receipts'
-    | 'renders'
-    | 'analyses'
-    | 'providerUsage'
-    | 'errors'
-    | 'committedWork'
-    | 'retriableWork'
-    | 'temporaryAssets'
-    | 'pendingEffectContinuations'
-    | 'preparedStemImports'
-    | 'workLeases';
-
-const RUN_COLLECTION_KEYS: readonly AgentRunCollectionKey[] = [
+const RUN_COLLECTION_KEYS = [
     'batches',
     'receipts',
     'renders',
@@ -44,7 +30,9 @@ const RUN_COLLECTION_KEYS: readonly AgentRunCollectionKey[] = [
     'pendingEffectContinuations',
     'preparedStemImports',
     'workLeases',
-];
+] as const;
+
+type AgentRunCollectionKey = (typeof RUN_COLLECTION_KEYS)[number];
 
 export type AgentRunBoundSubject = Pick<
     AgentRun,
