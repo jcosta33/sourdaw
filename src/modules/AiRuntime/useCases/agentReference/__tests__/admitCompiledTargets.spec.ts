@@ -364,6 +364,47 @@ describe('a role-family pick admits only the roles the request narrows the famil
         expect(createAdmission('turn down the lead vocal')(familyTerms(anyVocal, ['track-bv']))).toEqual(UNAUTHORIZED);
     });
 
+    describe('a narrower role binds only the targets its own family reaches', () => {
+        const kick = roleTrack('track-kick', 'Kick', 'kick');
+        const band = createProjectContext([leadVox, backingVox, kick, keys]);
+        const anyOf = (
+            ...predicates: NonNullable<NonNullable<CompiledSelectorTerms['match']>['any']>
+        ): CompiledSelectorTerms => ({ targetArgument: 'trackId', match: { any: predicates } });
+
+        it('admits the lead vocal and the kick for "turn down the lead vocal and the drums by 3 dB"', () => {
+            const terms = pickTerms(
+                anyOf({ roleFamily: 'vocal' }, { roleFamily: 'drums' }),
+                ['track-lead-vox', 'track-kick'],
+                undefined,
+                band
+            );
+
+            expect(createAdmission('turn down the lead vocal and the drums by 3 dB')(terms)).toEqual(ADMITTED);
+        });
+
+        it('admits the lead vocal and Keys for "turn down the lead vocal and Keys by 3 dB"', () => {
+            const terms = pickTerms(
+                anyOf({ roleFamily: 'vocal' }, { nameIncludes: 'Keys' }),
+                ['track-lead-vox', 'track-keys'],
+                undefined,
+                band
+            );
+
+            expect(createAdmission('turn down the lead vocal and Keys by 3 dB')(terms)).toEqual(ADMITTED);
+        });
+
+        it('refuses the backing vocal beside the kick for "turn down the lead vocal and the drums by 3 dB"', () => {
+            const terms = pickTerms(
+                anyOf({ roleFamily: 'vocal' }, { roleFamily: 'drums' }),
+                ['track-bv', 'track-kick'],
+                undefined,
+                band
+            );
+
+            expect(createAdmission('turn down the lead vocal and the drums by 3 dB')(terms)).toEqual(UNAUTHORIZED);
+        });
+    });
+
     it("reads a selector's family only for the argument it resolves", () => {
         expect(createAdmission('turn down the lead vocal')(familyTerms(vocalFamily, ['track-bv'], 'busId'))).toEqual(
             ADMITTED

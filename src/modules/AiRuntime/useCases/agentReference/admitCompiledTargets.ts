@@ -1,12 +1,13 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
 import {
     type SemanticCommandListMatch,
     type SemanticCommandListRoleFamily,
     type SemanticCommandListSelector,
 } from '../../models/SemanticCommandList';
+import { resolveRoleFamily } from '../canonicalRoleFamilies';
 
 import { blankRange } from './blankRange';
 import {
@@ -27,6 +28,7 @@ import { namesTrackSelectorForm } from './namesTrackSelectorForm';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readFamilyStatement, type FamilyStatement } from './readFamilyStatement';
+import { readOnce } from './readOnce';
 import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 import { scopeToInstruction } from './scopeToInstruction';
@@ -727,16 +729,8 @@ type RequestReading = {
     /** Read only for a call that must prove its selector's picks. */
     evidence: () => EvidenceReading;
     /** Per role family the selector picks by, how the instruction states it. */
-    familyStatements: () => readonly FamilyStatement[];
+    familyStatements: () => ReadonlyArray<{ pick: FamilyPick; statement: FamilyStatement }>;
 };
-
-function readOnce<Reading>(read: () => Reading): () => Reading {
-    let result: { value: Reading } | undefined;
-    return () => {
-        result ??= { value: read() };
-        return result.value;
-    };
-}
 
 function readEvidence(input: RequestReadingInput, picks: NamePicks, text: string): EvidenceReading {
     const { capability, context, dependencyId } = input;
@@ -757,26 +751,29 @@ function readEvidence(input: RequestReadingInput, picks: NamePicks, text: string
     };
 }
 
+/** A role family a selector picks by; `everyTarget` when `match.all` holds it for every target. */
+type FamilyPick = { family: SemanticCommandListRoleFamily; everyTarget: boolean };
+
 /** The role families a selector picks its targets by. */
-function getFamilyPicks(input: RequestReadingInput): SemanticCommandListRoleFamily[] {
+function getFamilyPicks(input: RequestReadingInput): FamilyPick[] {
     const terms = input.selectorTerms;
     if (terms === undefined || terms.targetArgument !== input.argument) {
         return [];
     }
-    const predicates = [terms.match?.all, terms.match?.any].flatMap((list) => list ?? []);
-    return predicates.flatMap((predicate) => ('roleFamily' in predicate ? [predicate.roleFamily] : []));
+    const readPicks = (predicates: SemanticCommandListMatch['all'], everyTarget: boolean): FamilyPick[] =>
+        (predicates ?? []).flatMap((predicate) =>
+            'roleFamily' in predicate ? [{ family: predicate.roleFamily, everyTarget }] : []
+        );
+    return [...readPicks(terms.match?.all, true), ...readPicks(terms.match?.any, false)];
 }
 
-/** The canonical role of a track, or of the track that owns the object. */
-function getOwnerRole(id: string, context: ProjectContext): string | undefined {
-    const owner = context.tracks.find(
-        (track) => track.id === id || getTrackOwnedObjectIds(track.id, context).includes(id)
-    );
-    return owner?.canonicalRole?.role;
+/** The track itself, or the track that owns the object. */
+function getOwnerTrack(id: string, context: ProjectContext): ProjectContextTrack | undefined {
+    return context.tracks.find((track) => track.id === id || getTrackOwnedObjectIds(track.id, context).includes(id));
 }
 
 function holdsStatedRole(id: string, roles: ReadonlySet<string>, context: ProjectContext): boolean {
-    const role = getOwnerRole(id, context);
+    const role = getOwnerTrack(id, context)?.canonicalRole?.role;
     return role !== undefined && roles.has(role);
 }
 
@@ -791,31 +788,45 @@ function readRequest(input: RequestReadingInput): RequestReading {
         picks,
         evidence: readOnce(() => readEvidence(input, picks, text())),
         familyStatements: readOnce(() =>
-            getFamilyPicks(input).map((family) =>
-                readFamilyStatement(
+            getFamilyPicks(input).map((pick) => ({
+                pick,
+                statement: readFamilyStatement(
                     {
                         scoped: maskObjectNames(text(), input.context),
                         whole: maskObjectNames(requestText(), input.context),
                     },
-                    family
-                )
-            )
+                    pick.family
+                ),
+            }))
         ),
     };
 }
 
+/** The targets a family pick's predicate reaches: every one under `match.all`, those of the family under `match.any`. */
+function getReachedTargetIds(pick: FamilyPick, input: CompiledTargetAuthorityInput): readonly string[] {
+    if (pick.everyTarget) {
+        return input.targetIds;
+    }
+    return input.targetIds.filter((targetId) => {
+        const owner = getOwnerTrack(targetId, input.context);
+        return owner !== undefined && resolveRoleFamily(owner) === pick.family;
+    });
+}
+
 /**
- * Whether the instruction states every family the selector picks by, and every target holds a role
- * it states for a family it names only through narrower roles.
+ * Whether the instruction states every family the selector picks by, and every target the family
+ * reaches holds a role it states for a family it names only through narrower roles.
  */
 function staysWithinStatedFamilies(input: CompiledTargetAuthorityInput, reading: RequestReading): boolean {
-    return reading.familyStatements().every((statement) => {
+    return reading.familyStatements().every(({ pick, statement }) => {
         if (statement.kind === 'elsewhere') {
             return false;
         }
         return (
             statement.kind !== 'roles' ||
-            input.targetIds.every((targetId) => holdsStatedRole(targetId, statement.roles, input.context))
+            getReachedTargetIds(pick, input).every((targetId) =>
+                holdsStatedRole(targetId, statement.roles, input.context)
+            )
         );
     });
 }
