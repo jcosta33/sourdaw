@@ -536,6 +536,11 @@ function statesNoAction(
     );
 }
 
+/** Whether a clause is only the reference trailers a removal closes on, which the splitter cut off after a comma. */
+function statesOnlyReferenceTrailers(words: string): boolean {
+    return words.length > 0 && refinementRequestReading.stripTrailers(words).trim() === '';
+}
+
 /**
  * The first clause beside a removal that may withdraw or qualify it, read as the refinement reader
  * reads a clause it cannot consume: one stating a negation ("or not", "never mind", "without changing
@@ -558,7 +563,11 @@ function findUnreadQualifier(reading: readonly ClauseReading[], scope: Protectio
             const words = refinementRequestReading
                 .withoutLeadingConnectors(`${normalizePromptText(clause.text)} `)
                 .trim();
-            if (refinementProtectionForms.readsRestOfMix(words) || protectsOffCardObjects(words, scope)) {
+            if (
+                refinementProtectionForms.readsRestOfMix(words) ||
+                protectsOffCardObjects(words, scope) ||
+                statesOnlyReferenceTrailers(words)
+            ) {
                 return false;
             }
             if (refinementRequestReading.statesNegation(clause)) {

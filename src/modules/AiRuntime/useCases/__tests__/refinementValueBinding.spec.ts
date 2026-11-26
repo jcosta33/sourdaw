@@ -7040,6 +7040,16 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
             });
         });
 
+        it.each([
+            'Remove the guitar pan too',
+            'Remove the guitar pan, too',
+            'Remove the guitar pan, for now',
+            'Remove the guitar pan, from the card',
+            'Remove the guitar pan, entirely',
+        ])('reads the reference trailer in "%s" as part of the removal', (prompt) => {
+            expect(admit(prompt)).toEqual({ status: 'valid' });
+        });
+
         const importStems = { type: 'importStemSet', payload: { selectionId: 'selection-1' } };
         const admitWithImport = (prompt: string) =>
             validateRefinedProposalActions({
