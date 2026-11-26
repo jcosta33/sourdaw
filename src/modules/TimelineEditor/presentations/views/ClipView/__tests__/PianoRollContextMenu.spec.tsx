@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import {
     copyPianoRollNotes,
     copySelectedNotes,
@@ -12,6 +13,7 @@ import { executeAppActionBatch, executeUserAppAction, pushUndoEntry } from '#/mo
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import {
     createGrooveTemplate,
+    getGrooveSourceClipName,
     getNotesForClip,
     humanizeNotes,
     moveMidiNote,
@@ -123,6 +125,64 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
+
+function createNamedClipTrackState(clipId: string, clipName: string): TrackStoreState {
+    return {
+        tracks: [
+            {
+                id: 'track-named',
+                name: 'Named track',
+                kind: 'midi',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                color: '#abcdef',
+                clips: [
+                    {
+                        id: clipId,
+                        trackId: 'track-named',
+                        name: clipName,
+                        startBeat: 0,
+                        endBeat: 4,
+                        type: 'midi',
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                        gain: 1,
+                        color: '#abcdef',
+                        locked: false,
+                        muted: false,
+                    },
+                ],
+                devices: [],
+                sends: [],
+                midiFx: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+                parentId: null,
+                collapsed: false,
+                inputMonitoring: 'auto',
+                hidden: false,
+                disabled: false,
+                height: 80,
+                outputId: 'master',
+                automationMode: 'read',
+                groupId: null,
+                soloSafe: false,
+                notes: '',
+                inputId: null,
+                activeAlternativeId: 'main',
+                alternatives: [],
+                vcaGroupId: null,
+                midiOutputTrackId: null,
+                followChordTrack: false,
+            },
+        ],
+        selectedTrackId: 'track-named',
+        ghostClips: [],
+    };
+}
 
 describe('PianoRollContextMenu', () => {
     const defaultProps = {
@@ -648,6 +708,21 @@ describe('PianoRollContextMenu', () => {
                 payload: { clipId: 'clip-9', grooveId: 'groove-straight', amount: 0.5 },
             })
         );
+    });
+
+    it('extracts under the name the source clip shows, not its id', async () => {
+        trackStore.set(createNamedClipTrackState('clip-5', 'Verse keys'));
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} clipId="clip-5" />);
+
+        fireEvent.click(screen.getByText('Extract Groove'));
+
+        await waitFor(() => expect(executeUserAppAction).toHaveBeenCalled());
+        expect(getGrooveSourceClipName('clip-5')).toBe('Verse keys');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'extractGroove',
+            payload: { clipId: 'clip-5', sourceName: getGrooveSourceClipName('clip-5') },
+        });
+        trackStore.set(structuredClone(defaultTrackState));
     });
 
     it('selects the template a re-extraction created, not the first version of the clip', async () => {

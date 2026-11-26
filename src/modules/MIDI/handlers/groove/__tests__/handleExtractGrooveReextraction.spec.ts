@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../../../stores/grooveTemplateStore';
 import { createGrooveTemplate } from '../../../useCases/grooveTemplates/createGrooveTemplate';
+import { prepareGrooveExtraction } from '../../../useCases/grooveTemplates/prepareGrooveExtraction';
 import { handleExtractGroove } from '../handleExtractGroove';
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +45,30 @@ function storedTemplates() {
     );
 }
 
+function extractCurrentNotes() {
+    const result = prepareGrooveExtraction({
+        clipId: CLIP_ID,
+        sourceName: 'Source',
+        subdivision: '1/16',
+        templateId: `groove-${CLIP_ID}-v1`,
+    });
+    if (result.status !== 'extracted') {
+        throw new Error('Expected the current notes to extract a groove');
+    }
+    return result;
+}
+
+function currentSourceRevision(): string {
+    return extractCurrentNotes().sourceRevision;
+}
+
+/** Stores the clip's version 1 holding what the current notes extract to, under a name the extraction would not derive. */
+function storeCurrentExtractionAs(name: string) {
+    const template = { ...extractCurrentNotes().template, name };
+    createGrooveTemplate(template);
+    return template;
+}
+
 describe('handleExtractGroove re-extraction', () => {
     beforeEach(() => {
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
@@ -76,6 +101,41 @@ describe('handleExtractGroove re-extraction', () => {
         expect(handleExtractGroove.isNoop?.(second)).toBe(true);
         expect(handleExtractGroove.describe(second).inverseAction).toBeNull();
         expect(handleExtractGroove.execute(second)).toEqual({ status: 'no-write' });
+        expect(grooveTemplateStore.value).toEqual(before);
+    });
+
+    it('reuses the version holding the same notes under another name, writing nothing', () => {
+        setNotes(0.02);
+        const stored = storeCurrentExtractionAs('Renamed groove');
+        const before = structuredClone(grooveTemplateStore.value);
+
+        const action = createIdLessAction();
+
+        expect(handleExtractGroove.isNoop?.(action)).toBe(true);
+        expect(handleExtractGroove.describe(action).inverseAction).toBeNull();
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'no-write' });
+        expect(grooveTemplateStore.value).toEqual(before);
+        expect(storedTemplates()).toEqual([stored]);
+    });
+
+    it('accepts a pinned proposal that is the stored template when only the derived name differs', () => {
+        setNotes(0.02);
+        const stored = storeCurrentExtractionAs('Renamed groove');
+        const before = structuredClone(grooveTemplateStore.value);
+        const action = {
+            type: 'extractGroove' as const,
+            payload: {
+                clipId: CLIP_ID,
+                sourceName: 'Source',
+                subdivision: '1/16' as const,
+                templateId: stored.id,
+                proposal: structuredClone(stored),
+                sourceRevision: currentSourceRevision(),
+            },
+        };
+
+        expect(handleExtractGroove.isNoop?.(action)).toBe(true);
+        expect(handleExtractGroove.execute(action)).toEqual({ status: 'no-write' });
         expect(grooveTemplateStore.value).toEqual(before);
     });
 
