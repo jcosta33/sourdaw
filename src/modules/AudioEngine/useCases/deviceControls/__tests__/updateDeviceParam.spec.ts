@@ -6,7 +6,8 @@ import { clampDeviceParamWrite, trackStore, type Device, type Track } from '#/mo
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { isDeviceCarriedByNativeSession } from '../../livePlayback/isDeviceCarriedByNativeSession';
 import { sendNativeDeviceParameters } from '../../livePlayback/sendNativeDeviceParameters';
-import { updateDeviceParam, updateDeviceParameters } from '../updateDeviceParam';
+import { updateDeviceParam } from '../updateDeviceParam';
+import { updateDeviceParameters } from '../updateDeviceParameters';
 
 registerDeviceEnginePorts();
 
