@@ -2946,7 +2946,7 @@ function getWholeSectionReferenceName(
     if (slot === null) {
         return null;
     }
-    const name = normalizePromptText(slot);
+    const name = normalizePromptText(getLabeledSectionName(slot) ?? slot);
     if (name.length === 0) {
         return null;
     }
@@ -3294,16 +3294,20 @@ function getSectionNameSlot(promptText: string): string | null {
     return promptText.slice(intent.index + intent[0].length, range.startIndex).trim();
 }
 
+/** The text after a leading "named" or "called" label in a section name slot, or null without one. */
+function getLabeledSectionName(slot: string): string | null {
+    return /^(?:named|called)\s+(.+)$/iu.exec(slot)?.[1] ?? null;
+}
+
 function getSectionNameFromPrompt(promptText: string): string | null {
     const assertedName = getSectionNameSlot(promptText);
     if (assertedName === null) {
         return null;
     }
-    const explicitLabel = /^(?:named|called)\s+(.+)$/iu.exec(assertedName);
-    if (!explicitLabel) {
+    const rawName = getLabeledSectionName(assertedName);
+    if (rawName === null) {
         return null;
     }
-    const rawName = explicitLabel[1] ?? '';
     if (/^(?:"|'|“|‘)/u.test(rawName.trim())) {
         return parseExplicitSectionName(rawName);
     }

@@ -1310,6 +1310,55 @@ describe('section references beside a section whose name the other contains', ()
         });
     });
 
+    // A "named" or "called" label is no part of the name, so an unquoted name holding "or" still
+    // reads whole, and a name the project lacks still never reads as a shorter one.
+    it.each([
+        {
+            prompt: 'remove the section named Call or Response from beat 16 to beat 32',
+            call: { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: 'Call or Response' } },
+            action: { type: 'removeSection', payload: { sectionId: 'section-call-response' } },
+        },
+        {
+            prompt: 'remove the section called Call or Response from beat 16 to beat 32',
+            call: { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: 'Call or Response' } },
+            action: { type: 'removeSection', payload: { sectionId: 'section-call-response' } },
+        },
+        {
+            prompt: 'rename the section named Call or Response from beat 16 to beat 32 to Outro',
+            call: {
+                name: 'renameSection',
+                arguments: { startBeat: 16, endBeat: 32, name: 'Call or Response', newName: 'Outro' },
+            },
+            action: { type: 'renameSection', payload: { sectionId: 'section-call-response', name: 'Outro' } },
+        },
+    ])('grounds "$prompt" as the labelled section it names whole', ({ prompt, call, action }) => {
+        const callResponse = { ...CHORUS, id: 'section-call-response', name: 'Call or Response' };
+
+        expect(groundSectionCall(call, prompt, [callResponse, VERSE])).toEqual({ actions: [action], rejections: [] });
+    });
+
+    it.each([
+        {
+            prompt: 'remove the section named Call from beat 16 to beat 32',
+            section: { ...CHORUS, id: 'section-call-response', name: 'Call or Response' },
+            providerName: 'Call or Response',
+        },
+        {
+            prompt: 'remove the section named Chorus Two from beat 16 to beat 32',
+            section: CHORUS,
+            providerName: 'Chorus',
+        },
+    ])('refuses "$prompt" as a name the project lacks whole', ({ prompt, section, providerName }) => {
+        const call = { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: providerName } };
+
+        expect(groundSectionCall(call, prompt, [section, VERSE])).toEqual({
+            actions: [],
+            rejections: [
+                { index: 0, name: 'removeSection', reason: 'Provider value name does not match the user request' },
+            ],
+        });
+    });
+
     // A section whose name normalizes to nothing is no name a request can state whole.
     it('refuses a removal of a section whose name normalizes to nothing', () => {
         const bang = { ...CHORUS, id: 'section-bang', name: '!!!' };
