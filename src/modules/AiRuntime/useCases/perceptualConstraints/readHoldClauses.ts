@@ -1,6 +1,8 @@
 import {
     AND_JOIN,
     ANY,
+    ASSURED_NEGATION,
+    ASSURING_LEAD,
     AT,
     CAUSING_VERB,
     CLAUSE_END,
@@ -17,18 +19,23 @@ import {
     LIST_JOINER,
     MASK_GLYPH,
     MODAL_NEGATION,
+    MOVE_LEAD_VERB,
     NEGATION,
     NOT_PERMITTED,
     OBJECT_LIST,
     OBJECT_MEMBERS,
     OBJECT_PREPOSITION,
     OPENING_NEGATION,
+    PERMITTED_PERSON,
     PURPOSE_HEAD,
     SCOPE_WORD,
+    STRESSED,
     THE,
     THE_SAME,
     TO,
+    WANT_NEGATION,
     WANTING_VERB,
+    WITHOUT_WORD,
 } from './constraintClauseWords';
 import {
     APOSTROPHE,
@@ -43,11 +50,13 @@ import {
     QUALITY_OF,
     QUALITY_VERB,
     SPLIT_VERB_HEAD,
+    SPLIT_VERB_HEAD_WORD,
     SPLIT_VERB_PARTICLE,
     WORD_END,
 } from './constraintDirections';
 import { normalizeObjectName } from './normalizeObjectName';
 import { nounConstraintId } from './nounConstraintId';
+import { describeSkippedMembers, UNMEASURED_MEMBERS } from './readSkippedTerms';
 
 /**
  * One object's holds inside a clause: the holds it states, its object and where that object's words
@@ -59,8 +68,19 @@ export type HoldPart = {
     object: string | null;
     unreadable: string | null;
 };
-/** A clause a measured-hold reader consumed: its own words, the span it covers and its parts. */
-export type HoldClause = { clause: string; start: number; end: number; parts: HoldPart[] };
+/** The members a direction list ends on that name no measured quality: why they hold nothing, and where they end. */
+export type SkippedMembers = { reason: string; end: number };
+/**
+ * A clause a measured-hold reader consumed: its own words, the span it covers and its parts, and the
+ * unmeasured members its list ended on, which it bounds nothing for.
+ */
+export type HoldClause = {
+    clause: string;
+    start: number;
+    end: number;
+    parts: HoldPart[];
+    skipped: SkippedMembers | null;
+};
 
 const LIST_TAIL = String.raw`(?:\s+${OBJECT_PREPOSITION}\s+${OBJECT_LIST})?`;
 /** The state a held noun may be kept in after it: "keep the level the same". */
@@ -83,14 +103,16 @@ const NOUN_IN_LIST = new RegExp(
     String.raw`(?:(?<pre>${PRE_LIST})\s+)?${QUALIFIED}(?<noun>${HOLD_NOUN_WORD})\b`,
     'dgiu'
 );
+const UNMEASURED_LIST_END = String.raw`(?=${UNMEASURED_MEMBERS})`;
+const SKIPPED_MEMBERS = new RegExp(UNMEASURED_MEMBERS, 'dyiu');
 /**
  * Where a direction clause ends: at a clause end, where a later object with its own direction joins it,
  * so the "or" in "don't make the vocal brighter or the mix wider" lists the next member rather than
  * running on inside the clause, or before a keep, which opens a clause of its own ("don't make the mix
- * wider keep the vocal bright"), and before an ampersand opening one ("don't make the mix wider&keep the
- * vocal bright").
+ * wider keep the vocal bright"), before an ampersand opening one ("don't make the mix wider&keep the
+ * vocal bright"), and before unmeasured members ending it.
  */
-const DIRECTION_CLAUSE_END = String.raw`(?:${JOINED_CLAUSE_END}|(?=${LIST_JOIN}(?!${ANY}\b)${OBJECT_MEMBERS}\s+${DIRECTION_LEAD}${DIRECTION})|(?=\s+${KEEP_VERBS}\b))`;
+const DIRECTION_CLAUSE_END = String.raw`(?:${JOINED_CLAUSE_END}|(?=${LIST_JOIN}(?!${ANY}\b)${OBJECT_MEMBERS}\s+${DIRECTION_LEAD}${DIRECTION})|(?=\s+${KEEP_VERBS}\b)|${UNMEASURED_LIST_END})`;
 const DIRECTION_CLAUSE = String.raw`${DIRECTION_LEAD}${DIRECTION_LIST}${DIRECTION_CLAUSE_END}`;
 /**
  * A later object under the same negation, joined as every list is: "don't make the mix louder, and the
@@ -123,14 +145,29 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         String.raw`\b${OPENING_NEGATION}\s+${CAUSING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
-    // "I don't want it louder", "I don't want the drums to get louder"
+    // "I don't want it louder", "I don't want the drums to get louder", "I wouldn't want the drums to ever get louder"
     holdPattern(
-        String.raw`\b${OPENING_NEGATION}\s+${WANTING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+(?:${TO}\s+)?${DIRECTION_CLAUSE}`,
+        String.raw`\b${WANT_NEGATION}\s+${WANTING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?(?:\s+${TO})?${STRESSED}\s+${DIRECTION_CLAUSE}`,
+        DIRECTION_CONTINUATION
+    ),
+    // "I don't want to make the drums wider", "I don't want you to make it louder", "I don't wanna make it louder"
+    holdPattern(
+        String.raw`\b${WANT_NEGATION}\s+${WANTING_VERB}(?:\s+${PERMITTED_PERSON})?(?:\s+${TO})?${STRESSED}\s+${CAUSING_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?\s+${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
     // "the mix must not get louder", "the vocal shouldn't be louder", "the drums should never get wider"
     holdPattern(
         String.raw`${CLAUSE_HEAD}${OBJECT_LIST}\s+${MODAL_NEGATION}\s+${DIRECTION_CLAUSE}`,
+        DIRECTION_CONTINUATION
+    ),
+    // "make sure the vocal isn't any louder": after "make sure" a copula negation asks for a bound
+    holdPattern(
+        String.raw`\b${ASSURING_LEAD}\s+${OBJECT_LIST}\s+${ASSURED_NEGATION}\s+${DIRECTION_CLAUSE}`,
+        DIRECTION_CONTINUATION
+    ),
+    // "without the mix getting louder": "without" may name the subject of the move it rules out
+    holdPattern(
+        String.raw`\b${WITHOUT_WORD}\s+(?!${ANY}\b)${OBJECT_LIST}\s+(?=${MOVE_LEAD_VERB}\s)${DIRECTION_CLAUSE}`,
         DIRECTION_CONTINUATION
     ),
     // "add some warmth so it doesn't sound louder": a purpose's "doesn't" bounds, even through a linking verb
@@ -145,7 +182,12 @@ const HOLD_PATTERNS: readonly HoldPattern[] = [
         String.raw`\b${NEGATION}\s+${SPLIT_VERB_HEAD}\s+${nounList(HOLD_NOUN_WORD)}${LIST_TAIL}\s+${SPLIT_VERB_PARTICLE}${CLAUSE_END}`,
         null
     ),
-    // "don't widen the drums", "without squashing the mix"
+    // "don't turn the vocal up", "without turning it down"
+    holdPattern(
+        String.raw`\b${OPENING_NEGATION}\s+${SPLIT_VERB_HEAD}\s+(?!${ANY}\b)${OBJECT_LIST}\s+${SPLIT_VERB_PARTICLE}${CLAUSE_END}`,
+        null
+    ),
+    // "don't widen the drums", "without squashing the mix", "don't raise the vocal"
     holdPattern(
         String.raw`\b${OPENING_NEGATION}\s+${QUALITY_VERB}(?:\s+(?!${ANY}\b)${OBJECT_LIST})?${CLAUSE_END}`,
         null
@@ -244,9 +286,12 @@ function readNounPart(match: RegExpExecArray, verb: string | undefined, prompt: 
     };
 }
 
-/** The holds a direction clause states. */
+/**
+ * The holds a direction clause states: its directions, or the split verb it moves its object through
+ * ("turn … up"), or else the level it keeps ("keep the Keys at the same level").
+ */
 function directionPartIds(match: RegExpExecArray): MeasuredConstraintId[] {
-    const direction = match.groups?.direction;
+    const direction = match.groups?.direction ?? verbOf(match);
     return direction === undefined ? [FAMILY_IDS.loudness.held] : directionConstraintIds(direction);
 }
 
@@ -278,11 +323,21 @@ function withContinuations(match: RegExpExecArray, continuation: RegExp | null, 
     return matches;
 }
 
+/** The unmeasured members the clause's list ended on, which no hold or bound covers, or none. */
+function readSkippedMembers(masked: string, end: number, prompt: string): SkippedMembers | null {
+    SKIPPED_MEMBERS.lastIndex = end;
+    const tail = SKIPPED_MEMBERS.exec(masked);
+    if (tail === null) {
+        return null;
+    }
+    return { reason: describeSkippedMembers(prompt.slice(end, end + tail[0].length)), end: end + tail[0].length };
+}
+
 /**
  * Every part reads under the opening match's verb, which a continuation never restates. A
  * continuation with no object of its own shares the object before it ("the level and, the width").
  */
-function readHoldMatch(matches: readonly RegExpExecArray[], prompt: string): HoldClause {
+function readHoldMatch(matches: readonly RegExpExecArray[], masked: string, prompt: string): HoldClause {
     const [first] = matches;
     const last = matches.at(-1);
     const start = first?.index ?? 0;
@@ -295,11 +350,11 @@ function readHoldMatch(matches: readonly RegExpExecArray[], prompt: string): Hol
         const inherited = parts.at(-1);
         parts.push(part.object === null && inherited !== undefined ? { ...part, object: inherited.object } : part);
     }
-    return { clause, start, end, parts };
+    return { clause, start, end, parts, skipped: readSkippedMembers(masked, end, prompt) };
 }
 
-function readUnreadableDirection(match: RegExpExecArray, prompt: string): HoldClause {
-    const hold = readHoldMatch([match], prompt);
+function readUnreadableDirection(match: RegExpExecArray, masked: string, prompt: string): HoldClause {
+    const hold = readHoldMatch([match], masked, prompt);
     const object = spanText(prompt, match.indices?.groups?.object) ?? '';
     return {
         ...hold,
@@ -311,10 +366,13 @@ function readUnreadableDirection(match: RegExpExecArray, prompt: string): HoldCl
 }
 
 /**
- * Every hold pattern, the unreadable fallback included, requires a direction, a quality verb or a held
- * noun, so a request naming none holds nothing and never pays to compile the patterns.
+ * Every hold pattern, the unreadable fallback included, requires a direction, a quality verb, a split
+ * verb or a held noun, so a request naming none holds nothing and never pays to compile the patterns.
  */
-const HOLD_WORD = new RegExp(String.raw`${DIRECTION}|${QUALITY_VERB}|${HOLD_NOUN_WORD}|${LOUDNESS_NOUN_WORD}`, 'iu');
+const HOLD_WORD = new RegExp(
+    String.raw`${DIRECTION}|${QUALITY_VERB}|${SPLIT_VERB_HEAD_WORD}|${HOLD_NOUN_WORD}|${LOUDNESS_NOUN_WORD}`,
+    'iu'
+);
 
 /** Every measured-hold clause in the order it appears, never two over one span, a readable one first. */
 export function readHoldClauses(masked: string, prompt: string): HoldClause[] {
@@ -323,11 +381,11 @@ export function readHoldClauses(masked: string, prompt: string): HoldClause[] {
     }
     const readable = HOLD_PATTERNS.flatMap(({ pattern, continuation }) =>
         Array.from(masked.matchAll(pattern), (match) =>
-            readHoldMatch(withContinuations(match, continuation, masked), prompt)
+            readHoldMatch(withContinuations(match, continuation, masked), masked, prompt)
         )
     );
     const unreadable = Array.from(masked.matchAll(UNREADABLE_DIRECTION), (match) =>
-        readUnreadableDirection(match, prompt)
+        readUnreadableDirection(match, masked, prompt)
     );
     // No readable clause opens or ends inside a fallback object, so the two overlap only by sharing a
     // start, where the stable sort keeps the readable clause, which comes first.

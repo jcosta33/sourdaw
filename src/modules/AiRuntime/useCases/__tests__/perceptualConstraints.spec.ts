@@ -33,7 +33,15 @@ import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
-import { AVOID_VERB, KEEP, SCOPE_WORD } from '../perceptualConstraints/constraintClauseWords';
+import {
+    AVOID_VERB,
+    CLAUSE_HEAD,
+    CLAUSE_JOINING_AMPERSAND,
+    KEEP,
+    PURPOSE_HEAD,
+    RELEASED_GERUND,
+    SCOPE_WORD,
+} from '../perceptualConstraints/constraintClauseWords';
 import { findExcludedDimensionEdit } from '../perceptualConstraints/findExcludedDimensionEdit';
 import { PERCEPTUAL_CONSTRAINT_INVARIANTS } from '../perceptualConstraints/perceptualConstraintInvariants';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
@@ -2251,6 +2259,343 @@ describe('reading a subject before "never", graded comparatives and a comma befo
     );
 });
 
+const IT_AFTER_A_TRACK = '“it” names no single scope: the request names a track or role before it.';
+
+describe('reading wishes, level verbs, subject-led "without", stressed negations and other joiners', () => {
+    it.each([
+        // a refused wish bounds what it wishes for, through an object, "to", "you" or a causing verb
+        [
+            "I don't want the mix any wider",
+            [measured('stereo-width-not-widened-v1', "don't want the mix any wider", MIX)],
+            [],
+        ],
+        ["I don't want it to get louder", [measured('loudness-not-raised-v1', "don't want it to get louder", MIX)], []],
+        [
+            "I don't want to make the drums wider",
+            [measured('stereo-width-not-widened-v1', "don't want to make the drums wider", onTracks('drums'))],
+            [],
+        ],
+        [
+            "I don't want the vocal to go louder",
+            [measured('loudness-not-raised-v1', "don't want the vocal to go louder", onTracks('vocal'))],
+            [],
+        ],
+        ["I don't wanna make it louder", [measured('loudness-not-raised-v1', "don't wanna make it louder", MIX)], []],
+        [
+            "I wouldn't want the drums to get louder",
+            [measured('loudness-not-raised-v1', "wouldn't want the drums to get louder", onTracks('drums'))],
+            [],
+        ],
+        [
+            "I wouldn't want the drums louder",
+            [measured('loudness-not-raised-v1', "wouldn't want the drums louder", onTracks('drums'))],
+            [],
+        ],
+        [
+            "I don't want you to make the drums wider",
+            [measured('stereo-width-not-widened-v1', "don't want you to make the drums wider", onTracks('drums'))],
+            [],
+        ],
+        [
+            "I don't want the drums to ever get louder",
+            [measured('loudness-not-raised-v1', "don't want the drums to ever get louder", onTracks('drums'))],
+            [],
+        ],
+        [
+            "I don't really want the drums to get louder",
+            [measured('loudness-not-raised-v1', "don't really want the drums to get louder", onTracks('drums'))],
+            [],
+        ],
+        // a wish whose tail no reader reads is recorded unsupported, never dropped at its "to"
+        [
+            "I don't want the drums to get louder in the chorus",
+            [],
+            [unread("I don't want the drums to get louder in the chorus", NET_REASON)],
+        ],
+        ["I don't want the drums to get too loud", [], [unread("I don't want the drums to get too loud", NET_REASON)]],
+        [
+            "I don't want the drums to get much louder",
+            [],
+            [unread("I don't want the drums to get much louder", NET_REASON)],
+        ],
+        [
+            "I don't want the drums to get louder than the vocal",
+            [],
+            [unread("I don't want the drums to get louder than the vocal", COMPARATIVE_REASON)],
+        ],
+        // a wish for a keep or a stop is a permission and states nothing
+        ["I don't want to keep the mix from getting wider", [], []],
+        // a level verb with an object and no level noun bounds the object's loudness
+        [
+            "don't turn the vocal up",
+            [measured('loudness-not-raised-v1', "don't turn the vocal up", onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't turn up the vocal",
+            [measured('loudness-not-raised-v1', "don't turn up the vocal", onTracks('vocal'))],
+            [],
+        ],
+        ["don't turn it down", [measured('loudness-not-lowered-v1', "don't turn it down", MIX)], []],
+        ["don't raise the vocal", [measured('loudness-not-raised-v1', "don't raise the vocal", onTracks('vocal'))], []],
+        ["don't boost the bass", [measured('loudness-not-raised-v1', "don't boost the bass", onTracks('bass'))], []],
+        ['make the vocal brighter without turning it up', [], [unread('without turning it up', IT_AFTER_A_TRACK)]],
+        ["don't turn the vocal up in the chorus", [], [unread("don't turn the vocal up in the chorus", NET_REASON)]],
+        [
+            "don't lower the reverb",
+            [],
+            [unread("don't lower the reverb", '“the reverb” names no track or mix whose loudness can be measured.')],
+        ],
+        // "kill" and "crush" lower a held noun, and "crush" the dynamics of an object
+        ["don't kill the dynamics", [measured('dynamics-not-reduced-v1', "don't kill the dynamics", MIX)], []],
+        ["don't crush the dynamics", [measured('dynamics-not-reduced-v1', "don't crush the dynamics", MIX)], []],
+        ["don't kill the vocal", [], []],
+        // "more" and "less" grade every plain adjective its own way
+        ["don't make it less quiet", [measured('loudness-not-raised-v1', "don't make it less quiet", MIX)], []],
+        ["don't make it more quiet", [measured('loudness-not-lowered-v1', "don't make it more quiet", MIX)], []],
+        ["don't make it more soft", [measured('loudness-not-lowered-v1', "don't make it more soft", MIX)], []],
+        ["don't make it more dark", [measured('brightness-not-lowered-v1', "don't make it more dark", MIX)], []],
+        ["don't make it less dull", [measured('brightness-not-raised-v1', "don't make it less dull", MIX)], []],
+        [
+            "don't make the vocal less bright",
+            [measured('brightness-not-lowered-v1', "don't make the vocal less bright", onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't make it any less wide",
+            [measured('stereo-width-not-narrowed-v1', "don't make it any less wide", MIX)],
+            [],
+        ],
+        // "without" may name the subject of the move it rules out
+        [
+            'make the vocal brighter without the mix getting louder',
+            [measured('loudness-not-raised-v1', 'without the mix getting louder', MIX)],
+            [],
+        ],
+        [
+            'make the vocal brighter without it getting quieter',
+            [],
+            [unread('without it getting quieter', IT_AFTER_A_TRACK)],
+        ],
+        [
+            'make the vocal brighter without anything getting louder',
+            [],
+            [
+                unread(
+                    'without anything getting louder',
+                    '“anything” names no single scope: the request names a track or role before it.'
+                ),
+            ],
+        ],
+        [
+            'make the vocal brighter without the mix getting louder in the chorus',
+            [],
+            [unread('make the vocal brighter without the mix getting louder in the chorus', NET_REASON)],
+        ],
+        // a bare "not" refuses a direction; after a copula it describes the sound
+        ['brighten the vocal, just not any louder', [], [unread('just not any louder', NET_REASON)]],
+        ['brighten the vocal, but not louder', [], [unread('not louder', NET_REASON)]],
+        ['the vocal is not louder, make it louder', [], []],
+        // after "make sure" a copula or "doesn't" negation is a request
+        [
+            "make sure the vocal isn't any louder",
+            [measured('loudness-not-raised-v1', "make sure the vocal isn't any louder", onTracks('vocal'))],
+            [],
+        ],
+        [
+            "make sure it doesn't get louder",
+            [measured('loudness-not-raised-v1', "make sure it doesn't get louder", MIX)],
+            [],
+        ],
+        [
+            "make sure the vocal isn't louder in the chorus",
+            [],
+            [unread("make sure the vocal isn't louder in the chorus", NET_REASON)],
+        ],
+        // a list ending on comparatives naming no measured quality bounds the rest and records the clause unsupported
+        [
+            'make the vocal brighter without making the mix louder or harsher',
+            [measured('loudness-not-raised-v1', 'without making the mix louder', MIX)],
+            [unread('without making the mix louder or harsher', unmeasured('harsher'))],
+        ],
+        [
+            "don't make it louder or punchier",
+            [measured('loudness-not-raised-v1', "don't make it louder", MIX)],
+            [unread("don't make it louder or punchier", unmeasured('punchier'))],
+        ],
+        [
+            "don't make it louder, punchier or harsher",
+            [measured('loudness-not-raised-v1', "don't make it louder", MIX)],
+            [
+                unread(
+                    "don't make it louder, punchier or harsher",
+                    'No measurement the application takes shows that “punchier” and “harsher” holds.'
+                ),
+            ],
+        ],
+        [
+            'without making the mix louder or harsher',
+            [measured('loudness-not-raised-v1', 'without making the mix louder', MIX)],
+            [unread('without making the mix louder or harsher', unmeasured('harsher'))],
+        ],
+        [
+            'keep the mix from getting brighter or harsher',
+            [measured('brightness-not-raised-v1', 'keep the mix from getting brighter or harsher', MIX)],
+            [unread('keep the mix from getting brighter or harsher', unmeasured('harsher'))],
+        ],
+        // a list whose every member is measured records nothing unsupported
+        [
+            "don't make it louder or brighter",
+            [
+                measured('loudness-not-raised-v1', "don't make it louder or brighter", MIX),
+                measured('brightness-not-raised-v1', "don't make it louder or brighter", MIX),
+            ],
+            [],
+        ],
+        [
+            'make the vocal brighter without making it louder or harsher',
+            [],
+            [unread('without making it louder', IT_AFTER_A_TRACK)],
+        ],
+        // a "will" negation before a making verb is a protection the net records, whatever its subject or lead
+        ["this won't make it louder", [], [unread("this won't make it louder", NET_REASON)]],
+        ["this won't make the drums wider", [], [unread("this won't make the drums wider", NET_REASON)]],
+        ["this EQ won't make it louder", [], [unread("this EQ won't make it louder", NET_REASON)]],
+        ["make sure this won't make it louder", [], [unread("make sure this won't make it louder", NET_REASON)]],
+        ["hopefully it won't make it louder", [], [unread("hopefully it won't make it louder", NET_REASON)]],
+        ["the agent won't make it louder", [], [unread("the agent won't make it louder", NET_REASON)]],
+        ["You won't make it louder, ok?", [], [unread("You won't make it louder", NET_REASON)]],
+        ["I hope you won't make it louder", [], [unread("I hope you won't make it louder", NET_REASON)]],
+        ["Promise you won't make it louder", [], [unread("Promise you won't make it louder", NET_REASON)]],
+        ["You won't make the drums wider, will you?", [], [unread("You won't make the drums wider", NET_REASON)]],
+        ['You will not make the drums wider', [], [unread('You will not make the drums wider', NET_REASON)]],
+        ["I hope this won't make it louder", [], [unread("I hope this won't make it louder", NET_REASON)]],
+        // a wish refused through "would not" whose tail no reader reads is recorded unsupported
+        [
+            "I wouldn't want the drums louder in the chorus",
+            [],
+            [unread("I wouldn't want the drums louder in the chorus", NET_REASON)],
+        ],
+        // a stressing adverb beside a modal's or a subject's "never" keeps the subject's scope
+        [
+            'the drums should really never get wider',
+            [measured('stereo-width-not-widened-v1', 'the drums should really never get wider', onTracks('drums'))],
+            [],
+        ],
+        [
+            'the drums should absolutely never get wider',
+            [measured('stereo-width-not-widened-v1', 'the drums should absolutely never get wider', onTracks('drums'))],
+            [],
+        ],
+        [
+            'the drums should also never get wider',
+            [measured('stereo-width-not-widened-v1', 'the drums should also never get wider', onTracks('drums'))],
+            [],
+        ],
+        [
+            'the drums should never really get wider',
+            [measured('stereo-width-not-widened-v1', 'the drums should never really get wider', onTracks('drums'))],
+            [],
+        ],
+        [
+            'the drums should never ever get wider',
+            [measured('stereo-width-not-widened-v1', 'the drums should never ever get wider', onTracks('drums'))],
+            [],
+        ],
+        [
+            'the drums should never really get wider in the chorus',
+            [],
+            [unread('the drums should never really get wider in the chorus', NET_REASON)],
+        ],
+        // a degree no fixed tolerance states is unsupported, never dropped
+        ["the bass shouldn't be too much louder", [], [unread("the bass shouldn't be too much louder", NET_REASON)]],
+        ["the bass shouldn't be a lot louder", [], [unread("the bass shouldn't be a lot louder", NET_REASON)]],
+        ["the bass shouldn't be far louder", [], [unread("the bass shouldn't be far louder", NET_REASON)]],
+        ["the bass shouldn't be overly loud", [], [unread("the bass shouldn't be overly loud", NET_REASON)]],
+        ["the bass shouldn't be very loud", [], [unread("the bass shouldn't be very loud", NET_REASON)]],
+        // a subject's "never" with a tail is unsupported, as its "should never" form is
+        [
+            'the vocal never gets louder in the verse',
+            [],
+            [unread('the vocal never gets louder in the verse', NET_REASON)],
+        ],
+        [
+            'the vocal should never get louder in the verse',
+            [],
+            [unread('the vocal should never get louder in the verse', NET_REASON)],
+        ],
+        // requests, descriptions and moves stay unread
+        ['make it louder', [], []],
+        ['I want it louder', [], []],
+        ['make it go wider', [], []],
+        ['never mind, brighten it', [], []],
+        ['the vocal never sounds louder, make it louder', [], []],
+        ['it never sounds loud enough, make it louder', [], []],
+        ["the vocal doesn't get louder in the chorus, raise it", [], []],
+        [
+            'keep the vocal bright, but not too bright',
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [],
+        ],
+        [
+            "don't make the drums wider, and make the vocal louder",
+            [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
+            [],
+        ],
+        // "plus", "as well as" and "nor" are no joiners, so a clause holding one is recorded unsupported whole
+        [
+            "Add reverb to the guitar. Don't make the bass louder plus the vocal",
+            [],
+            [unread("Don't make the bass louder plus the vocal", NET_REASON)],
+        ],
+        [
+            "Add reverb to the guitar. Don't make the bass louder as well as the vocal",
+            [],
+            [unread("Don't make the bass louder as well as the vocal", NET_REASON)],
+        ],
+        [
+            'Add reverb to the guitar. Keep the bass level as well as the vocal',
+            [],
+            [unread('Keep the bass level as well as the vocal', NET_REASON)],
+        ],
+        [
+            "don't touch the vocal nor brighten the drums",
+            [],
+            [unread("don't touch the vocal nor brighten the drums", NET_REASON)],
+        ],
+        [
+            'never touch the drums nor make the bass louder',
+            [],
+            [unread('never touch the drums nor make the bass louder', NET_REASON)],
+        ],
+        [
+            'Never make the drums louder nor widen the vocal',
+            [],
+            [unread('Never make the drums louder nor widen the vocal', NET_REASON)],
+        ],
+        // a joined part led by a wider degree word is a request of its own, never the rest of the protection
+        ...['a bit', 'far', 'way', 'even', 'slightly'].map(
+            (
+                degree
+            ): [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']] => [
+                `don't make the drums wider and ${degree} louder vocals`,
+                [measured('stereo-width-not-widened-v1', "don't make the drums wider", onTracks('drums'))],
+                [],
+            ]
+        ),
+        // a positive request led by a degree word is its own clause, never the rest of a protection before it
+        ['Keep the drums as they are, and a bit louder on the vocal', [], []],
+        ["Don't touch the bass and a lot louder drums", [], []],
+        ['Leave the bass alone and a bit louder drums', [], []],
+        ["Don't touch the drums, and way louder vocals", [], []],
+    ] satisfies [string, PerceptualConstraintReading['constraints'], PerceptualConstraintReading['unsupported']][])(
+        'reads "%s"',
+        (prompt, constraints, unsupported) => {
+            expect(compilePerceptualConstraints(prompt, grammarContext())).toEqual({ constraints, unsupported });
+        }
+    );
+});
+
 describe('reading only governed protections and whole object names', () => {
     it.each([
         // a negated stop, prevent or keep … from permits the move, so it states no bound
@@ -2804,6 +3149,37 @@ describe('reading only governed protections and whole object names', () => {
             [unread('stop making the mix wider', NET_REASON)],
         ],
         ['keep the vocal&stop making the mix wider', [], [unread('stop making the mix wider', NET_REASON)]],
+        // a long whitespace run before the ampersand is one run, read the same as a single space
+        [
+            `keep the vocal bright${' '.repeat(9000)}&stop making the mix wider`,
+            [measured('brightness-held-v1', 'keep the vocal bright', onTracks('vocal'))],
+            [unread('stop making the mix wider', NET_REASON)],
+        ],
+        [
+            `don't make the drums wider${' '.repeat(9000)}and the vocal louder`,
+            [
+                measured(
+                    'stereo-width-not-widened-v1',
+                    `don't make the drums wider${' '.repeat(9000)}and the vocal louder`,
+                    onTracks('drums')
+                ),
+                measured(
+                    'loudness-not-raised-v1',
+                    `don't make the drums wider${' '.repeat(9000)}and the vocal louder`,
+                    onTracks('vocal')
+                ),
+            ],
+            [],
+        ],
+        // a long run of one stressing or degree word is read in linear time, never split between adjacent repeats
+        [`keep the drums as they are${' even'.repeat(1600)} the vocal louder`, [], []],
+        [`make sure${' even'.repeat(1600)} the vocal louder`, [], []],
+        [
+            `I don't want${' even'.repeat(1600)} the vocal louder`,
+            [],
+            [unread(`I don't want${' even'.repeat(1600)} the vocal louder`, NET_REASON)],
+        ],
+        [`Raise the vocal by 2 dB instead${' even'.repeat(1600)} the vocal louder`, [], []],
         [
             "don't make the mix wider&keep the vocal bright",
             [
@@ -4107,6 +4483,41 @@ describe('the card a constraint criterion is shown on', () => {
         expect(criterionTexts('Lower the Vocal Trim and keep it warm')).toEqual([
             'Constraint “keep it warm”: nothing the application measures shows that it holds, so this batch cannot be approved as verified.',
         ]);
+    });
+});
+
+describe('whitespace guards in the clause vocabulary', () => {
+    // Runs long enough that asking a lookbehind from every position of one takes far longer than the test timeout.
+    const spaces = (length: number) => ' '.repeat(length);
+
+    /** The start and length of the first match, or null. */
+    function firstMatch(pattern: string, text: string): { index: number; length: number } | null {
+        const match = new RegExp(pattern, 'u').exec(text);
+        return match === null ? null : { index: match.index, length: match[0].length };
+    }
+
+    it('asks a clause head only where a word starts, not from every position of a whitespace run', () => {
+        const run = 100_000;
+        expect(firstMatch(`${CLAUSE_HEAD}\\s*x`, `1 and${spaces(run)}y`)).toBeNull();
+        expect(firstMatch(`${CLAUSE_HEAD}\\s*x`, `1 and${spaces(run)}x`)).toEqual({ index: 5 + run, length: 1 });
+    });
+
+    it('asks a purpose head only where a word starts, not from every position of a whitespace run', () => {
+        const run = 100_000;
+        expect(firstMatch(`${PURPOSE_HEAD}\\s*x`, `so${spaces(run)}y`)).toBeNull();
+        expect(firstMatch(`${PURPOSE_HEAD}\\s*x`, `so${spaces(run)}x`)).toEqual({ index: 2 + run, length: 1 });
+    });
+
+    it('asks whether a release governs a gerund only where a word starts, not from every position of a whitespace run', () => {
+        const run = 300_000;
+        expect(firstMatch(RELEASED_GERUND, `stop${spaces(run)}!`)).toBeNull();
+        expect(firstMatch(RELEASED_GERUND, `stop${spaces(run)}keeping`)).toEqual({ index: 4 + run, length: 7 });
+    });
+
+    it('reads a whitespace run once for a clause-joining ampersand it never finds', () => {
+        const run = 300_000;
+        expect(firstMatch(CLAUSE_JOINING_AMPERSAND, `a${spaces(run)}stop`)).toBeNull();
+        expect(firstMatch(CLAUSE_JOINING_AMPERSAND, `a${spaces(run)}&stop`)).toEqual({ index: 1, length: run + 1 });
     });
 });
 
