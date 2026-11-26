@@ -4,6 +4,7 @@ import { reconcileLevainDeviceStatesFromProject } from '#/modules/Levain/useCase
 import { reconcileToasterKitsFromProject } from '#/modules/Toaster/useCases';
 
 import { createCrumbsSampleProjectAccess } from './createCrumbsSampleProjectAccess';
+import { initCrumbsSamplePush } from './initCrumbsSamplePush';
 
 /**
  * Re-run the Toaster, Levain and Crumbs device sweeps on every change to the
@@ -39,6 +40,7 @@ export function initDeviceStateReconciliation(): () => void {
     let sweepScheduled = false;
     const sampleAccess = createCrumbsSampleProjectAccess();
     const disposeSampleAccess = configureCrumbsSampleProjectAccess(sampleAccess.capture);
+    const disposeSamplePush = initCrumbsSamplePush();
     const unsubscribe = subscribeToCrdtChanges((docId) => {
         if (docId !== undefined && docId !== DOC_PREFIX_ROOT) {
             return;
@@ -62,6 +64,7 @@ export function initDeviceStateReconciliation(): () => void {
     return () => {
         subscribed = false;
         unsubscribe();
+        disposeSamplePush();
         disposeSampleAccess();
     };
 }

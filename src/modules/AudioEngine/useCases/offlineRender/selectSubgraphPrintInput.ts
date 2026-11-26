@@ -2,7 +2,6 @@ import { type ClipGainEnvelope, type Track } from '#/modules/Arrangement/stores'
 
 import { affectsTrack } from './affectsTrack';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
-import { drivesTrackMixer } from './drivesTrackMixer';
 import { listPrintedFieldRefs } from './listPrintedFieldRefs';
 import { listPrintedTakeLaneRefs } from './listPrintedTakeLaneRefs';
 import { type OfflineRenderProjectSource, type OfflineRenderSessionSource } from './OfflineRenderSource';
@@ -10,6 +9,7 @@ import { readPrintedAdjustmentLayer } from './readPrintedAdjustmentLayer';
 import { readPrintedModulator } from './readPrintedModulator';
 import { readPrintedTrack } from './readPrintedTrack';
 import { resolveMuteHonoringTrackIds } from './resolveMuteHonoringTrackIds';
+import { selectPrintedAutomationLanes } from './selectPrintedAutomationLanes';
 
 /** The owner read models a subgraph print reads, live or captured. */
 export type SubgraphPrintInputSource = Pick<
@@ -40,7 +40,7 @@ export type SubgraphPrintInput = {
     routes: readonly OfflineRenderProjectSource['sidechainRoutes'][number][];
     /** The tracks whose mute the render honours: the keys of the detectors `routes` wires. */
     muteHonoringTrackIds: ReadonlySet<string>;
-    /** The lanes on `tracks`, except the target's own fader and pan lanes, which stay live. */
+    /** The lanes on `tracks`, except the target's own fader and pan lanes, which stay live, and any leader a follower among them reads. */
     automationLanes: readonly OfflineRenderProjectSource['automationLanes'][number][];
     midiRows: readonly MidiClipRows[];
     probabilitySeed: number | null;
@@ -107,9 +107,12 @@ export function selectSubgraphPrintInput({
         tracks,
         routes,
         muteHonoringTrackIds,
-        automationLanes: source.automationLanes
-            .filter((lane) => memberIds.has(lane.trackId) && !drivesTrackMixer(lane, targetTrackId))
-            .map(take),
+        automationLanes: selectPrintedAutomationLanes({
+            lanes: source.automationLanes,
+            memberIds,
+            targetTrackId,
+            takeRefs: (laneRefs) => refs.push(...laneRefs),
+        }),
         midiRows: clips
             .filter((clip) => clip.type === 'midi')
             .map((clip) => ({

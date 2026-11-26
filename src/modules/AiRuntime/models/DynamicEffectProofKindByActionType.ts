@@ -88,6 +88,7 @@ export const dynamicEffectProofKindByActionType: { readonly [Type in AppActionTy
     setGrandBouleDeviceState: 'none',
     setToasterFactoryKit: 'none',
     setBacteriaFactoryPatch: 'none',
+    setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',
     setProofPatchSelection: 'none',
     createBus: 'none',
