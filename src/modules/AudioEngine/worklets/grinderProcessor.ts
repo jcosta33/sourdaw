@@ -7,6 +7,11 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
 
+import {
+    GRINDER_PARAMETER_COUNT,
+    isGrinderLiveParameter,
+    isGrinderRuntimeParameter,
+} from '../models/GrinderRuntimeControl';
 import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
 import grinderAudioParamContract from '../services/grinderAudioParamContract.json';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
@@ -188,6 +193,15 @@ const MAX_NEURAL_CONV_LAYERS = 10;
 
 type UnknownRecord = Record<string, unknown>;
 
+function isGrinderParameterList(value: unknown): value is string[] {
+    return (
+        Array.isArray(value) &&
+        value.length <= GRINDER_PARAMETER_COUNT &&
+        value.every((id: unknown) => typeof id === 'string' && isGrinderRuntimeParameter(id)) &&
+        new Set(value).size === value.length
+    );
+}
+
 type ScheduledFallbackControl = {
     parameterId: string;
     value: number;
@@ -200,6 +214,7 @@ type FallbackControlTarget = {
     deviceId: string;
     deviceType: string;
     parameterIds: readonly string[];
+    allowUncapturedImmediate: boolean;
 };
 
 type GrinderNeuralPatch =
@@ -480,13 +495,18 @@ class GrinderProcessor extends AudioWorkletProcessor {
             message.schemaVersion !== 1 ||
             message.command !== 'initialize-fallback-control' ||
             !isRecord(message.target) ||
-            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
+            !hasOnlyKeys(message.target, [
+                'trackId',
+                'deviceId',
+                'deviceType',
+                'parameterIds',
+                'allowUncapturedImmediate',
+            ]) ||
             !isBoundedId(message.target.trackId) ||
             !isBoundedId(message.target.deviceId) ||
             !isBoundedId(message.target.deviceType) ||
-            !Array.isArray(message.target.parameterIds) ||
-            !message.target.parameterIds.every(isBoundedId) ||
-            new Set(message.target.parameterIds).size !== message.target.parameterIds.length ||
+            typeof message.target.allowUncapturedImmediate !== 'boolean' ||
+            !isGrinderParameterList(message.target.parameterIds) ||
             !isRecord(message.correlation) ||
             !hasOnlyKeys(message.correlation, ['workletGeneration']) ||
             !isPositiveSafeInteger(message.correlation.workletGeneration)
@@ -498,6 +518,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
             deviceId: message.target.deviceId,
             deviceType: message.target.deviceType,
             parameterIds: Object.freeze([...message.target.parameterIds]),
+            allowUncapturedImmediate: message.target.allowUncapturedImmediate,
         });
         this._fallbackControlGeneration = message.correlation.workletGeneration;
         this._lastFallbackControlSequence = 0;
@@ -580,15 +601,22 @@ class GrinderProcessor extends AudioWorkletProcessor {
             message.correlation.controlSequence <= this._lastFallbackControlSequence ||
             message.target.trackId !== controlTarget.trackId ||
             message.target.deviceId !== controlTarget.deviceId ||
-            message.target.deviceType !== controlTarget.deviceType ||
-            !controlTarget.parameterIds.includes(message.target.parameterId)
+            message.target.deviceType !== controlTarget.deviceType
         ) {
             return true;
         }
         const { targetFrame, deadlineFrame } = message.scheduling;
         const immediate = targetFrame === null && deadlineFrame === null;
         const scheduled = isNonNegativeSafeInteger(targetFrame) && isNonNegativeSafeInteger(deadlineFrame);
-        if (!immediate && (!scheduled || targetFrame > deadlineFrame)) {
+        if (
+            (!immediate && (!scheduled || targetFrame > deadlineFrame)) ||
+            (!controlTarget.parameterIds.includes(message.target.parameterId) &&
+                !(
+                    immediate &&
+                    controlTarget.allowUncapturedImmediate &&
+                    isGrinderLiveParameter(message.target.parameterId)
+                ))
+        ) {
             return true;
         }
         this._hasFallbackControlSequenceGap ||=

@@ -70,6 +70,7 @@
                     { "max": 80, "skipBlankLines": true, "skipComments": true, "IIFEs": true }
                 ],
                 "max-params": ["error", { "max": 4 }],
+                "no-new-wrappers": "error",
                 "sourdaw-craft/no-positional-boolean-flags": "error",
                 "typescript/no-non-null-assertion": "error",
                 "unicorn/no-invalid-remove-event-listener": "error"

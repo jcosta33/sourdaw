@@ -211,7 +211,8 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    a matched observer entry must still pass with valid reference and app-work evidence even when
    the cold SDK span exceeds the relative allowance. Match observer long tasks to exactly one
    qualified trace task and keep the full 100 ms frame-gap predicate.
-   (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
+   Save-only checkpoints (#6240): `ai-request-authority.md` probe 7.
+   (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939, #6240)
 
 8. **A spec or report diff launders behavior or strands its sites.**
    Probe: for a spec-only red-to-green diff, read the product code each hunk observes and decide stale
