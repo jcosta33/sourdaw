@@ -1,4 +1,4 @@
-import { protectionObjectForms } from './protectionObjectForms';
+import { protectionObjectForms, SKIP_VERBS } from './protectionObjectForms';
 import { refinementProtectionForms } from './refinementProtectionForms';
 
 /** Where an explicit protection clause sits in a request: the references it protects and how it was closed. */
@@ -17,10 +17,15 @@ const startPatterns: ReadonlyArray<{ kind: StartKind; pattern: RegExp }> = [
     { kind: 'prohibition', pattern: /\b(?:keep\s+(?:your\s+)?)?hands\s+off\b/giu },
     { kind: 'prohibition', pattern: /\bwithout\s+(?:touching|changing|altering|moving|editing)\b/giu },
     { kind: 'prohibition', pattern: /\bno\s+changes?\s+to\b/giu },
+    { kind: 'prohibition', pattern: new RegExp(String.raw`\b(?:${SKIP_VERBS.join('|')})\b`, 'giu') },
     {
         kind: 'carve-out',
         pattern: /\b(?:except(?:\s+for)?|excluding|but\s+not|apart\s+from|other\s+than|besides)\b/giu,
     },
+    // A "not" opening a coordinated part, after a comma, "and" or "or", sets its member apart as "but not"
+    // does ("..., not the vocals", "and not Keys"). "not including" is the track-control restriction's own
+    // phrase, which the grounding routes read there.
+    { kind: 'carve-out', pattern: /(?<=(?:,|\b(?:and|or))\s*)\bnot\b(?!\s+including\b)/giu },
 ];
 const instructionPattern = new RegExp(String.raw`\b${INSTRUCTION_VERBS}\b`, 'giu');
 const instructionStartPattern = new RegExp(String.raw`^\s+${INSTRUCTION_VERBS}\b`, 'iu');

@@ -207,6 +207,7 @@ describe('readExplicitProtections', () => {
             ['leave the first track alone', ['first track']],
             ['leave Keys as well as the first track alone', ['first track']],
             ['leave Keys along with the second track alone', ['second track']],
+            ['leave the 2nd track alone', ['2nd track']],
             ['leave Keys as well as the last one alone', ['last one']],
             ['leave the Keys alone except the second one', ['second one']],
             ['leave the next one alone', ['next one']],

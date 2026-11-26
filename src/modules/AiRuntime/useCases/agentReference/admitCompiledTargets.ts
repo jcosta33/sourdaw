@@ -1,14 +1,21 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
-import { type SemanticCommandListMatch, type SemanticCommandListSelector } from '../../models/SemanticCommandList';
+import {
+    type SemanticCommandListMatch,
+    type SemanticCommandListRoleFamily,
+    type SemanticCommandListSelector,
+} from '../../models/SemanticCommandList';
+import { resolveRoleFamily } from '../canonicalRoleFamilies';
 
+import { blankRanges } from './blankRanges';
 import {
     findAgentReferenceNameSpans,
     type AgentReferenceNameForms,
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
+import { DEMONSTRATIVE_TRACK_REFERENCE, findBackReference, SELECTION_PRONOUN } from './findBackReference';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -17,9 +24,15 @@ import { maskProjectReferences } from './groundingStrategies/maskProjectReferenc
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
+import { holdsFragmentAtWordStart } from './holdsFragmentAtWordStart';
+import { namesTrackSelectorForm } from './namesTrackSelectorForm';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
+import { readFamilyStatement, type FamilyStatement } from './readFamilyStatement';
+import { readOnce } from './readOnce';
+import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
+import { scopeToInstruction } from './scopeToInstruction';
 
 /*
  * Compiled target authority (#5295).
@@ -51,19 +64,32 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * Vocals EQ" and "bypass Vocals' EQ" never state the EQ on Keys, nor "mute the Vocals Verse clip" the
  * Verse clip on Keys; a request naming and selecting no track ("bypass every EQ") leaves the owner
  * open, and so does a selector that also picks by kind, role, role family, tag, device type or
- * condition ("bypass the EQ on Vocals and all MIDI tracks"). The text read is the whole request less
- * its restrictions and the values any call of the batch writes, so an instruction may pick by a name
- * an earlier one states ("turn Vocals down and pan it left"). A selection reference ("this track",
- * "the selected track", "it" or "its" outside every object name for the selected track) that resolves
- * to the picked objects states those picks only when the request names no object of that kind or
+ * condition ("bypass the EQ on Vocals and all MIDI tracks"). The text read is the whole request less its
+ * restrictions, the values any call of the batch writes and every other instruction naming its own
+ * tracks, where an instruction is the clause the direct route grounds an action in with the clauses
+ * continuing it, so another instruction's name never picks the call's target ("set Vocals volume to
+ * 75% and mute Keys" states no Keys gain). An instruction names tracks when it states them in any
+ * form a selector picks by: a name, id or position, a role phrase, a family word, or a word-start
+ * fragment of a track name ("mute the pad" names Synth Pad). Text giving no instruction always
+ * counts ("Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums"). Only an
+ * instruction that refers back, naming no track before that reference, keeps earlier instructions
+ * naming tracks: every one for "them" ("Mute Vocals. Mute Keys. Pan them left."), the nearest for
+ * "it" or "that track"; a call no clause grounds reads the whole request. A selection reference
+ * ("this track", "the selected track", "it" or "its" outside every object name for the selected
+ * track) that resolves to the picked objects states those picks only when the text names no object of that kind, by name, id or, for a track, position, or
  * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
- * volume so it sits better" never stands for the selected Keys, nor "bypass the EQ on Play It".
+ * volume so it sits better" never stands for the selected Keys, nor "set the first track volume so it
+ * sits better", nor "bypass the EQ on Play It". A fragment picks a target only where it starts a
+ * word of the target's name, a camel-case one included, so "guitar" picks Guitar1 and BassGuitar and
+ * "pad" never picks Launchpad.
  *
- * Literal targets, owner-track picks in a request that names and selects no track, and selections
- * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
- * compiler resolved them, subject to the protections above. Supported named prohibitions protect
- * their objects rather than state picks. Remaining named-negation and positional-reference gaps
- * belong to #5385; stricter selector-scope authority remains with #5351 and #5353.
+ * A role-family selection is admitted only for the roles the instruction states: one naming the
+ * family only through a narrower role phrase holding its word ("the lead vocal") admits the tracks of
+ * that role alone. Literal targets, owner-track picks in a request that names and selects no track,
+ * and selections by role, a role family the instruction names, kind, device type, tag, condition or no
+ * filter at all, are taken as the compiler resolved them, subject to the protections above. The
+ * request's protections, named, by role family or by role, read by the shared protection reader,
+ * subtract their objects ("..., not the vocals", "but not the backing vocals", "skip Keys").
  */
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -103,6 +129,8 @@ export type CompiledTargetCallTerms = {
     referenceResolved: boolean;
     /** The selector the call's targets came from, absent when the compiler named every one literally. */
     selectorTerms?: CompiledSelectorTerms;
+    /** Where the request states the instruction asking for this call's change; absent when no clause does. */
+    instruction?: AgentReferenceTextRange | undefined;
     targetIds: readonly string[];
 };
 
@@ -223,8 +251,9 @@ function getTrackOwnedObjectIds(trackId: string, context: ProjectContext): strin
     return [...track.devices.map((device) => device.id), ...track.clips.map((clip) => clip.id), ...laneIds];
 }
 
-function isTrackOwned(id: string, context: ProjectContext): boolean {
-    return context.tracks.some((track) => getTrackOwnedObjectIds(track.id, context).includes(id));
+/** The track owning a device, clip or automation lane. */
+function findObjectOwner(id: string, context: ProjectContext): ProjectContextTrack | undefined {
+    return context.tracks.find((track) => getTrackOwnedObjectIds(track.id, context).includes(id));
 }
 
 /** The name of every object in the project, which a value or fragment read in the text never runs into. */
@@ -238,12 +267,6 @@ function getProjectObjectNames(context: ProjectContext): string[] {
     const layerNames = (context.adjustmentLayers ?? []).map((layer) => layer.name);
     return [...trackNames, ...laneNames, ...layerNames];
 }
-
-/** "that track" points at a track as "this track" does, though the shared reading takes only the latter. */
-const DEMONSTRATIVE_TRACK_REFERENCE = /\bthat (?:audio |midi |bus |folder )?track\b/u;
-
-/** "it" or "its", which may stand for the selected track. */
-const SELECTION_PRONOUN = /\bits?\b/iu;
 
 /** A phrase that may stand for the selection: "this track", "the selected track", "the current track", "it" or "its". */
 const SELECTION_REFERENCE =
@@ -264,7 +287,8 @@ function joinsAsListMembers(between: string): boolean {
 /** The text with every range stating the name of an object in the project blanked out. */
 function maskObjectNames(text: string, context: ProjectContext): string {
     const names = getProjectObjectNames(context);
-    return names.flatMap((name) => findAgentReferenceNameSpans(text, name, NAME_FORMS, names)).reduce(blankRange, text);
+    const spans = names.flatMap((name) => findAgentReferenceNameSpans(text, name, NAME_FORMS, names));
+    return blankRanges(text, spans, ' ');
 }
 
 /** Whether "it" or "its" occurs outside every object name: "Play It" names a track, not the selection. */
@@ -290,10 +314,13 @@ function listsSelectionBesideName(text: string, capability: Capability, context:
 
 /**
  * Whether the text's selection reference may stand for the selection: when the text names no object
- * of the capability, or lists the reference beside one it names.
+ * of the capability, a track by position included ("the first track"), or lists the reference beside
+ * one it names.
  */
 function readsSelectionReference(text: string, capability: Capability, context: ProjectContext): boolean {
-    return !namesObjectByName(text, capability, context) || listsSelectionBesideName(text, capability, context);
+    const namesObject =
+        capability === 'track' ? namesTrack(text, context) : namesObjectByName(text, capability, context);
+    return !namesObject || listsSelectionBesideName(text, capability, context);
 }
 
 /**
@@ -324,22 +351,30 @@ function picksByNameAlone(terms: CompiledSelectorTerms | undefined): boolean {
 }
 
 /**
- * The track-owned objects the text can refer to: every object on a track the text names, by whole
- * name or id in any phrasing ("the Vocals EQ", "the EQ of Vocals", "Vocals' EQ", "the EQ on Vocals"),
- * and on the selected track when the text refers to it. Null when a dependency already fixes the owner,
- * when the selector also picks by something other than a name fragment, or when the text names and
- * selects no track, which leaves every owner open.
+ * The call's own instruction and the whole request. Which targets a pick reaches is read from the
+ * instruction; whether the request names or selects any track at all is read from the whole request,
+ * so another instruction's track never leaves this one's owner open to the selection.
  */
-function readReachableOwnedIds(text: string, input: RequestReadingInput): ReadonlySet<string> | null {
+type EvidenceTexts = { scoped: string; whole: string };
+
+/**
+ * The track-owned objects the instruction can refer to: every object on a track it names, by whole
+ * name or id in any phrasing ("the Vocals EQ", "the EQ of Vocals", "Vocals' EQ", "the EQ on Vocals"),
+ * and on the selected track when it refers to it. Null when a dependency already fixes the owner, when
+ * the selector also picks by something other than a name fragment, or when the whole request names and
+ * selects no track, which leaves every owner open; once any instruction names one, an instruction
+ * naming none reaches no owner ("Mute Keys. Bypass the EQ.").
+ */
+function readReachableOwnedIds(texts: EvidenceTexts, input: RequestReadingInput): ReadonlySet<string> | null {
     const { context, dependencyId } = input;
     if (dependencyId !== undefined || !picksByNameAlone(input.selectorTerms)) {
         return null;
     }
-    const namedTrackIds = readStatedIds(text, 'track', context);
-    const selectsTrack = refersToSelectedTrack(text, context);
-    if (namedTrackIds.length === 0 && !selectsTrack) {
+    if (readStatedIds(texts.whole, 'track', context).length === 0 && !refersToSelectedTrack(texts.whole, context)) {
         return null;
     }
+    const namedTrackIds = readStatedIds(texts.scoped, 'track', context);
+    const selectsTrack = refersToSelectedTrack(texts.scoped, context);
     const selectedTrackIds = selectsTrack && context.selectedTrackId !== null ? [context.selectedTrackId] : [];
     return new Set(
         [...namedTrackIds, ...selectedTrackIds].flatMap((trackId) => getTrackOwnedObjectIds(trackId, context))
@@ -377,10 +412,6 @@ function getRestrictionRanges(request: MaskedRequest, catalog: GroundingCatalog)
     }));
 }
 
-function blankRange(text: string, { start, end }: AgentReferenceTextRange): string {
-    return `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`;
-}
-
 /**
  * The text with the last occurrence of each written value blanked out: the value ("rename Kick to
  * Bass Drum") follows the target it is written to, and "rename Kick to Kick In" keeps the earlier
@@ -390,7 +421,7 @@ function maskWrittenValues(text: string, values: readonly string[], context: Pro
     const objectNames = getProjectObjectNames(context);
     return values.reduce((masked, value) => {
         const last = findAgentReferenceNameSpans(masked, value, NAME_FORMS, objectNames).at(-1);
-        return last === undefined ? masked : blankRange(masked, last);
+        return last === undefined ? masked : blankRanges(masked, [last], ' ');
     }, text);
 }
 
@@ -425,7 +456,7 @@ function getProtectedIds(
     // Whole owners are transferred before their source clauses are masked. Control facets remain
     // enforced after grounding against the actual mutation owners, never as blanket exclusions.
     const genericRestrictionIds = new Set<string>();
-    const genericRestrictions = consumed.reduce(blankRange, request.prompt);
+    const genericRestrictions = blankRanges(request.prompt, consumed, ' ');
     for (const range of restrictionRanges) {
         const restriction = genericRestrictions.slice(range.start, range.end);
         const { capability, context, dependencyId } = input;
@@ -433,9 +464,10 @@ function getProtectedIds(
             genericRestrictionIds.add(id);
         }
         // "leave Bass Verse unchanged" protects the clip, not every object on a track named Bass.
-        const trackRestriction = readNaming(restriction, capability, context, dependencyId).nameRanges.reduce(
-            blankRange,
-            restriction
+        const trackRestriction = blankRanges(
+            restriction,
+            readNaming(restriction, capability, context, dependencyId).nameRanges,
+            ' '
         );
         for (const trackId of readReferencedIds(trackRestriction, 'track', context)) {
             genericRestrictionIds.add(trackId);
@@ -447,19 +479,83 @@ function getProtectedIds(
     return { protectedIds, genericRestrictionIds };
 }
 
+/** Whether the text names a track by whole name, id or position. */
+function namesTrack(text: string, context: ProjectContext): boolean {
+    return namesObjectByName(text, 'track', context) || readTrackPosition(text) !== undefined;
+}
+
 /**
- * The text the targets are read from: the whole request, so a later instruction may pick by a name
- * an earlier one states ("mute Vocals and bypass the EQ on it"), with its restrictions and the values
- * the batch writes blanked, so a name stated only to protect an object or as a new name is never
- * read as picking a target.
+ * Whether the text states tracks in any form a selector picks them by: a whole name, id or position,
+ * or a role, family or name fragment outside every object name.
  */
-function getEvidenceText(
+function statesTracks(text: string, context: ProjectContext): boolean {
+    return namesTrack(text, context) || namesTrackSelectorForm(maskObjectNames(text, context), context.tracks);
+}
+
+/** The whole request with its restrictions and the values the batch writes blanked. */
+function getRequestText(
     input: RequestReadingInput,
     request: MaskedRequest,
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): string {
-    const unrestricted = restrictionRanges.reduce(blankRange, request.prompt);
+    const unrestricted = blankRanges(request.prompt, restrictionRanges, ' ');
     return maskWrittenValues(unrestricted, input.valueTexts, input.context);
+}
+
+/**
+ * The text the targets are read from: the whole request with its restrictions, the values the batch
+ * writes and every other instruction naming its own tracks blanked, so a name stated only by another
+ * instruction, to protect an object or as a new name is never read as picking a target.
+ */
+function getEvidenceText(input: RequestReadingInput, request: MaskedRequest, unwritten: string): string {
+    if (input.instruction === undefined) {
+        return unwritten;
+    }
+    const { context, catalog } = input;
+    const instruction = extendInstruction(request, input.instruction, catalog);
+    return scopeToInstruction({
+        text: unwritten,
+        clauses: request.clauses,
+        instruction,
+        reader: {
+            namesTracks: (text) => statesTracks(text, context),
+            findBackReference: (text) =>
+                findBackReference(text, maskObjectNames(text, context), (after) => statesTracks(after, context)),
+            givesInstruction: (masked) => resolveClauseActionIntent(masked, catalog) !== null,
+            extendInstruction: (clause) => extendInstruction(request, clause, catalog),
+        },
+    });
+}
+
+/**
+ * The call's clause with every following clause that continues it rather than giving another
+ * instruction: "add an EQ to Vocals and Keys" and "set Vocals volume to 75%, Drums to 60%" run whole.
+ */
+function extendInstruction(
+    request: MaskedRequest,
+    clause: AgentReferenceTextRange,
+    catalog: GroundingCatalog
+): AgentReferenceTextRange {
+    const end = Math.max(clause.end, getInstructionEnd(request, clause.start, catalog));
+    return { start: clause.start, end: extendOverListLines(request, end, catalog) };
+}
+
+/**
+ * Past the lines a clause ending on a colon introduces ("Turn down these tracks by 3 dB:\n- Bass\n-
+ * Drums"), up to the first line that gives an instruction of its own.
+ */
+function extendOverListLines(request: MaskedRequest, end: number, catalog: GroundingCatalog): number {
+    if (!request.prompt.slice(0, end).trimEnd().endsWith(':')) {
+        return end;
+    }
+    let listEnd = end;
+    for (const line of request.maskedPrompt.slice(end).matchAll(/[^\n]+/gu)) {
+        if (resolveClauseActionIntent(line[0], catalog) !== null) {
+            break;
+        }
+        listEnd = end + line.index + line[0].length;
+    }
+    return listEnd;
 }
 
 /** The whole names, name fragments and owner tracks a selector picks its targets by. */
@@ -505,6 +601,15 @@ function getObjectName(id: string, context: ProjectContext): string | undefined 
     return context.adjustmentLayers?.find((candidate) => candidate.id === id)?.name;
 }
 
+/**
+ * Whether the object's name holds the fragment at the start of a word, as the request must state it:
+ * the compiler's candidates match it anywhere, so "pad" also reaches Launchpad.
+ */
+function namesFragmentAsWord(id: string, fragment: string, context: ProjectContext): boolean {
+    const name = getObjectName(id, context);
+    return name === undefined || holdsFragmentAtWordStart(name, fragment);
+}
+
 /** Whether the range reaches past the inner range on either side while covering all of it. */
 function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceTextRange): boolean {
     const covers = range.start <= inner.start && inner.end <= range.end;
@@ -512,13 +617,9 @@ function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceText
 }
 
 /**
- * Whether the text states the fragment for every target it picks: as a whole word, in either number,
- * somewhere no range states a longer whole name of another object, so "Bus" inside "the Drum Bus"
- * states the Drum Bus and never the FX Bus. A whole name read no further than the fragment leaves it
- * standing: "the guitars" states the Guitar track and the "guitar" fragment for Guitar 2 alike. A
- * target a track owns must also sit on a track the text names or selects, when it names or selects
- * any, so "the Vocals EQ" never states the EQ on Keys, nor "the Verse clip on Vocals" the Verse clip
- * on Keys.
+ * Whether the text states the fragment for every target it picks: each target's name holds it at a
+ * word start, the text states it as a word outside any longer name of another object, and a target a
+ * track owns sits on a track the text names or selects, when it names or selects any.
  */
 function statesFragment(
     { fragment, occurrences }: FragmentReading,
@@ -532,7 +633,10 @@ function statesFragment(
     const { nameRanges, reachableIds } = evidence;
     return pickedIds.every(
         (targetId) =>
-            (reachableIds === null || !isTrackOwned(targetId, input.context) || reachableIds.has(targetId)) &&
+            namesFragmentAsWord(targetId, fragment, input.context) &&
+            (reachableIds === null ||
+                findObjectOwner(targetId, input.context) === undefined ||
+                reachableIds.has(targetId)) &&
             occurrences.some((occurrence) =>
                 nameRanges.every((nameRange) => nameRange.id === targetId || !extendsBeyond(nameRange, occurrence))
             )
@@ -619,50 +723,112 @@ type RequestReading = {
     picks: NamePicks;
     /** Read only for a call that must prove its selector's picks. */
     evidence: () => EvidenceReading;
+    /** Per role family the selector picks by, how the instruction states it. */
+    familyStatements: () => ReadonlyArray<{ pick: FamilyPick; statement: FamilyStatement }>;
 };
 
-function readOnce<Reading>(read: () => Reading): () => Reading {
-    let result: { value: Reading } | undefined;
-    return () => {
-        result ??= { value: read() };
-        return result.value;
-    };
-}
-
-function readEvidence(
-    input: RequestReadingInput,
-    picks: NamePicks,
-    request: MaskedRequest,
-    restrictionRanges: readonly AgentReferenceTextRange[]
-): EvidenceReading {
+function readEvidence(input: RequestReadingInput, picks: NamePicks, texts: EvidenceTexts): EvidenceReading {
     const { capability, context, dependencyId } = input;
-    const text = getEvidenceText(input, request, restrictionRanges);
     const objectNames = getProjectObjectNames(context);
+    const text = texts.scoped;
     return {
         text,
         statedIds:
             picks.names.length > 0 ? readWithNamedOwners(readStatedIds, text, capability, context, dependencyId) : [],
         nameRanges: readNaming(text, capability, context, dependencyId).nameRanges,
-        reachableIds: readReachableOwnedIds(text, input),
+        reachableIds: readReachableOwnedIds(texts, input),
         fragments: picks.fragments.map((fragment) => ({
             fragment,
             occurrences: findAgentReferenceNameSpans(text, fragment, NAME_FORMS, objectNames),
         })),
         statesTrackPicks:
-            picks.trackIds.every((trackId) => statesTrack(text, trackId, context)) || !refersToAnyTrack(text, context),
+            picks.trackIds.every((trackId) => statesTrack(text, trackId, context)) ||
+            !refersToAnyTrack(texts.whole, context),
         readsSelectionReference: readOnce(() => readsSelectionReference(text, capability, context)),
     };
+}
+
+/** A role family a selector picks by; `everyTarget` when `match.all` holds it for every target. */
+type FamilyPick = { family: SemanticCommandListRoleFamily; everyTarget: boolean };
+
+/** The role families a selector picks its targets by. */
+function getFamilyPicks(input: RequestReadingInput): FamilyPick[] {
+    const terms = input.selectorTerms;
+    if (terms === undefined || terms.targetArgument !== input.argument) {
+        return [];
+    }
+    const readPicks = (predicates: SemanticCommandListMatch['all'], everyTarget: boolean): FamilyPick[] =>
+        (predicates ?? []).flatMap((predicate) =>
+            'roleFamily' in predicate ? [{ family: predicate.roleFamily, everyTarget }] : []
+        );
+    return [...readPicks(terms.match?.all, true), ...readPicks(terms.match?.any, false)];
+}
+
+/** The track itself, or the track that owns the object. */
+function getOwnerTrack(id: string, context: ProjectContext): ProjectContextTrack | undefined {
+    return context.tracks.find((track) => track.id === id) ?? findObjectOwner(id, context);
+}
+
+function holdsStatedRole(id: string, roles: ReadonlySet<string>, context: ProjectContext): boolean {
+    const role = getOwnerTrack(id, context)?.canonicalRole?.role;
+    return role !== undefined && roles.has(role);
 }
 
 function readRequest(input: RequestReadingInput): RequestReading {
     const request = maskRequest(input.prompt, input.context);
     const restrictionRanges = getRestrictionRanges(request, input.catalog);
     const picks = getNamePicks(input);
+    const requestText = readOnce(() => getRequestText(input, request, restrictionRanges));
+    const text = readOnce(() => getEvidenceText(input, request, requestText()));
     return {
         ...getProtectedIds(input, request, restrictionRanges),
         picks,
-        evidence: readOnce(() => readEvidence(input, picks, request, restrictionRanges)),
+        evidence: readOnce(() => readEvidence(input, picks, { scoped: text(), whole: requestText() })),
+        familyStatements: readOnce(() =>
+            getFamilyPicks(input).map((pick) => ({
+                pick,
+                statement: readFamilyStatement(
+                    {
+                        scoped: maskObjectNames(text(), input.context),
+                        whole: maskObjectNames(requestText(), input.context),
+                    },
+                    pick.family
+                ),
+            }))
+        ),
     };
+}
+
+/**
+ * The targets a family pick's predicate reaches: every one under `match.all`, those of the family
+ * under `match.any`.
+ */
+function getReachedTargetIds(pick: FamilyPick, input: CompiledTargetAuthorityInput): readonly string[] {
+    if (pick.everyTarget) {
+        return input.targetIds;
+    }
+    return input.targetIds.filter((targetId) => {
+        const owner = getOwnerTrack(targetId, input.context);
+        return owner !== undefined && resolveRoleFamily(owner) === pick.family;
+    });
+}
+
+/**
+ * Whether the instruction states every family the selector picks by, and every target the family
+ * reaches holds a role it states for a family it names only through narrower roles.
+ */
+function staysWithinStatedFamilies(input: CompiledTargetAuthorityInput, reading: RequestReading): boolean {
+    return reading.familyStatements().every(({ pick, statement }) => {
+        if (statement.kind === 'elsewhere') {
+            return false;
+        }
+        return (
+            statement.kind !== 'roles' ||
+            getReachedTargetIds(pick, input).every((targetId) =>
+                holdsStatedRole(targetId, statement.roles, input.context)
+            )
+        );
+    });
 }
 
 function admitTargets(input: CompiledTargetAuthorityInput, reading: RequestReading): CompiledTargetAuthority {
@@ -674,6 +840,9 @@ function admitTargets(input: CompiledTargetAuthorityInput, reading: RequestReadi
     }
     if (input.referenceResolved) {
         return ADMITTED;
+    }
+    if (!staysWithinStatedFamilies(input, reading)) {
+        return UNAUTHORIZED;
     }
     const { picks } = reading;
     if (picks.names.length === 0 && picks.fragments.length === 0 && picks.trackIds.length === 0) {
@@ -691,7 +860,9 @@ function readsAlike(left: CompiledTargetCallTerms, right: CompiledTargetCallTerm
         left.selectorTerms === right.selectorTerms &&
         left.argument === right.argument &&
         left.capability === right.capability &&
-        left.dependencyId === right.dependencyId
+        left.dependencyId === right.dependencyId &&
+        left.instruction?.start === right.instruction?.start &&
+        left.instruction?.end === right.instruction?.end
     );
 }
 

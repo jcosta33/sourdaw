@@ -3395,13 +3395,13 @@
             "count": 29
         },
         "sourdaw-craft/no-control-flow-ternary": {
-            "count": 53
+            "count": 52
         },
         "sourdaw-craft/no-long-array-chain": {
             "count": 5
         },
         "sourdaw-craft/no-spread-clone-array-method": {
-            "count": 13
+            "count": 12
         },
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 3
@@ -3760,11 +3760,6 @@
             "count": 1
         },
         "eslint/max-params": {
-            "count": 1
-        }
-    },
-    "src/modules/AiRuntime/useCases/agentReference/readRoleFamilyProtection.ts": {
-        "eslint/complexity": {
             "count": 1
         }
     },
