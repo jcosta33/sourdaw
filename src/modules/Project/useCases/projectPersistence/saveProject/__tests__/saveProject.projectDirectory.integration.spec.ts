@@ -8,7 +8,10 @@ import {
 } from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    countPendingAutomergeStorageWrites,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -548,6 +551,14 @@ function captureDirectoryLoadBoundary(
     };
 }
 
+function persistenceFailureMessages(warn: {
+    readonly mock: { readonly calls: readonly (readonly unknown[])[] };
+}): string[] {
+    return warn.mock.calls
+        .filter(([message]) => message === '[saveProject] Project persistence failed:')
+        .map(([, error]) => (error instanceof Error ? error.message : String(error)));
+}
+
 describe('project directory save and cold Recent open', () => {
     beforeEach(() => {
         folder.root = new MemoryDirectory('selected-root');
@@ -760,6 +771,10 @@ describe('project directory save and cold Recent open', () => {
         expect(typeof previousNamed).toBe('string');
         const previousDirectory = await projectDirectory.read(runtime.directory, runtime.projectId);
 
+        // A pending store write is the only thing that re-projects the document into projectStore here, and
+        // the Save's own settle step would flush it. Settling first leaves the store holding the old identity
+        // for certain, whether or not an animation frame has already flushed it.
+        flushAutomergeStorageWrites();
         type NativeProjectRoot = { projectMeta?: { projectId?: string } };
         const rootId = runtime.crdt.DOC_PREFIX_ROOT;
         const differentProjectId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -774,15 +789,62 @@ describe('project directory save and cold Recent open', () => {
         });
         expect(runtime.crdt.getCrdtDoc<NativeProjectRoot>(rootId)?.projectMeta?.projectId).toBe(differentProjectId);
         expect(projectStore.value?.projectId).toBe(runtime.projectId);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
         const witness = runtime.crdt.captureDurableDocumentWitness();
         const warn = vi.spyOn(logger, 'warn');
 
         await expect(runtime.project.saveProject()).resolves.toBe(false);
 
-        expect(warn).toHaveBeenCalledWith(
-            '[saveProject] Project persistence failed:',
-            expect.objectContaining({ message: 'Project identity changed during Save preparation' })
-        );
+        expect(persistenceFailureMessages(warn)).toEqual([
+            'Project Save preparation requires matching native metadata',
+        ]);
+        expect(runtime.crdt.captureDurableDocumentWitness()).toBe(witness);
+        expect(await readNamedProjectJson(recentKey)).toBe(previousNamed);
+        expect(await projectDirectory.read(runtime.directory, runtime.projectId)).toEqual(previousDirectory);
+    }, 70_000);
+
+    it('refuses a Save whose own settle step re-projects a different project identity into the store', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const { logger } = await import('#/infra/logger/appLogger');
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        const { readNamedProjectJson } = await import('../../../../repositories/project/readNamedProjectJson');
+        const { getProjectSnapshotKey } = await import('../../getProjectSnapshotKey');
+        const { projectStore } = runtime.projectStores;
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected the saved project');
+        }
+        const recentKey = getProjectSnapshotKey(project.createdAt);
+        const previousNamed = await readNamedProjectJson(recentKey);
+        expect(typeof previousNamed).toBe('string');
+        const previousDirectory = await projectDirectory.read(runtime.directory, runtime.projectId);
+
+        // Only a pending store write makes the Save's settle step flush and re-project the edited native identity
+        // into the store after the Save captured the store's identity. Settling first and writing the stored value
+        // back unchanged leaves exactly that one write pending, and it commits nothing to the document.
+        flushAutomergeStorageWrites();
+        projectStore.set(project);
+        type NativeProjectRoot = { projectMeta?: { projectId?: string } };
+        const rootId = runtime.crdt.DOC_PREFIX_ROOT;
+        const differentProjectId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+        runtime.crdt.mutateCrdtDoc<NativeProjectRoot>({
+            id: rootId,
+            changeFn: (draft) => {
+                if (!draft.projectMeta) {
+                    throw new Error('Expected native project metadata');
+                }
+                draft.projectMeta.projectId = differentProjectId;
+            },
+        });
+        expect(runtime.crdt.getCrdtDoc<NativeProjectRoot>(rootId)?.projectMeta?.projectId).toBe(differentProjectId);
+        expect(projectStore.value?.projectId).toBe(runtime.projectId);
+        expect(countPendingAutomergeStorageWrites()).toBe(1);
+        const witness = runtime.crdt.captureDurableDocumentWitness();
+        const warn = vi.spyOn(logger, 'warn');
+
+        await expect(runtime.project.saveProject()).resolves.toBe(false);
+
+        expect(persistenceFailureMessages(warn)).toEqual(['Project identity changed during Save preparation']);
         expect(runtime.crdt.captureDurableDocumentWitness()).toBe(witness);
         expect(await readNamedProjectJson(recentKey)).toBe(previousNamed);
         expect(await projectDirectory.read(runtime.directory, runtime.projectId)).toEqual(previousDirectory);
