@@ -1,4 +1,5 @@
 import { escapeRegExp } from './escapeRegExp';
+import { POLITE_COMMAND_PREFIX_SOURCE } from './getPoliteCommandPrefixLength';
 import { normalizePromptText } from './normalizePromptText';
 
 export type ReferencedIntentPhraseMatch = {
@@ -18,11 +19,10 @@ const MASKED_REFERENCE = '(?:the\\s+)?(□+)';
 const DECIBEL_FIGURE = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*d\\s?b';
 
 /**
- * The clause opens with exactly the polite prefix `isExplicitCommandClause.ts` strips: the carrier
- * ("could you", "could you please") and then at most one "please" ("could you please please set" reads,
- * "please please set" does not). It closes with at most "please" and a full stop.
+ * The clause opens with exactly the polite prefix `isExplicitCommandClause.ts` strips, and closes with
+ * at most "please" and a full stop.
  */
-const CLAUSE_START = '^\\s*(?:(?:please\\s+)?(?:can|could|would)\\s+you(?:\\s+please)?\\s+)?(?:please\\s+)?';
+const CLAUSE_START = POLITE_COMMAND_PREFIX_SOURCE;
 const CLAUSE_END = '(?:\\s+please)?\\s*\\.?\\s*$';
 
 /** Registry phrases bound this; each pattern is built once. */

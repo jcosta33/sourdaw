@@ -993,6 +993,33 @@ describe('section grounding', () => {
         expect(absorbed.actions).toEqual([]);
     });
 
+    it.each([
+        'because the hook lands',
+        'since the hook lands',
+        'so I can find it',
+        'so that I can find it',
+        'to mark the hook',
+        'as a cue',
+        'which holds the hook',
+        'when the hook lands',
+        'where the hook lands',
+    ])('ends an unquoted section name before "%s"', (rationale) => {
+        const prompt = `add a section named Chorus ${rationale} from beat 16 to beat 32`;
+        const bounded = bridge(
+            [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } }],
+            prompt
+        );
+        const absorbed = bridge(
+            [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: `Chorus ${rationale}` } }],
+            prompt
+        );
+
+        expect(bounded.actions).toEqual([
+            { type: 'addSection', payload: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+        ]);
+        expect(absorbed.actions).toEqual([]);
+    });
+
     it('bounds remove and rename current labels before rationale', () => {
         const removed = bridge(
             [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],

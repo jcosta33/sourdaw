@@ -154,4 +154,75 @@ describe('range automation grounds the decibel figure and the shared target list
         expect(result.actions).toEqual([]);
         expect(result.rejections).not.toEqual([]);
     });
+
+    it('grounds a shared list whose range phrase stands before its figure', () => {
+        const calls = busCalls({ deltaDb: 1.5 });
+
+        const result = bridge(calls, 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual(calls.map((call) => ({ type: call.name, payload: call.arguments })));
+    });
+
+    it.each(['Turn Drum Bus and Bass Bus in Chorus Two down 3 dB', 'Turn Drum Bus in Chorus Two down 3 dB'])(
+        'keeps a fader level whose range phrase stands before its figure refused in "%s"',
+        (prompt) => {
+            const calls = BUSES.map((trackId) => ({ name: 'setTrackGain', arguments: { trackId, deltaDb: -3 } }));
+
+            const result = bridge(prompt.includes(' and ') ? calls : calls.slice(0, 1), prompt);
+
+            expect(result.actions).toEqual([]);
+        }
+    );
+});
+
+describe('a shared list is read with its lead, its both and its first member where the request writes them', () => {
+    const oldBassBus: NonNullable<ProjectTrack['clips']>[number] = {
+        id: 'clip-old-bass-bus',
+        name: 'Old Bass Bus',
+        type: 'audio',
+        startBeat: 0,
+        endBeat: 8,
+        gain: 1,
+        noteCount: 0,
+    };
+    const clipContext: ProjectContext = {
+        ...projectContext,
+        tracks: projectContext.tracks.map((track) =>
+            track.id === 'track-vocals' ? { ...track, clipCount: 1, clips: [oldBassBus] } : track
+        ),
+    };
+
+    function bridgeIn(context: ProjectContext, calls: ProviderCalls, prompt: string) {
+        return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures: [], sectionSignatures: [] });
+    }
+
+    it('grounds a list whose lead and both stand before its members', () => {
+        const calls = busCalls({ deltaDb: 1.5 });
+
+        const result = bridge(calls, 'Lift both Drum Bus and Bass Bus by 1.5 dB in Chorus Two');
+
+        expect(result.actions).toEqual(calls.map((call) => ({ type: call.name, payload: call.arguments })));
+    });
+
+    it.each([
+        'Lift both Drum Bus and Bass Bus peak by 1.5 dB in Chorus Two',
+        'In Chorus Two lift the peak of Drum Bus and Bass Bus by 1.5 dB',
+    ])('refuses a list whose words before the figure name another control in "%s"', (prompt) => {
+        const result = bridge(busCalls({ deltaDb: 1.5 }), prompt);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('grounds a list beside a clause naming a clip whose name ends in a member name', () => {
+        const calls = busCalls({ deltaDb: 1.5 });
+
+        const result = bridgeIn(
+            clipContext,
+            calls,
+            'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two, then solo Vocals over Old Bass Bus'
+        );
+
+        expect(result.actions).toEqual(calls.map((call) => ({ type: call.name, payload: call.arguments })));
+    });
 });

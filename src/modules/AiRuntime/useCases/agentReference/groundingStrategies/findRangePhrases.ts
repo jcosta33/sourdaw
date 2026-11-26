@@ -22,10 +22,14 @@ export const RANGE_CLOSING = String.raw`[\p{P}\s]*$`;
 /** A figure a range phrase or its target states. */
 export const RANGE_NUMBER = String.raw`\d+(?:\.\d+)?`;
 
+/** The units a range counts musical time in, as pattern sources: one bar or several, one beat or several. */
+export const BAR_WORD = 'bars?';
+export const BEAT_WORD = 'beats?';
+
 const SECTION_CONNECTOR_PATTERN = /(?<=^|\s)(?:in|during)\s+/giu;
 
 const BAR_RANGE_PATTERN = new RegExp(
-    String.raw`(?<=^|\s)(?:over|across|in|from|during)\s+bars?\s+(?<start>\d+)\s*(?:to|through|-|–)\s*(?:bar\s+)?(?<end>\d+)`,
+    String.raw`(?<=^|\s)(?:over|across|in|from|during)\s+${BAR_WORD}\s+(?<start>\d+)\s*(?:to|through|-|–)\s*(?:bar\s+)?(?<end>\d+)`,
     'giu'
 );
 
@@ -53,12 +57,12 @@ const COUNT_WORDS: Readonly<Record<string, number>> = {
 
 /** "the last 4 bars before": the section reference follows, read by the caller. */
 const BARS_BEFORE_PATTERN = new RegExp(
-    String.raw`(?<=^|\s)(?:in|over|across|during|for)\s+the\s+(?:last|final)\s+(?<count>\d+|${Object.keys(COUNT_WORDS).join('|')})\s+bars?\s+before\s+`,
+    String.raw`(?<=^|\s)(?:in|over|across|during|for)\s+the\s+(?:last|final)\s+(?<count>\d+|${Object.keys(COUNT_WORDS).join('|')})\s+${BAR_WORD}\s+before\s+`,
     'giu'
 );
 
 const BEAT_RANGE_PATTERN = new RegExp(
-    String.raw`(?<=^|\s)(?:over|across|from)\s+beats?\s+(?<start>${RANGE_NUMBER})\s*(?:to|through|-|–)\s*(?:beat\s+)?(?<end>${RANGE_NUMBER})`,
+    String.raw`(?<=^|\s)(?:over|across|from)\s+${BEAT_WORD}\s+(?<start>${RANGE_NUMBER})\s*(?:to|through|-|–)\s*(?:beat\s+)?(?<end>${RANGE_NUMBER})`,
     'giu'
 );
 
