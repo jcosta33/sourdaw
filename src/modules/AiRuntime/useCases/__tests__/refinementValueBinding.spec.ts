@@ -3527,8 +3527,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(
                 [first, second].map(
                     (command) =>
-                        readStoredCardRemoval({ prompt, command, pendingActions: pending, context: PAIRING_CONTEXT })
-                            .status
+                        readStoredCardRemoval({
+                            prompt,
+                            command,
+                            pendingActions: pending,
+                            actions: [],
+                            context: PAIRING_CONTEXT,
+                        }).status
                 )
             ).toEqual(['keeps', 'keeps']);
             for (const next of [[vocalGain(0.5)], [second, vocalGain(0.5)], [first, vocalGain(0.5)]]) {
@@ -3543,7 +3548,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             const prompt = 'drop the snare gain a bit and the vocal gain';
 
             expect(
-                readStoredCardRemoval({ prompt, command: vocalGain(0.5), pendingActions: pending, context }).status
+                readStoredCardRemoval({
+                    prompt,
+                    command: vocalGain(0.5),
+                    pendingActions: pending,
+                    actions: [],
+                    context,
+                }).status
             ).toBe('keeps');
             expect(admission(pending, [snareGain], prompt, context)).toBe('refused');
             // The same bare name after a removal that ends at its object continues it.
@@ -3552,6 +3563,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     prompt: 'drop the snare gain and the vocal gain',
                     command: vocalGain(0.5),
                     pendingActions: pending,
+                    actions: [],
                     context,
                 }).status
             ).toBe('removes');
@@ -3567,8 +3579,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             for (const [prompt, command] of rows) {
                 expect({
                     prompt,
-                    read: readStoredCardRemoval({ prompt, command, pendingActions: pending, context: PAIRING_CONTEXT })
-                        .status,
+                    read: readStoredCardRemoval({
+                        prompt,
+                        command,
+                        pendingActions: pending,
+                        actions: [],
+                        context: PAIRING_CONTEXT,
+                    }).status,
                 }).toEqual({ prompt, read: 'keeps' });
             }
             expect(admission(pending, [vocalGain(0.5)], 'remove "Compressor')).toBe('refused');
@@ -7020,6 +7037,44 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
                 reason: expect.stringContaining(
                     `"${asked}" beside a removal does not say whether that change is removed`
                 ),
+            });
+        });
+
+        const importStems = { type: 'importStemSet', payload: { selectionId: 'selection-1' } };
+        const admitWithImport = (prompt: string) =>
+            validateRefinedProposalActions({
+                pendingActions,
+                actions: [{ type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.6 } }, importStems],
+                prompt,
+                context: STORED_CONTEXT,
+                createdObject: proposalCommandShape.createdObject,
+                readRemoval: readStoredCardRemoval,
+            });
+
+        it.each([
+            'import the selected stems using the published role-based gain and pan values',
+            'import the selected stems, using the published role-based gain and pan values',
+        ])('admits the described addition "%s" beside a removal', (clause) => {
+            expect(admitWithImport(`Remove the guitar pan and ${clause}`)).toEqual({ status: 'valid' });
+        });
+
+        it.each([
+            ['import the selected stems, or not', 'or not'],
+            ["import the selected stems, don't do that", "don't do that"],
+            ['import the selected stems, never mind', 'never mind'],
+        ])('asks "%s" beside a removal, which may withdraw it', (clause, asked) => {
+            expect(admitWithImport(`Remove the guitar pan and ${clause}`)).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining(
+                    `"${asked}" beside a removal does not say whether that change is removed`
+                ),
+            });
+        });
+
+        it('asks a qualifier beside a removal when the batch adds nothing the clause names', () => {
+            expect(admit('Remove the guitar pan and import the selected stems')).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining('beside a removal does not say whether that change is removed'),
             });
         });
 

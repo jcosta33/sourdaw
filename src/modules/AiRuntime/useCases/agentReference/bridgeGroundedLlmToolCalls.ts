@@ -6600,6 +6600,7 @@ function findSilentOmission(input: {
             prompt: input.prompt,
             command: pendingActions[index]!,
             pendingActions,
+            actions: [],
             context: input.context,
         });
         if (removal.status === 'ambiguous') {

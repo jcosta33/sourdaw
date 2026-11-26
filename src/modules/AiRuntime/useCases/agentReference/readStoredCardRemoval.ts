@@ -433,6 +433,7 @@ function readCreationRemoval(input: {
     command: Command;
     names: readonly string[];
     pendingActions: readonly Command[];
+    actions: readonly Command[];
     context: ProjectContext;
 }): RemovalReading {
     const creations = readPendingCreations(input.pendingActions, input.context);
@@ -460,7 +461,7 @@ function readCreationRemoval(input: {
             const onNamedHost = sameName.filter((creation) => creation.hostIds.some((id) => hosts.has(id)));
             const picked = hosts.size === 0 ? sameName : onNamedHost;
             if (picked.length === 1 && picked[0]!.command === input.command) {
-                return settleRemoval(reading, readProtectionScope(input.pendingActions, input.context));
+                return settleRemoval(reading, readProtectionScope(input.pendingActions, input.actions, input.context));
             }
         }
     }
@@ -477,11 +478,27 @@ function readCreationRemoval(input: {
     return { status: 'keeps' };
 }
 
-type ProtectionScope = Parameters<typeof refinementProtectionForms.read>[1];
+type ProtectionScope = Parameters<typeof refinementProtectionForms.read>[1] & {
+    /** The verb word of each command type the refined batch adds and the card holds none of. */
+    addedVerbs: ReadonlySet<string>;
+};
 
-/** The project objects a clause can protect, and every object id a pending command of the card acts on. */
-function readProtectionScope(pendingActions: readonly Command[], context: ProjectContext): ProtectionScope {
+function readVerbWord(commandType: string): string {
+    return (/^[a-z]+/u.exec(commandType)?.[0] ?? commandType).toLowerCase();
+}
+
+/**
+ * The project objects a clause can protect, every object id a pending command of the card acts on, and
+ * the verb word each added command type states ("import" for `importStemSet`).
+ */
+function readProtectionScope(
+    pendingActions: readonly Command[],
+    actions: readonly Command[],
+    context: ProjectContext
+): ProtectionScope {
+    const heldTypes = new Set(pendingActions.map((pending) => pending.type));
     return {
+        addedVerbs: new Set(actions.filter((action) => !heldTypes.has(action.type)).map((a) => readVerbWord(a.type))),
         candidates: refinementRequestReading.candidates(context),
         pendingIds: new Set(
             pendingActions.flatMap(
@@ -496,6 +513,29 @@ function protectsOffCardObjects(words: string, scope: ProtectionScope): boolean 
     return refinementProtectionForms.read(words, scope)?.kind === 'protects';
 }
 
+/** Whether a clause opens or names the verb of a command the refined batch adds, so it describes that addition. */
+function statesAddedVerb(words: string, scope: ProtectionScope): boolean {
+    return words.split(' ').some((word) => scope.addedVerbs.has(word));
+}
+
+/** Whether a clause names no object, states no figure and no action, and is no closed filler or courtesy. */
+function statesNoAction(
+    clause: ClauseReading,
+    words: string,
+    catalog: ReturnType<typeof getExecutableAppActionGroundingCatalog>
+): boolean {
+    return (
+        words.length > 0 &&
+        clause.mentions.length === 0 &&
+        !refinementRequestReading.statesFigure(clause) &&
+        resolveClauseActionIntent(clause.masked, catalog) === null &&
+        !refinementCourtesy.filler.has(words) &&
+        !refinementCourtesy.clauses.has(
+            refinementRequestReading.withoutLeadingConnectors(normalizePromptText(clause.masked))
+        )
+    );
+}
+
 /**
  * The first clause beside a removal that may withdraw or qualify it, read as the refinement reader
  * reads a clause it cannot consume: one stating a negation ("or not", "never mind", "without changing
@@ -506,9 +546,11 @@ function protectsOffCardObjects(words: string, scope: ProtectionScope): boolean 
  */
 function findUnreadQualifier(reading: readonly ClauseReading[], scope: ProtectionScope): ClauseReading | null {
     const catalog = getExecutableAppActionGroundingCatalog();
+    let describesAddition = false;
     return (
         reading.find((clause) => {
             if (clause.directives.some((directive) => directive.intention === 'remove')) {
+                describesAddition = false;
                 return false;
             }
             // Read with a trailing space, so a clause of connectors alone (the "And" the splitter cuts
@@ -522,16 +564,10 @@ function findUnreadQualifier(reading: readonly ClauseReading[], scope: Protectio
             if (refinementRequestReading.statesNegation(clause)) {
                 return true;
             }
-            return (
-                words.length > 0 &&
-                clause.mentions.length === 0 &&
-                !refinementRequestReading.statesFigure(clause) &&
-                resolveClauseActionIntent(clause.masked, catalog) === null &&
-                !refinementCourtesy.filler.has(words) &&
-                !refinementCourtesy.clauses.has(
-                    refinementRequestReading.withoutLeadingConnectors(normalizePromptText(clause.masked))
-                )
-            );
+            // A clause naming an added command's verb opens its description, which the clauses the
+            // splitter cut from it ("… the published gain and pan values") go on with.
+            describesAddition = statesAddedVerb(words, scope) || (describesAddition && clause.mentions.length === 0);
+            return !describesAddition && statesNoAction(clause, words, catalog);
         }) ?? null
     );
 }
@@ -555,10 +591,10 @@ function settleRemoval(reading: readonly ClauseReading[], scope: ProtectionScope
  * it states named by a removal verb opening its clause and no clause keeping it; a creation by the
  * name of what it creates. A removal beside a clause that may withdraw or qualify it is asked.
  */
-export const readStoredCardRemoval: ReadCommandRemoval = ({ prompt, command, pendingActions, context }) => {
+export const readStoredCardRemoval: ReadCommandRemoval = ({ prompt, command, pendingActions, actions, context }) => {
     const { created, targetIds } = readStoredCommandObjects(command, proposalCommandShape.createdObject, context);
     if (created !== null) {
-        return readCreationRemoval({ prompt, command, names: created.names, pendingActions, context });
+        return readCreationRemoval({ prompt, command, names: created.names, pendingActions, actions, context });
     }
     const operation = operationPattern(command.type);
     if (targetIds.length === 0 || operation === null) {
@@ -570,5 +606,8 @@ export const readStoredCardRemoval: ReadCommandRemoval = ({ prompt, command, pen
         targetIds.map((id) => ({ name: id, id }))
     );
     const removes = targetIds.every((id) => removesMentioned(readMentionIntentions(reading, id, operation)));
-    return removes ? settleRemoval(reading, readProtectionScope(pendingActions, context)) : { status: 'keeps' };
+    if (!removes) {
+        return { status: 'keeps' };
+    }
+    return settleRemoval(reading, readProtectionScope(pendingActions, actions, context));
 };
