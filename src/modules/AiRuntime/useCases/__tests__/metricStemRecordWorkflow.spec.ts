@@ -643,7 +643,7 @@ describe('stem import and starting mix workflow', () => {
 
     it.each([
         ['short', 'Raise Guide Mix by 1 dB while keeping true peak below -1 dBTP'],
-        ['long', `Raise Guide Mix by 1 dB while keeping true peak below -1 dBTP ${'please '.repeat(1200)}end`],
+        ['long', `Raise Guide Mix by 1 dB while keeping true peak below -1 dBTP. ${'Thanks. '.repeat(1200)}`],
     ] as const)('plans a staged refinement of the %s predecessor', async (kind, originalPrompt) => {
         let predecessorId = '';
         const emittedIds = new Set<string>();

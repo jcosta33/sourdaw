@@ -29,15 +29,15 @@ export type PromptDecibelFigure = {
 };
 
 /** `dB`, `db`, `d b`, immediately after the number. */
-const DECIBEL_UNIT_PATTERN = /^\s*d\s?b\b/iu;
+export const DECIBEL_UNIT_PATTERN = /^\s*d\s?b\b/iu;
 
-const ARTICLES: ReadonlySet<string> = new Set(['a', 'an', 'the']);
+export const ARTICLES: ReadonlySet<string> = new Set(['a', 'an', 'the']);
 
 /** Words that put the figure where the level should land. */
-const ABSOLUTE_CONNECTORS: ReadonlySet<string> = new Set(['at', 'to']);
+export const ABSOLUTE_CONNECTORS: ReadonlySet<string> = new Set(['at', 'to']);
 
 /** Words that bind a figure as the starting state rather than the requested destination. */
-const SOURCE_CONNECTORS: ReadonlySet<string> = new Set(['from']);
+export const SOURCE_CONNECTORS: ReadonlySet<string> = new Set(['from']);
 
 /** Words that put the figure on the distance the level should move. */
 const RELATIVE_CONNECTORS: ReadonlySet<string> = new Set(['by', 'down', 'up']);

@@ -2108,3 +2108,41 @@ describe('complete protection owners at every grounding boundary', () => {
         ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('"Drums"') });
     });
 });
+
+describe('a coordinated level list whose level noun precedes its first member (#5344)', () => {
+    it.each([
+        'lower the volume of the Drums by 3 dB',
+        'turn down the volume of the Drums by 3 dB',
+        'lower the level of the Drums by 3 dB',
+        'lower the gain of the Drums by 3 dB',
+        'lower the fader of the Drums by 3 dB',
+    ])('grounds the single-track head "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
+        'lower the volume of the Drums and the Bass by 3 dB',
+        'turn down the volume of the Drums and the Bass by 3 dB',
+        'lower the level of the Drums and the Bass by 3 dB',
+        'lower the gain of the Drums and the Bass by 3 dB',
+        'lower the fader of the Drums and the Bass by 3 dB',
+    ])('grounds the same head for the list "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
+        'lower the volume of the Drums and the Bass by 3 dB except the last one',
+        'lower the send of the Drums and the Bass by 3 dB',
+        'lower the volume of the Drums and the Bass by 3 dB, but not the latter',
+    ])('still refuses "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+
+        expect(result.actions).toEqual([]);
+    });
+});
