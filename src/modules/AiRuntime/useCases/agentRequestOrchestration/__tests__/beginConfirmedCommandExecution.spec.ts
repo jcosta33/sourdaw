@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+
 import { beginConfirmedCommandExecution } from '../beginConfirmedCommandExecution';
 import { retainedRenderReceipts } from '../retainedRenderReceipts';
 
@@ -562,6 +564,46 @@ describe('beginConfirmedCommandExecution', () => {
 
             expect(result.status).toBe('ready');
             expect(mocks.failPreflight).not.toHaveBeenCalled();
+        });
+
+        it('refuses a protected batch as stale while the project needs repair', async () => {
+            agentProjectRepairStateStore.set({
+                audioGraphValid: false,
+                detectedRevision: 'repair-revision',
+                inspectionAvailable: true,
+                projectInvariantsValid: false,
+                rawProjectRetained: true,
+                repairCandidates: [],
+                status: 'repair-required',
+            });
+            const action = {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-on-other', paramId: 'comp-threshold', value: -16 },
+            } satisfies PendingAppActionConfirmation['actions'][number];
+
+            const protectedConfirmation = protectTrackWith(action);
+            try {
+                const result = beginConfirmedCommandExecution({
+                    confirmation: protectedConfirmation,
+                    priorVerifiedBatchReceipt: null,
+                    recoveringPendingEffects: false,
+                });
+
+                expect(result.status).toBe('settled');
+                if (result.status !== 'settled') {
+                    throw new Error('Expected the repair-required refusal to settle.');
+                }
+                await result.result;
+                expect(mocks.invalidate).toHaveBeenCalledWith(
+                    protectedConfirmation,
+                    'The project needs repair before the objects the batch targets can be checked against its protections.'
+                );
+                expect(mocks.failPreflight).not.toHaveBeenCalled();
+                expect(mocks.getContext).not.toHaveBeenCalled();
+                expect(mocks.parseBatch).not.toHaveBeenCalled();
+            } finally {
+                agentProjectRepairStateStore.set(null);
+            }
         });
 
         it('refuses an addDevice onto a protected track', async () => {
