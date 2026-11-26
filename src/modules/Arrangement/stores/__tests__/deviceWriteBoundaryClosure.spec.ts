@@ -1222,7 +1222,6 @@ const DEVICE_DATA_COUNTS = {
         // `executeAppAction` — the migration it calls is a pure function that
         // returns its input untouched when nothing applies.
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
-        'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
         // The explicit parameter map and shorthand returned device chain are both
         // part of the owning store write.
