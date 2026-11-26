@@ -1932,6 +1932,39 @@ describe('an instruction naming no track takes no selected owner once another in
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id]);
     });
+
+    it('mutes Keys and grounds the selected Keys EQ for "Mute Keys. Bypass the EQ on track 2."', () => {
+        const result = compileAndBridge(
+            'Mute Keys. Bypass the EQ on track 2.',
+            [trackItem('muteTrack', mixKeys, { muted: true }), bypassItem(mixKeysEq, mixKeys.id)],
+            [],
+            { ...mixContext, selectedTrackId: mixKeys.id }
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(payloadTargets(result)).toEqual([mixKeys.id, mixKeysEq.id]);
+    });
+
+    it.each(['Mute Keys. Bypass the EQ on the first track.', 'Mute Keys. Bypass the EQ on track 1.'])(
+        'refuses the selected Vocals EQ and mutes Keys for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [trackItem('muteTrack', mixKeys, { muted: true }), bypassItem(mixVocalsEq, mixVocals.id)],
+                [],
+                vocalsSelected
+            );
+
+            expect(payloadTargets(result)).toEqual([mixKeys.id]);
+            expect(result.rejections).toEqual([
+                {
+                    index: 1,
+                    name: 'bypassDevice',
+                    reason: 'Compiled target deviceId is not authorized by the user request',
+                },
+            ]);
+        }
+    );
 });
 
 describe('a selection reference stands for no track once the request names one', () => {

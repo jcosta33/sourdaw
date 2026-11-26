@@ -214,6 +214,33 @@ function continuesProtectionOwner(masked: string, event: Event, lead: Piece['lea
     return protectionObjectForms.readObjectForm(tokens, false, []) !== null;
 }
 
+/**
+ * A coordinated "not" inside a still-open protection that closes later in its sentence lists a member of that
+ * protection ("keep Keys, not Bass, unchanged"), so it opens no carve-out that would cut the clause before its closer.
+ */
+function insideOpenProtection(masked: string, event: Event, lead: Piece['lead']): boolean {
+    if (event.kind !== 'carve-out' || masked.slice(event.index, event.end).toLowerCase() !== 'not') {
+        return false;
+    }
+    if (lead === null || lead.kind === 'carve-out') {
+        return false;
+    }
+    if (findCloser(masked, lead.end, event.index, closerPattern, lead.text) !== null) {
+        return false;
+    }
+    const boundary = masked.slice(event.end).search(hardBoundaryPattern);
+    const end = boundary === -1 ? masked.length : event.end + boundary;
+    return findCloser(masked, event.end, end, closerPattern, lead.text) !== null;
+}
+
+/** Whether an instruction verb or a coordinated "not" belongs to the protection still open before it. */
+function continuesOpenProtection(masked: string, event: Event, lead: Piece['lead']): boolean {
+    if (event.kind === 'instruction') {
+        return continuesProtectionOwner(masked, event, lead);
+    }
+    return insideOpenProtection(masked, event, lead);
+}
+
 /** The text cut at boundaries, instruction verbs and conjunctions, and before every protection start. */
 function splitPieces(masked: string, names: readonly Range[]): Piece[] {
     const pieces: Piece[] = [];
@@ -224,7 +251,7 @@ function splitPieces(masked: string, names: readonly Range[]): Piece[] {
         if (event.index < cursor) {
             continue;
         }
-        if (event.kind === 'instruction' && continuesProtectionOwner(masked, event, lead)) {
+        if (continuesOpenProtection(masked, event, lead)) {
             continue;
         }
         if (

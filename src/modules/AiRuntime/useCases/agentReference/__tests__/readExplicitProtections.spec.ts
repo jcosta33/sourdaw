@@ -421,6 +421,14 @@ describe('readExplicitProtections', () => {
         );
 
         it.each([
+            'Keep Keys, not Bass, unchanged',
+            'keep Keys, not Bass, as is',
+            'turn Drums down 3 dB and keep Keys, not Bass, unchanged',
+        ])('keeps a keep clause whole across a coordinated not before its closing word in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([keys.id]);
+        });
+
+        it.each([
             'turn Drums down 3 dB, the problem is not Keys',
             'turn Drums down 3 dB; what clashes is not the Keys',
         ])('reads no carve-out from a not inside a clause in "%s"', (prompt) => {

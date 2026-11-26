@@ -701,6 +701,18 @@ function statesTrack(text: string, trackId: string, context: ProjectContext): bo
     return readsSelectionReference(text, 'track', context) && selectsObject(text, trackId, 'track', context);
 }
 
+/**
+ * Whether the request states the owner track the instruction picks by. An instruction stating a track
+ * by position ("bypass the EQ on track 2") names one the shared resolver does not bind, so its owner
+ * is read from the whole request, as it was before instructions were read apart.
+ */
+function statesOwnerTrack(texts: EvidenceTexts, trackId: string, context: ProjectContext): boolean {
+    return (
+        statesTrack(texts.scoped, trackId, context) ||
+        (readTrackPosition(texts.scoped) !== undefined && statesTrack(texts.whole, trackId, context))
+    );
+}
+
 /** A name fragment a selector picks by, and every place the text states it as a whole word. */
 type FragmentReading = { fragment: string; occurrences: readonly AgentReferenceTextRange[] };
 
@@ -742,7 +754,7 @@ function readEvidence(input: RequestReadingInput, picks: NamePicks, texts: Evide
             occurrences: findAgentReferenceNameSpans(text, fragment, NAME_FORMS, objectNames),
         })),
         statesTrackPicks:
-            picks.trackIds.every((trackId) => statesTrack(text, trackId, context)) ||
+            picks.trackIds.every((trackId) => statesOwnerTrack(texts, trackId, context)) ||
             !refersToAnyTrack(texts.whole, context),
         readsSelectionReference: readOnce(() => readsSelectionReference(text, capability, context)),
     };
