@@ -204,6 +204,23 @@ struct PendingParameterDrainEntry {
 struct PendingParameterQueue {
     slots: [PendingParameterSlot; PENDING_PARAMETER_CAPACITY],
     next_sequence: AtomicU64,
+    /// Every write whose sequence is at or below this was issued before the
+    /// last block the plugin was not handed ended, so the sample it names is
+    /// one of a block that no longer exists: it is delivered at sample 0.
+    /// Lateness is carried by the sequence rather than by rewriting a slot's
+    /// offset, because a slot another thread holds mid-claim cannot be
+    /// rewritten and must not be waited for. Only grows.
+    late_through: AtomicU64,
+}
+
+/// The sample a write is delivered at: its own, unless it was issued before
+/// the last unserved block ended, in which case the head of the next block.
+fn effective_sample_offset(sample_offset: u32, sequence: u64, late_through: u64) -> u32 {
+    if sequence <= late_through {
+        0
+    } else {
+        sample_offset
+    }
 }
 
 impl PendingParameterQueue {
@@ -211,6 +228,7 @@ impl PendingParameterQueue {
         Self {
             slots: std::array::from_fn(|_| PendingParameterSlot::new()),
             next_sequence: AtomicU64::new(1),
+            late_through: AtomicU64::new(0),
         }
     }
 
@@ -261,6 +279,7 @@ impl PendingParameterQueue {
     /// still counts as queued: the parameter's pending value is at least as new
     /// as the one being folded in.
     fn coalesce(&self, param_id: u32, sample_offset: u32, value_bits: u64, sequence: u64) -> bool {
+        let late_through = self.late_through.load(Ordering::Acquire);
         for slot in &self.slots {
             if slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY {
                 continue;
@@ -270,40 +289,67 @@ impl PendingParameterQueue {
                 continue;
             }
 
-            if slot
-                .state
-                .compare_exchange(
-                    PENDING_PARAMETER_READY,
-                    PENDING_PARAMETER_WRITING,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_err()
-            {
-                continue;
+            if Self::fold_into_ready_slot(
+                slot,
+                param_id,
+                sample_offset,
+                value_bits,
+                sequence,
+                late_through,
+            ) {
+                return true;
             }
-
-            // Read under the claim: a restamp moves a slot's offset only while
-            // it holds the slot the same way.
-            if slot.sample_offset.load(Ordering::Relaxed) != sample_offset {
-                slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
-                continue;
-            }
-
-            if slot.sequence.load(Ordering::Relaxed) < sequence {
-                slot.value_bits.store(value_bits, Ordering::Relaxed);
-                slot.sequence.store(sequence, Ordering::Relaxed);
-            }
-            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
-            return true;
         }
 
         false
     }
 
+    /// Claim a published slot and fold the write into it when, read under the
+    /// claim, it still holds the same parameter at the same effective sample.
+    /// The unclaimed checks that chose this slot may be stale: it can have been
+    /// drained and republished for another parameter or sample since, so the
+    /// claim re-reads both and gives the slot back untouched on a mismatch.
+    /// A slot another thread holds is skipped, never waited for.
+    ///
+    /// Both sides compare effective samples: a write issued before the last
+    /// unserved block is late and names sample 0, whatever offset it carries.
+    fn fold_into_ready_slot(
+        slot: &PendingParameterSlot,
+        param_id: u32,
+        sample_offset: u32,
+        value_bits: u64,
+        sequence: u64,
+        late_through: u64,
+    ) -> bool {
+        if !Self::claim_ready(slot) {
+            return false;
+        }
+
+        let held_sequence = slot.sequence.load(Ordering::Relaxed);
+        let same_point = slot.param_id.load(Ordering::Relaxed) == param_id
+            && effective_sample_offset(
+                slot.sample_offset.load(Ordering::Relaxed),
+                held_sequence,
+                late_through,
+            ) == effective_sample_offset(sample_offset, sequence, late_through);
+        if !same_point {
+            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+            return false;
+        }
+
+        if held_sequence < sequence {
+            slot.value_bits.store(value_bits, Ordering::Relaxed);
+            slot.sample_offset.store(sample_offset, Ordering::Relaxed);
+            slot.sequence.store(sequence, Ordering::Relaxed);
+        }
+        slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+        true
+    }
+
     fn drain(&self, out: &mut [PendingParameterUpdate]) -> usize {
         let mut count = 0;
         let mut entries = [PendingParameterDrainEntry::default(); PENDING_PARAMETER_CAPACITY];
+        let late_through = self.late_through.load(Ordering::Acquire);
 
         for slot in &self.slots {
             if count >= out.len() {
@@ -323,12 +369,16 @@ impl PendingParameterQueue {
                 continue;
             }
 
+            let sequence = slot.sequence.load(Ordering::Relaxed);
             let update = PendingParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Relaxed)),
-                sample_offset: slot.sample_offset.load(Ordering::Relaxed),
+                sample_offset: effective_sample_offset(
+                    slot.sample_offset.load(Ordering::Relaxed),
+                    sequence,
+                    late_through,
+                ),
             };
-            let sequence = slot.sequence.load(Ordering::Relaxed);
             if let Some(existing) = entries[..count].iter_mut().find(|entry| {
                 entry.update.param_id == update.param_id
                     && entry.update.sample_offset == update.sample_offset
@@ -365,22 +415,36 @@ impl PendingParameterQueue {
     /// samples of a block that no longer exists, and left as they are they
     /// would sort behind the next block's own early points. A late write is
     /// delivered at the head, exactly as [`HostedPluginSlot`] re-stamps a
-    /// retained note. A slot mid-publish is its producer's, so it is left to
-    /// publish the offset it chose: that producer is writing for the block
-    /// about to run.
+    /// retained note.
     ///
-    /// Every late write of one parameter now names the same sample, so they
-    /// are one write: the slots of a parameter fold into its latest (highest
+    /// Lateness is marked by sequence: every write issued so far is at or
+    /// below the new `late_through`, and drain and coalesce read a late write
+    /// as sample 0 whatever offset its slot holds. Rewriting offsets in place
+    /// would miss a slot another thread holds mid-claim, and the audio thread
+    /// may not wait for it; the watermark covers that slot all the same. A
+    /// write issued after the mark carries a higher sequence and keeps its own
+    /// offset, since it is for the block about to run.
+    ///
+    /// Every late write of one parameter names the same sample, so they are
+    /// one write: the slots of a parameter fold into its latest (highest
     /// sequence) and the rest are freed. Kept apart, the points of a ramp from
     /// consecutive unserved blocks would fill the queue and refuse the newest
-    /// writes of that ramp.
-    fn restamp_to_block_head(&self) {
+    /// writes of that ramp. A slot another thread holds is skipped by the
+    /// fold; drain folds it the same way once it is published.
+    fn mark_pending_late(&self) {
+        let issued = self.next_sequence.load(Ordering::Acquire).saturating_sub(1);
+        self.late_through.fetch_max(issued, Ordering::Release);
+        let late_through = self.late_through.load(Ordering::Acquire);
+
         for (index, slot) in self.slots.iter().enumerate() {
             if !Self::claim_ready(slot) {
                 continue;
             }
-            slot.sample_offset.store(0, Ordering::Relaxed);
             let param_id = slot.param_id.load(Ordering::Relaxed);
+            if slot.sequence.load(Ordering::Relaxed) > late_through {
+                slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+                continue;
+            }
             for other in &self.slots[index + 1..] {
                 if other.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY
                     || other.param_id.load(Ordering::Relaxed) != param_id
@@ -389,8 +453,11 @@ impl PendingParameterQueue {
                     continue;
                 }
                 // Re-read under the claim: the slot may have been freed and
-                // republished for another parameter since the unclaimed check.
-                if other.param_id.load(Ordering::Relaxed) != param_id {
+                // republished for another parameter, or for the coming block,
+                // since the unclaimed check.
+                if other.param_id.load(Ordering::Relaxed) != param_id
+                    || other.sequence.load(Ordering::Relaxed) > late_through
+                {
                     other
                         .state
                         .store(PENDING_PARAMETER_READY, Ordering::Release);
@@ -1881,7 +1948,7 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
             // Non-RT state/editor control owns the plugin, or it is unloading
             // or inactive: the block passes through as-is, and is counted. Its
             // parameter writes stay queued, late, for the next block's head.
-            self.plugin.pending_parameters.restamp_to_block_head();
+            self.plugin.pending_parameters.mark_pending_late();
             self.plugin.record_unserved_block();
         }
     }
@@ -1977,7 +2044,7 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
                 // hold are counted as dropped.
                 // Its parameter writes are late the same way the notes are.
                 self.retain_events(midi_events);
-                self.plugin.pending_parameters.restamp_to_block_head();
+                self.plugin.pending_parameters.mark_pending_late();
                 self.plugin.record_unserved_block();
             }
         }
@@ -2421,6 +2488,144 @@ mod tests {
             vec![vec![(4, 0.64, 0), (4, 0.99, 5)]],
             "the late points arrive as their last value at the head, ahead of \
              the next block's own point"
+        );
+    }
+
+    /// A write another thread holds mid-claim when the unserved block ends is
+    /// still late: the audio thread cannot rewrite a slot it does not own, so
+    /// lateness is a fact of the write's sequence, not of the slot's offset.
+    /// Mutation: restamp only the slots the audio thread manages to claim —
+    /// the write drains at offset 200 of the next block.
+    #[test]
+    fn a_late_write_whose_slot_another_thread_holds_still_lands_at_the_head() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let queue = &shared.pending_parameters;
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        // Another thread's claim on the slot, as `coalesce` takes one.
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_WRITING, Ordering::Release);
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.2, 0)]]
+        );
+    }
+
+    /// A late slot holds the head of the next block, so a write for that
+    /// block's own sample 200 is a separate point, and one for the head folds
+    /// into the late write by sequence.
+    #[test]
+    fn a_new_write_never_folds_into_a_late_slot_at_a_different_sample() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 200));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.3, 200));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.9, 0));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.2, 0), (4, 0.8, 200)], vec![(4, 0.9, 0)]],
+            "a write at 200 keeps its own sample beside the late one, and a \
+             newer write at the head replaces a late one"
+        );
+    }
+
+    /// A slot republished for another parameter between `coalesce`'s unclaimed
+    /// pre-check and its claim must keep its own value: the claim re-reads the
+    /// parameter. Mutation: drop the re-check — Q's pending value is
+    /// overwritten with P's.
+    #[test]
+    fn a_fold_claim_on_a_slot_holding_another_parameter_leaves_it_alone() {
+        let queue = PendingParameterQueue::new();
+        assert!(queue.enqueue(8, 0.25, 0).is_ok());
+
+        // `coalesce` for parameter 7 found slot 0 holding 7 and claims it, but
+        // the slot now holds 8: the claim itself has to notice.
+        let late_through = queue.late_through.load(Ordering::Acquire);
+        let folded = PendingParameterQueue::fold_into_ready_slot(
+            &queue.slots[0],
+            7,
+            0,
+            0.9f64.to_bits(),
+            queue.next_sequence.fetch_add(1, Ordering::Relaxed),
+            late_through,
+        );
+
+        assert!(!folded);
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        assert_eq!(queue.drain(&mut drained), 1);
+        assert_eq!(
+            drained[0],
+            PendingParameterUpdate {
+                param_id: 8,
+                value: 0.25,
+                sample_offset: 0,
+            }
+        );
+    }
+
+    /// Both instrument paths owe their late parameter writes the same head
+    /// delivery as the effect path, one slot per parameter: a block the
+    /// instrument is not handed is followed by a block that receives every
+    /// late point of a parameter as one write at sample 0.
+    /// Mutation: delete the `mark_pending_late` call of `process_with_events`.
+    #[test]
+    fn an_unserved_instrument_block_delivers_its_late_parameter_writes_at_the_head() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let render = |slot: &mut HostedPluginSlot<ProcessRecordingPlugin>| {
+            slot.process_with_events(
+                &mut [0.0f32; 256],
+                &mut [0.0f32; 256],
+                256,
+                &[],
+                &TransportState::default(),
+            );
+        };
+
+        for offset in 1..=PENDING_PARAMETER_CAPACITY as u32 {
+            assert!(slot.apply_parameter_on_audio_thread(4, f64::from(offset) / 100.0, offset));
+        }
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        render(&mut slot);
+        drop(control);
+
+        assert!(
+            slot.apply_parameter_on_audio_thread(4, 0.99, 5),
+            "the unserved block's points hold one slot, so the next write has room"
+        );
+        render(&mut slot);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.64, 0), (4, 0.99, 5)]]
         );
     }
 

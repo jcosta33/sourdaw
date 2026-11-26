@@ -108,10 +108,21 @@ const STATE_HEADER_BYTES: usize = 14;
 // ---------------------------------------------------------------------------
 
 /// The most points one parameter's queue holds in one block: every host write
-/// one block can carry — the engine's pending queue is `MAX_PARAMETER_QUEUES`
-/// deep, and all of it may be one parameter's ramp — plus the one editor
-/// gesture staged ahead of them. Sized so nothing the engine admitted is cut
-/// here; the engine's own queues refuse and count anything past that.
+/// one block can carry — `sourdaw-native`'s pending queue is
+/// `PENDING_PARAMETER_CAPACITY` (64) deep, and all of it may be one
+/// parameter's ramp — plus the one editor gesture staged ahead of them. Sized
+/// so no point of one parameter the engine admitted is cut here.
+///
+/// The bound on distinct parameters is different: gestures and host writes
+/// share the `MAX_PARAMETER_QUEUES` queue table, so parameters past it are
+/// dropped (#7194).
+///
+/// A queue at its bound never refuses: a further point replaces the last, so the
+/// queue still ends on the newest value. That is the law for host staging and
+/// for a plugin's output list alike, and `addPoint` answers `kResultOk` because
+/// the value was recorded as the one the parameter ends the block on; only the
+/// plugin's intermediate points are lost, and a block's final value is what
+/// `settled` and the echo check read.
 const MAX_QUEUE_POINTS: usize = MAX_PARAMETER_QUEUES + 1;
 
 /// One parameter's points for the coming block, each at the sample offset it
@@ -143,22 +154,27 @@ impl Default for HostParamValueQueue {
 
 impl HostParamValueQueue {
     /// Add a point after the last, or replace the last one's value at its own
-    /// offset. Returns the point's index, or `None` when the queue is full.
-    /// RT-safe.
-    fn push(&self, sample_offset: int32, value: ParamValue) -> Option<usize> {
+    /// offset. A full queue keeps its bound and still ends on the newest value:
+    /// the point replaces the last one, at the later of the two offsets so the
+    /// points stay in non-decreasing offset. Returns the index the point landed
+    /// at. RT-safe.
+    fn push(&self, sample_offset: int32, value: ParamValue) -> usize {
         let count = self.count.get();
         if let Some(last) = count.checked_sub(1) {
             if self.points[last].get().0 == sample_offset {
                 self.points[last].set((sample_offset, value));
-                return Some(last);
+                return last;
             }
         }
         if count == MAX_QUEUE_POINTS {
-            return None;
+            let last = MAX_QUEUE_POINTS - 1;
+            let held_offset = self.points[last].get().0;
+            self.points[last].set((sample_offset.max(held_offset), value));
+            return last;
         }
         self.points[count].set((sample_offset, value));
         self.count.set(count + 1);
-        Some(count)
+        count
     }
 
     fn points(&self) -> impl Iterator<Item = (int32, ParamValue)> + '_ {
@@ -206,9 +222,7 @@ impl IParamValueQueueTrait for HostParamValueQueue {
     }
 
     unsafe fn addPoint(&self, sample_offset: int32, value: ParamValue, index: *mut int32) -> int32 {
-        let Some(position) = self.push(sample_offset, value) else {
-            return kResultFalse;
-        };
+        let position = self.push(sample_offset, value);
         if !index.is_null() {
             // SAFETY: non-null (checked above); `addPoint`'s `index` is the
             // plugin's own writable out-parameter, live for this call.
@@ -244,15 +258,15 @@ impl HostParameterChanges {
 
     /// Stage one point of a parameter for the coming block, after any already
     /// staged for it — or over the last one, at its own offset. RT-safe;
-    /// writes past `MAX_PARAMETER_QUEUES` parameters or `MAX_QUEUE_POINTS`
-    /// points are dropped rather than grown on the audio thread, and both
-    /// bounds sit above what the engine's own counted queues admit.
+    /// a parameter past `MAX_PARAMETER_QUEUES` is dropped rather than grown on
+    /// the audio thread, and a full queue ends on the newest value (see
+    /// `MAX_QUEUE_POINTS`).
     fn stage(&self, param_id: ParamID, sample_offset: u32, value: ParamValue) {
         let Some(position) = self.queue_index_for(param_id) else {
             return;
         };
         let offset = int32::try_from(sample_offset).unwrap_or(int32::MAX);
-        let _ = self.queues[position].push(offset, value);
+        self.queues[position].push(offset, value);
     }
 
     /// The queue already holding this parameter, or a freshly claimed one.
