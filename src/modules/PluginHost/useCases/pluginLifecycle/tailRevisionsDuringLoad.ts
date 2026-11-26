@@ -9,9 +9,9 @@ import { type NativeTailFigure } from '../../stores/externalPluginTailStore';
  * returns, and drains each tail change exactly once, so a plugin that revises
  * its tail on its first block — a reverb that sizes itself from the impulse
  * response it just loaded — reports before the load's own answer reaches this
- * process. That answer is the older figure; the figure held here wins when
- * the load seeds the tail store, because the load carries no sequence to rank it
- * against and the host read the figure it holds after the load read its own.
+ * process. When the load seeds the tail store the held figure is ranked against
+ * the load's `tail_sequence`: it wins only if its native sequence is higher, so a
+ * figure the host numbered before the load read its own is ignored.
  *
  * Only instances in `loadedExternalInstances` are held, so a change for an
  * instance that was never loaded or has been unloaded is still dropped. An

@@ -380,8 +380,6 @@ const validators = {
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>
         isObj(param) && isString(param.trackId) && isString(param.name),
     duplicateTrack: hasTrackId,
-    deleteTrackAlternative: (param): param is PayloadOf<'deleteTrackAlternative'> =>
-        isObj(param) && isString(param.trackId) && isString(param.alternativeId),
     freezeTrack: hasTrackId,
     unfreezeTrack: hasTrackId,
     flattenTrack: hasTrackId,
@@ -853,8 +851,6 @@ const validators = {
         hasExactKeys(param, ['trackId', 'folded']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.folded === 'boolean',
-    groupTracks: 'unchecked',
-    ungroupTracks: 'unchecked',
     clearSolos: hasNoPayload,
 
     // Yeast rack — the `expected*` payload fields are internal replay guards,
@@ -1034,7 +1030,6 @@ const validators = {
     // Bus / folder / send
     createBus: (param): param is PayloadOf<'createBus'> =>
         isObj(param) && hasExactKeys(param, ['name']) && normalizeSafeProjectName(param.name) !== null,
-    createFolder: 'unchecked',
     setSend: (param): param is PayloadOf<'setSend'> =>
         isObj(param) &&
         hasOnlyKeys(param, [
@@ -1309,9 +1304,6 @@ const validators = {
     labelUndoBranch: 'unchecked',
 
     // Track alternatives
-    createTrackAlternative: 'unchecked',
-    switchTrackAlternative: 'unchecked',
-    renameTrackAlternative: 'unchecked',
 
     // Setlist / session
     nextSetlistItem: 'unchecked',

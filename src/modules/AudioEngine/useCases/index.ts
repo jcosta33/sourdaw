@@ -102,6 +102,7 @@ export { discardDecodedAudioFile } from './discardDecodedAudioFile';
 export { discardDecodedAudioFileIfCurrent } from './discardDecodedAudioFileIfCurrent';
 
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
+export { updateDeviceParameters } from './deviceControls/updateDeviceParameters';
 export { captureDeviceParameterRuntimeWriteAuthority } from './deviceControls/captureDeviceParameterRuntimeWriteAuthority';
 export { writeNativeBuiltinParameters } from './deviceControls/writeNativeBuiltinParameters';
 export { holdWebFallbackDeviceParam } from './deviceControls/holdWebFallbackDeviceParam';
@@ -266,6 +267,13 @@ export { matchesRuntimeDeviceChainTopology } from './matchesRuntimeDeviceChainTo
 
 export { captureOfflineRenderInput } from './offlineRender/captureOfflineRenderInput';
 export { captureOfflineRenderProjectSource } from './offlineRender/captureOfflineRenderProjectSource';
+export { readLiveOfflineRenderProjectModels } from './offlineRender/readLiveOfflineRenderProjectModels';
+export { captureOfflineRenderSessionSource } from './offlineRender/captureOfflineRenderSessionSource';
+export { readLiveOfflineRenderSessionModels } from './offlineRender/readLiveOfflineRenderSessionModels';
+export { describeSubgraphPrintInput } from './offlineRender/describeSubgraphPrintInput';
+export { selectSubgraphPrintInput } from './offlineRender/selectSubgraphPrintInput';
+export { subgraphPrintInputsMatch } from './offlineRender/subgraphPrintInputsMatch';
+export { subscribeSubgraphPrintInputStores } from './offlineRender/subscribeSubgraphPrintInputStores';
 export { findUnloadedHostedPluginDevices } from './offlineRender/findUnloadedHostedPluginDevices';
 export { renderOfflineInput } from './offlineRender/renderOfflineInput';
 

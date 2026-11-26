@@ -179,6 +179,7 @@ const lowerByActionType: {
     setGrandBouleDeviceState: cloneForReplay,
     setToasterFactoryKit: cloneForReplay,
     setBacteriaFactoryPatch: cloneForReplay,
+    setCrustFactoryPreset: cloneForReplay,
     setGlutenFactoryPreset: cloneForReplay,
     setProofPatchSelection: cloneForReplay,
     createBus: cloneForReplay,
