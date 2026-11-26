@@ -44,6 +44,7 @@ import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePrepared
 import { readAgentRunBoundRefusal } from '../validators/readAgentRunBoundRefusal';
 import { type AgentRunPlanBoundRefusal } from '../validators/readAgentRunPlanBoundRefusal';
 
+import { admitRecoveredAgentRuns } from './admitRecoveredAgentRuns';
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import {
     type ClaimAgentRunWorkLeaseResult as ClaimWorkLeaseResult,
@@ -1128,7 +1129,7 @@ function recordAgentRunReceiptSaga(input: AgentRunReceiptSagaInput): { effectsPe
     });
     const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
     const runs = [...state.runs];
-    runs[runIndex] = trackActiveSince(run, applied.run, projection.recordedAt);
+    runs[runIndex] = requireAdmittedAgentRun(trackActiveSince(run, applied.run, projection.recordedAt));
     persistAgentRunState(
         withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger),
         projection.recordedAt
@@ -1158,18 +1159,20 @@ function recordAgentRunCommittedRecoveryFailure(input: AgentRunReceiptSagaInput 
     });
     const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
     const runs = [...state.runs];
-    runs[runIndex] = trackActiveSince(
-        run,
-        {
-            ...applied.run,
-            phase: reduceAgentRunTransition(applied.run.phase, {
-                type: 'error-recorded',
-                terminal: true,
-                hasCommittedWork: true,
-            }),
-            errors: [...applied.run.errors, structuredClone(input.error)],
-        },
-        input.error.occurredAt
+    runs[runIndex] = requireAdmittedAgentRun(
+        trackActiveSince(
+            run,
+            {
+                ...applied.run,
+                phase: reduceAgentRunTransition(applied.run.phase, {
+                    type: 'error-recorded',
+                    terminal: true,
+                    hasCommittedWork: true,
+                }),
+                errors: [...applied.run.errors, structuredClone(input.error)],
+            },
+            input.error.occurredAt
+        )
     );
     persistAgentRunState(
         withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger),
@@ -1321,7 +1324,7 @@ function recordAgentRunPendingEffectContinuation(input: {
         recordedAt
     );
     const runs = [...state.runs];
-    runs[index] = next;
+    runs[index] = requireAdmittedAgentRun(next);
     persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger), recordedAt);
     return structuredClone(next);
 }
@@ -1395,7 +1398,7 @@ function failAgentRunPendingEffectContinuation(input: {
             continuation.batchId === input.batchId ? { ...continuation, lastError: input.reason } : continuation
         ),
     };
-    runs[index] = next;
+    runs[index] = requireAdmittedAgentRun(next);
     persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger), failedAt);
     return structuredClone(next);
 }
@@ -1474,7 +1477,7 @@ function requireAgentRunPendingEffectManualRepair(input: {
         ),
     } satisfies AgentRun;
     const runs = [...state.runs];
-    runs[runIndex] = next;
+    runs[runIndex] = requireAdmittedAgentRun(next);
     const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).map(
         (candidate): AgentRunPendingEffectRecovery =>
             isPendingEffectRecovery(candidate, input)
@@ -1598,7 +1601,7 @@ function completeAgentRunPendingEffectContinuation(input: {
         completedAt
     );
     const runs = [...state.runs];
-    runs[index] = next;
+    runs[index] = requireAdmittedAgentRun(next);
     persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger), completedAt);
     return structuredClone(next);
 }
@@ -1699,20 +1702,22 @@ function settleAgentRunPendingEffectManualReview(input: {
         run.temporaryAssets.some((asset) => asset.status !== 'released') ||
         remainingManualResumeWorkIds.length > 0;
     const runs = [...state.runs];
-    runs[runIndex] = trackActiveSince(
-        run,
-        {
-            ...run,
-            updatedAt: settledAt,
-            phase: reduceAgentRunTransition(run.phase, { type: 'pending-effect-completed', hasRecoveryObligation }),
-            pendingEffectContinuations,
-            manualResume:
-                remainingManualResumeWorkIds.length > 0
-                    ? { ...run.manualResume, required: true, workIds: remainingManualResumeWorkIds }
-                    : { required: false, reason: null, workIds: [], requiredAt: null },
-            saga: { schemaVersion: 1, steps },
-        } satisfies AgentRun,
-        settledAt
+    runs[runIndex] = requireAdmittedAgentRun(
+        trackActiveSince(
+            run,
+            {
+                ...run,
+                updatedAt: settledAt,
+                phase: reduceAgentRunTransition(run.phase, { type: 'pending-effect-completed', hasRecoveryObligation }),
+                pendingEffectContinuations,
+                manualResume:
+                    remainingManualResumeWorkIds.length > 0
+                        ? { ...run.manualResume, required: true, workIds: remainingManualResumeWorkIds }
+                        : { required: false, reason: null, workIds: [], requiredAt: null },
+                saga: { schemaVersion: 1, steps },
+            } satisfies AgentRun,
+            settledAt
+        )
     );
     const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
         (candidate) => !isPendingEffectRecovery(candidate, input)
@@ -1952,7 +1957,7 @@ function recordAgentRunPreparedStemImportRecovery(input: {
     ];
     const runs = [...state.runs];
     if (nextRun) {
-        runs[index] = nextRun;
+        runs[index] = requireAdmittedAgentRun(nextRun);
     }
     persistAgentRunState(
         withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
@@ -1986,7 +1991,7 @@ function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchI
         ),
     } satisfies AgentRun;
     const runs = [...state.runs];
-    runs[index] = next;
+    runs[index] = requireAdmittedAgentRun(next);
     persistAgentRunState(
         withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
         forgottenAt
@@ -2069,7 +2074,7 @@ function requireAgentRunPreparedStemManualRepair(input: {
               },
           };
     const runs = [...state.runs];
-    runs[index] = next;
+    runs[index] = requireAdmittedAgentRun(next);
     persistAgentRunState(
         withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
         requiredAt
@@ -2197,7 +2202,7 @@ function transferAgentRunPreparedStemImportResources(input: {
         preparedStemImports: run.preparedStemImports.filter((recovery) => !recoveryBatchIds.has(recovery.batchId)),
     } satisfies AgentRun;
     const runs = [...state.runs];
-    runs[index] = next;
+    runs[index] = requireAdmittedAgentRun(next);
     const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).filter(
         (recovery) => recovery.runId !== input.runId || !recoveryBatchIds.has(recovery.batchId)
     );
@@ -2346,7 +2351,7 @@ function acknowledgeAgentRunCancellation(input: {
 function recoverInterruptedAgentRunState(input?: { recoveredAt?: number }): { recoveredRunIds: string[] } {
     const recoveredAt = input?.recoveredAt ?? Date.now();
     const current = readAgentRunState();
-    const recovery = recoverInterruptedRunState(current, recoveredAt);
+    const recovery = admitRecoveredAgentRuns(current, recoverInterruptedRunState(current, recoveredAt));
     if (recovery.recoveredRunIds.length > 0) {
         persistAgentRunState(recovery.state, recoveredAt);
     }

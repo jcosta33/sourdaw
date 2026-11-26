@@ -14,3 +14,8 @@ export const MAX_PLAN_APPLICATION_TOOL_RECEIPTS = 1024;
  * the allowance every other collection keeps.
  */
 export const MAX_PLAN_CAPABILITIES = MAX_PLAN_APPLICATION_TOOL_RECEIPTS + MAX_COLLECTION_LENGTH;
+/**
+ * The longest serialized batch, slice, proposal or plan a run keeps. The restore reader measures it
+ * in characters, as it does `AGENT_RUN_MAX_TEXT_LENGTH`, and drops what is longer.
+ */
+export const AGENT_RUN_MAX_SERIALIZED_LENGTH = 1024 * 1024;

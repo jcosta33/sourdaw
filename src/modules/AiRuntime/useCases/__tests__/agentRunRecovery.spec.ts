@@ -1,6 +1,7 @@
-import { stringify } from 'superjson';
+import { parse, stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MAX_COLLECTION_LENGTH } from '../../models/AgentRunPlanBounds';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
@@ -1396,6 +1397,48 @@ describe('agent run recovery', () => {
                 lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
             }),
         ]);
+    });
+
+    it('recovers every interrupted run a bound refusal does not block and leaves the refused run as stored', () => {
+        const fullRunId = 'run-full-errors';
+        const ordinaryRunId = 'run-ordinary';
+        for (const runId of [fullRunId, ordinaryRunId]) {
+            createAgentRun({ runId, request: 'Interrupted run.', mode: 'apply', createdRevision: 'heads-1' });
+            agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: 'heads-1' });
+            agentRunLifecycle.transitionPhase({ runId, phase: 'executing', revision: 'heads-1' });
+            registerAgentRunTemporaryAsset({
+                runId,
+                assetId: `asset-${runId}`,
+                kind: 'import',
+                cleanupOwner: 'stem-import-preparation',
+            });
+        }
+        for (let index = 0; index < MAX_COLLECTION_LENGTH; index += 1) {
+            agentRunLifecycle.recordError({
+                runId: fullRunId,
+                error: {
+                    code: `error-${String(index)}`,
+                    message: 'An error was recorded.',
+                    occurredAt: 10 + index,
+                    retriable: false,
+                    workId: null,
+                },
+            });
+        }
+        const storedFullRun = structuredClone(getAgentRun(fullRunId));
+
+        let recovered: { recoveredRunIds: string[] } | undefined;
+        expect(() => {
+            recovered = agentRunLifecycle.recoverInterruptedState({ recoveredAt: 500 });
+        }).not.toThrow();
+
+        expect(recovered?.recoveredRunIds).toEqual([ordinaryRunId]);
+        const reloaded = sanitizeAgentRunState(parse<unknown>(window.localStorage.getItem('sourdaw-agent-runs')));
+        const reloadedOrdinary = reloaded.runs.find((run) => run.runId === ordinaryRunId);
+        expect(reloadedOrdinary?.phase).not.toBe('executing');
+        expect(reloadedOrdinary?.errors).toHaveLength(1);
+        expect(reloaded.runs.find((run) => run.runId === fullRunId)).toEqual(storedFullRun);
+        expect(getAgentRun(fullRunId)).toEqual(storedFullRun);
     });
 
     it('rejects unsupported persisted schema versions without overwriting their bytes', async () => {

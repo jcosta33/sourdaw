@@ -9,5 +9,8 @@ export function describeAgentRunPlanBoundRefusal(refusal: AgentRunPlanBoundRefus
     if (refusal.reason === 'field-bytes') {
         return `${subject} cannot keep ${refusal.collection} larger than ${String(refusal.bound)} bytes`;
     }
+    if (refusal.reason === 'field-length') {
+        return `${subject} cannot keep ${refusal.collection} longer than ${String(refusal.bound)} characters`;
+    }
     return `${subject} cannot hold more than ${String(refusal.bound)} entries in ${refusal.collection}`;
 }

@@ -40,12 +40,12 @@ export type AgentRunPlanBoundedCollection = AgentRunPlanCollectionName | AgentRu
 
 /**
  * A run the persistent schema would not read back: a collection holding more entries than its
- * bound, or a receipt, goal state or settlement larger than its byte bound. `collection` names the
- * bounded field. Writing it would lose the whole run, or the field, on restore.
+ * bound, a receipt, goal state or settlement larger than its byte bound, or a text longer than its
+ * character bound. `collection` names the bounded field. Writing it would lose the whole run, or the field, on restore.
  */
 export type AgentRunPlanBoundRefusal = {
     status: 'refused';
-    reason: 'collection-bound' | 'receipt-bytes' | 'field-bytes';
+    reason: 'collection-bound' | 'receipt-bytes' | 'field-bytes' | 'field-length';
     collection: AgentRunPlanBoundedCollection;
     bound: number;
 };

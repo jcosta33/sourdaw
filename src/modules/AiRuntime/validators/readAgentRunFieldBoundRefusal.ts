@@ -55,11 +55,15 @@ export type AgentRunBoundSubject = Pick<
     saga: { steps: readonly unknown[] };
 } & Record<AgentRunCollectionKey, readonly unknown[] | undefined>;
 
-function field(path: string): AgentRunFieldName {
+/** A run field's refusal name: `run.` and its path. */
+export function field(path: string): AgentRunFieldName {
     return `run.${path}`;
 }
 
-function scopeCollections(path: string, scope: AgentRunScope): BoundedCollection[] {
+export function scopeCollections(
+    path: string,
+    scope: Readonly<Record<keyof AgentRunScope, readonly unknown[]>>
+): BoundedCollection[] {
     return [
         boundedCollection(field(`${path}.targetIds`), scope.targetIds),
         boundedCollection(field(`${path}.targetRanges`), scope.targetRanges),
