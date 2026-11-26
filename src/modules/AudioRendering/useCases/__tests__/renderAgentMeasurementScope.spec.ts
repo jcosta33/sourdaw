@@ -146,14 +146,6 @@ describe('renderAgentMeasurementScope — a musician export outranks the measure
         expect(engine.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ lockHolder: 'agent-measurement' }));
     });
 
-    // Red when the mixdown renders past its span by the latency depth: a window that is the whole
-    // span would then keep frames its range does not hold, unlike the same window beside a wider one.
-    it('renders the master mixdown over its span alone, without the latency widening', async () => {
-        await renderAgentMeasurementScope(masterInput);
-
-        expect(engine.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ extendForLatency: false }));
-    });
-
     it('refuses with render-busy, not cancelled, when a musician export stopped the render', async () => {
         const onRenderStart = vi.fn();
         engine.renderOffline.mockRejectedValue(createAppError('RenderBusy', 'stopped for an export'));

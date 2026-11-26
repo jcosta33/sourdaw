@@ -3,40 +3,13 @@ import { getVcaGroupsState } from '#/modules/Arrangement/stores';
 import { getAudioDeviceRuntimeSink, type CapturedOfflineInstrument } from '../../engine/audioDeviceRuntimeSink';
 import { createExportError } from '../../errors/ExportError';
 import { capturesNativeCalibration } from '../deviceCapabilities/capturesNativeCalibration';
-import { getMaxTrackLatency } from '../latencyCompensation/compensation/getMaxTrackLatency';
-import { type LatencyCompensationInput } from '../latencyCompensation/compensation/LatencyCompensationInput';
 import { projectDeviceForNativeBody } from '../livePlayback/projectDeviceForNativeBody';
 
 import { captureOfflineRenderRuntimeInput } from './captureOfflineRenderRuntimeInput';
 import { captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
 import { type OfflineRenderProjectSource, type OfflineRenderRuntimeSource } from './OfflineRenderSource';
 import { resolveHistoryAwareRenderContext } from './resolveHistoryAwareRenderContext';
-import { type ResolveRenderContextInput } from './resolveRenderContext';
 import { type OfflineRenderOptions } from './types';
-
-/**
- * Every strip is held back to the session's deepest latency, so the render
- * runs that much longer than the project and tail, or the last stretch of
- * content is shifted past its end and never printed.
- */
-function widenForLatency(input: {
-    request: ResolveRenderContextInput;
-    resolved: ReturnType<typeof resolveHistoryAwareRenderContext>;
-    project: OfflineRenderProjectSource | undefined;
-    latency: LatencyCompensationInput;
-    extend: boolean;
-}) {
-    const latencySeconds = getMaxTrackLatency(input.latency) / 1000;
-    if (!input.extend || latencySeconds <= 0) {
-        return input.resolved;
-    }
-    // Only the widened span is kept from this resolution; the render context keeps the
-    // musician's own tail, so adding the depth to the tail here moves nothing else.
-    return resolveHistoryAwareRenderContext(
-        { ...input.request, tailSeconds: (input.request.tailSeconds ?? 0) + latencySeconds },
-        input.project
-    );
-}
 
 /** Capture every project-dependent render input synchronously, before backend discovery or device I/O. */
 export function captureOfflineRenderInput(
@@ -50,13 +23,10 @@ export function captureOfflineRenderInput(
     }
     const project = source === undefined ? undefined : structuredClone(source.project);
     const sampleRate = options.sampleRate ?? 44_100;
-    const request = {
-        ...options,
-        sampleRate,
-        startBeat: options.startBeat ?? 0,
-        tailSeconds: options.tailSeconds ?? 0,
-    };
-    const resolved = resolveHistoryAwareRenderContext(request, project);
+    const resolved = resolveHistoryAwareRenderContext(
+        { ...options, sampleRate, startBeat: options.startBeat ?? 0, tailSeconds: options.tailSeconds ?? 0 },
+        project
+    );
     const context = resolved.renderContext;
     const renderContext = {
         ...context,
@@ -95,21 +65,11 @@ export function captureOfflineRenderInput(
             );
         }
     }
-    const scheduling = captureOfflineSchedulingInput(tracks, sampleRate, project, runtime);
-    const span = widenForLatency({
-        request,
-        resolved,
-        project,
-        latency: scheduling.latency,
-        extend: options.extendForLatency !== false,
-    });
     return {
         ...resolved,
-        outputDurationSeconds: span.outputDurationSeconds,
-        outputFrameCount: span.outputFrameCount,
-        renderContext: { ...renderContext, durationSeconds: span.renderContext.durationSeconds },
+        renderContext,
         sampleRate,
-        scheduling,
+        scheduling: captureOfflineSchedulingInput(tracks, sampleRate, project, runtime),
         vcaGroups: structuredClone(project ? project.vcaGroups : getVcaGroupsState()),
         soloMode: runtime.soloMode,
         instruments,

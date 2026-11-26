@@ -116,8 +116,6 @@ function renderMixdown(input: RenderAgentMeasurementTargetsInput, span: AgentMea
             abortSignal: input.signal,
             // A musician's export outranks this render: it stops it, and the target reports `render-busy`.
             lockHolder: 'agent-measurement',
-            // Windows are cut by the frame law, so the render holds only the span's own frames.
-            extendForLatency: false,
         },
         input.project
     );
