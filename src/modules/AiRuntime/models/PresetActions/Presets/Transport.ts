@@ -16,6 +16,20 @@ function buildMetronomeToggle(ctx: PresetContext): RuntimeAction | null {
     return { type: 'setMetronomeEnabled', payload: { enabled: !ctx.metronomeEnabled } };
 }
 
+function buildCountInToggle(ctx: PresetContext): RuntimeAction | null {
+    if (ctx.countInEnabled === undefined) {
+        return null;
+    }
+    return { type: 'toggleCountIn', payload: { enabled: !ctx.countInEnabled } };
+}
+
+function buildPreRollToggle(ctx: PresetContext): RuntimeAction | null {
+    if (ctx.preRollEnabled === undefined) {
+        return null;
+    }
+    return { type: 'togglePreRoll', payload: { enabled: !ctx.preRollEnabled } };
+}
+
 export const transportPresets: readonly PresetAction[] = [
     {
         id: 'play',
@@ -75,13 +89,13 @@ export const transportPresets: readonly PresetAction[] = [
         label: 'Toggle Count-In',
         keywords: ['count in', 'count-in', 'precount', 'toggle count'],
         category: 'Transport',
-        buildAction: () => ({ type: 'toggleCountIn' }),
+        buildAction: buildCountInToggle,
     },
     {
         id: 'pre-roll',
         label: 'Toggle Pre-Roll',
         keywords: ['pre roll', 'pre-roll', 'preroll'],
         category: 'Transport',
-        buildAction: () => ({ type: 'togglePreRoll' }),
+        buildAction: buildPreRollToggle,
     },
 ];

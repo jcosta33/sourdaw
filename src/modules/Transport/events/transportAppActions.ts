@@ -126,10 +126,26 @@ export type TransportAppAction =
           };
       }
     | { type: 'togglePunch'; payload?: undefined }
-    | { type: 'toggleCountIn'; payload?: undefined }
-    | { type: 'setCountInBars'; payload: { bars: number } }
-    | { type: 'togglePreRoll'; payload?: undefined }
-    | { type: 'setPreRollBars'; payload: { bars: number } }
+    | {
+          type: 'toggleCountIn';
+          /** `enabled` is the wanted state. `expectedEnabled` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
+          payload: { enabled: boolean; expectedEnabled?: boolean };
+      }
+    | {
+          type: 'setCountInBars';
+          /** `expectedBars` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
+          payload: { bars: number; expectedBars?: number };
+      }
+    | {
+          type: 'togglePreRoll';
+          /** `enabled` is the wanted state. `expectedEnabled` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
+          payload: { enabled: boolean; expectedEnabled?: boolean };
+      }
+    | {
+          type: 'setPreRollBars';
+          /** `expectedBars` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
+          payload: { bars: number; expectedBars?: number };
+      }
     | { type: 'addTimeSignatureChange'; payload: { beat: number; numerator: number; denominator: number } }
     | { type: 'removeTimeSignatureChange'; payload: { beat: number } };
 

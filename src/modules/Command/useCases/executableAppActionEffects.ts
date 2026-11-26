@@ -404,6 +404,22 @@ export const executableAppActionEffectsByType = {
         dimensions: ['monitoring'],
         scope: 'project',
     },
+    toggleCountIn: {
+        dimensions: ['transport'],
+        scope: 'project',
+    },
+    setCountInBars: {
+        dimensions: ['transport'],
+        scope: 'project',
+    },
+    togglePreRoll: {
+        dimensions: ['transport'],
+        scope: 'project',
+    },
+    setPreRollBars: {
+        dimensions: ['transport'],
+        scope: 'project',
+    },
     setMasterGain: {
         dimensions: ['master'],
         scope: 'project',

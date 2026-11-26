@@ -1,4 +1,5 @@
 import { type LevelArgument, METRONOME_LEVEL_LAW } from '#/utils/audioLevelLaw';
+import { MAX_TRANSPORT_BARS, MIN_TRANSPORT_BARS } from '#/utils/transportBarsLimits';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
@@ -20,6 +21,10 @@ export const transportTimelineActionNames = [
     'setPunchEnabled',
     'setMetronomeEnabled',
     'setMetronomeVolume',
+    'toggleCountIn',
+    'setCountInBars',
+    'togglePreRoll',
+    'setPreRollBars',
 ] as const satisfies readonly Extract<RuntimeActionType, string>[];
 
 export type TransportTimelineCallName = (typeof transportTimelineActionNames)[number];
@@ -56,6 +61,14 @@ type LlmActionStrategyDefinition<Name extends TransportTimelineCallName> = {
 
 function isValidTimeSignatureDenominator(value: unknown): value is 2 | 4 | 8 | 16 {
     return value === 2 || value === 4 || value === 8 || value === 16;
+}
+
+const TRANSPORT_BARS_REASON = `Expected only a whole number of bars from ${MIN_TRANSPORT_BARS} through ${MAX_TRANSPORT_BARS}`;
+
+function isWholeTransportBars(value: unknown): value is number {
+    return (
+        isFiniteNumber(value) && Number.isInteger(value) && value >= MIN_TRANSPORT_BARS && value <= MAX_TRANSPORT_BARS
+    );
 }
 
 function metronomeLevelPayload(argument: LevelArgument) {
@@ -259,6 +272,46 @@ const transportTimelineStrategyDefinitions = [
                 return rejection(index, call.name, 'Expected only a boolean enabled value');
             }
             return { type: 'setMetronomeEnabled', payload: { enabled: args.enabled } };
+        },
+    },
+    {
+        name: 'toggleCountIn',
+        transform: ({ call, index }) => {
+            const args = call.arguments;
+            if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
+                return rejection(index, call.name, 'Expected only a boolean enabled value');
+            }
+            return { type: 'toggleCountIn', payload: { enabled: args.enabled } };
+        },
+    },
+    {
+        name: 'setCountInBars',
+        transform: ({ call, index }) => {
+            const args = call.arguments;
+            if (!hasExactKeys(args, ['bars']) || !isWholeTransportBars(args.bars)) {
+                return rejection(index, call.name, TRANSPORT_BARS_REASON);
+            }
+            return { type: 'setCountInBars', payload: { bars: args.bars } };
+        },
+    },
+    {
+        name: 'togglePreRoll',
+        transform: ({ call, index }) => {
+            const args = call.arguments;
+            if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
+                return rejection(index, call.name, 'Expected only a boolean enabled value');
+            }
+            return { type: 'togglePreRoll', payload: { enabled: args.enabled } };
+        },
+    },
+    {
+        name: 'setPreRollBars',
+        transform: ({ call, index }) => {
+            const args = call.arguments;
+            if (!hasExactKeys(args, ['bars']) || !isWholeTransportBars(args.bars)) {
+                return rejection(index, call.name, TRANSPORT_BARS_REASON);
+            }
+            return { type: 'setPreRollBars', payload: { bars: args.bars } };
         },
     },
     {

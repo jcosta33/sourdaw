@@ -253,6 +253,10 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['setPunchEnabled', 'project-timeline', 'Transport'],
     ['setMetronomeEnabled', 'project-timeline', 'Transport'],
     ['setMetronomeVolume', 'project-timeline', 'Transport'],
+    ['toggleCountIn', 'project-timeline', 'Transport'],
+    ['setCountInBars', 'project-timeline', 'Transport'],
+    ['togglePreRoll', 'project-timeline', 'Transport'],
+    ['setPreRollBars', 'project-timeline', 'Transport'],
     ['setMasterGain', 'project-timeline', 'Transport'],
 
     // Project — project-timeline. The brief's decisions stay uncovered: a request copies them unchanged.
@@ -366,13 +370,6 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         packet: RUNTIME_ACTION_PACKET,
         reason: "A vertical zoom's sign must follow the user's words, and no grounding rule yet tells a shrink from a grow reliably in ordinary prompts, so the command is registered once a direction rule is proven.",
         actionTypes: ['zoomTracksVertical'],
-    },
-    {
-        kind: 'interim-unsupported',
-        category: 'project-timeline',
-        packet: RUNTIME_ACTION_PACKET,
-        reason: 'Undoable transport settings with no executable descriptor yet. setCountInBars and setPreRollBars describe their inverse, but toggleCountIn and togglePreRoll do not, and none of the four has an executable descriptor yet, so the packet registers the bar setters and gives the toggles an inverse or retires them.',
-        actionTypes: ['toggleCountIn', 'setCountInBars', 'togglePreRoll', 'setPreRollBars'],
     },
     {
         kind: 'interim-unsupported',

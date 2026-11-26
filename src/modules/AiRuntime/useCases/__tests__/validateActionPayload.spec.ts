@@ -10,7 +10,7 @@ import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
 import { validateActions } from '../validateActions';
 
 type PayloadOf<ActionType extends RuntimeActionType> =
-    Extract<RuntimeAction, { type: ActionType }> extends { payload: infer Payload } ? Payload : undefined;
+    Extract<RuntimeAction, { type: ActionType }> extends { payload?: infer Payload } ? Payload : undefined;
 
 type GuardedPayloadCase<ActionType extends RuntimeActionType> = {
     actionType: ActionType;
@@ -801,6 +801,52 @@ const guardedPayloadContractCases = [
         actionType: 'setMetronomeEnabled',
         validPayload: { enabled: false },
         invalidPayloads: [{}, { enabled: 1 }, { enabled: false, extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'toggleCountIn',
+        validPayload: { enabled: true },
+        invalidPayloads: [
+            {},
+            { enabled: 1 },
+            { enabled: true, extra: true },
+            { enabled: true, expectedEnabled: false },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'togglePreRoll',
+        validPayload: { enabled: true },
+        invalidPayloads: [
+            {},
+            { enabled: 1 },
+            { enabled: true, extra: true },
+            { enabled: true, expectedEnabled: false },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setCountInBars',
+        validPayload: { bars: 4 },
+        invalidPayloads: [
+            {},
+            { bars: 0 },
+            { bars: 9 },
+            { bars: 2.5 },
+            { bars: '2' },
+            { bars: Number.NaN },
+            { bars: 2, expectedBars: 1 },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setPreRollBars',
+        validPayload: { bars: 4 },
+        invalidPayloads: [
+            {},
+            { bars: 0 },
+            { bars: 9 },
+            { bars: 2.5 },
+            { bars: '2' },
+            { bars: Number.NaN },
+            { bars: 2, expectedBars: 1 },
+        ],
     }),
     guardedPayloadCase({
         actionType: 'setMetronomeVolume',

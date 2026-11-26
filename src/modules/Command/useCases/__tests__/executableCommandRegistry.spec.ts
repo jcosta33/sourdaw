@@ -1091,6 +1091,38 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'toggleCountIn',
+        'Turn the count-in on or off. Always states the wanted state; it never flips the current one.',
+        { enabled: { type: 'boolean', description: 'true=turn on, false=turn off' } },
+        ['enabled'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setCountInBars',
+        'Set the count-in length in whole bars, from 1 to 8.',
+        { bars: { type: 'integer', minimum: 1, maximum: 8, description: 'Whole bars, 1 to 8' } },
+        ['bars'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'togglePreRoll',
+        'Turn the pre-roll on or off. Always states the wanted state; it never flips the current one.',
+        { enabled: { type: 'boolean', description: 'true=turn on, false=turn off' } },
+        ['enabled'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setPreRollBars',
+        'Set the pre-roll length in whole bars, from 1 to 8.',
+        { bars: { type: 'integer', minimum: 1, maximum: 8, description: 'Whole bars, 1 to 8' } },
+        ['bars'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'setMasterGain',
         `Set the master output volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
         {
@@ -2619,6 +2651,58 @@ const EXPECTED_GROUNDING = [
                 levelForm: 'linear',
             },
         ],
+    },
+    {
+        actionType: 'toggleCountIn',
+        intentPhrases: [
+            'turn count-in on',
+            'turn count-in off',
+            'enable count-in',
+            'disable count-in',
+            'enable the count-in',
+            'disable the count-in',
+        ],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['turn count-in on', 'enable count-in', 'enable the count-in'],
+                falsePhrases: ['turn count-in off', 'disable count-in', 'disable the count-in'],
+            },
+        ],
+    },
+    {
+        actionType: 'setCountInBars',
+        intentPhrases: ['set count-in', 'set the count-in', 'change count-in', 'change the count-in'],
+        targetRules: [],
+        valueRules: [{ argument: 'bars', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'togglePreRoll',
+        intentPhrases: [
+            'turn pre-roll on',
+            'turn pre-roll off',
+            'enable pre-roll',
+            'disable pre-roll',
+            'enable the pre-roll',
+            'disable the pre-roll',
+        ],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['turn pre-roll on', 'enable pre-roll', 'enable the pre-roll'],
+                falsePhrases: ['turn pre-roll off', 'disable pre-roll', 'disable the pre-roll'],
+            },
+        ],
+    },
+    {
+        actionType: 'setPreRollBars',
+        intentPhrases: ['set pre-roll', 'set the pre-roll', 'change pre-roll', 'change the pre-roll'],
+        targetRules: [],
+        valueRules: [{ argument: 'bars', kind: 'number-if-present', requiredInPrompt: true }],
     },
     {
         actionType: 'setMasterGain',

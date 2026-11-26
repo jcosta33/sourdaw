@@ -199,4 +199,28 @@ describe('count-in and pre-roll undo entries in the history a project reload res
             expect(pastTypes()).toEqual([]);
         }
     );
+
+    it.each([
+        { kind: 'count-in', forward: 'toggleCountIn', read: () => transportStore.value?.countInEnabled },
+        { kind: 'pre-roll', forward: 'togglePreRoll', read: () => transportStore.value?.preRollEnabled },
+    ] as const)('restores, undoes and redoes a $kind switch behind an older edit', async ({ forward, read }) => {
+        primeProject();
+        flushAutomergeStorageWrites();
+        reconcile();
+
+        await executeAppAction({ type: 'setTrackColor', payload: { trackId: TRACK_ID, color: '#ff5500' } });
+        await executeAppAction({ type: forward, payload: { enabled: true } });
+        expect(read()).toBe(true);
+
+        expect(reloadSavedProject()).toEqual(['setTrackColor', forward]);
+        expect(pastTypes()).toEqual(['setTrackColor', forward]);
+
+        await undo();
+        expect(read()).toBe(false);
+        await redo();
+        expect(read()).toBe(true);
+        await undo();
+        expect(read()).toBe(false);
+        expect(vocalColor()).toBe('#ff5500');
+    });
 });

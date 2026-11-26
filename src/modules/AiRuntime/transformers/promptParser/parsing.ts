@@ -111,6 +111,8 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
         selectedTrackSoloSafe: selectedTrack?.soloSafe,
         loopEnabled: context.isLooping,
         metronomeEnabled: context.metronomeEnabled,
+        countInEnabled: context.countInEnabled,
+        preRollEnabled: context.preRollEnabled,
     };
 }
 

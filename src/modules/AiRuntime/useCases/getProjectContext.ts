@@ -100,6 +100,13 @@ const contextCache: {
     context: null,
 };
 
+function readRecordingLeadIn(transportState: typeof transportStore.value) {
+    return {
+        countInEnabled: transportState?.countInEnabled ?? false,
+        preRollEnabled: transportState?.preRollEnabled ?? false,
+    };
+}
+
 export function getProjectContext(): ProjectContext {
     if (agentProjectRepairStateStore.value) {
         throw new AiProposalInvalidatedError(
@@ -158,6 +165,7 @@ export function getProjectContext(): ProjectContext {
         punchInBeat: transportState?.punchInBeat ?? 0,
         punchOutBeat: transportState?.punchOutBeat ?? 16,
         metronomeEnabled: transportState?.metronomeEnabled ?? false,
+        ...readRecordingLeadIn(transportState),
         metronomeVolume: transportState?.metronomeVolume ?? 0.5,
         metronomeVolumeDb: toLevelDb(transportState?.metronomeVolume ?? 0.5),
         masterGain: (transportState?.masterGain ?? 80) / 100,

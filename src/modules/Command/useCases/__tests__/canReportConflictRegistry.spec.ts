@@ -1251,6 +1251,27 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
             },
         },
     },
+    // The live transport holds the default 1 count-in bar and 2 pre-roll bars, both off.
+    {
+        title: 'setCountInBars refuses to write against a diverged bar count',
+        actionType: 'setCountInBars',
+        divergedAction: { type: 'setCountInBars', payload: { bars: 3, expectedBars: 5 } },
+    },
+    {
+        title: 'setPreRollBars refuses to write against a diverged bar count',
+        actionType: 'setPreRollBars',
+        divergedAction: { type: 'setPreRollBars', payload: { bars: 3, expectedBars: 5 } },
+    },
+    {
+        title: 'toggleCountIn refuses to write against a diverged state',
+        actionType: 'toggleCountIn',
+        divergedAction: { type: 'toggleCountIn', payload: { enabled: true, expectedEnabled: true } },
+    },
+    {
+        title: 'togglePreRoll refuses to write against a diverged state',
+        actionType: 'togglePreRoll',
+        divergedAction: { type: 'togglePreRoll', payload: { enabled: true, expectedEnabled: true } },
+    },
     {
         title: 'restoreLoopRegion refuses to write against a collaborator loop edit',
         actionType: 'restoreLoopRegion',

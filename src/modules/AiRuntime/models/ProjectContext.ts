@@ -19,6 +19,9 @@ export type ProjectContext = {
     punchInBeat: number;
     punchOutBeat: number;
     metronomeEnabled: boolean;
+    /** Read by the Prompt Bar toggle presets, which state the opposite of what holds; never sent to a provider. */
+    countInEnabled?: boolean;
+    preRollEnabled?: boolean;
     metronomeVolume: number;
     metronomeVolumeDb?: number | null;
     masterGain: number;

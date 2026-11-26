@@ -65,13 +65,11 @@ export { isTransportIdle } from './transportControls/isTransportIdle';
 export { countSettledTakes } from './transportControls/countSettledTakes';
 export { rearmNativeSessionAfterEngineRetire } from './transportControls/rearmNativeSessionAfterEngineRetire';
 export { syncTransportMapsToNativeSession } from './transportControls/syncTransportMapsToNativeSession';
-export { toggleCountIn } from './transportControls/toggleCountIn';
 export { toggleLoop } from './transportControls/toggleLoop';
 export { toggleMetronome } from './transportControls/toggleMetronome';
 export { toggleOverdub } from './transportControls/toggleOverdub';
 export { togglePlayback } from './transportControls/togglePlayback';
 export { togglePunchEnabled } from './transportControls/togglePunchEnabled';
-export { togglePreRoll } from './transportControls/togglePreRoll';
 export { toggleRecording } from './transportControls/toggleRecording';
 
 export { addTimeSignatureChange } from './timeSignatureChanges/addTimeSignatureChange';

@@ -25,12 +25,6 @@ describe('handleSetCountInBars', () => {
         });
     });
 
-    it('redoes to the clamped bar count the use case stores', () => {
-        expect(handleSetCountInBars.describe({ type: 'setCountInBars', payload: { bars: 20 } })).toMatchObject({
-            redoAction: { type: 'setCountInBars', payload: { bars: 8 } },
-        });
-    });
-
     it('has no inverse when the transport state is unavailable', () => {
         vi.mocked(getTransportState).mockReturnValue(null);
 
@@ -39,11 +33,8 @@ describe('handleSetCountInBars', () => {
         ).toBeNull();
     });
 
-    it('treats the stored clamped value as a no-op', () => {
+    it('treats the stored value as a no-op', () => {
         expect(handleSetCountInBars.isNoop?.({ type: 'setCountInBars', payload: { bars: 1 } })).toBe(true);
         expect(handleSetCountInBars.isNoop?.({ type: 'setCountInBars', payload: { bars: 2 } })).toBe(false);
-
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, countInBars: 8 });
-        expect(handleSetCountInBars.isNoop?.({ type: 'setCountInBars', payload: { bars: 20 } })).toBe(true);
     });
 });

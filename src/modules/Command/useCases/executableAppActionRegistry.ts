@@ -28,6 +28,11 @@ import {
     trackDisplayMutationIdempotenceByType,
     trackDisplayMutationIdentityRulesByType,
 } from './executableDescriptors/trackDisplayDescriptors';
+import {
+    transportCountInDescriptors,
+    transportCountInMutationIdempotenceByType,
+    transportCountInMutationIdentityRulesByType,
+} from './executableDescriptors/transportCountInDescriptors';
 
 export type {
     ExecutableAppActionDerivedMutationIdentityArgument,
@@ -1996,6 +2001,7 @@ export const executableAppActionDescriptors = [
             required: [],
         },
     },
+    ...transportCountInDescriptors,
     {
         actionType: 'setMasterGain',
         risk: 'authority-sensitive',
@@ -3348,6 +3354,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     removeYeastProcessor: [{ arguments: [{ argument: 'processorId' }], resourceFamily: 'yeast-processor' }],
     reorderYeastProcessor: [{ arguments: [{ argument: 'processorId' }], resourceFamily: 'yeast-processor' }],
     ...trackDisplayMutationIdentityRulesByType,
+    ...transportCountInMutationIdentityRulesByType,
 } as const satisfies Record<ExecutableAppActionType, readonly ExecutableAppActionMutationIdentityRule[]>;
 
 export const executableAppActionMutationIdempotenceByType = {
@@ -3469,6 +3476,7 @@ export const executableAppActionMutationIdempotenceByType = {
     removeYeastProcessor: false,
     reorderYeastProcessor: false,
     ...trackDisplayMutationIdempotenceByType,
+    ...transportCountInMutationIdempotenceByType,
 } as const satisfies Record<ExecutableAppActionType, boolean>;
 
 export const executableAppActionDescriptorByType: ReadonlyMap<string, (typeof executableAppActionDescriptors)[number]> =
