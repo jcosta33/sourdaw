@@ -1,4 +1,7 @@
 use crate::events::EventSink;
+use crate::host::ui_thread::{
+    call_on_ui_thread, call_on_ui_thread_within, LentRef, UiThread, UiThreadError,
+};
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, RecordState};
 /// Bridge: implements daw_engine::NativePlugin for any hosted plugin runtime.
@@ -97,7 +100,7 @@ const PLUGIN_LIFECYCLE_RETIRED: u8 = 2;
 /// a slow call from a hung one; this one is chosen to sit well clear of every
 /// bound the host already puts on a control call's own waits. A control call
 /// spends at most 2 s on the RT seam (every production `with_control` timeout)
-/// and 2 s on the editor's UI-thread hop (`EDITOR_UI_THREAD_DEADLINE`), and the
+/// and 2 s on the editor's UI-thread hop (`EDITOR_UI_THREAD_DEADLINE`; a visit's re-hops for a busy seam are clipped to its own timeout), and the
 /// host gives a whole plugin instantiation plus its full capability query 10 s
 /// in the scan worker (`WORKER_TIMEOUT`) and one shell window round trip 10 s
 /// (`WINDOW_HOST_DEADLINE`). A gate held longer than the longest of those makes
@@ -166,9 +169,19 @@ fn without_stalling_async_worker<ResultValue>(wait: impl FnOnce() -> ResultValue
 
 type PendingParameterUpdate = HostParameterUpdate;
 
+/// One pending write: a parameter, its value, and the sample of the next
+/// process call it applies at.
+///
+/// A slot is keyed by `(param_id, sample_offset)`, not by the parameter alone:
+/// automation hands one parameter several points inside one block, and each is
+/// a point of the ramp the plugin is owed rather than a newer value replacing
+/// an older one. Two writes for the same parameter at the same sample do still
+/// collapse to the later — that is the coalescing a control write and an audio
+/// write at the head of one block rely on.
 struct PendingParameterSlot {
     param_id: AtomicU32,
     value_bits: AtomicU64,
+    sample_offset: AtomicU32,
     sequence: AtomicU64,
     state: AtomicU8,
 }
@@ -178,6 +191,7 @@ impl PendingParameterSlot {
         Self {
             param_id: AtomicU32::new(0),
             value_bits: AtomicU64::new(0.0f64.to_bits()),
+            sample_offset: AtomicU32::new(0),
             sequence: AtomicU64::new(0),
             state: AtomicU8::new(PENDING_PARAMETER_EMPTY),
         }
@@ -193,6 +207,26 @@ struct PendingParameterDrainEntry {
 struct PendingParameterQueue {
     slots: [PendingParameterSlot; PENDING_PARAMETER_CAPACITY],
     next_sequence: AtomicU64,
+    /// Every write whose sequence is at or below this was issued before the
+    /// last block the plugin was not handed ended, or before the last served
+    /// drain, so the sample it names is one of a block that no longer exists:
+    /// it is delivered at sample 0. An unserved block raises it
+    /// (`mark_pending_late`); every served drain raises it past the writes it
+    /// did not take (the `fetch_max` after the drain).
+    /// Lateness is carried by the sequence rather than by rewriting a slot's
+    /// offset, because a slot another thread holds mid-claim cannot be
+    /// rewritten and must not be waited for. Only grows.
+    late_through: AtomicU64,
+}
+
+/// The sample a write is delivered at: its own, unless it was issued before
+/// the last unserved block ended, in which case the head of the next block.
+fn effective_sample_offset(sample_offset: u32, sequence: u64, late_through: u64) -> u32 {
+    if sequence <= late_through {
+        0
+    } else {
+        sample_offset
+    }
 }
 
 impl PendingParameterQueue {
@@ -200,14 +234,15 @@ impl PendingParameterQueue {
         Self {
             slots: std::array::from_fn(|_| PendingParameterSlot::new()),
             next_sequence: AtomicU64::new(1),
+            late_through: AtomicU64::new(0),
         }
     }
 
-    fn enqueue(&self, param_id: u32, value: f64) -> Result<(), ()> {
+    fn enqueue(&self, param_id: u32, value: f64, sample_offset: u32) -> Result<(), ()> {
         let value_bits = value.to_bits();
         let sequence = self.next_sequence.fetch_add(1, Ordering::Relaxed);
 
-        if self.coalesce(param_id, value_bits, sequence) {
+        if self.coalesce(param_id, sample_offset, value_bits, sequence) {
             return Ok(());
         }
 
@@ -224,21 +259,90 @@ impl PendingParameterQueue {
             {
                 slot.param_id.store(param_id, Ordering::Relaxed);
                 slot.value_bits.store(value_bits, Ordering::Relaxed);
+                slot.sample_offset.store(sample_offset, Ordering::Relaxed);
                 slot.sequence.store(sequence, Ordering::Relaxed);
                 slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
                 return Ok(());
             }
         }
 
-        if self.coalesce(param_id, value_bits, sequence) {
+        if self.coalesce(param_id, sample_offset, value_bits, sequence) {
+            return Ok(());
+        }
+
+        if self.fold_into_newest_point(param_id, sample_offset, value_bits, sequence) {
             return Ok(());
         }
 
         Err(())
     }
 
+    /// With no slot free, fold a write into the parameter's newest published
+    /// point — highest effective sample, then highest sequence — so a ramp
+    /// that fills the queue still ends on its newest value instead of losing
+    /// it. The point keeps the later of the two samples, so the parameter's
+    /// points stay in non-decreasing order, the same law a full plugin-side
+    /// value queue follows. A slot another thread holds, or one that no longer
+    /// holds the parameter once claimed, is not waited for. The write is
+    /// refused (`false`) when the queue holds no point of the parameter, when
+    /// the parameter's newest slot is held by another thread, or when that
+    /// slot was republished for another parameter by the time it is claimed.
+    /// The audio-thread caller counts every refusal as an unmapped write.
+    fn fold_into_newest_point(
+        &self,
+        param_id: u32,
+        sample_offset: u32,
+        value_bits: u64,
+        sequence: u64,
+    ) -> bool {
+        let late_through = self.late_through.load(Ordering::Acquire);
+        let newest = self
+            .slots
+            .iter()
+            .filter(|slot| {
+                slot.state.load(Ordering::Acquire) == PENDING_PARAMETER_READY
+                    && slot.param_id.load(Ordering::Relaxed) == param_id
+            })
+            .max_by_key(|slot| {
+                (
+                    effective_sample_offset(
+                        slot.sample_offset.load(Ordering::Relaxed),
+                        slot.sequence.load(Ordering::Relaxed),
+                        late_through,
+                    ),
+                    slot.sequence.load(Ordering::Relaxed),
+                )
+            });
+        let Some(slot) = newest else {
+            return false;
+        };
+        if !Self::claim_ready(slot) {
+            return false;
+        }
+        if slot.param_id.load(Ordering::Relaxed) != param_id {
+            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+            return false;
+        }
+
+        let held_sequence = slot.sequence.load(Ordering::Relaxed);
+        if held_sequence < sequence {
+            let held_offset = effective_sample_offset(
+                slot.sample_offset.load(Ordering::Relaxed),
+                held_sequence,
+                late_through,
+            );
+            let new_offset = effective_sample_offset(sample_offset, sequence, late_through);
+            slot.value_bits.store(value_bits, Ordering::Relaxed);
+            slot.sample_offset
+                .store(held_offset.max(new_offset), Ordering::Relaxed);
+            slot.sequence.store(sequence, Ordering::Relaxed);
+        }
+        slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+        true
+    }
+
     /// Fold a write into the pending value this queue already holds for the
-    /// same parameter, if it holds one.
+    /// same parameter at the same sample, if it holds one.
     ///
     /// The fold keeps the later sequence, never simply the later writer: two
     /// producers — the control path and the audio thread — take their sequence
@@ -248,7 +352,8 @@ impl PendingParameterQueue {
     /// value the automation had already moved past. A write the slot subsumes
     /// still counts as queued: the parameter's pending value is at least as new
     /// as the one being folded in.
-    fn coalesce(&self, param_id: u32, value_bits: u64, sequence: u64) -> bool {
+    fn coalesce(&self, param_id: u32, sample_offset: u32, value_bits: u64, sequence: u64) -> bool {
+        let late_through = self.late_through.load(Ordering::Acquire);
         for slot in &self.slots {
             if slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY {
                 continue;
@@ -258,33 +363,75 @@ impl PendingParameterQueue {
                 continue;
             }
 
-            if slot
-                .state
-                .compare_exchange(
-                    PENDING_PARAMETER_READY,
-                    PENDING_PARAMETER_WRITING,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_err()
-            {
-                continue;
+            if Self::fold_into_ready_slot(
+                slot,
+                param_id,
+                sample_offset,
+                value_bits,
+                sequence,
+                late_through,
+            ) {
+                return true;
             }
-
-            if slot.sequence.load(Ordering::Relaxed) < sequence {
-                slot.value_bits.store(value_bits, Ordering::Relaxed);
-                slot.sequence.store(sequence, Ordering::Relaxed);
-            }
-            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
-            return true;
         }
 
         false
     }
 
+    /// Claim a published slot and fold the write into it when, read under the
+    /// claim, it still holds the same parameter at the same effective sample.
+    /// The unclaimed checks that chose this slot may be stale: it can have been
+    /// drained and republished for another parameter or sample since, so the
+    /// claim re-reads both and gives the slot back untouched on a mismatch.
+    /// A slot another thread holds is skipped, never waited for.
+    ///
+    /// Both sides compare effective samples: a write issued before the last
+    /// unserved block is late and names sample 0, whatever offset it carries.
+    fn fold_into_ready_slot(
+        slot: &PendingParameterSlot,
+        param_id: u32,
+        sample_offset: u32,
+        value_bits: u64,
+        sequence: u64,
+        late_through: u64,
+    ) -> bool {
+        if !Self::claim_ready(slot) {
+            return false;
+        }
+
+        let held_sequence = slot.sequence.load(Ordering::Relaxed);
+        let same_point = slot.param_id.load(Ordering::Relaxed) == param_id
+            && effective_sample_offset(
+                slot.sample_offset.load(Ordering::Relaxed),
+                held_sequence,
+                late_through,
+            ) == effective_sample_offset(sample_offset, sequence, late_through);
+        if !same_point {
+            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+            return false;
+        }
+
+        if held_sequence < sequence {
+            slot.value_bits.store(value_bits, Ordering::Relaxed);
+            slot.sample_offset.store(sample_offset, Ordering::Relaxed);
+            slot.sequence.store(sequence, Ordering::Relaxed);
+        }
+        slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+        true
+    }
+
+    /// Hand every published write to the block being served, then mark late
+    /// whatever this drain did not take. A slot another thread holds mid-claim
+    /// is skipped, and its write was issued before this block ended, so the
+    /// offset it names belongs to a block that no longer exists: left as it is,
+    /// the next block would sort it behind that block's newer points and the
+    /// plugin would end on the older value. Writes issued after the snapshot
+    /// keep their offsets.
     fn drain(&self, out: &mut [PendingParameterUpdate]) -> usize {
         let mut count = 0;
         let mut entries = [PendingParameterDrainEntry::default(); PENDING_PARAMETER_CAPACITY];
+        let issued_before_drain = self.next_sequence.load(Ordering::Acquire).saturating_sub(1);
+        let late_through = self.late_through.load(Ordering::Acquire);
 
         for slot in &self.slots {
             if count >= out.len() {
@@ -304,15 +451,20 @@ impl PendingParameterQueue {
                 continue;
             }
 
+            let sequence = slot.sequence.load(Ordering::Relaxed);
             let update = PendingParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Relaxed)),
+                sample_offset: effective_sample_offset(
+                    slot.sample_offset.load(Ordering::Relaxed),
+                    sequence,
+                    late_through,
+                ),
             };
-            let sequence = slot.sequence.load(Ordering::Relaxed);
-            if let Some(existing) = entries[..count]
-                .iter_mut()
-                .find(|entry| entry.update.param_id == update.param_id)
-            {
+            if let Some(existing) = entries[..count].iter_mut().find(|entry| {
+                entry.update.param_id == update.param_id
+                    && entry.update.sample_offset == update.sample_offset
+            }) {
                 if sequence > existing.sequence {
                     *existing = PendingParameterDrainEntry { update, sequence };
                 }
@@ -322,6 +474,8 @@ impl PendingParameterQueue {
             }
             slot.state.store(PENDING_PARAMETER_EMPTY, Ordering::Release);
         }
+        self.late_through
+            .fetch_max(issued_before_drain, Ordering::Release);
 
         sort_pending_parameter_entries(&mut entries[..count]);
         for (index, entry) in entries[..count].iter().enumerate() {
@@ -335,6 +489,90 @@ impl PendingParameterQueue {
         self.slots
             .iter()
             .any(|slot| slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_EMPTY)
+    }
+
+    /// Move every pending write to the head of whichever block delivers it.
+    /// Audio thread only, after a block the plugin was not handed.
+    ///
+    /// The offsets a write carries name samples of the block it was queued
+    /// for; once that block has passed without reaching the plugin they name
+    /// samples of a block that no longer exists, and left as they are they
+    /// would sort behind the next block's own early points. A late write is
+    /// delivered at the head, exactly as [`HostedPluginSlot`] re-stamps a
+    /// retained note.
+    ///
+    /// Lateness is marked by sequence: every write issued so far is at or
+    /// below the new `late_through`, and drain and coalesce read a late write
+    /// as sample 0 whatever offset its slot holds. Rewriting offsets in place
+    /// would miss a slot another thread holds mid-claim, and the audio thread
+    /// may not wait for it; the watermark covers that slot all the same. A
+    /// write issued after the mark carries a higher sequence and keeps its own
+    /// offset, since it is for the block about to run.
+    ///
+    /// Every late write of one parameter names the same sample, so they are
+    /// one write. The fold is best-effort under claims: it runs only forward,
+    /// from each slot to the later slots of its parameter, and it skips any
+    /// slot another thread holds. A late slot the fold leaves that way is
+    /// folded by the drain once it is published. Kept apart, the points of a
+    /// ramp from consecutive unserved blocks would fill the queue and refuse
+    /// the newest writes of that ramp.
+    fn mark_pending_late(&self) {
+        let issued = self.next_sequence.load(Ordering::Acquire).saturating_sub(1);
+        self.late_through.fetch_max(issued, Ordering::Release);
+        let late_through = self.late_through.load(Ordering::Acquire);
+
+        for (index, slot) in self.slots.iter().enumerate() {
+            if !Self::claim_ready(slot) {
+                continue;
+            }
+            let param_id = slot.param_id.load(Ordering::Relaxed);
+            if slot.sequence.load(Ordering::Relaxed) > late_through {
+                slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+                continue;
+            }
+            for other in &self.slots[index + 1..] {
+                if other.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY
+                    || other.param_id.load(Ordering::Relaxed) != param_id
+                    || !Self::claim_ready(other)
+                {
+                    continue;
+                }
+                // Re-read under the claim: the slot may have been freed and
+                // republished for another parameter, or for the coming block,
+                // since the unclaimed check.
+                if other.param_id.load(Ordering::Relaxed) != param_id
+                    || other.sequence.load(Ordering::Relaxed) > late_through
+                {
+                    other
+                        .state
+                        .store(PENDING_PARAMETER_READY, Ordering::Release);
+                    continue;
+                }
+                if other.sequence.load(Ordering::Relaxed) > slot.sequence.load(Ordering::Relaxed) {
+                    slot.value_bits
+                        .store(other.value_bits.load(Ordering::Relaxed), Ordering::Relaxed);
+                    slot.sequence
+                        .store(other.sequence.load(Ordering::Relaxed), Ordering::Relaxed);
+                }
+                other
+                    .state
+                    .store(PENDING_PARAMETER_EMPTY, Ordering::Release);
+            }
+            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
+        }
+    }
+
+    /// Take a published slot for this thread alone, or report that it is empty
+    /// or mid-publish and so someone else's.
+    fn claim_ready(slot: &PendingParameterSlot) -> bool {
+        slot.state
+            .compare_exchange(
+                PENDING_PARAMETER_READY,
+                PENDING_PARAMETER_WRITING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_ok()
     }
 
     /// Drop every write this queue holds, leaving any slot mid-publish to the
@@ -366,11 +604,17 @@ impl PendingParameterQueue {
     }
 }
 
+/// Order a drain the way a plugin is owed it: by the sample each write applies
+/// at, and by issue order among writes at one sample. Writes to one parameter
+/// at the same sample have already folded to the later one issued, and the
+/// plugin ends on the write with the highest sample. An insertion sort because
+/// the audio thread runs it and it allocates nothing.
 fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
+    let key = |entry: &PendingParameterDrainEntry| (entry.update.sample_offset, entry.sequence);
     for index in 1..entries.len() {
         let entry = entries[index];
         let mut cursor = index;
-        while cursor > 0 && entries[cursor - 1].sequence > entry.sequence {
+        while cursor > 0 && key(&entries[cursor - 1]) > key(&entry) {
             entries[cursor] = entries[cursor - 1];
             cursor -= 1;
         }
@@ -397,6 +641,171 @@ impl<Runtime: HostedPluginRuntime> Drop for ControlGateGuard<'_, Runtime> {
         fence(Ordering::SeqCst);
         self.owner.recover_if_unresponsive();
     }
+}
+
+/// One instance's control gate, held across the steps of one control visit.
+///
+/// The gate serialises this instance's control calls against each other; the
+/// audio access seam, which the audio thread competes for, is a separate claim
+/// that each step takes for only as long as it touches the wrapper. Holding the
+/// gate between steps is what keeps another control call from interleaving
+/// with a visit that hops to the shell's UI thread and back.
+pub struct ControlVisit<'owner, Runtime: HostedPluginRuntime> {
+    owner: &'owner SharedHostedPlugin<Runtime>,
+    _gate: ControlGateGuard<'owner, Runtime>,
+}
+
+impl<Runtime: HostedPluginRuntime> ControlVisit<'_, Runtime> {
+    /// Run `operation` against the wrapper here, under the access seam, waiting
+    /// up to `timeout` for the audio thread to let go of it.
+    pub fn with_seam<ResultValue, OperationError>(
+        &self,
+        timeout: Duration,
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
+        self.owner.with_control_locked(timeout, operation)
+    }
+
+    /// Run `call` against the wrapper on `ui`'s thread, claiming the access seam
+    /// only once the call has landed there, and never waiting for it there.
+    ///
+    /// The seam is what the audio thread's `with_process` competes for, and the
+    /// wait for the shell's thread to take the call is unbounded by anything
+    /// this instance does: a seam held across it skips the plugin's blocks for
+    /// as long as the shell is busy. So the wait holds the gate alone. Landed,
+    /// the call makes one non-blocking try at the seam. The seam is free unless
+    /// the audio thread is inside a block, and a plugin whose block hangs holds
+    /// it indefinitely, so the shell's thread — which every editor, menu and
+    /// window of the app shares — waits for it not at all: a busy seam hands
+    /// the call back unrun. The caller, still holding the gate on its own
+    /// thread, backs off and hops again until `timeout` has passed from the
+    /// start of the visit, then refuses with [`PluginControlRefusal::TimedOut`].
+    /// A visit run on the UI thread itself waits at most [`UI_THREAD_SEAM_WAIT`].
+    /// The seam then covers the plugin's own call, because that call is handed
+    /// the whole wrapper the audio thread also borrows.
+    pub fn on_ui_thread<Ui, Produced>(
+        &self,
+        ui: &Ui,
+        timeout: Duration,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.hop(ui, None, timeout, call)
+    }
+
+    /// [`Self::on_ui_thread`], withdrawing the call if the UI thread has not
+    /// started it by `hop_deadline`; for a caller on a timer, whose retry
+    /// carries a call withdrawn unrun. The deadline bounds each hop, and
+    /// `timeout` the whole visit.
+    pub fn on_ui_thread_within<Ui, Produced>(
+        &self,
+        ui: &Ui,
+        hop_deadline: Duration,
+        timeout: Duration,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.hop(ui, Some(hop_deadline), timeout, call)
+    }
+
+    fn hop<Ui, Produced, Call>(
+        &self,
+        ui: &Ui,
+        hop_deadline: Option<Duration>,
+        timeout: Duration,
+        call: Call,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+        Call: FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    {
+        let started = Instant::now();
+        let deadline = started + timeout;
+        // A caller that is itself the UI thread is the shell's one thread, so
+        // its wait for the seam is the short bound, not the control timeout.
+        let seam_wait_until = if ui.is_ui_thread() {
+            deadline.min(started + UI_THREAD_SEAM_WAIT)
+        } else {
+            deadline
+        };
+        let mut call = call;
+        let mut rehop = false;
+        loop {
+            // A hop after the first is clipped to what is left of `timeout`, so
+            // a shell that stops taking work mid-wait cannot stretch the visit
+            // past the longer of `timeout` and one hop.
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let this_hop = match (rehop, hop_deadline) {
+                (false, hop_deadline) => hop_deadline,
+                (true, Some(hop_deadline)) => Some(hop_deadline.min(remaining)),
+                (true, None) => Some(remaining),
+            };
+            let owner = LentRef::new(self.owner);
+            let landed = move || {
+                // SAFETY: lent for exactly this call, and the hop below parks
+                // this visit — and with it the borrow of the owner — until the
+                // call has run or been withdrawn unrun.
+                unsafe { owner.with(|owner| owner.try_run_landed(call)) }
+            };
+            let hopped = without_stalling_async_worker(|| match this_hop {
+                Some(this_hop) => call_on_ui_thread_within(ui, this_hop, landed),
+                None => call_on_ui_thread(ui, landed),
+            });
+            match hopped {
+                Ok(Landed::Ran(produced)) => return Ok(produced),
+                Ok(Landed::SeamBusy(returned)) => call = returned,
+                // The seam was busy on an earlier hop, so this one running out
+                // of time is the seam's timeout, not the shell's.
+                Err(UiThreadError::NotRunInTime) if rehop => return Err(self.seam_timed_out()),
+                Err(unreached) => return Err(PluginControlError::Operation(unreached)),
+            }
+
+            if Instant::now() >= seam_wait_until {
+                return Err(self.seam_timed_out());
+            }
+            without_stalling_async_worker(|| thread::sleep(SEAM_RETRY_BACKOFF));
+            rehop = true;
+        }
+    }
+
+    fn seam_timed_out(&self) -> PluginControlError<UiThreadError> {
+        PluginControlError::Refused(PluginControlRefusal::TimedOut {
+            plugin: self.owner.name.clone(),
+        })
+    }
+}
+
+/// How long a visit waits, off the UI thread, before it hops again to find the
+/// access seam free; the audio thread's block is normally far shorter.
+const SEAM_RETRY_BACKOFF: Duration = Duration::from_millis(2);
+
+/// The most a visit run on the UI thread itself waits for the audio seam.
+///
+/// Its callers are an OS window close and the quit cascade's editor close, which
+/// cannot hop elsewhere and must not fail merely because the audio thread is
+/// inside a block: while playing, the seam is held for part of every block, and
+/// a plugin's processing of one block is a few milliseconds even under heavy
+/// load. 50 ms is comfortably above that, so a close finds the seam free, and
+/// far below the control timeout, so a plugin whose block hangs costs the shell
+/// at most this before the close refuses.
+const UI_THREAD_SEAM_WAIT: Duration = Duration::from_millis(50);
+
+/// What a call that hopped to the UI thread found there.
+enum Landed<Produced, Call> {
+    /// The seam was free and the call ran under it.
+    Ran(Produced),
+    /// The audio thread held the seam; the call comes back unrun.
+    SeamBusy(Call),
 }
 
 /// Why the control path refused to run an operation against one hosted
@@ -618,6 +1027,13 @@ impl PluginRuntimeLifecycle {
 
     fn is_active(&self) -> bool {
         self.state.load(Ordering::SeqCst) == PLUGIN_LIFECYCLE_ACTIVE
+    }
+
+    /// Whether the unload that closed this instance has finished. Unlike an
+    /// unloading instance, which a cancelled unload returns to service, a
+    /// retired one never serves again.
+    fn is_retired(&self) -> bool {
+        self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_RETIRED
     }
 
     fn begin_unload(&self) {
@@ -969,10 +1385,18 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// serialises the control-thread producer against the audio thread's drain,
     /// and it serialises two producers by exactly the same transitions: a slot
     /// is owned by whoever won the CAS into `WRITING`. Coalescing keeps at most
-    /// one pending value per parameter id: where a write meets a pending one
-    /// for the same id, the later sequence number survives, so a control write
-    /// and an audio write of the same parameter before one process call
-    /// collapse to the later of the two rather than to both.
+    /// one pending value per parameter id and sample: where a write meets a
+    /// pending one for the same id at the same `sample_offset`, the later
+    /// sequence number survives, so a control write and an audio write of the
+    /// same parameter at the head of one process call collapse to the later of
+    /// the two rather than to both. Writes at different samples are distinct
+    /// points of one ramp and each reaches the plugin, in sample order.
+    ///
+    /// `sample_offset` is the sample of the next process call the write
+    /// applies at, in the frame of reference the engine hands that call (see
+    /// `NativePlugin::apply_parameter_on_audio_thread`). A block the plugin is
+    /// not handed leaves its writes queued and moves them to the head of the
+    /// block that delivers them.
     ///
     /// That ordering is what coalescing guarantees, and only that. A producer
     /// takes its sequence number before it reaches a slot, so one descheduled
@@ -984,12 +1408,19 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// A non-finite value is refused without touching the queue, mirroring the
     /// control path: `NaN` reaching the plugin is a parameter the host can
     /// never move back.
-    pub fn enqueue_parameter_on_audio_thread(&self, param_id: u32, value: f64) -> bool {
+    pub fn enqueue_parameter_on_audio_thread(
+        &self,
+        param_id: u32,
+        value: f64,
+        sample_offset: u32,
+    ) -> bool {
         if !value.is_finite() {
             return false;
         }
 
-        self.pending_parameters.enqueue(param_id, value).is_ok()
+        self.pending_parameters
+            .enqueue(param_id, value, sample_offset)
+            .is_ok()
     }
 
     pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), ParameterWriteError> {
@@ -1009,8 +1440,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             });
         }
 
+        // A control write has no timeline position: it lands at the head of
+        // the next block.
         self.pending_parameters
-            .enqueue(param_id, value)
+            .enqueue(param_id, value, 0)
             .map_err(|()| ParameterWriteError::QueueFull {
                 plugin: self.name.clone(),
             })?;
@@ -1021,7 +1454,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         // from. Queued first so a write that arrives while the audio thread
         // holds the seam is delivered by the next control visit rather than
         // lost.
-        let _ = self.editor_parameter_writes.enqueue(param_id, value);
+        let _ = self.editor_parameter_writes.enqueue(param_id, value, 0);
         if let Some(_guard) = self.try_claim_control() {
             // SAFETY: the guard holds the control side of the access seam, so
             // the audio thread cannot be inside the wrapper.
@@ -1137,6 +1570,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
     pub fn retire(&self) {
         self.lifecycle.retire();
+    }
+
+    pub fn is_retired(&self) -> bool {
+        self.lifecycle.is_retired()
     }
 
     pub fn ensure_public_control_allowed(&self) -> Result<(), PluginControlRefusal> {
@@ -1280,6 +1717,85 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.with_control_locked(timeout, operation)
+    }
+
+    /// Hold this instance's control gate for a visit of several steps, once the
+    /// lifecycle allows public control. Waits for the gate as
+    /// [`Self::with_control`] does.
+    pub fn control_visit(&self) -> Result<ControlVisit<'_, Runtime>, PluginControlRefusal> {
+        let gate = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+        Ok(ControlVisit {
+            owner: self,
+            _gate: gate,
+        })
+    }
+
+    /// [`Self::control_visit`], refusing a busy gate rather than waiting for it,
+    /// as [`Self::try_with_control`] does.
+    pub fn try_control_visit(&self) -> Result<ControlVisit<'_, Runtime>, PluginControlRefusal> {
+        let gate = self.try_lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+        Ok(ControlVisit {
+            owner: self,
+            _gate: gate,
+        })
+    }
+
+    /// [`Self::control_visit`] for an instance on its way out, without asking
+    /// the lifecycle, as [`Self::with_unload_control`] does.
+    pub fn unload_control_visit(&self) -> Result<ControlVisit<'_, Runtime>, PluginControlRefusal> {
+        let gate = self.lock_non_rt_control()?;
+        Ok(ControlVisit {
+            owner: self,
+            _gate: gate,
+        })
+    }
+
+    /// One call on `ui`'s thread under the control gate; see
+    /// [`ControlVisit::on_ui_thread`].
+    pub fn with_control_on_ui_thread<Ui, Produced>(
+        &self,
+        timeout: Duration,
+        ui: &Ui,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.control_visit()?.on_ui_thread(ui, timeout, call)
+    }
+
+    /// [`Self::with_control_on_ui_thread`] through [`Self::try_control_visit`].
+    pub fn try_with_control_on_ui_thread<Ui, Produced>(
+        &self,
+        timeout: Duration,
+        ui: &Ui,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.try_control_visit()?.on_ui_thread(ui, timeout, call)
+    }
+
+    /// [`Self::with_control_on_ui_thread`] through [`Self::unload_control_visit`].
+    pub fn with_unload_control_on_ui_thread<Ui, Produced>(
+        &self,
+        timeout: Duration,
+        ui: &Ui,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.unload_control_visit()?.on_ui_thread(ui, timeout, call)
     }
 
     /// Take the gate that serializes this instance's non-RT control operations.
@@ -1572,6 +2088,22 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         }
     }
 
+    /// One non-blocking try at the control side of the access seam, for a call
+    /// that has landed on the UI thread: run `call` under it, or hand `call`
+    /// back unrun when the audio thread holds it. Never waits.
+    fn try_run_landed<Produced, Call>(&self, call: Call) -> Landed<Produced, Call>
+    where
+        Call: FnOnce(&mut Runtime) -> Produced,
+    {
+        let Some(_guard) = self.try_claim_control() else {
+            return Landed::SeamBusy(call);
+        };
+        // SAFETY: `_guard` holds the control side of the access seam until this
+        // return, so neither the audio thread nor another control visit can be
+        // inside the wrapper.
+        Landed::Ran(call(unsafe { &mut *self.wrapper.get() }))
+    }
+
     fn with_process<ResultValue>(
         &self,
         operation: impl FnOnce(&mut Runtime, &PendingParameterQueue) -> ResultValue,
@@ -1771,7 +2303,9 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
 
         if processed.is_none() {
             // Non-RT state/editor control owns the plugin, or it is unloading
-            // or inactive: the block passes through as-is, and is counted.
+            // or inactive: the block passes through as-is, and is counted. Its
+            // parameter writes stay queued, late, for the next block's head.
+            self.plugin.pending_parameters.mark_pending_late();
             self.plugin.record_unserved_block();
         }
     }
@@ -1865,14 +2399,17 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
                 // retention array holds, and this block's events go back
                 // behind it: the staged ones fit, and any the queue cannot
                 // hold are counted as dropped.
+                // Its parameter writes are late the same way the notes are.
                 self.retain_events(midi_events);
+                self.plugin.pending_parameters.mark_pending_late();
                 self.plugin.record_unserved_block();
             }
         }
     }
 
-    fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64) -> bool {
-        self.plugin.enqueue_parameter_on_audio_thread(id, value)
+    fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64, sample_offset: u32) -> bool {
+        self.plugin
+            .enqueue_parameter_on_audio_thread(id, value, sample_offset)
     }
 
     fn name(&self) -> &str {
@@ -2065,7 +2602,8 @@ mod tests {
     }
 
     /// The parameter updates each process call was handed, one entry per call.
-    type ProcessedBlocks = Arc<Mutex<Vec<Vec<(u32, f64)>>>>;
+    /// Each update is `(parameter id, value, sample offset)`.
+    type ProcessedBlocks = Arc<Mutex<Vec<Vec<(u32, f64, u32)>>>>;
 
     /// A backend that records the parameter updates every process call is
     /// handed — the only place a queued write becomes observable to the plugin.
@@ -2081,7 +2619,7 @@ mod tests {
             self.processed.lock().expect("the process log").push(
                 updates
                     .iter()
-                    .map(|update| (update.param_id, update.value))
+                    .map(|update| (update.param_id, update.value, update.sample_offset))
                     .collect(),
             );
         }
@@ -2200,20 +2738,20 @@ mod tests {
     fn an_audio_thread_parameter_write_reaches_the_next_process() {
         let (mut slot, _shared, processed) = process_recording_slot();
 
-        assert!(slot.apply_parameter_on_audio_thread(3, 0.75));
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.75, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
             *processed.lock().expect("the process log"),
-            vec![vec![(3, 0.75)]]
+            vec![vec![(3, 0.75, 0)]]
         );
     }
 
     /// Two producers now write the same queue. A parameter the user is holding
-    /// and an automation lane writing the same id before one process call must
-    /// reach the plugin as one value — the later of the two — rather than as
-    /// two updates the plugin applies in whatever order the slots happen to sit
-    /// in.
+    /// and an automation lane writing the same id at the head of one process
+    /// call must reach the plugin as one value — the later of the two — rather
+    /// than as two updates the plugin applies in whatever order the slots
+    /// happen to sit in.
     #[test]
     fn an_audio_thread_write_coalesces_with_a_control_write_by_sequence() {
         let (mut slot, shared, processed) = process_recording_slot();
@@ -2221,12 +2759,264 @@ mod tests {
         shared
             .enqueue_parameter(3, 0.1)
             .expect("the pending queue has room");
-        assert!(slot.apply_parameter_on_audio_thread(3, 0.9));
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.9, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
             *processed.lock().expect("the process log"),
-            vec![vec![(3, 0.9)]]
+            vec![vec![(3, 0.9, 0)]]
+        );
+    }
+
+    /// The engine's offset travels with the write into the update the runtime
+    /// is handed, and a UI edit queued beside the automation stays at the head
+    /// of the block. Several automation points for one parameter all reach the
+    /// plugin, in sample order, in the one process call they were queued for.
+    #[test]
+    fn an_audio_thread_write_reaches_the_plugin_at_its_sample_offset() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 10));
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 200));
+        shared
+            .enqueue_parameter(9, 0.5)
+            .expect("the pending queue has room");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(9, 0.5, 0), (4, 0.2, 10), (4, 0.8, 200)]]
+        );
+    }
+
+    /// A block the plugin is not handed leaves its writes queued, and the
+    /// offsets they carry name samples of a block that has passed. They are
+    /// delivered late, at the head of the next block the plugin receives, and
+    /// ahead of that block's own points — never sorted in among them as if
+    /// they were still on time.
+    #[test]
+    fn a_write_queued_for_an_unserved_block_lands_at_the_head_of_the_next() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 100));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.2, 0), (4, 0.8, 100)]],
+            "the unserved block's write arrives once, at the head, ahead of the \
+             next block's own point"
+        );
+    }
+
+    /// Every late point of one parameter lands at the same sample, so they are
+    /// one write: the queue folds them into the latest on the restamp rather
+    /// than holding a slot each until the next served block. Held, the points
+    /// of a ramp from consecutive unserved blocks would fill the queue and the
+    /// newest writes of that ramp would be the ones refused.
+    #[test]
+    fn late_points_of_one_parameter_do_not_hold_a_slot_each() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        for offset in 1..=PENDING_PARAMETER_CAPACITY as u32 {
+            assert!(slot.apply_parameter_on_audio_thread(4, f64::from(offset) / 100.0, offset));
+        }
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+
+        assert!(
+            slot.apply_parameter_on_audio_thread(4, 0.99, 5),
+            "the unserved block's points hold one slot, so the next write has room"
+        );
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.64, 0), (4, 0.99, 5)]],
+            "the late points arrive as their last value at the head, ahead of \
+             the next block's own point"
+        );
+    }
+
+    /// A write another thread holds mid-claim when the unserved block ends is
+    /// still late: the audio thread cannot rewrite a slot it does not own, so
+    /// lateness is a fact of the write's sequence, not of the slot's offset.
+    /// Mutation: restamp only the slots the audio thread manages to claim —
+    /// the write drains at offset 200 of the next block.
+    #[test]
+    fn a_late_write_whose_slot_another_thread_holds_still_lands_at_the_head() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let queue = &shared.pending_parameters;
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        // Another thread's claim on the slot, as `coalesce` takes one.
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_WRITING, Ordering::Release);
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.2, 0)]]
+        );
+    }
+
+    /// A served block's drain takes only published slots; a write whose slot
+    /// another thread holds mid-claim stays queued, and it was issued before
+    /// that block ended, so the next block delivers it at the head, ahead of
+    /// its own newer points, rather than at its old offset behind them.
+    /// Mutation: drop the drain's post-drain advance of `late_through` — the
+    /// next block delivers `[(4, 0.8, 10), (4, 0.2, 200)]` and ends on 0.2.
+    #[test]
+    fn a_write_a_served_drain_skipped_is_late_for_the_next_block() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let queue = &shared.pending_parameters;
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_WRITING, Ordering::Release);
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![Vec::new()],
+            "the held slot is not taken by the served block"
+        );
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 10));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![Vec::new(), vec![(4, 0.2, 0), (4, 0.8, 10)]]
+        );
+    }
+
+    /// A late slot holds the head of the next block, so a write for that
+    /// block's own sample 200 is a separate point, and one for the head folds
+    /// into the late write by sequence.
+    #[test]
+    fn a_new_write_never_folds_into_a_late_slot_at_a_different_sample() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.2, 200));
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.8, 200));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.3, 200));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+        assert!(slot.apply_parameter_on_audio_thread(4, 0.9, 0));
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.2, 0), (4, 0.8, 200)], vec![(4, 0.9, 0)]],
+            "a write at 200 keeps its own sample beside the late one, and a \
+             newer write at the head replaces a late one"
+        );
+    }
+
+    /// A slot republished for another parameter between `coalesce`'s unclaimed
+    /// pre-check and its claim must keep its own value: the claim re-reads the
+    /// parameter. Mutation: drop the re-check — Q's pending value is
+    /// overwritten with P's.
+    #[test]
+    fn a_fold_claim_on_a_slot_holding_another_parameter_leaves_it_alone() {
+        let queue = PendingParameterQueue::new();
+        assert!(queue.enqueue(8, 0.25, 0).is_ok());
+
+        // `coalesce` for parameter 7 found slot 0 holding 7 and claims it, but
+        // the slot now holds 8: the claim itself has to notice.
+        let late_through = queue.late_through.load(Ordering::Acquire);
+        let folded = PendingParameterQueue::fold_into_ready_slot(
+            &queue.slots[0],
+            7,
+            0,
+            0.9f64.to_bits(),
+            queue.next_sequence.fetch_add(1, Ordering::Relaxed),
+            late_through,
+        );
+
+        assert!(!folded);
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        assert_eq!(queue.drain(&mut drained), 1);
+        assert_eq!(
+            drained[0],
+            PendingParameterUpdate {
+                param_id: 8,
+                value: 0.25,
+                sample_offset: 0,
+            }
+        );
+    }
+
+    /// Both instrument paths owe their late parameter writes the same head
+    /// delivery as the effect path, one slot per parameter: a block the
+    /// instrument is not handed is followed by a block that receives every
+    /// late point of a parameter as one write at sample 0.
+    /// Mutation: delete the `mark_pending_late` call of `process_with_events`.
+    #[test]
+    fn an_unserved_instrument_block_delivers_its_late_parameter_writes_at_the_head() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let render = |slot: &mut HostedPluginSlot<ProcessRecordingPlugin>| {
+            slot.process_with_events(
+                &mut [0.0f32; 256],
+                &mut [0.0f32; 256],
+                256,
+                &[],
+                &TransportState::default(),
+            );
+        };
+
+        for offset in 1..=PENDING_PARAMETER_CAPACITY as u32 {
+            assert!(slot.apply_parameter_on_audio_thread(4, f64::from(offset) / 100.0, offset));
+        }
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        render(&mut slot);
+        drop(control);
+
+        assert!(
+            slot.apply_parameter_on_audio_thread(4, 0.99, 5),
+            "the unserved block's points hold one slot, so the next write has room"
+        );
+        render(&mut slot);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.64, 0), (4, 0.99, 5)]]
         );
     }
 
@@ -2237,7 +3027,7 @@ mod tests {
     fn an_audio_thread_write_refuses_a_non_finite_value() {
         let (mut slot, _shared, processed) = process_recording_slot();
 
-        assert!(!slot.apply_parameter_on_audio_thread(3, f64::NAN));
+        assert!(!slot.apply_parameter_on_audio_thread(3, f64::NAN, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
@@ -2270,12 +3060,12 @@ mod tests {
             .state
             .store(PENDING_PARAMETER_READY, Ordering::Release);
 
-        assert!(slot.apply_parameter_on_audio_thread(3, 0.1));
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.1, 0));
         render_one_block(&mut slot);
 
         assert_eq!(
             *processed.lock().expect("the process log"),
-            vec![vec![(3, 0.9)]],
+            vec![vec![(3, 0.9, 0)]],
             "the newer sequence's value survives the write that arrived after it"
         );
     }
@@ -2305,7 +3095,7 @@ mod tests {
         queue.slots[0].param_id.store(7, Ordering::Relaxed);
 
         queue.clear();
-        assert!(queue.enqueue(9, 0.1).is_ok());
+        assert!(queue.enqueue(9, 0.1, 0).is_ok());
 
         // The interrupted producer finishes its publish.
         queue.slots[0]
@@ -2330,10 +3120,12 @@ mod tests {
                 PendingParameterUpdate {
                     param_id: 7,
                     value: 0.9,
+                    sample_offset: 0,
                 },
                 PendingParameterUpdate {
                     param_id: 9,
                     value: 0.1,
+                    sample_offset: 0,
                 },
             ]
         );
@@ -2343,8 +3135,8 @@ mod tests {
     fn pending_parameter_queue_coalesces_and_drains_latest_value() {
         let queue = PendingParameterQueue::new();
 
-        assert!(queue.enqueue(7, 0.25).is_ok());
-        assert!(queue.enqueue(7, 0.75).is_ok());
+        assert!(queue.enqueue(7, 0.25, 0).is_ok());
+        assert!(queue.enqueue(7, 0.75, 0).is_ok());
 
         let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
         let count = queue.drain(&mut drained);
@@ -2355,6 +3147,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 7,
                 value: 0.75,
+                sample_offset: 0,
             }
         );
         assert_eq!(queue.drain(&mut drained), 0);
@@ -2370,10 +3163,10 @@ mod tests {
         let queue = PendingParameterQueue::new();
 
         for index in 0..=PENDING_PARAMETER_CAPACITY {
-            assert!(queue.enqueue(7, index as f64).is_ok(), "write {index}");
+            assert!(queue.enqueue(7, index as f64, 0).is_ok(), "write {index}");
         }
         assert!(
-            queue.enqueue(9, 0.5).is_ok(),
+            queue.enqueue(9, 0.5, 0).is_ok(),
             "the repeated writes left no room for another parameter"
         );
 
@@ -2385,13 +3178,96 @@ mod tests {
                 PendingParameterUpdate {
                     param_id: 7,
                     value: PENDING_PARAMETER_CAPACITY as f64,
+                    sample_offset: 0,
                 },
                 PendingParameterUpdate {
                     param_id: 9,
                     value: 0.5,
+                    sample_offset: 0,
                 },
             ]
         );
+    }
+
+    /// A ramp that fills every slot with distinct sample offsets of one
+    /// parameter still ends on its newest point: the full queue folds the
+    /// write into the parameter's latest slot instead of refusing it. A
+    /// parameter the queue holds no slot for stays refused.
+    /// Mutation: return `Err` when no slot is free — the newest point is lost.
+    #[test]
+    fn a_full_queue_folds_a_ramps_newest_point_into_its_last_slot() {
+        let queue = PendingParameterQueue::new();
+        for index in 0..PENDING_PARAMETER_CAPACITY {
+            assert!(
+                queue.enqueue(1, index as f64 / 100.0, index as u32).is_ok(),
+                "point {index}"
+            );
+        }
+
+        assert!(queue.enqueue(1, 0.99, 100).is_ok());
+        assert_eq!(
+            queue.enqueue(2, 0.5, 0),
+            Err(()),
+            "a parameter the full queue holds no slot for is refused"
+        );
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+        assert_eq!(count, PENDING_PARAMETER_CAPACITY);
+        assert_eq!(
+            drained[count - 1],
+            PendingParameterUpdate {
+                param_id: 1,
+                value: 0.99,
+                sample_offset: 100,
+            }
+        );
+        assert!(
+            drained[..count]
+                .windows(2)
+                .all(|pair| pair[0].sample_offset <= pair[1].sample_offset),
+            "the drain stays ordered by sample offset"
+        );
+    }
+
+    /// A write folded into a full queue below the newest point's offset takes
+    /// that point's value and keeps its higher offset; no other point of the
+    /// parameter moves.
+    /// Mutation: `max_by_key` -> `min_by_key` folds into the oldest point.
+    /// Mutation: store `new_offset` instead of the later of the two offsets.
+    #[test]
+    fn a_full_queue_fold_below_the_newest_offset_keeps_the_newest_offset() {
+        let queue = PendingParameterQueue::new();
+        let original: Vec<PendingParameterUpdate> = (0..PENDING_PARAMETER_CAPACITY)
+            .map(|index| PendingParameterUpdate {
+                param_id: 1,
+                value: index as f64 / 100.0,
+                sample_offset: index as u32 * 2,
+            })
+            .collect();
+        for update in &original {
+            assert!(queue
+                .enqueue(update.param_id, update.value, update.sample_offset)
+                .is_ok());
+        }
+
+        // Offset 11 is held by no point, so the write reaches the fold rather
+        // than coalescing into an existing point.
+        assert!(queue.enqueue(1, 0.77, 11).is_ok());
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+        assert_eq!(count, PENDING_PARAMETER_CAPACITY);
+        let newest = PENDING_PARAMETER_CAPACITY - 1;
+        assert_eq!(
+            drained[newest],
+            PendingParameterUpdate {
+                param_id: 1,
+                value: 0.77,
+                sample_offset: newest as u32 * 2,
+            }
+        );
+        assert_eq!(&drained[..newest], &original[..newest]);
     }
 
     #[test]
@@ -2399,10 +3275,10 @@ mod tests {
         let queue = PendingParameterQueue::new();
 
         for index in 0..PENDING_PARAMETER_CAPACITY {
-            assert!(queue.enqueue(index as u32, index as f64).is_ok());
+            assert!(queue.enqueue(index as u32, index as f64, 0).is_ok());
         }
 
-        assert_eq!(queue.enqueue(999, 0.5), Err(()));
+        assert_eq!(queue.enqueue(999, 0.5, 0), Err(()));
 
         let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
         let count = queue.drain(&mut drained);
@@ -2413,6 +3289,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 0,
                 value: 0.0,
+                sample_offset: 0,
             }
         );
         assert_eq!(
@@ -2420,6 +3297,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: (PENDING_PARAMETER_CAPACITY - 1) as u32,
                 value: (PENDING_PARAMETER_CAPACITY - 1) as f64,
+                sample_offset: 0,
             }
         );
     }
@@ -2428,8 +3306,8 @@ mod tests {
     fn pending_parameter_queue_keeps_updates_when_drain_output_is_full() {
         let queue = PendingParameterQueue::new();
 
-        assert!(queue.enqueue(1, 0.1).is_ok());
-        assert!(queue.enqueue(2, 0.2).is_ok());
+        assert!(queue.enqueue(1, 0.1, 0).is_ok());
+        assert!(queue.enqueue(2, 0.2, 0).is_ok());
 
         let mut first_drain = [PendingParameterUpdate::default(); 1];
         assert_eq!(queue.drain(&mut first_drain), 1);
@@ -2438,6 +3316,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 1,
                 value: 0.1,
+                sample_offset: 0,
             }
         );
 
@@ -2448,7 +3327,50 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 2,
                 value: 0.2,
+                sample_offset: 0,
             }
+        );
+    }
+
+    /// Automation hands one parameter several points inside one block, and
+    /// each is a point of the ramp rather than a newer value replacing an older
+    /// one: every point is drained, in the order of the samples they apply at,
+    /// with the other parameter's point between them. Folding them by parameter
+    /// id — the per-id coalescing UI writes rely on — would hand the plugin the
+    /// ramp's last value at the wrong sample and nothing else.
+    #[test]
+    fn pending_parameter_queue_keeps_every_point_of_a_ramp_in_sample_order() {
+        let queue = PendingParameterQueue::new();
+
+        assert!(queue.enqueue(4, 0.8, 200).is_ok());
+        assert!(queue.enqueue(4, 0.2, 10).is_ok());
+        assert!(queue.enqueue(7, 0.5, 100).is_ok());
+        assert!(queue.enqueue(4, 0.6, 10).is_ok());
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+
+        assert_eq!(
+            drained[..count],
+            [
+                PendingParameterUpdate {
+                    param_id: 4,
+                    value: 0.6,
+                    sample_offset: 10,
+                },
+                PendingParameterUpdate {
+                    param_id: 7,
+                    value: 0.5,
+                    sample_offset: 100,
+                },
+                PendingParameterUpdate {
+                    param_id: 4,
+                    value: 0.8,
+                    sample_offset: 200,
+                },
+            ],
+            "distinct samples stay distinct points, in sample order; two writes at \
+             one sample still fold to the later"
         );
     }
 
@@ -2562,6 +3484,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 7,
                 value: 0.9,
+                sample_offset: 0,
             }
         );
     }
@@ -2595,6 +3518,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 2,
                 value: 0.2,
+                sample_offset: 0,
             }
         );
         assert_eq!(
@@ -2602,6 +3526,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 1,
                 value: 0.1,
+                sample_offset: 0,
             }
         );
     }
@@ -2610,7 +3535,7 @@ mod tests {
     fn pending_parameter_queue_clear_invalidates_accepted_updates() {
         let queue = PendingParameterQueue::new();
 
-        assert!(queue.enqueue(7, 0.75).is_ok());
+        assert!(queue.enqueue(7, 0.75, 0).is_ok());
         assert!(queue.has_pending());
         queue.clear();
 
@@ -2622,7 +3547,7 @@ mod tests {
     #[test]
     fn process_drain_reads_updates_enqueued_for_runtime_delivery() {
         let queue = PendingParameterQueue::new();
-        assert!(queue.enqueue(11, 0.42).is_ok());
+        assert!(queue.enqueue(11, 0.42, 0).is_ok());
 
         let mut scratch = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
         let count = drain_pending_parameters_for_process(&queue, &mut scratch);
@@ -2633,6 +3558,7 @@ mod tests {
             PendingParameterUpdate {
                 param_id: 11,
                 value: 0.42,
+                sample_offset: 0,
             }
         );
         assert_eq!(
@@ -4468,6 +5394,200 @@ mod tests {
             *notes.lock().expect("the note log"),
             vec![(60, 100, 0, false, 0)],
             "the retained note-off is delivered on the first block after release"
+        );
+    }
+
+    /// A shell whose thread is another thread, which times how long each task
+    /// occupies it and counts them: the cost the rest of the app pays for an
+    /// editor call's hop.
+    #[derive(Default)]
+    struct TimedUiThread {
+        occupancy: Mutex<Vec<Duration>>,
+        ran_on: Mutex<Vec<std::thread::ThreadId>>,
+    }
+
+    impl TimedUiThread {
+        fn hops(&self) -> usize {
+            self.occupancy.lock().expect("the occupancy log").len()
+        }
+    }
+
+    impl UiThread for TimedUiThread {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), UiThreadError> {
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        let started = Instant::now();
+                        task.run();
+                        self.occupancy
+                            .lock()
+                            .expect("the occupancy log")
+                            .push(started.elapsed());
+                        self.ran_on
+                            .lock()
+                            .expect("the thread log")
+                            .push(std::thread::current().id());
+                    })
+                    .join()
+                    .expect("the shell thread does not panic");
+            });
+            Ok(())
+        }
+    }
+
+    /// The longest a landed call may sit on the shell's thread when it is not
+    /// running the plugin: one failed compare-exchange and a return.
+    const UI_THREAD_OCCUPANCY_BOUND: Duration = Duration::from_millis(10);
+
+    /// #7427's remainder: a plugin block that hangs holds the seam, and the
+    /// landed call used to poll for it on the shell's thread for the caller's
+    /// whole timeout. The shell's thread now spends only a try per hop, the
+    /// caller waits off it, and the refusal arrives at the caller's own timeout.
+    /// Mutation: poll the seam inside `ControlVisit::hop`'s landed closure —
+    /// the occupancy bound fails.
+    #[test]
+    fn a_hop_that_finds_the_seam_held_frees_the_shell_thread_and_refuses_at_the_timeout() {
+        let (_slot, shared, _notes) = seam_recording_slot();
+        let ui = TimedUiThread::default();
+        let timeout = Duration::from_millis(300);
+        let _audio_block = shared
+            .try_claim_control()
+            .expect("the audio side takes a free seam");
+
+        let started = Instant::now();
+        let outcome = shared.with_control_on_ui_thread(timeout, &ui, |_| ());
+
+        assert_eq!(
+            outcome,
+            Err(PluginControlError::Refused(
+                PluginControlRefusal::TimedOut {
+                    plugin: shared.name.clone()
+                }
+            )),
+            "a seam held past the timeout is the refusal the caller always got"
+        );
+        assert!(
+            started.elapsed() >= timeout,
+            "the caller waits out its own timeout before refusing"
+        );
+        assert!(ui.hops() >= 2, "the caller hops again while it waits");
+        let occupancy = ui.occupancy.lock().expect("the occupancy log");
+        assert!(
+            occupancy
+                .iter()
+                .all(|spent| *spent < UI_THREAD_OCCUPANCY_BOUND),
+            "no hop may hold the shell's thread waiting for the seam: {occupancy:?}"
+        );
+    }
+
+    /// The seam freed while the caller waits: a later hop finds it and the call
+    /// runs, on the shell's thread, and never ran for the hops that found it held.
+    #[test]
+    fn a_seam_freed_while_the_caller_waits_lets_the_call_run_on_a_later_hop() {
+        let (_slot, shared, _notes) = seam_recording_slot();
+        let ui = TimedUiThread::default();
+        let audio_block = shared
+            .try_claim_control()
+            .expect("the audio side takes a free seam");
+        let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let outcome = std::thread::scope(|scope| {
+            let counted = Arc::clone(&runs);
+            let caller = scope.spawn(|| {
+                shared.with_control_on_ui_thread(Duration::from_secs(10), &ui, move |_| {
+                    counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    7
+                })
+            });
+            let waiting_since = Instant::now();
+            while ui.hops() < 1 {
+                assert!(
+                    waiting_since.elapsed() < Duration::from_secs(10),
+                    "the caller must hop at all"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert_eq!(
+                runs.load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "a hop that finds the seam held must not run the plugin call"
+            );
+            drop(audio_block);
+            caller.join().expect("the caller does not panic")
+        });
+
+        assert_eq!(outcome, Ok(7), "the call completes once the seam is free");
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(ui.hops() >= 2, "it ran on a later hop than the first");
+        assert!(
+            shared.try_claim_control().is_some(),
+            "the seam is free again once the call has run"
+        );
+    }
+
+    /// A shell whose caller is the UI thread: every task runs inline.
+    struct InlineUiThread;
+
+    impl UiThread for InlineUiThread {}
+
+    /// A close issued from the shell's own thread (an OS window close, the quit
+    /// cascade) while the audio thread is inside a block must wait out the
+    /// block, not fail on the first busy try. Mutation: refuse at once when the
+    /// caller is the UI thread — this fails.
+    #[test]
+    fn a_visit_on_the_ui_thread_waits_out_a_short_audio_block() {
+        let (_slot, shared, _notes) = seam_recording_slot();
+        let audio_block = shared
+            .try_claim_control()
+            .expect("the audio side takes a free seam");
+
+        let outcome = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                std::thread::sleep(Duration::from_millis(5));
+                drop(audio_block);
+            });
+            shared.with_control_on_ui_thread(Duration::from_secs(2), &InlineUiThread, |_| 9)
+        });
+
+        assert_eq!(
+            outcome,
+            Ok(9),
+            "the call runs once the block's seam is free"
+        );
+    }
+
+    /// A seam held past the bound refuses within about the bound, not the
+    /// control timeout: the shell's thread is not parked for a hung block.
+    #[test]
+    fn a_visit_on_the_ui_thread_refuses_within_the_bound_when_the_seam_stays_held() {
+        let (_slot, shared, _notes) = seam_recording_slot();
+        let _audio_block = shared
+            .try_claim_control()
+            .expect("the audio side takes a free seam");
+
+        let started = Instant::now();
+        let outcome =
+            shared.with_control_on_ui_thread(Duration::from_secs(2), &InlineUiThread, |_| ());
+        let waited = started.elapsed();
+
+        assert_eq!(
+            outcome,
+            Err(PluginControlError::Refused(
+                PluginControlRefusal::TimedOut {
+                    plugin: shared.name.clone()
+                }
+            ))
+        );
+        assert!(
+            waited >= UI_THREAD_SEAM_WAIT && waited < UI_THREAD_SEAM_WAIT * 4,
+            "refused after {waited:?}, expected about {UI_THREAD_SEAM_WAIT:?}"
         );
     }
 

@@ -146,3 +146,7 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         ditherBits: 24,
     }),
 ];
+
+export function getProofFactoryPreset(id: string): ProofPreset | undefined {
+    return PROOF_PRESETS.find((preset) => preset.id === id);
+}

@@ -7,13 +7,14 @@ use crate::host::native_bridge::{
     PluginStateError, SharedHostedPlugin,
 };
 use crate::host::plugin_registry_store::{
-    plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
-    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt,
-    RescanClaim, ScanRow,
+    plugin_file_fingerprint, plugin_file_path, CompletedScanScope, FileFingerprint,
+    InconclusiveOutcome, PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore,
+    RescanAttempt, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::{PluginScanPolicy, ScanPathRefusal};
 use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
+use crate::host::tail_watcher::next_tail_sequence;
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread, UiThreadError,
 };
@@ -71,6 +72,12 @@ pub struct PluginInstance {
     /// announces a new one — over `plugin-tail-changed` rather than in this
     /// value, which is the reading at load and nothing later.
     pub tail_samples: u32,
+    /// Where that load-time tail read falls in the order every tail the host
+    /// reports takes (see `host::tail_watcher::next_tail_sequence`), taken at
+    /// the same read. A `plugin-tail-changed` event or `read_plugin_tails`
+    /// answer numbered at or below it was read before this load, so it came
+    /// from an earlier instance that held the same id.
+    pub tail_sequence: u64,
     pub engine_plugin_id: Option<usize>,
 }
 
@@ -132,6 +139,12 @@ pub(crate) enum PluginCommandError {
     ChangedBeforeOpen {
         name: String,
         path: String,
+    },
+    /// A scan quarantined the binary: its helper crashed or timed out.
+    Quarantined {
+        name: String,
+        path: String,
+        reason: String,
     },
     RescanDidNotFinish {
         name: String,
@@ -267,6 +280,10 @@ impl fmt::Display for PluginCommandError {
             Self::ChangedBeforeOpen { name, path } => write!(
                 f,
                 "Plugin '{name}' at {path} changed after it was checked and before it was opened. Load it again to check it afresh."
+            ),
+            Self::Quarantined { name, path, reason } => write!(
+                f,
+                "Plugin '{name}' at {path} will not be loaded: a plugin scan quarantined it ({reason}). Retry quarantined plugins from the plugin scan settings once it has been fixed or updated."
             ),
             Self::RescanDidNotFinish { name, path, reason } => write!(
                 f,
@@ -470,7 +487,7 @@ pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
     PLUGIN_RUNTIME_GATE.try_write().ok()
 }
 
-struct PluginLifecycleLease {
+pub(super) struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
     _guard: tokio::sync::OwnedMutexGuard<()>,
@@ -488,7 +505,7 @@ impl Drop for PluginLifecycleLease {
         }
     }
 }
-fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+pub(super) fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     let mut gates = PLUGIN_LIFECYCLE_GATES
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -498,7 +515,7 @@ fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
     )
 }
-async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
+pub(super) async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).lock_owned().await;
     PluginLifecycleLease {
@@ -511,10 +528,10 @@ async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
 ///
 /// For [`attach_dormant_plugins`], which runs inside a graph batch holding the
 /// registry guard and so cannot await anything. A lease it cannot take means a
-/// load or unload owns this instance right now: the attach leaves it dormant
-/// and the next batch tries again, which is the same answer an engine refusal
-/// gets.
-fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
+/// load, an unload or another attach owns this instance right now: the attach
+/// leaves it dormant and the next batch tries again, which is the same answer
+/// an engine refusal gets.
+pub(super) fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).try_lock_owned().ok()?;
     Some(PluginLifecycleLease {
@@ -748,20 +765,19 @@ fn publish_scan_results_in_registry(
     plugins: &[ScannedPlugin],
     fingerprints: &ScanFingerprints,
 ) {
-    let survives_this_scan = |path: &Path| {
-        if scan_complete {
-            return !authorized_paths.iter().any(|root| path.starts_with(root));
-        }
-        !scanned_paths.iter().any(|scanned| scanned == path)
-    };
+    let scope = CompletedScanScope::new(
+        scan_complete,
+        authorized_paths.to_vec(),
+        scanned_paths.to_vec(),
+    );
 
-    registry_store.apply_completed_scan_removals(survives_this_scan);
+    registry_store.apply_completed_scan_removals(scope.clone());
 
     let indexed = index_scanned_plugins(plugins, fingerprints);
     let mut registry = plugin_registry
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.retain(|_, entry| survives_this_scan(Path::new(&entry.path)));
+    registry.retain(|_, entry| scope.keeps(Path::new(&entry.path)));
     registry.extend(indexed);
 }
 
@@ -1653,6 +1669,12 @@ fn resolve_registry_entry_once<Rescan>(
 where
     Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, RescanFailure>,
 {
+    // The scan runs in another process, so a plugin it just found reaches
+    // this one only through the file.
+    if read_registry_entry(plugin_registry, plugin_id).is_none() {
+        registry_store.adopt_entry_written_elsewhere(plugin_registry, scan_policy, plugin_id);
+    }
+
     if let Some(entry) = read_registry_entry(plugin_registry, plugin_id) {
         return vet_registry_hit(
             plugin_registry,
@@ -1669,6 +1691,21 @@ where
             plugin_id: plugin_id.to_string(),
         }));
     };
+
+    // Before the claim: a targeted rescan reads the descriptor only, and the
+    // crash that quarantined the binary can come from the instance pass it
+    // never runs, so its success would disprove nothing.
+    let last_known_path = Path::new(&last_known.plugin.path);
+    let authorized =
+        authorize_plugin_file(scan_policy, last_known_path, &last_known.plugin.format).ok();
+    if let Err(quarantined) = refuse_if_quarantined(
+        registry_store,
+        &last_known.plugin.name,
+        last_known_path,
+        authorized.as_deref(),
+    ) {
+        return Resolution::settled(Err(quarantined));
+    }
 
     let attempt = match registry_store.claim_rescan(plugin_id) {
         RescanClaim::Granted(attempt) => attempt,
@@ -1716,9 +1753,11 @@ where
 /// 1. the path, and the module inside a bundle that the loader actually opens,
 ///    are re-authorized through the scan policy's own check, so a plugin
 ///    replaced by a symlink to somewhere the policy does not cover is refused;
-/// 2. the file is fingerprinted, and a fingerprint equal to the one the entry
+/// 2. a binary quarantined now, in this process's decision or the file's, is
+///    refused ([`refuse_if_quarantined`]);
+/// 3. the file is fingerprinted, and a fingerprint equal to the one the entry
 ///    recorded loads with no further work;
-/// 3. anything else — a different file, a rewritten one, an entry nobody
+/// 4. anything else — a different file, a rewritten one, an entry nobody
 ///    fingerprinted — gets the same one bounded rescan a miss gets, through the
 ///    same per-key claim, so a refusal is recorded and the next load of the
 ///    same id answers from it instead of spawning again.
@@ -1744,6 +1783,17 @@ where
             }));
         }
     };
+
+    // A hit this process holds can predate the quarantine: the scan process
+    // writes it to the file after this one hydrated.
+    if let Err(quarantined) = refuse_if_quarantined(
+        registry_store,
+        &entry.name,
+        Path::new(&entry.path),
+        Some(&authorized),
+    ) {
+        return Resolution::settled(Err(quarantined));
+    }
 
     let live = plugin_file_fingerprint(&authorized, &entry.format);
     if let Some(fingerprint) = live.filter(|live| Some(*live) == entry.scanned_fingerprint) {
@@ -1813,6 +1863,37 @@ fn authorize_plugin_file(
         }
     }
     Ok(authorized)
+}
+
+/// Refuse a load of a binary the registry quarantines, under the path the
+/// registry names it by or the path the policy resolved it to.
+///
+/// Every load path asks, because quarantine is a safety control: a binary
+/// whose scan helper crashed or hung is never opened in this process, and the
+/// only route back is the scan that retries quarantined plugins, which clears
+/// the record before its helper runs. Quarantine keys are the candidate path's
+/// display string, the same string a row stores as its path.
+fn refuse_if_quarantined(
+    registry_store: &PluginRegistryStore,
+    name: &str,
+    registry_path: &Path,
+    authorized: Option<&Path>,
+) -> Result<(), PluginCommandError> {
+    let quarantine = registry_store
+        .quarantine_in_force(registry_path)
+        .or_else(|| {
+            authorized
+                .filter(|authorized| *authorized != registry_path)
+                .and_then(|authorized| registry_store.quarantine_in_force(authorized))
+        });
+    match quarantine {
+        None => Ok(()),
+        Some(quarantine) => Err(PluginCommandError::Quarantined {
+            name: name.to_string(),
+            path: quarantine.path,
+            reason: quarantine.reason,
+        }),
+    }
 }
 
 /// What one targeted rescan is asked to look at, and for whom.
@@ -2298,6 +2379,13 @@ impl<Constructor> RuntimeConstructor for Constructor where
 {
 }
 
+/// What [`construct_runtime_on_ui_thread`] checks a vetted entry against
+/// immediately before the plugin's code is opened.
+pub(crate) struct PreOpenChecks {
+    pub(crate) scan_policy: PluginScanPolicy,
+    pub(crate) registry_store: Arc<PluginRegistryStore>,
+}
+
 /// Build and activate a runtime on the shell's UI thread.
 ///
 /// Both formats bind instantiation to the host's main thread. VST3 runs the
@@ -2329,10 +2417,14 @@ impl<Constructor> RuntimeConstructor for Constructor where
 /// own open: CFBundle, `dlopen` and `LoadLibrary` all take a path rather than a
 /// descriptor, so no check this side of them can be made against the very file
 /// they open.
+///
+/// The quarantine is consulted there too: a scan can quarantine the binary
+/// during either wait, and an offline render rebuilds an instance a live load
+/// opened before the quarantine existed.
 pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
     ui: &Ui,
     backend: HostBackend,
-    scan_policy: PluginScanPolicy,
+    checks: PreOpenChecks,
     vetted: VettedRegistryEntry,
     sample_rate: f64,
     mode: ProcessMode,
@@ -2340,6 +2432,10 @@ pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
 ) -> Result<HostedRuntime, PluginCommandError> {
     call_on_ui_thread(ui, move || {
         let VettedRegistryEntry { entry, fingerprint } = vetted;
+        let PreOpenChecks {
+            scan_policy,
+            registry_store,
+        } = checks;
         let authorized =
             match authorize_plugin_file(&scan_policy, Path::new(&entry.path), &entry.format) {
                 Ok(authorized) => authorized,
@@ -2364,6 +2460,7 @@ pub(crate) fn construct_runtime_on_ui_thread<Ui: UiThread + ?Sized>(
                 path: entry.path,
             });
         }
+        refuse_if_quarantined(&registry_store, &entry.name, Path::new(&entry.path), None)?;
         create_runtime(
             backend,
             &entry.path,
@@ -2548,7 +2645,10 @@ async fn load_plugin_under_runtime_gate(
     let mut wrapper = construct_runtime_on_ui_thread(
         windows_host,
         backend,
-        scan_policy,
+        PreOpenChecks {
+            scan_policy,
+            registry_store: Arc::clone(&state.plugin_registry_store),
+        },
         vetted.clone(),
         sample_rate,
         ProcessMode::Realtime,
@@ -2613,7 +2713,7 @@ async fn load_plugin_under_runtime_gate(
     let latency_ms = wrapper.latency_ms();
     // Read on the same control-thread visit, and left in frames: see
     // `PluginInstance::tail_samples` for why this one does not convert.
-    let tail_samples = wrapper.tail_samples();
+    let (tail_samples, tail_sequence) = read_load_tail(&wrapper);
 
     // Wake the latency watcher when this instance flags a runtime latency
     // change, so the plugin's own notification — CLAP's `latency.changed()`
@@ -2748,10 +2848,19 @@ async fn load_plugin_under_runtime_gate(
         latency_samples,
         latency_ms,
         tail_samples,
+        tail_sequence,
         engine_plugin_id,
     };
 
     Ok(instance)
+}
+
+/// The tail a freshly activated plugin reports, with its place in the host-wide
+/// tail order taken at the same read. Runs on the load's control thread before
+/// the instance is shared, so it takes an atomic counter step and nothing the
+/// audio thread contends for.
+fn read_load_tail<Runtime: HostedPluginRuntime>(runtime: &Runtime) -> (u32, u64) {
+    (runtime.tail_samples(), next_tail_sequence())
 }
 
 fn ensure_plugin_instance_id_available(
@@ -3718,13 +3827,11 @@ async fn unload_plugin_runtime(
         // `removed` and CLAP `gui.destroy`, and running them on this worker
         // un-parents an NSView off the main thread. Behind a hung call the
         // close waits out the gate's deadline and is skipped.
-        if let Err(error) =
-            runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
-                    plugin.close_gui()
-                })
-            })
-        {
+        if let Err(error) = runtime.with_unload_control_on_ui_thread(
+            std::time::Duration::from_secs(2),
+            editor_thread(windows_host),
+            |plugin| plugin.close_gui(),
+        ) {
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
         }
         remove_plugin_window(instance_id, windows_host, state);
@@ -3762,13 +3869,11 @@ async fn unload_plugin_runtime(
 
         state.retain_retired_engine_plugin(Arc::clone(&runtime));
 
-        if let Err(error) =
-            runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
-                    plugin.close_gui()
-                })
-            })
-        {
+        if let Err(error) = runtime.with_unload_control_on_ui_thread(
+            std::time::Duration::from_secs(2),
+            editor_thread(windows_host),
+            |plugin| plugin.close_gui(),
+        ) {
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
         }
 
@@ -4134,6 +4239,10 @@ pub struct PluginTailReading {
     /// formats' infinite sentinel would not survive a conversion (see
     /// `PluginInstance::tail_samples`).
     pub tail_samples: u32,
+    /// Where this reading falls in the order of every tail the host reported,
+    /// the `plugin-tail-changed` events included; see
+    /// `host::tail_watcher::next_tail_sequence`.
+    pub sequence: u64,
 }
 
 /// Re-read the tail of each named instance from the plugin itself.
@@ -4143,6 +4252,16 @@ pub struct PluginTailReading {
 /// unknown instance, or one the control path could not be reached for, is left
 /// out of the answer: a fabricated tail would read downstream as a shorter decay.
 pub async fn read_plugin_tails(
+    instance_ids: Vec<String>,
+    state: &AppState,
+) -> Result<Vec<PluginTailReading>, String> {
+    read_plugin_tails_within(TAIL_READ_TIMEOUT, instance_ids, state)
+}
+
+/// `read_plugin_tails` with the per-instance wait as a parameter, so a test that
+/// holds the audio seam can give the read a deadline only its own release beats.
+fn read_plugin_tails_within(
+    timeout: Duration,
     instance_ids: Vec<String>,
     state: &AppState,
 ) -> Result<Vec<PluginTailReading>, String> {
@@ -4162,28 +4281,44 @@ pub async fn read_plugin_tails(
             })
             .collect::<Vec<_>>()
     };
-    Ok(read_tails(runtimes))
+    Ok(read_tails_within(timeout, runtimes))
 }
 
-fn read_tails<Runtime: HostedPluginRuntime>(
+/// The control path being in use is the expected way an instance goes unread
+/// during an export: the caller keeps its stored figure and asks again, so it
+/// is not a failure to log.
+fn is_expected_tail_refusal(error: &PluginControlError<std::convert::Infallible>) -> bool {
+    matches!(
+        error,
+        PluginControlError::Refused(PluginControlRefusal::GateBusy { .. })
+    )
+}
+
+fn read_tails_within<Runtime: HostedPluginRuntime>(
+    timeout: Duration,
     runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
 ) -> Vec<PluginTailReading> {
     runtimes
         .into_iter()
         .filter_map(|(instance_id, runtime)| {
-            let read = runtime.try_with_control(TAIL_READ_TIMEOUT, |plugin| {
-                Ok::<_, std::convert::Infallible>(plugin.tail_samples())
+            // The sequence is taken inside the control closure, with the read,
+            // so it orders this figure against an event for the same instance.
+            let read = runtime.try_with_control(timeout, |plugin| {
+                Ok::<_, std::convert::Infallible>((plugin.tail_samples(), next_tail_sequence()))
             });
             match read {
-                Ok(tail_samples) => Some(PluginTailReading {
+                Ok((tail_samples, sequence)) => Some(PluginTailReading {
                     instance_id,
                     tail_samples,
+                    sequence,
                 }),
                 Err(error) => {
-                    eprintln!(
-                        "[Plugin] tail read failed for instance {}: {}",
-                        instance_id, error
-                    );
+                    if !is_expected_tail_refusal(&error) {
+                        eprintln!(
+                            "[Plugin] tail read failed for instance {}: {}",
+                            instance_id, error
+                        );
+                    }
                     None
                 }
             }
@@ -7939,7 +8074,10 @@ mod tests {
                 change: Box::new(|| {}),
             },
             HostBackend::Clap,
-            plugins.scan_policy(),
+            PreOpenChecks {
+                scan_policy: plugins.scan_policy(),
+                registry_store: Arc::new(PluginRegistryStore::in_memory_only()),
+            },
             VettedRegistryEntry { entry, fingerprint },
             48_000.0,
             ProcessMode::Realtime,
@@ -8159,6 +8297,57 @@ mod tests {
         assert!(
             log.lock().expect("vetting log").is_empty(),
             "the unchanged file vetted with no rescan, and the changed one is never constructed"
+        );
+    }
+
+    /// The last quarantine check before the open: a scan that quarantines the
+    /// binary after resolution vetted it, while the load waited for the UI
+    /// thread, keeps it from being opened.
+    ///
+    /// Mutation this catches: dropping the quarantine check from
+    /// `construct_runtime_on_ui_thread`'s hop, which constructs the binary.
+    #[test]
+    fn a_plugin_quarantined_after_vetting_is_refused_before_it_is_opened() {
+        let plugins = LoadFixtureRoot::create("vetting-pre-open-quarantined");
+        let registry_location = plugins.root.join("plugin-registry.json");
+        let state = AppState {
+            plugin_registry_store: Arc::new(PluginRegistryStore::at(registry_location.clone())),
+            ..AppState::default()
+        };
+        let published =
+            plugins.publish(&state, &[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+        let path = PathBuf::from(&published[0].path);
+        let quarantined = path.clone();
+        let windows = FileChangingUiWindowHost {
+            change: Box::new(move || {
+                // The scan process, with its own store over the same file.
+                let scan_process = PluginRegistryStore::at(registry_location.clone());
+                scan_process.quarantine_failure(
+                    &quarantined,
+                    "Plugin scan helper timed out".to_string(),
+                    1,
+                );
+                scan_process.persist(&[]);
+            }),
+        };
+        let log = vetting_log();
+
+        let error = load_vetted(
+            &plugins,
+            &state,
+            &windows,
+            &log,
+            recording_rescan(&log, Ok(())),
+        )
+        .expect_err("a binary quarantined after vetting must not be opened");
+
+        assert_eq!(
+            error,
+            quarantined_refusal("Plugin aaaa1111", &path, "Plugin scan helper timed out")
+        );
+        assert!(
+            log.lock().expect("vetting log").is_empty(),
+            "the unchanged file vetted with no rescan, and the quarantined one is never constructed"
         );
     }
 
@@ -11867,25 +12056,142 @@ mod tests {
         (runtime, tail_samples)
     }
 
+    /// A read's wait when the test holds the seam and releases it itself: long
+    /// enough that only the release, never the clock, ends the read.
+    const HELD_SEAM_READ_DEADLINE: Duration = Duration::from_secs(10);
+
+    fn read_tails<Runtime: HostedPluginRuntime>(
+        runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
+    ) -> Vec<PluginTailReading> {
+        read_tails_within(TAIL_READ_TIMEOUT, runtimes)
+    }
+
+    /// A reading with its sequence blanked, for assertions about the figure.
+    fn figure_of(readings: Vec<PluginTailReading>) -> Vec<(String, u32)> {
+        readings
+            .into_iter()
+            .map(|reading| (reading.instance_id, reading.tail_samples))
+            .collect()
+    }
+
+    #[test]
+    fn a_load_tail_read_is_numbered_after_a_figure_a_predecessor_published() {
+        let plugin = MovableTailPlugin {
+            tail_samples: Arc::new(std::sync::atomic::AtomicU32::new(96_000)),
+            processing: Arc::new(daw_plugin_host::ProcessingGate::default()),
+        };
+        let predecessor_event = next_tail_sequence();
+
+        let (tail_samples, tail_sequence) = read_load_tail(&plugin);
+
+        assert_eq!(tail_samples, 96_000);
+        assert!(
+            tail_sequence > predecessor_event,
+            "the load read {tail_sequence} must outrank an event numbered {predecessor_event}"
+        );
+    }
+
     #[test]
     fn a_tail_that_changed_after_load_is_read_back_from_the_plugin() {
         let (runtime, tail_samples) = movable_tail_runtime(96_000);
-        let reading = |tail| PluginTailReading {
-            instance_id: "inst-1".to_string(),
-            tail_samples: tail,
-        };
+        let figure = |tail| vec![("inst-1".to_string(), tail)];
 
         assert_eq!(
-            read_tails(vec![("inst-1".to_string(), Arc::clone(&runtime))]),
-            vec![reading(96_000)]
+            figure_of(read_tails(vec![(
+                "inst-1".to_string(),
+                Arc::clone(&runtime)
+            )])),
+            figure(96_000)
         );
 
         tail_samples.store(240_000, std::sync::atomic::Ordering::SeqCst);
 
         assert_eq!(
-            read_tails(vec![("inst-1".to_string(), runtime)]),
-            vec![reading(240_000)],
+            figure_of(read_tails(vec![("inst-1".to_string(), runtime)])),
+            figure(240_000),
             "a tail revised after load must be the one the read answers"
+        );
+    }
+
+    /// The same guarantee from the read's side: a number taken while the read
+    /// still waits for the audio thread's seam is older than an event that got in
+    /// first, so the read must take its own once the control path is reached.
+    #[test]
+    fn a_tail_read_takes_its_sequence_once_the_control_path_is_reached() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let reading_runtime = Arc::clone(&runtime);
+        let (started, reading_started) = std::sync::mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            started.send(()).expect("the test is listening");
+            // A deadline only the release below can beat, so a slow machine
+            // cannot end the read before the test has taken its marker.
+            read_tails_within(
+                HELD_SEAM_READ_DEADLINE,
+                vec![("engine-owned-fixture".to_string(), reading_runtime)],
+            )
+        });
+        reading_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the reader starts");
+        // Let the reader reach the seam wait. A stall that delays it past the
+        // marker can only make this test pass vacuously (the read then takes its
+        // sequence after the marker either way); it can never make it fail.
+        std::thread::sleep(Duration::from_millis(50));
+        let marker = next_tail_sequence();
+        drop(seam);
+        let readings = reader.join().expect("the reader thread finishes");
+
+        let sequence = readings
+            .first()
+            .expect("the seam was released inside the deadline, so the read answered")
+            .sequence;
+        assert!(
+            sequence > marker,
+            "the read's sequence {sequence} was taken before the control path was reached ({marker} came later)"
+        );
+    }
+
+    #[test]
+    fn only_a_busy_control_path_is_an_expected_tail_refusal() {
+        let refused = |refusal| PluginControlError::Refused(refusal);
+        let plugin = || "fixture".to_string();
+
+        assert!(is_expected_tail_refusal(&refused(
+            PluginControlRefusal::GateBusy { plugin: plugin() }
+        )));
+        assert!(!is_expected_tail_refusal(&refused(
+            PluginControlRefusal::TimedOut { plugin: plugin() }
+        )));
+        assert!(!is_expected_tail_refusal(&refused(
+            PluginControlRefusal::Retired { plugin: plugin() }
+        )));
+        assert!(!is_expected_tail_refusal(&refused(
+            PluginControlRefusal::Unresponsive { plugin: plugin() }
+        )));
+    }
+
+    #[test]
+    fn a_later_read_of_the_same_instance_carries_a_larger_sequence() {
+        let (runtime, _tail) = movable_tail_runtime(96_000);
+
+        let sequence_of_a_read = || {
+            read_tails(vec![("inst-1".to_string(), Arc::clone(&runtime))])
+                .first()
+                .expect("an idle instance answers")
+                .sequence
+        };
+        let first = sequence_of_a_read();
+        let second = sequence_of_a_read();
+
+        assert!(
+            second > first,
+            "the frontend ranks a read against an event by sequence: {first} then {second}"
         );
     }
 
@@ -11904,11 +12210,8 @@ mod tests {
             .expect("the control path is free for the outer call");
 
         assert_eq!(
-            answer,
-            vec![PluginTailReading {
-                instance_id: "idle".to_string(),
-                tail_samples: 48_000,
-            }],
+            figure_of(answer),
+            vec![("idle".to_string(), 48_000)],
             "an unreached instance must be omitted, not answered with a made-up tail"
         );
     }
@@ -11928,11 +12231,62 @@ mod tests {
         .expect("the tail read should succeed");
 
         assert_eq!(
-            answer,
-            vec![PluginTailReading {
-                instance_id: "engine-owned-fixture".to_string(),
-                tail_samples: 0,
-            }]
+            figure_of(answer),
+            vec![("engine-owned-fixture".to_string(), 0)]
+        );
+    }
+
+    /// The reads wait on the audio thread for up to `TAIL_READ_TIMEOUT` each, so
+    /// they must not do it holding the `engine_plugins` map every other command
+    /// reads. The seam is held by the test, so the read can only end by its
+    /// deadline; the map has to be free while it is still waiting.
+    #[test]
+    fn a_tail_read_waiting_on_the_audio_seam_does_not_hold_the_engine_plugins_map() {
+        let state = Arc::new(AppState::default());
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let (started, reading_started) = std::sync::mpsc::channel();
+        let (answered, answer) = std::sync::mpsc::channel();
+        let reader_state = Arc::clone(&state);
+        let reader = std::thread::spawn(move || {
+            started.send(()).expect("the test is listening");
+            let readings = read_plugin_tails_within(
+                HELD_SEAM_READ_DEADLINE,
+                vec!["engine-owned-fixture".to_string()],
+                &reader_state,
+            );
+            answered.send(readings).expect("the test is listening");
+        });
+        reading_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the reader starts");
+        // The deadline is far away, so the read cannot end before the release
+        // below; the pause only gives the reader time to park on the seam.
+        std::thread::sleep(Duration::from_millis(50));
+
+        let map_is_free = state.engine_plugins.try_lock().is_ok();
+        let still_waiting = answer.try_recv().is_err();
+        drop(seam);
+        let released_answer = answer
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the read answers once the seam is released");
+        reader.join().expect("the reader thread finishes");
+
+        assert!(
+            released_answer.is_ok(),
+            "the read answers once the seam is released"
+        );
+        assert!(
+            still_waiting,
+            "the check ran after the read ended, so it observed nothing"
+        );
+        assert!(
+            map_is_free,
+            "a read parked on the audio seam must not hold the engine_plugins map"
         );
     }
 
@@ -11941,10 +12295,14 @@ mod tests {
         let json = serde_json::to_string(&PluginTailReading {
             instance_id: "inst-7".to_string(),
             tail_samples: 1024,
+            sequence: 31,
         })
         .expect("reading serialises");
 
-        assert_eq!(json, r#"{"instance_id":"inst-7","tail_samples":1024}"#);
+        assert_eq!(
+            json,
+            r#"{"instance_id":"inst-7","tail_samples":1024,"sequence":31}"#
+        );
     }
 
     #[test]
@@ -12251,6 +12609,35 @@ mod tests {
             },
         )
         .expect("the persisted plugin must resolve in a new session")
+        .entry;
+
+        assert_eq!(entry.path, plugin_path.display().to_string());
+        assert_eq!(entry.descriptor_id, "com.vendor.reverb");
+    }
+
+    /// The scan runs in its own process with its own store. A plugin it found
+    /// after this process hydrated loads in the same session, not only after a
+    /// relaunch.
+    #[test]
+    fn an_activation_resolves_a_plugin_the_scan_process_found_after_this_one_hydrated() {
+        let fixture = PersistedRegistryFixture::create("activation-sibling-scan");
+        let session_registry = Mutex::new(HashMap::new());
+        let session_store = fixture.store();
+        session_store.hydrate_into(&session_registry, &fixture.scan_policy());
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        // `persist` writes through a store of its own: the scan process's.
+        fixture.persist("aaaa1111", &plugin_path);
+
+        let entry = resolve_registry_entry(
+            &session_registry,
+            &session_store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                panic!("a row the scan process wrote must resolve without rescanning {path:?}")
+            },
+        )
+        .expect("a plugin the scan just found must resolve in the same session")
         .entry;
 
         assert_eq!(entry.path, plugin_path.display().to_string());
@@ -12809,78 +13196,311 @@ mod tests {
         next_launch
     }
 
-    /// A scan quarantines a path whose helper crashed or hung, and the crash
-    /// can come from the instance pass the targeted rescan never runs. A
-    /// descriptor read that succeeds therefore disproves nothing, and clearing
-    /// the quarantine would let the next ordinary scan spawn the helper that
-    /// hangs.
-    ///
-    /// Mutation this catches: clearing the quarantine of the scanned path on
-    /// `rescan_and_publish`'s success path.
-    #[test]
-    fn a_successful_rescan_leaves_the_quarantine_of_the_path_it_scanned() {
-        let fixture = PersistedRegistryFixture::create("activation-rescan-keeps-quarantine-ok");
-        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
-        fixture.persist("aaaa1111", &plugin_path);
-        let store = quarantined_in_a_previous_launch(&fixture, &plugin_path);
-        assert!(
-            store.is_quarantined(&plugin_path).is_some(),
-            "the quarantine must be in force before the rescan, or this test proves nothing"
-        );
-
-        resolve_registry_entry(
-            &Mutex::new(HashMap::new()),
-            &store,
-            &fixture.scan_policy(),
-            "aaaa1111",
-            |format, path, plugin_id, descriptor_id| {
-                Ok(ScannedPlugin {
-                    format: format.to_string(),
-                    path: path.display().to_string(),
-                    descriptor_id: descriptor_id.to_string(),
-                    ..scanned(plugin_id, descriptor_id, format)
-                })
-            },
+    /// The refusal a load of a quarantined `plugin_path` gives.
+    fn quarantined_refusal(name: &str, plugin_path: &Path, reason: &str) -> String {
+        format!(
+            "Plugin '{name}' at {} will not be loaded: a plugin scan quarantined it ({reason}). Retry quarantined plugins from the plugin scan settings once it has been fixed or updated.",
+            plugin_path.display()
         )
-        .expect("a quarantined plugin whose rescan succeeds must resolve");
-
-        assert!(
-            store.is_quarantined(&plugin_path).is_some(),
-            "a descriptor read that succeeded does not disprove a quarantine"
-        );
     }
 
-    /// Only a rescan that publishes disproves a quarantine.
+    /// A rescan double that counts its calls and would publish the plugin it
+    /// was handed, so a load that reaches it resolves.
+    fn counting_rescan(
+        rescans: &std::cell::Cell<usize>,
+    ) -> impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, RescanFailure> + '_ {
+        move |format, path, plugin_id, descriptor_id| {
+            rescans.set(rescans.get() + 1);
+            Ok(ScannedPlugin {
+                format: format.to_string(),
+                path: path.display().to_string(),
+                descriptor_id: descriptor_id.to_string(),
+                ..scanned(plugin_id, descriptor_id, format)
+            })
+        }
+    }
+
+    /// A row quarantined when this process hydrated is a miss, and the miss is
+    /// refused as quarantined before any rescan: the crash can come from the
+    /// instance pass the targeted rescan never runs, so a descriptor read that
+    /// succeeds disproves nothing.
     ///
-    /// Mutation this catches: clearing the quarantine before the rescan's
-    /// outcome is known.
+    /// Mutation this catches: dropping the quarantine check before
+    /// `resolve_registry_entry_once`'s rescan claim, which rescans and loads.
     #[test]
-    fn a_refused_rescan_leaves_the_quarantine_of_the_path_it_scanned() {
-        let fixture = PersistedRegistryFixture::create("activation-rescan-keeps-quarantine");
+    fn a_miss_on_a_row_quarantined_at_hydration_is_refused_without_a_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-miss-quarantined");
         let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
         fixture.persist("aaaa1111", &plugin_path);
         let store = quarantined_in_a_previous_launch(&fixture, &plugin_path);
+        assert!(
+            store.last_known_entry("aaaa1111").is_some(),
+            "the row must be the last-known location, or the miss never reaches a rescan"
+        );
+        let rescans = std::cell::Cell::new(0);
 
         let error = resolve_registry_entry(
             &Mutex::new(HashMap::new()),
             &store,
             &fixture.scan_policy(),
             "aaaa1111",
-            |_format, _path, _plugin_id, _descriptor_id| {
-                Err(RescanFailure::Verdict("no plugin declared".to_string()))
-            },
+            counting_rescan(&rescans),
         )
-        .expect_err("a refused rescan must not resolve")
+        .expect_err("a quarantined plugin must not load")
         .to_string();
 
-        assert!(
-            error.contains("no plugin declared"),
-            "the miss must have reached the rescan, got: {error}"
+        assert_eq!(
+            error,
+            quarantined_refusal(
+                "Vendor Reverb",
+                &plugin_path,
+                "Plugin scan helper timed out"
+            )
         );
+        assert_eq!(rescans.get(), 0, "no helper runs for a quarantined binary");
         assert!(
             store.is_quarantined(&plugin_path).is_some(),
-            "a refusal proves nothing about the helper"
+            "a refused load leaves the quarantine in force"
         );
+    }
+
+    /// A stale row the file quarantines after this process hydrated is
+    /// refused the same way: the quarantine is read from the file, not only
+    /// from what hydration saw.
+    ///
+    /// Mutation this catches: answering the miss's quarantine check from this
+    /// process's hydrated view alone (`is_quarantined`), which rescans.
+    #[test]
+    fn a_miss_on_a_row_the_file_quarantines_after_hydration_is_refused_without_a_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-miss-quarantined-elsewhere");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        std::fs::write(&plugin_path, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+        let session_registry = Mutex::new(HashMap::new());
+        let session = fixture.store();
+        session.hydrate_into(&session_registry, &fixture.scan_policy());
+        assert!(
+            session_registry.lock().expect("registry lock").is_empty(),
+            "the stale row must be a miss"
+        );
+        let scan_process = fixture.store();
+        scan_process.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+        scan_process.persist(&[]);
+        let rescans = std::cell::Cell::new(0);
+
+        let error = resolve_registry_entry(
+            &session_registry,
+            &session,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            counting_rescan(&rescans),
+        )
+        .expect_err("a plugin the file quarantines must not load")
+        .to_string();
+
+        assert_eq!(
+            error,
+            quarantined_refusal(
+                "Vendor Reverb",
+                &plugin_path,
+                "Plugin scan helper timed out"
+            )
+        );
+        assert_eq!(rescans.get(), 0, "no helper runs for a quarantined binary");
+    }
+
+    /// A row the scan process wrote after this one hydrated, for a binary it
+    /// also quarantined, is adopted as the last-known location only, and the
+    /// miss that follows is refused as quarantined.
+    ///
+    /// Mutation this catches: dropping the file's quarantine from
+    /// `adopt_entry_written_elsewhere`'s check, which makes the row a hit;
+    /// or dropping the miss's quarantine check, which rescans and loads.
+    #[test]
+    fn a_row_adopted_from_the_file_with_its_quarantine_is_refused_without_a_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-adopted-quarantined");
+        let session_registry = Mutex::new(HashMap::new());
+        let session = fixture.store();
+        session.hydrate_into(&session_registry, &fixture.scan_policy());
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        let scan_process = fixture.store();
+        scan_process.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+        scan_process.persist(&[]);
+        let rescans = std::cell::Cell::new(0);
+
+        let error = resolve_registry_entry(
+            &session_registry,
+            &session,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            counting_rescan(&rescans),
+        )
+        .expect_err("a plugin the file quarantines must not load")
+        .to_string();
+
+        assert_eq!(
+            error,
+            quarantined_refusal(
+                "Vendor Reverb",
+                &plugin_path,
+                "Plugin scan helper timed out"
+            )
+        );
+        assert_eq!(rescans.get(), 0, "no helper runs for a quarantined binary");
+        assert!(
+            !session_registry
+                .lock()
+                .expect("registry lock")
+                .contains_key("aaaa1111"),
+            "a quarantined row is never adopted as a hit"
+        );
+        assert!(
+            session.last_known_entry("aaaa1111").is_some(),
+            "it is adopted as the last-known location"
+        );
+    }
+
+    /// The issue's reproduction: a healthy row this session hydrated, then
+    /// quarantined by the scan process on the unchanged binary, is refused —
+    /// the matching fingerprint does not settle the hit.
+    ///
+    /// Mutation this catches: dropping the quarantine check from
+    /// `vet_registry_hit`, which loads the binary that hung the helper.
+    #[test]
+    fn a_hit_the_scan_process_quarantines_after_hydration_is_refused() {
+        let fixture = PersistedRegistryFixture::create("activation-hit-quarantined-elsewhere");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        let session_registry = Mutex::new(HashMap::new());
+        let session = fixture.store();
+        session.hydrate_into(&session_registry, &fixture.scan_policy());
+        assert!(
+            session_registry
+                .lock()
+                .expect("registry lock")
+                .contains_key("aaaa1111"),
+            "the healthy row must be a hit"
+        );
+        let scan_process = fixture.store();
+        scan_process.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+        scan_process.persist(&[]);
+        let rescans = std::cell::Cell::new(0);
+
+        let error = resolve_registry_entry(
+            &session_registry,
+            &session,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            counting_rescan(&rescans),
+        )
+        .expect_err("a hit the file quarantines must not load")
+        .to_string();
+
+        assert_eq!(
+            error,
+            quarantined_refusal(
+                "Vendor Reverb",
+                &plugin_path,
+                "Plugin scan helper timed out"
+            )
+        );
+        assert_eq!(rescans.get(), 0, "an unchanged file is never rescanned");
+    }
+
+    /// A hit whose file changed would take the targeted rescan; quarantined,
+    /// it is refused before the rescan is claimed, so no helper runs and no
+    /// verdict is recorded against the key.
+    ///
+    /// Mutation this catches: dropping the quarantine check from
+    /// `vet_registry_hit`, which claims the rescan and publishes.
+    #[test]
+    fn a_changed_hit_the_scan_process_quarantines_is_refused_without_a_rescan() {
+        let fixture = PersistedRegistryFixture::create("activation-changed-hit-quarantined");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        let session_registry = Mutex::new(HashMap::new());
+        let session = fixture.store();
+        session.hydrate_into(&session_registry, &fixture.scan_policy());
+        std::fs::write(&plugin_path, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+        let scan_process = fixture.store();
+        scan_process.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+        scan_process.persist(&[]);
+        let rescans = std::cell::Cell::new(0);
+
+        let error = resolve_registry_entry(
+            &session_registry,
+            &session,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            counting_rescan(&rescans),
+        )
+        .expect_err("a changed hit the file quarantines must not load")
+        .to_string();
+
+        assert_eq!(
+            error,
+            quarantined_refusal(
+                "Vendor Reverb",
+                &plugin_path,
+                "Plugin scan helper timed out"
+            )
+        );
+        assert_eq!(rescans.get(), 0, "no helper runs for a quarantined binary");
+        assert!(
+            matches!(session.claim_rescan("aaaa1111"), RescanClaim::Granted(_)),
+            "the refusal claimed no rescan and recorded no verdict"
+        );
+    }
+
+    /// The only route back: once a retry of quarantined plugins clears the
+    /// record in the file, the same session loads the plugin.
+    #[test]
+    fn a_hit_loads_again_once_the_file_clears_its_quarantine() {
+        let fixture = PersistedRegistryFixture::create("activation-hit-quarantine-cleared");
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        fixture.persist("aaaa1111", &plugin_path);
+        let session_registry = Mutex::new(HashMap::new());
+        let session = fixture.store();
+        session.hydrate_into(&session_registry, &fixture.scan_policy());
+        let scan_process = fixture.store();
+        scan_process.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+        scan_process.persist(&[]);
+        scan_process.clear_quarantine(&plugin_path);
+        scan_process.persist(&[]);
+
+        resolve_registry_entry(
+            &session_registry,
+            &session,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                panic!("an unchanged hit must load without rescanning {path:?}")
+            },
+        )
+        .expect("a plugin whose quarantine was cleared loads");
     }
 
     #[test]

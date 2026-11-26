@@ -724,23 +724,78 @@ export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHos
     return reservationInOrphanGrace(owner);
 }
 
+// An admitted command is killed at its timeout and its orphan grace is that same timeout,
+// so no command can hold a reservation longer than two of the longest profile timeouts.
+const longestProfileTimeoutMs = Math.max(...Object.values(profiles).map((profile) => profile.timeoutMs));
+export const staleUnreadableReservationMs = longestProfileTimeoutMs * 2;
+
+// The most memory any admitted command can reserve: a profile ceiling or a measured script budget.
+const largestGrantableRssBytes = Math.max(
+    ...Object.values(profiles).map((profile) => profile.maxRssBytes),
+    ...measuredScriptBudgets.values()
+);
+
+type ReservationProbe =
+    { status: 'live'; owner: ReservationRecord } | { status: 'dead' } | { status: 'unusable'; reason: string };
+
+// A record that cannot be read, or whose fields make the liveness check throw (for example a
+// non-iterable trackedProcesses), is unusable: its command may still run.
+function probeReservation(path: string, host: ProcessTreeHost): ReservationProbe {
+    try {
+        const owner = reservationWithState(path);
+        if (!reservationIsLive(owner, host)) {
+            return { status: 'dead' };
+        }
+        // A live owner short-circuits liveness, so validate the tracked list the sampler will iterate.
+        reservationProcessTree(owner);
+        return { status: 'live', owner };
+    } catch (error) {
+        return { status: 'unusable', reason: errorMessage(error) };
+    }
+}
+
+function unreadableReservationOwner(path: string): ReservationRecord {
+    return {
+        token: basename(path, '.json'),
+        pid: 0,
+        cwd: '',
+        command: 'unreadable reservation',
+        startedAt: '',
+        processStartedAt: '',
+        reservedRssBytes: largestGrantableRssBytes,
+    };
+}
+
+function reservationFileIsStale(path: string): boolean {
+    try {
+        // An mtime further ahead than the horizon is clock damage, not a record written by a live command.
+        return Math.abs(Date.now() - statSync(path).mtimeMs) > staleUnreadableReservationMs;
+    } catch {
+        return false;
+    }
+}
+
 function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: ReservationRecord; path: string }> {
     mkdirSync(root, { recursive: true });
     const live: Array<{ owner: ReservationRecord; path: string }> = [];
-    for (const name of readdirSync(root)) {
-        if (!name.endsWith('.json') || name.includes('.state.')) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+        const name = entry.name;
+        // Only regular files are records; anything else here is not ours to read or delete.
+        if (!entry.isFile() || !name.endsWith('.json') || name.includes('.state.')) {
             continue;
         }
         const path = join(root, name);
-        try {
-            const owner = reservationWithState(path);
-            if (reservationIsLive(owner, host)) {
-                live.push({ owner, path });
-            } else {
-                removeReservation(path);
-            }
-        } catch {
+        const probe = probeReservation(path, host);
+        if (probe.status === 'live') {
+            live.push({ owner: probe.owner, path });
+        } else if (probe.status === 'dead') {
             removeReservation(path);
+        } else if (reservationFileIsStale(path)) {
+            // Records are written atomically, so an unusable one is external damage and its
+            // command may still run: hold the largest budget until the file is provably stale.
+            removeReservation(path);
+        } else if (existsSync(path)) {
+            live.push({ owner: unreadableReservationOwner(path), path });
         }
     }
     return live;
@@ -1176,6 +1231,18 @@ function killedByTimeout(error: Error | undefined): boolean {
     return error !== undefined && 'code' in error && error.code === 'ETIMEDOUT';
 }
 
+// lsof lists a forked same-UID process, then is refused its files once it execs a set-user-ID
+// binary such as `ps`, which every concurrent guard runs. A refused process that then exited or
+// left this account is outside the census, like one lsof never listed; any heir appears in a fresh
+// observation's lists.
+function inspectedProcessLeft(pid: number, uid: number, deadline: number): boolean {
+    if (processIsGone(pid)) {
+        return true;
+    }
+    const snapshot = processFileSnapshot(pid, Math.max(1, deadline - Date.now()));
+    return snapshot === undefined ? processIsGone(pid) : snapshot.uid !== uid;
+}
+
 type ScopedFileState =
     | { kind: 'alive' }
     | { kind: 'uncovered'; pids: number[]; reason?: string }
@@ -1206,14 +1273,23 @@ function scopedDarwinFileState(
     }
     let parseReason = 'unclassified';
     let parseDetail: string | undefined;
+    let parsePid: number | undefined;
     const census =
         result.stdout === ''
             ? { pids: new Set<number>(), paths: [] }
-            : parseLsofCensus(result.stdout, (reason, detail) => {
+            : parseLsofCensus(result.stdout, (reason, detail, pid) => {
                   parseReason = reason;
                   parseDetail = detail;
+                  parsePid = pid;
               });
     if (census === undefined) {
+        if (
+            parseReason === 'file-inspection-diagnostic' &&
+            parsePid !== undefined &&
+            inspectedProcessLeft(parsePid, uid, deadline)
+        ) {
+            return { kind: 'uncovered', pids };
+        }
         if (parseReason === 'file-inspection-diagnostic') {
             return {
                 kind: 'uncovered',
@@ -1729,13 +1805,24 @@ export function storageFileState(
                 }
                 let parseReason = 'unclassified';
                 let parseDetail: string | undefined;
-                const census = parseLsofCensus(result.stdout, (reason, detail) => {
+                let parsePid: number | undefined;
+                const census = parseLsofCensus(result.stdout, (reason, detail, pid) => {
                     parseReason = reason;
                     parseDetail = detail;
+                    parsePid = pid;
                 });
                 if (census === undefined) {
                     // A descriptor can close or become uninspectable between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
+                    if (
+                        parseReason === 'file-inspection-diagnostic' &&
+                        parseDetail !== undefined &&
+                        parsePid !== undefined &&
+                        inspectedProcessLeft(parsePid, uid, deadline)
+                    ) {
+                        uncovered = `lsof-inspected-pid-left:${parseDetail}`;
+                        continue;
+                    }
                     if (parseReason === 'file-inspection-diagnostic') {
                         inspectionDiagnostic ??= `lsof-fields-unusable:${parseReason}${parseDetail === undefined ? '' : `:${parseDetail}`}`;
                         continue;

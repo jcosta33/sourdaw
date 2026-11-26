@@ -106,17 +106,6 @@ export const midiPresets: readonly PresetAction[] = [
         requiresSelection: 'clipMidi',
         buildAction: clipAction('extractGroove', (id) => ({ clipId: id })),
     },
-    {
-        id: 'audio-to-midi',
-        label: 'Audio to MIDI',
-        keywords: ['audio to midi', 'convert audio', 'onset detection', 'rhythm detect'],
-        category: 'MIDI',
-        requiresSelection: 'clip',
-        buildAction: (ctx) =>
-            ctx.selectedClipId
-                ? { type: 'audioToMidi', payload: { clipId: ctx.selectedClipId, trackId: ctx.selectedTrackId } }
-                : null,
-    },
 
     // ─── Groove presets ─────────────────────────────────────────────────
     {

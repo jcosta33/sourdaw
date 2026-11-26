@@ -1007,7 +1007,7 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setLoopEnabled',
-        'Enable or disable the project loop.',
+        "Enable or disable the project loop; enabling with no valid loop region sets the region to the arrangement's clips, or one bar.",
         { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
         ['enabled'],
         'bounded-reversible',

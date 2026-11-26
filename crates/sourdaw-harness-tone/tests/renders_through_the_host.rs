@@ -243,6 +243,7 @@ fn level_scales_the_tone() {
     let updates = [HostParameterUpdate {
         param_id: 0,
         value: 0.5,
+        sample_offset: 0,
     }];
     let (mut left, mut right) = silent_stereo_block();
     {
