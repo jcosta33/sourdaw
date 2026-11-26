@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockTrackStore, mockPrepareExtraction } = vi.hoisted(() => ({
+const { mockTrackStore, mockResolvePin } = vi.hoisted(() => ({
     mockTrackStore: { value: null as unknown as { tracks: Array<{ clips: Array<Record<string, unknown>> }> } },
-    mockPrepareExtraction: vi.fn(),
+    mockResolvePin: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mockTrackStore }));
-vi.mock('#/modules/MIDI/useCases', () => ({ prepareGrooveExtraction: mockPrepareExtraction }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    resolveGrooveExtractionPin: mockResolvePin,
+}));
 
 import { proposeYeastGrooveExtraction } from '../proposeYeastGrooveExtraction';
 
@@ -16,6 +18,14 @@ function midiClip(id: string, name = id) {
 
 function stateWithClips(clips: Array<Record<string, unknown>>) {
     return { tracks: [{ id: 't1', name: 'T1', clips }] };
+}
+
+function resolvesTo(
+    extraction: Record<string, unknown>,
+    template?: Record<string, unknown>,
+    templateId = 'groove-c1-v1'
+) {
+    mockResolvePin.mockReturnValue({ templateId, extraction, template });
 }
 
 describe('proposeYeastGrooveExtraction', () => {
@@ -41,7 +51,7 @@ describe('proposeYeastGrooveExtraction', () => {
             status: 'extracted' as const,
             template: { id: 'groove-c1-v1', name: 'My Clip groove' },
         };
-        mockPrepareExtraction.mockReturnValue(extracted);
+        resolvesTo(extracted);
         const result = proposeYeastGrooveExtraction({ clipId: 'c1', subdivision: '1/16' });
         expect(result.status).toBe('extracted');
         expect(result).toMatchObject({ clipId: 'c1', sourceName: 'My Clip', subdivision: '1/16' });
@@ -49,7 +59,7 @@ describe('proposeYeastGrooveExtraction', () => {
 
     it('returns the straight groove with source metadata', () => {
         mockTrackStore.value = stateWithClips([midiClip('c1', 'On Grid')]);
-        mockPrepareExtraction.mockReturnValue({
+        resolvesTo({
             status: 'straight',
             template: { id: 'groove-straight' },
         });
@@ -60,7 +70,7 @@ describe('proposeYeastGrooveExtraction', () => {
 
     it('returns invalid-source with reason when prepareGrooveExtraction rejects', () => {
         mockTrackStore.value = stateWithClips([midiClip('c1', 'Bad')]);
-        mockPrepareExtraction.mockReturnValue({
+        resolvesTo({
             status: 'invalid-source',
             reason: 'No notes on grid positions',
         });
@@ -71,9 +81,36 @@ describe('proposeYeastGrooveExtraction', () => {
 
     it('returns empty/unsupported status passthrough with source metadata', () => {
         mockTrackStore.value = stateWithClips([midiClip('c1', 'Empty')]);
-        mockPrepareExtraction.mockReturnValue({ status: 'empty' });
+        resolvesTo({ status: 'empty' });
         const result = proposeYeastGrooveExtraction({ clipId: 'c1', subdivision: '1/16' });
         expect(result.status).toBe('empty');
         expect(result).toMatchObject({ clipId: 'c1', sourceName: 'Empty', subdivision: '1/16' });
+    });
+
+    it('previews under the id and sourceName the clip resolves, with its own subdivision', () => {
+        mockTrackStore.value = stateWithClips([midiClip('c1', 'My Clip')]);
+        resolvesTo({ status: 'empty' }, undefined, 'groove-c1-v2');
+
+        proposeYeastGrooveExtraction({ clipId: 'c1', subdivision: '1/8' });
+
+        expect(mockResolvePin).toHaveBeenCalledWith({ clipId: 'c1', sourceName: 'My Clip', subdivision: '1/8' });
+    });
+
+    it('proposes the stored template, with the note revision, when the resolver reuses an existing version', () => {
+        mockTrackStore.value = stateWithClips([midiClip('c1', 'Renamed')]);
+        const stored = { id: 'groove-c1-v2', name: 'My Clip groove 2' };
+        resolvesTo(
+            {
+                status: 'extracted',
+                template: { id: 'groove-c1-v2', name: 'Renamed groove' },
+                sourceRevision: 'rev-notes',
+            },
+            stored,
+            'groove-c1-v2'
+        );
+
+        const result = proposeYeastGrooveExtraction({ clipId: 'c1', subdivision: '1/16' });
+
+        expect(result).toMatchObject({ status: 'extracted', template: stored, sourceRevision: 'rev-notes' });
     });
 });
