@@ -743,7 +743,12 @@ type ReservationProbe =
 function probeReservation(path: string, host: ProcessTreeHost): ReservationProbe {
     try {
         const owner = reservationWithState(path);
-        return reservationIsLive(owner, host) ? { status: 'live', owner } : { status: 'dead' };
+        if (!reservationIsLive(owner, host)) {
+            return { status: 'dead' };
+        }
+        // A live owner short-circuits liveness, so validate the tracked list the sampler will iterate.
+        reservationProcessTree(owner);
+        return { status: 'live', owner };
     } catch (error) {
         return { status: 'unusable', reason: errorMessage(error) };
     }
@@ -763,7 +768,8 @@ function unreadableReservationOwner(path: string): ReservationRecord {
 
 function reservationFileIsStale(path: string): boolean {
     try {
-        return Date.now() - statSync(path).mtimeMs > staleUnreadableReservationMs;
+        // An mtime further ahead than the horizon is clock damage, not a record written by a live command.
+        return Math.abs(Date.now() - statSync(path).mtimeMs) > staleUnreadableReservationMs;
     } catch {
         return false;
     }
@@ -772,8 +778,10 @@ function reservationFileIsStale(path: string): boolean {
 function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: ReservationRecord; path: string }> {
     mkdirSync(root, { recursive: true });
     const live: Array<{ owner: ReservationRecord; path: string }> = [];
-    for (const name of readdirSync(root)) {
-        if (!name.endsWith('.json') || name.includes('.state.')) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+        const name = entry.name;
+        // Only regular files are records; anything else here is not ours to read or delete.
+        if (!entry.isFile() || !name.endsWith('.json') || name.includes('.state.')) {
             continue;
         }
         const path = join(root, name);
