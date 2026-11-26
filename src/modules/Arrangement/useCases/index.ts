@@ -8,6 +8,7 @@ export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack } from './createTrack';
 export { normalizeTrack } from './normalizeTrack';
 export { nextDefaultTrackName } from './nextDefaultTrackName';
+export { captureTrackRemovalRuntimeAuthority } from './captureTrackRemovalRuntimeAuthority';
 export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';
 export { reserveNextTrackColorForCommand } from './reserveNextTrackColorForCommand';

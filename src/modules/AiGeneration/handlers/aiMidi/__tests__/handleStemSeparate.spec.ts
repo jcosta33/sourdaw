@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
     removeTrack: vi.fn(),
+    guardAbsent: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     info: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: mocks.addTrack,
     getTrackStoreState: mocks.getTrackStoreState,
     removeTrack: mocks.removeTrack,
+    captureTrackRemovalRuntimeAuthority: () => ({ guardAbsent: mocks.guardAbsent }),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -51,6 +53,7 @@ describe('handleStemSeparate', () => {
         vi.clearAllMocks();
         mocks.isStemSeparationAvailable.mockReturnValue(true);
         mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.guardAbsent.mockImplementation((_trackId: string, effect: () => unknown) => effect);
     });
 
     it('rejects before processing when no model is admitted', async () => {
@@ -216,6 +219,7 @@ describe('handleStemSeparate', () => {
         mocks.separateStems.mockResolvedValue({ vocals: vocalsBuffer });
         mocks.addTrack.mockReturnValue({ id: 't-new' });
         mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
+        mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: vi.fn() });
 
         await handleStemSeparate.execute({
             type: 'stemSeparate',
@@ -223,11 +227,79 @@ describe('handleStemSeparate', () => {
         });
 
         expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
-        expect(mocks.removeTrack).toHaveBeenCalledWith('t-old');
+        expect(mocks.removeTrack).toHaveBeenCalledWith('t-old', { deferRuntimeEffects: true });
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — vocals', kind: 'audio' });
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: vocalsBuffer });
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ audioBufferId: 'stem-buffer' }));
+    });
+
+    describe('replacing a prior stem track', () => {
+        async function rerun() {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    {
+                        id: 'src',
+                        clips: [
+                            {
+                                id: 'c1',
+                                name: 'Vocals',
+                                type: 'audio',
+                                audioBufferId: 'buf1',
+                                startBeat: 0,
+                                endBeat: 4,
+                            },
+                        ],
+                    },
+                    { id: 't-old-1', name: 'Vocals — vocals', clips: [] },
+                    { id: 't-old-2', name: 'Vocals — vocals', clips: [] },
+                ],
+            });
+            mocks.getCachedAudioBuffer.mockReturnValue({});
+            mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
+            mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer });
+            mocks.addTrack.mockReturnValue({ id: 't-new' });
+            mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
+            return handleStemSeparate.execute({
+                type: 'stemSeparate',
+                payload: { clipId: 'c1', stems: ['vocals'] },
+            });
+        }
+
+        it('defers each replaced track runtime removal to afterCommit and afterAmbiguousCommit', async () => {
+            const finalizers = [vi.fn().mockResolvedValue(undefined), vi.fn().mockResolvedValue(undefined)];
+            mocks.removeTrack
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizers[0] })
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizers[1] });
+
+            const result = await rerun();
+            if (!result || result.status !== 'written' || !result.afterCommit) {
+                throw new Error('Expected a written result with post-commit effects');
+            }
+            expect(finalizers[0]).not.toHaveBeenCalled();
+
+            await result.afterCommit();
+            expect(finalizers[0]).toHaveBeenCalledTimes(1);
+            expect(finalizers[1]).toHaveBeenCalledTimes(1);
+
+            await result.afterAmbiguousCommit();
+            expect(finalizers[0]).toHaveBeenCalledTimes(2);
+            expect(finalizers[1]).toHaveBeenCalledTimes(2);
+        });
+
+        it('rejects afterCommit when a replaced track runtime removal fails', async () => {
+            const failure = new Error('host gone');
+            mocks.removeTrack
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: vi.fn().mockRejectedValue(failure) })
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: vi.fn().mockResolvedValue(undefined) });
+
+            const result = await rerun();
+            if (!result || result.status !== 'written' || !result.afterCommit) {
+                throw new Error('Expected a written result with post-commit effects');
+            }
+
+            await expect(result.afterCommit()).rejects.toBe(failure);
+        });
     });
 
     it('logs warning if separation throws', async () => {
