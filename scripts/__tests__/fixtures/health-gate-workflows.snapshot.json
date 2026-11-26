@@ -3469,7 +3469,8 @@
           {
             "name": "Install Linux audio and display prerequisites",
             "if": "runner.os == 'Linux'",
-            "run": "sudo env \"PATH=$PATH\" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev xvfb xauth'\n"
+            "timeout-minutes": 10,
+            "run": "apt_input=$(mktemp -d \"$RUNNER_TEMP/sourdaw-apt.XXXXXX\")\nmkdir \"$apt_input/sources.list.d\"\ntrap 'rm -f -- \"$apt_input/apt.conf\" \"$apt_input/sources.list\"; rmdir -- \"$apt_input/sources.list.d\" \"$apt_input\"' EXIT\ncat > \"$apt_input/sources.list\" <<'SOURCES'\ndeb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://azure.archive.ubuntu.com/ubuntu/ jammy main universe\ndeb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://azure.archive.ubuntu.com/ubuntu/ jammy-updates main universe\ndeb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://security.ubuntu.com/ubuntu/ jammy-security main universe\nSOURCES\nprintf 'Dir::Etc::sourcelist \"%s\";\\nDir::Etc::sourceparts \"%s\";\\n' \\\n  \"$apt_input/sources.list\" \"$apt_input/sources.list.d\" > \"$apt_input/apt.conf\"\nsudo env \"PATH=$PATH\" \"APT_CONFIG=$apt_input/apt.conf\" bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev xvfb xauth'\n"
           },
           {
             "name": "Install dependencies",
