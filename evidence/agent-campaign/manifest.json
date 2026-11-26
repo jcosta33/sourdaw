@@ -150,7 +150,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts",
-                    "digest": "c128e7c0d3b26276dde7ab55c73b98ee05d4055cef23616867c340488ca848dd"
+                    "digest": "77926110b545c30c84807b5f6ebecdc4728df513e424e1cc2597fbe9c76c5395"
                 }
             ]
         },

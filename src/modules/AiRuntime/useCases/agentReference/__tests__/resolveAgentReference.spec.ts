@@ -2139,6 +2139,7 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
                 availableDeviceTypes: [
                     { id: 'builtin-eq', name: 'EQ' },
                     { id: 'builtin-compressor', name: 'Compressor' },
+                    { id: 'builtin-reverb', name: 'Reverb' },
                 ],
             };
         }
@@ -2152,6 +2153,40 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
             expect(
                 resolveAgentReference({ prompt: 'bypass fix-it', assertedId: 'fix-it', capability: 'device', context })
             ).toMatchObject({ status: 'resolved', id: 'fix-it' });
+        });
+
+        it('refuses "bypass lead/vox" as ambiguous between the devices the user named Lead and Vox, never the one named Lead Vox', () => {
+            const context = devicesOnVocals([
+                { id: 'eq-lead', type: 'builtin-eq', name: 'Lead', bypassed: false },
+                { id: 'comp-vox', type: 'builtin-compressor', name: 'Vox', bypassed: false },
+                { id: 'verb-lead-vox', type: 'builtin-reverb', name: 'Lead Vox', bypassed: false },
+            ]);
+
+            expect(
+                resolveAgentReference({
+                    prompt: 'bypass lead/vox',
+                    assertedId: 'verb-lead-vox',
+                    capability: 'device',
+                    context,
+                })
+            ).toMatchObject({ status: 'rejected', reason: 'ambiguous-target', candidateIds: ['eq-lead', 'comp-vox'] });
+        });
+
+        it('refuses "bypass lead/vox" as ambiguous between the EQ named Lead and the device whose id is vox, which the list names', () => {
+            const context = devicesOnVocals([
+                { id: 'eq-lead', type: 'builtin-eq', name: 'Lead', bypassed: false },
+                { id: 'vox', type: 'builtin-compressor', name: 'Vox', bypassed: false },
+                { id: 'verb-lead-vox', type: 'builtin-reverb', name: 'Lead Vox', bypassed: false },
+            ]);
+
+            expect(
+                resolveAgentReference({
+                    prompt: 'bypass lead/vox',
+                    assertedId: 'verb-lead-vox',
+                    capability: 'device',
+                    context,
+                })
+            ).toMatchObject({ status: 'rejected', reason: 'ambiguous-target', candidateIds: ['eq-lead', 'vox'] });
         });
 
         it('resolves "bypass the lead vox" to the EQ the user named Lead Vox, never the device whose id is lead', () => {
