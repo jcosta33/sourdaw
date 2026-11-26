@@ -5,7 +5,11 @@ import { maskQuotedTextContents } from '../../transformers/promptParser/promptQu
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
-import { findAgentReferenceNameSpans, type AgentReferenceNameForms } from './findAgentReferenceNameSpans';
+import {
+    findAgentReferenceNameSpans,
+    type AgentReferenceNameForms,
+    type AgentReferenceNameSpan,
+} from './findAgentReferenceNameSpans';
 import { getAgentReferenceCandidates, type AgentReferenceCandidate } from './getAgentReferenceCandidates';
 import { getBestAgentReferenceNameRanges } from './getBestAgentReferenceNameRanges';
 import { LEVEL_DIRECTION_WORDS } from './groundingStrategies/classifyPromptDecibelFigures';
@@ -15,6 +19,7 @@ import { hasExplicitClipSelection } from './hasExplicitClipSelection';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
 import { type AgentReferenceCapability } from './isAgentReferenceCapabilityCandidate';
 import { levenshteinDistance } from './levenshteinDistance';
+import { listAgentReferenceCandidateNames } from './listAgentReferenceCandidateNames';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { resolveTrackOwnerReference } from './resolveTrackOwnerReference';
 
@@ -131,7 +136,11 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
     'lufs',
 ]);
 
-/** Every range of the prompt that states the id as typed: its words joined by hyphens or underscores, case aside. */
+/**
+ * Every range of the prompt that states the id as typed: its words joined by hyphens or underscores,
+ * case aside. A combining mark belongs to the letter before it, so a decomposed "Café" never states
+ * the id "cafe".
+ */
 function getLiteralIdRanges(prompt: string, id: string): readonly { end: number; start: number }[] {
     const tokens = normalizeAgentReferenceText(id)
         .split(' ')
@@ -140,7 +149,7 @@ function getLiteralIdRanges(prompt: string, id: string): readonly { end: number;
         return [];
     }
     const needle = tokens.map((token) => escapeRegExp(token)).join('[-_]+');
-    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`, 'giu');
+    const pattern = new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${needle}(?![\\p{L}\\p{M}\\p{N}])`, 'giu');
     return Array.from(prompt.matchAll(pattern), (match) => ({
         start: match.index,
         end: match.index + match[0].length,
@@ -195,6 +204,21 @@ function hasNonClipReferenceCollision(
     );
 }
 
+/** Every range of the prompt that states any of the candidate's names. */
+function findCandidateNameSpans(
+    prompt: string,
+    candidate: AgentReferenceCandidate,
+    forms: AgentReferenceNameForms,
+    siblingNames: readonly string[]
+): AgentReferenceNameSpan[] {
+    return candidate.names.flatMap((name) => findAgentReferenceNameSpans(prompt, name, forms, siblingNames));
+}
+
+/** Every name any candidate may be stated by, which each name is read against as its siblings. */
+function getCandidateNames(candidates: readonly AgentReferenceCandidate[]): string[] {
+    return candidates.flatMap((candidate) => candidate.names);
+}
+
 /**
  * A name stated only where another candidate's name reads that range better names nothing: "Drum"
  * inside "Drum Bus" states the bus, "Vocal" states Vocal and not Vocals.
@@ -206,7 +230,9 @@ function removeOutreadExactNameEvidence(
     forms: AgentReferenceNameForms
 ): void {
     const named = candidates.filter((candidate) => evidenceById.get(candidate.id) === 'exact-name');
-    const statedIds = new Set(getBestAgentReferenceNameRanges(prompt, named, forms).map((range) => range.id));
+    const statedIds = new Set(
+        getBestAgentReferenceNameRanges(prompt, listAgentReferenceCandidateNames(named), forms).map((range) => range.id)
+    );
     for (const candidate of named) {
         if (!statedIds.has(candidate.id)) {
             evidenceById.delete(candidate.id);
@@ -226,12 +252,12 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
     if (literalIdRanges.length === 0) {
         return;
     }
-    const candidateNames = candidates.map((candidate) => candidate.name);
+    const candidateNames = getCandidateNames(candidates);
     for (const candidate of candidates) {
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const nameRanges = findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames);
+        const nameRanges = findCandidateNameSpans(prompt, candidate, forms, candidateNames);
         if (nameRanges.length === 0) {
             continue;
         }
@@ -289,10 +315,10 @@ function removeLiteralIdEvidenceNestedInExactNames(
     evidenceById: Map<string, AgentReferenceEvidence>,
     forms: AgentReferenceNameForms
 ): void {
-    const candidateNames = candidates.map((candidate) => candidate.name);
+    const candidateNames = getCandidateNames(candidates);
     const exactNameRanges = candidates.flatMap((candidate) =>
         evidenceById.get(candidate.id) === 'exact-name'
-            ? findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames)
+            ? findCandidateNameSpans(prompt, candidate, forms, candidateNames)
             : []
     );
     if (exactNameRanges.length === 0) {
@@ -448,7 +474,7 @@ function readNameEvidence(
     forms: AgentReferenceNameForms
 ): Map<string, AgentReferenceEvidence> {
     const evidenceById = new Map<string, AgentReferenceEvidence>();
-    const candidateNames = candidates.map((candidate) => candidate.name);
+    const candidateNames = getCandidateNames(candidates);
     for (const candidate of candidates) {
         if (capability === 'output' && candidate.id === 'master' && !containsQualifiedMasterOutputReference(prompt)) {
             continue;
@@ -461,7 +487,7 @@ function readNameEvidence(
             evidenceById.set(candidate.id, 'literal-id');
             continue;
         }
-        if (findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames).length > 0) {
+        if (findCandidateNameSpans(prompt, candidate, forms, candidateNames).length > 0) {
             if (
                 capability === 'vca-group' &&
                 reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.name)) &&

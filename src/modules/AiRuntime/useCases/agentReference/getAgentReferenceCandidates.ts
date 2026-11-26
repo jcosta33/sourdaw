@@ -8,12 +8,17 @@ import {
     type AgentReferenceCapability,
 } from './isAgentReferenceCapabilityCandidate';
 import { namesTrackAsQualifiedOwner } from './namesTrackAsQualifiedOwner';
+import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { resolveTrackOwnerReference } from './resolveTrackOwnerReference';
 
-/** One project object the prompt could be naming, drawn from the capability's collection. */
+/**
+ * One project object the prompt could be naming, drawn from the capability's collection: `name` is the
+ * name it is reported by, `names` every name the prompt may state it by, that one first.
+ */
 export type AgentReferenceCandidate = {
     id: string;
     name: string;
+    names: readonly string[];
     ownerQualified: boolean;
 };
 
@@ -26,10 +31,14 @@ export type AgentReferenceCandidateInput = {
 
 type Track = ProjectContext['tracks'][number];
 
+function namedCandidate(id: string, name: string, ownerQualified: boolean): AgentReferenceCandidate {
+    return { id, name, names: [name], ownerQualified };
+}
+
 function getTrackCandidates({ capability, context }: AgentReferenceCandidateInput): AgentReferenceCandidate[] {
     return context.tracks
         .filter((track) => isAgentReferenceCapabilityCandidate({ capability, context, id: track.id }))
-        .map((track) => ({ id: track.id, name: track.name, ownerQualified: false }));
+        .map((track) => namedCandidate(track.id, track.name, false));
 }
 
 /** The tracks an owner-qualified phrase narrows to ("the EQ on Vocals"): one, none when it names several, or all. */
@@ -56,7 +65,7 @@ function getClipCandidates({ prompt, context }: AgentReferenceCandidateInput): A
     const tracks = hasExplicitClipSelection(prompt) ? context.tracks : getOwnerQualifiedTracks(prompt, context);
     return tracks.flatMap((track) => {
         const ownerQualified = namesTrackAsQualifiedOwner(prompt, track);
-        return track.clips.map((clip) => ({ id: clip.id, name: clip.name, ownerQualified }));
+        return track.clips.map((clip) => namedCandidate(clip.id, clip.name, ownerQualified));
     });
 }
 
@@ -68,23 +77,34 @@ function getDeviceOwnerTracks({ prompt, context, dependencyId }: AgentReferenceC
     return getSelectedOrOwnerQualifiedTracks(prompt, context);
 }
 
+/**
+ * A device is stated by its type's catalog name and by the name the user gave it, unless that name
+ * is a catalog type's own name: a Saturator the user called "EQ" is never what "the EQ" states.
+ */
+function getDeviceNames(typeName: string, userName: string | undefined, catalogNames: ReadonlySet<string>): string[] {
+    if (userName === undefined || userName === typeName || catalogNames.has(normalizeAgentReferenceText(userName))) {
+        return [typeName];
+    }
+    return [typeName, userName];
+}
+
 function getDeviceCandidates(input: AgentReferenceCandidateInput): AgentReferenceCandidate[] {
     const { prompt, capability, context } = input;
     const tracks = getDeviceOwnerTracks(input);
-    const canonicalNamesByType = new Map(
-        (context.availableDeviceTypes ?? []).map((deviceType) => [deviceType.id, deviceType.name])
-    );
+    const deviceTypes = context.availableDeviceTypes ?? [];
+    const canonicalNamesByType = new Map(deviceTypes.map((deviceType) => [deviceType.id, deviceType.name]));
+    const catalogNames = new Set(deviceTypes.map((deviceType) => normalizeAgentReferenceText(deviceType.name)));
     return tracks.flatMap((track) => {
         const ownerQualified = namesTrackAsQualifiedOwner(prompt, track);
         return track.devices
             .filter((device) =>
                 isAgentReferenceCapabilityCandidate({ capability, context, dependencyId: track.id, id: device.id })
             )
-            .map((device) => ({
-                id: device.id,
-                name: canonicalNamesByType.get(device.type) ?? device.type,
-                ownerQualified,
-            }));
+            .map((device) => {
+                const typeName = canonicalNamesByType.get(device.type) ?? device.type;
+                const names = getDeviceNames(typeName, device.name, catalogNames);
+                return { id: device.id, name: typeName, names, ownerQualified };
+            });
     });
 }
 
@@ -96,11 +116,7 @@ function getDeviceParameterCandidates({
         return [];
     }
     const device = context.tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === dependencyId);
-    return (device?.parameters ?? []).map((parameter) => ({
-        id: parameter.id,
-        name: parameter.name,
-        ownerQualified: false,
-    }));
+    return (device?.parameters ?? []).map((parameter) => namedCandidate(parameter.id, parameter.name, false));
 }
 
 /** The lanes of the selected track when the prompt refers to it, otherwise of an owner-qualified track, or all. */
@@ -122,11 +138,7 @@ function getNarrowedAutomationLanes(prompt: string, context: ProjectContext) {
 function getAutomationLaneCandidates({ prompt, context }: AgentReferenceCandidateInput): AgentReferenceCandidate[] {
     return getNarrowedAutomationLanes(prompt, context).map((lane) => {
         const owner = context.tracks.find((track) => track.id === lane.trackId);
-        return {
-            id: lane.id,
-            name: lane.name,
-            ownerQualified: owner !== undefined && namesTrackAsQualifiedOwner(prompt, owner),
-        };
+        return namedCandidate(lane.id, lane.name, owner !== undefined && namesTrackAsQualifiedOwner(prompt, owner));
     });
 }
 
@@ -153,18 +165,10 @@ export function getAgentReferenceCandidates(input: AgentReferenceCandidateInput)
         return getAutomationLaneCandidates(input);
     }
     if (input.capability === 'adjustment-layer') {
-        return (input.context.adjustmentLayers ?? []).map((layer) => ({
-            id: layer.id,
-            name: layer.name,
-            ownerQualified: false,
-        }));
+        return (input.context.adjustmentLayers ?? []).map((layer) => namedCandidate(layer.id, layer.name, false));
     }
     if (input.capability === 'vca-group') {
-        return (input.context.vcaGroups ?? []).map((group) => ({
-            id: group.id,
-            name: group.name,
-            ownerQualified: false,
-        }));
+        return (input.context.vcaGroups ?? []).map((group) => namedCandidate(group.id, group.name, false));
     }
     return [];
 }

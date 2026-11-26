@@ -1,5 +1,7 @@
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
+import { CARDINAL_WORDS, FIGURE_WORD, NUMBER_SIGN_WORDS, ORDINAL_WORDS } from './positionWords';
+import { readUnitWord } from './unitWords';
 
 /** A range of the original text, `end` exclusive. */
 export type AgentReferenceTextRange = { start: number; end: number };
@@ -13,10 +15,11 @@ export type AgentReferenceNameForms = 'exact' | 'with-number-forms';
 
 /**
  * How closely a range states a name: as typed (case, composition and the form of a dash aside), the
- * same once case, diacritics and punctuation are folded ("Kick In" for "Kick (In)"), or with its final
- * word in the other grammatical number ("the vocal" for Vocals).
+ * same once case, diacritics and punctuation are folded ("Kick In" for "Kick (In)"), with its final
+ * word in the other grammatical number ("the vocal" for Vocals), or by the words after the index word
+ * that opens it ("the kick" for 01 Kick).
  */
-export type AgentReferenceNameCloseness = 'typed' | 'folded' | 'number-form';
+export type AgentReferenceNameCloseness = 'typed' | 'folded' | 'number-form' | 'without-index';
 
 export type AgentReferenceNameSpan = AgentReferenceTextRange & { closeness: AgentReferenceNameCloseness };
 
@@ -37,13 +40,40 @@ const TRAILING_PUNCTUATION = /[^\p{L}\p{M}\p{N}]+$/u;
 const NAME_WORD_SPACE = /^[\p{Zs}\t_-]$/u;
 
 /**
- * How much of the text past a joint is read for a sibling name starting there: the longest sibling's length plus
+ * How much of the text past a position is read for a sibling name starting there: the longest sibling's length plus
  * room for the punctuation a joiner may run to between its words, so the read never scans to the end of the text.
  */
 const FAR_SIDE_JOINER_SLACK = 256;
 
 /** A run of the text between two words of a name, which the reading then accepts or refuses. */
 const ANY_JOINER = '([^\\p{L}\\p{N}]+)';
+
+/** The same run where the text may also write the two words as one: "Guitar2" for Guitar 2, "Bobs" for Bob's. */
+const ANY_OR_NO_JOINER = '([^\\p{L}\\p{N}]*)';
+
+/**
+ * How far either side of a reading is read for the word beside it, so each reading costs the same
+ * whatever the length of the text around it.
+ */
+const ADJACENT_WORD_WINDOW = 64;
+
+/** The word opening the text past any punctuation or space before it, and what follows that word. */
+const WORD_AFTER = /^[^\p{L}\p{N}]*([\p{L}\p{N}]+)(.*)$/su;
+
+/**
+ * The word closing the text past any space or punctuation after it, short of a sentence stop or a
+ * list comma, which part a name from the word beyond them ("track 2, kick").
+ */
+const NEIGHBOUR_BEFORE = /([\p{L}\p{N}]+)[^\p{L}\p{N}.!?;,]*$/u;
+
+/**
+ * The word opening the text past any space or punctuation before it, short of a sentence stop or a
+ * list comma ("kick. Second", "kick, one bar"), and what follows that word.
+ */
+const NEIGHBOUR_AFTER = /^[^\p{L}\p{N}.!?;,]*([\p{L}\p{N}]+)(.*)$/su;
+
+/** A figure's digits and any decimal part: "50", "1.5". */
+const FIGURE = /^\p{N}+(?:\.\p{N}+)?/u;
 
 /**
  * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
@@ -238,33 +268,242 @@ function findAcceptedMatches(
     return matches;
 }
 
-/** Whether the whole text states one of the names, each read with no other name to stop its own joints. */
-function isAnyName(text: string, names: readonly string[], forms: AgentReferenceNameForms): boolean {
-    return names.some((name) =>
+/**
+ * Whether the text may write two neighbouring words of a name with nothing between them: across a
+ * letter and a figure ("Guitar2", "808Kick"), or where the name's own separator is an apostrophe
+ * ("Bobs" for Bob's). Two letters run together ("Bassguitar") never state two words.
+ */
+function mayRunTogether(before: string, after: string, nameSeparator: string): boolean {
+    const letterThenFigure = /\p{L}$/u.test(before) && /^\p{N}/u.test(after);
+    const figureThenLetter = /\p{N}$/u.test(before) && /^\p{L}/u.test(after);
+    return letterThenFigure || figureThenLetter || nameSeparator === "'";
+}
+
+/** What the text is read as while one name is read in it. */
+type NameReading = {
+    text: string;
+    /** The text folded one character at a time, so each folded offset maps back to the text. */
+    folded: string;
+    toTextOffset: (foldedOffset: number) => number;
+    forms: AgentReferenceNameForms;
+    /** The sibling names, less any that fold to the name read. */
+    otherNames: readonly string[];
+};
+
+/** The sibling names that each state the whole text, read with no other name to stop their own joints. */
+function getWholeNames(text: string, names: readonly string[], forms: AgentReferenceNameForms): string[] {
+    return names.filter((name) =>
         findAgentReferenceNameSpans(text, name, forms, []).some((span) => span.start === 0 && span.end === text.length)
     );
 }
 
-/** Whether the text starts with any of the names, each read with no other name to stop its own joints. */
-function startsWithAnyName(text: string, names: readonly string[], forms: AgentReferenceNameForms): boolean {
-    return names.some((name) => findAgentReferenceNameSpans(text, name, forms, []).some((span) => span.start === 0));
+/** The sibling name reading furthest into the text from its start, and where that reading ends. */
+function readLongestNameAtStart(
+    text: string,
+    names: readonly string[],
+    forms: AgentReferenceNameForms
+): { name: string; end: number } | null {
+    let longest: { name: string; end: number } | null = null;
+    for (const name of names) {
+        for (const span of findAgentReferenceNameSpans(text, name, forms, [])) {
+            if (span.start === 0 && span.end > (longest?.end ?? 0)) {
+                longest = { name, end: span.end };
+            }
+        }
+    }
+    return longest;
+}
+
+/**
+ * The sibling names the text states one after another from `from`, across any punctuation or space,
+ * reading no further than `until` needs, and where the last of them ends.
+ */
+function readSiblingNameChain(reading: NameReading, from: number, until: number): { names: string[]; end: number } {
+    const farSideLength = Math.max(0, ...reading.otherNames.map((sibling) => sibling.length)) + FAR_SIDE_JOINER_SLACK;
+    const names: string[] = [];
+    let end = from;
+    let position = from;
+    while (position < until) {
+        const next = readLongestNameAtStart(
+            reading.text.slice(position, position + farSideLength),
+            reading.otherNames,
+            reading.forms
+        );
+        if (next === null) {
+            break;
+        }
+        names.push(next.name);
+        end = position + next.end;
+        position = end + (/^[^\p{L}\p{N}]*/u.exec(reading.text.slice(end))?.[0].length ?? 0);
+    }
+    return { names, end };
+}
+
+/**
+ * Whether a joint of a match reads as a break between listed siblings rather than inside the name:
+ * the words before it are a sibling name by themselves, sibling names run from past it to at least
+ * the end of the match, and those siblings are at least two different names.
+ */
+function breaksIntoSiblingList(reading: NameReading, match: RegExpExecArray, joint: NameJoint): boolean {
+    const start = reading.toTextOffset(match.index);
+    const end = reading.toTextOffset(match.index + match[0].length);
+    const nearNames = getWholeNames(
+        reading.text.slice(start, reading.toTextOffset(joint.joinerStart)),
+        reading.otherNames,
+        reading.forms
+    );
+    if (nearNames.length === 0) {
+        return false;
+    }
+    const listed = readSiblingNameChain(reading, reading.toTextOffset(joint.restStart), end);
+    return listed.end >= end && new Set([...nearNames, ...listed.names]).size > 1;
+}
+
+/** The forms of the first word a reading of the words must find: the first word, or the final one's number forms. */
+function getFirstWordForms(tokens: readonly string[], forms: AgentReferenceNameForms): string[] {
+    const firstWord = tokens[0];
+    if (firstWord === undefined) {
+        return [];
+    }
+    return tokens.length > 1 || forms === 'exact' ? [firstWord] : getNumberForms(firstWord);
+}
+
+/** The words a name an index word opens ("01 Kick") is also stated by, none for any other name. */
+function getUnindexedWords(tokens: readonly string[]): readonly string[] {
+    const [indexWord, ...words] = tokens;
+    return indexWord !== undefined && words.length > 0 && FIGURE_WORD.test(indexWord) ? words : [];
+}
+
+/**
+ * Every match of the words, in order and in the forms the reading allows, joined across space, dashes,
+ * the name's own punctuation, nothing where the words may run together, and any other punctuation
+ * that breaks no list of siblings.
+ */
+function matchNameWords(
+    reading: NameReading,
+    tokens: readonly string[],
+    separators: readonly string[]
+): RegExpExecArray[] {
+    const finalToken = tokens.at(-1);
+    if (finalToken === undefined) {
+        return [];
+    }
+    const finalForms = reading.forms === 'exact' ? [finalToken] : getNumberForms(finalToken);
+    const words = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`];
+    const needle = words
+        .map((word, index) => {
+            if (index === 0) {
+                return `(${word})`;
+            }
+            const before = tokens[index - 1] ?? '';
+            const joiner = mayRunTogether(before, tokens[index] ?? '', separators[index - 1] ?? '')
+                ? ANY_OR_NO_JOINER
+                : ANY_JOINER;
+            return `${joiner}(${word})`;
+        })
+        .join('');
+    const pattern = new RegExp(`${WORD_BOUNDARY_BEFORE}${needle}${WORD_BOUNDARY_AFTER}`, 'gu');
+    return findAcceptedMatches(reading.folded, pattern, (match) =>
+        getNameJoints(match, separators).every(
+            (joint) =>
+                joinsAsNameSeparator(joint.joiner, joint.nameSeparator) || !breaksIntoSiblingList(reading, match, joint)
+        )
+    );
+}
+
+/**
+ * Whether the text opens with a value: a whole figure, decimal part included, with a unit word the
+ * shared unit reader reads after it, spaced or glued ("50%", "1.5 dB", "3db", "200 Hz", "10 ms").
+ */
+function opensWithValue(text: string): boolean {
+    const figure = FIGURE.exec(text);
+    return figure !== null && readUnitWord(text.slice(figure[0].length)) !== null;
+}
+
+/**
+ * Whether one word reads as a position or a number: it is an ordinal or a cardinal word ("second",
+ * "two"), or it holds a figure ("02", "2nd", "track2") that does not open a value ("50%", "3db").
+ */
+function readsAsPositionWord(word: string, rest: string): boolean {
+    if (ORDINAL_WORDS.includes(word) || CARDINAL_WORDS.includes(word)) {
+        return true;
+    }
+    return /\p{N}/u.test(word) && !opensWithValue(word + rest);
+}
+
+/**
+ * Whether a word reads as a position or a number on its own, or announces the one after it: "kick
+ * two", "kick number 2", "kick no. 2".
+ */
+function readsAsPosition(word: string, rest: string): boolean {
+    if (readsAsPositionWord(word, rest)) {
+        return true;
+    }
+    if (!NUMBER_SIGN_WORDS.includes(word)) {
+        return false;
+    }
+    const next = WORD_AFTER.exec(rest);
+    return next !== null && readsAsPositionWord(next[1] ?? '', next[2] ?? '');
+}
+
+/**
+ * Whether the word right before or right after the folded range, across any space or punctuation
+ * short of a sentence stop or a list comma, reads as a position or a number, which then states which
+ * of several indexed names is meant.
+ */
+function isBesidePosition(folded: string, start: number, end: number): boolean {
+    const before = NEIGHBOUR_BEFORE.exec(folded.slice(Math.max(0, start - ADJACENT_WORD_WINDOW), start));
+    const wordBefore = before?.[1] ?? '';
+    if (before !== null && readsAsPosition(wordBefore, before[0].slice(wordBefore.length))) {
+        return true;
+    }
+    const after = NEIGHBOUR_AFTER.exec(folded.slice(end, end + ADJACENT_WORD_WINDOW));
+    return after !== null && readsAsPosition(after[1] ?? '', after[2] ?? '');
+}
+
+/**
+ * The ranges stating a name an index word opens ("01 Kick") by the words after it, wherever no word
+ * beside them reads as a position or a number, so "the kick" and "set kick to 50%" state 01 Kick
+ * while "02: kick", "the 2nd kick", "the second kick", "track2 kick" and "kick 2" never do.
+ */
+function findUnindexedSpans(
+    reading: NameReading,
+    tokens: readonly string[],
+    separators: readonly string[]
+): AgentReferenceNameSpan[] {
+    const words = getUnindexedWords(tokens);
+    if (words.length === 0) {
+        return [];
+    }
+    return matchNameWords(reading, words, separators.slice(1))
+        .filter((match) => !isBesidePosition(reading.folded, match.index, match.index + match[0].length))
+        .map((match): AgentReferenceNameSpan => ({
+            start: reading.toTextOffset(match.index),
+            end: reading.toTextOffset(match.index + match[0].length),
+            closeness: 'without-index',
+        }));
 }
 
 /**
  * Every range of the text that states the name: its words folded as normalizeAgentReferenceText folds
  * them, final sigma aside, in order, the final word in either grammatical number when the forms allow
  * it. Space, underscore and any dash join two of its words wherever the text has them ("hi hat",
- * "hi_hat" and "hi–hat" state Hi-Hat, "hi-hat" states Hi Hat). Any other punctuation joins them where
- * the name itself has it there ("Guitar L/R"), and elsewhere too unless the reading's words before it
- * are a sibling name by themselves and a sibling name starts right past it, which reads the two as a
- * list: beside a Drums track and no Bus, "drums/bus" states Drums Bus, and beside a Guitar track and no
- * Bass, "bass/guitar" states Bass Guitar, while beside Bass and Drums tracks "Bass & Drums", "Bass |
- * Drums" and a bulleted list of the two never state Bass Drums, nor beside Bass and Drum Bus tracks
- * does "Bass & Drum Bus" state Bass Drum. A range the name as typed covers, both read composed and with
- * every dash as the hyphen, reads as typed and reaches as far as the typed name does, short of the
- * punctuation closing it, wherever the text goes on: "Kick (In)" reads Kick (In) more closely than
- * Kick In, "Hi–Hat" reads Hi-Hat more closely than Hi Hat, and "Lead?" in "mute Lead?!" reads no
- * further than Lead does.
+ * "hi_hat" and "hi–hat" state Hi-Hat, "hi-hat" states Hi Hat), and nothing joins them across a letter
+ * and a figure or where the name has an apostrophe ("Guitar2" states Guitar 2, "Bobs Guitar" Bob's
+ * Guitar). Any other punctuation joins them where the name itself has it there ("Guitar L/R"), and
+ * elsewhere too unless it breaks a list of siblings: the reading's words before it are a sibling name
+ * by themselves, and sibling names run from right past it to at least where the reading ends, naming
+ * at least two different siblings. So beside a Drums track and no Bus, "drums/bus" states Drums Bus;
+ * beside a Guitar track and no Bass, "bass/guitar" states Bass Guitar; beside Kick, Snare and Kick/Snare
+ * tracks, "kick/snare/room" states Kick Snare Room; and beside a Lead track, "Lead, Lead" states Lead
+ * Lead; while beside Bass and Drums tracks "Bass & Drums", "Bass | Drums" and a bulleted list of the
+ * two never state Bass Drums, nor beside Bass and Drum Bus tracks does "Bass & Drum Bus" state Bass
+ * Drum. A name that an index word opens ("01 Kick") is also stated by its other words, least closely
+ * of all, wherever no word beside them reads as a position or a number. A range the name as typed covers, both read
+ * composed and with every dash as the hyphen, reads as typed and reaches as far as the typed name does,
+ * short of the punctuation closing it, wherever the text goes on: "Kick (In)" reads Kick (In) more
+ * closely than Kick In, "Hi–Hat" reads Hi-Hat more closely than Hi Hat, and "Lead?" in "mute Lead?!"
+ * reads no further than Lead does.
  */
 export function findAgentReferenceNameSpans(
     text: string,
@@ -279,41 +518,32 @@ export function findAgentReferenceNameSpans(
     if (finalToken === undefined) {
         return [];
     }
-    const finalForms = forms === 'exact' ? [finalToken] : getNumberForms(finalToken);
-    const words = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`];
-    const needle = words.map((word, index) => (index === 0 ? `(${word})` : `${ANY_JOINER}(${word})`)).join('');
-    const pattern = new RegExp(`${WORD_BOUNDARY_BEFORE}${needle}${WORD_BOUNDARY_AFTER}`, 'gu');
-    const firstWordForms = tokens.length > 1 ? tokens.slice(0, 1) : finalForms;
     const foldedForPresence = foldCharacters(text);
-    if (!firstWordForms.some((form) => foldedForPresence.includes(form))) {
+    const statesFirstWord = (words: readonly string[]) =>
+        getFirstWordForms(words, forms).some((form) => foldedForPresence.includes(form));
+    if (!statesFirstWord(tokens) && !statesFirstWord(getUnindexedWords(tokens))) {
         return [];
     }
     const { transformed: folded, offsets } = transformWithOffsets(text, foldCharacters);
-    const toTextOffset = (foldedOffset: number): number => offsets[foldedOffset] ?? text.length;
-    const nameSeparators = getNameSeparators(name);
-    const otherNames = siblingNames.filter((sibling) => normalizeName(sibling) !== tokens.join(' '));
-    const farSideLength = Math.max(0, ...otherNames.map((sibling) => sibling.length)) + FAR_SIDE_JOINER_SLACK;
-    const continuesName = (match: RegExpExecArray): boolean => {
-        const start = toTextOffset(match.index);
-        return getNameJoints(match, nameSeparators).every((joint) => {
-            if (joinsAsNameSeparator(joint.joiner, joint.nameSeparator)) {
-                return true;
-            }
-            const nearSide = text.slice(start, toTextOffset(joint.joinerStart));
-            const farSideStart = toTextOffset(joint.restStart);
-            const farSide = text.slice(farSideStart, farSideStart + farSideLength);
-            return !(isAnyName(nearSide, otherNames, forms) && startsWithAnyName(farSide, otherNames, forms));
-        });
+    const foldedName = tokens.join(' ');
+    const reading: NameReading = {
+        text,
+        folded,
+        toTextOffset: (foldedOffset) => offsets[foldedOffset] ?? text.length,
+        forms,
+        otherNames: siblingNames.filter((sibling) => normalizeName(sibling) !== foldedName),
     };
-    const typedRanges = findTypedRanges(text, name);
-    return findAcceptedMatches(folded, pattern, continuesName).map((match): AgentReferenceNameSpan => {
-        const start = toTextOffset(match.index);
-        const end = toTextOffset(match.index + match[0].length);
+    const separators = getNameSeparators(name);
+    const matches = matchNameWords(reading, tokens, separators);
+    const typedRanges = matches.length > 0 ? findTypedRanges(text, name) : [];
+    const spans = matches.map((match): AgentReferenceNameSpan => {
+        const start = reading.toTextOffset(match.index);
+        const end = reading.toTextOffset(match.index + match[0].length);
         const typedRange = typedRanges.find((typed) => typed.start <= start && end <= typed.end);
         if (typedRange !== undefined) {
             return { ...typedRange, closeness: 'typed' };
         }
-        const foldsToName = normalizeName(text.slice(start, end)) === tokens.join(' ');
-        return { start, end, closeness: foldsToName ? 'folded' : 'number-form' };
+        return { start, end, closeness: match.at(-1) === finalToken ? 'folded' : 'number-form' };
     });
+    return [...spans, ...findUnindexedSpans(reading, tokens, separators)];
 }
