@@ -133,20 +133,18 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
         } else if (isLow) {
             sectionInfo = SECTION_PALETTE[6]!; // Break
             confidence = 0.65;
-        } else {
+        } else if (index + 1 < mergedBoundaries.length) {
             // Check if this leads into a high energy section → Pre-Chorus
-            if (index + 1 < mergedBoundaries.length) {
-                const nextStart = mergedBoundaries[index + 1]!;
-                const nextEnd = index + 2 < mergedBoundaries.length ? mergedBoundaries[index + 2]! : numWindows;
-                let nextEnergy = 0;
-                for (let w = nextStart; w < nextEnd; w++) {
-                    nextEnergy += energy[w]!;
-                }
-                nextEnergy /= nextEnd - nextStart || 1;
-                if (nextEnergy > avgEnergy * 1.3) {
-                    sectionInfo = SECTION_PALETTE[2]!; // Pre-Chorus
-                    confidence = 0.55;
-                }
+            const nextStart = mergedBoundaries[index + 1]!;
+            const nextEnd = index + 2 < mergedBoundaries.length ? mergedBoundaries[index + 2]! : numWindows;
+            let nextEnergy = 0;
+            for (let w = nextStart; w < nextEnd; w++) {
+                nextEnergy += energy[w]!;
+            }
+            nextEnergy /= nextEnd - nextStart || 1;
+            if (nextEnergy > avgEnergy * 1.3) {
+                sectionInfo = SECTION_PALETTE[2]!; // Pre-Chorus
+                confidence = 0.55;
             }
         }
 

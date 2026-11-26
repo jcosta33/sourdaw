@@ -79,14 +79,12 @@ self.onmessage = (event: MessageEvent<unknown>) => {
             };
             self.postMessage(tick);
         }, intervalMs);
-    } else {
-        if (timerId !== null) {
-            clearInterval(timerId);
-            timerId = null;
-            nextScheduledAtMs = 0;
-            tickSequence = 0;
-            schedulerGeneration = 0;
-        }
+    } else if (timerId !== null) {
+        clearInterval(timerId);
+        timerId = null;
+        nextScheduledAtMs = 0;
+        tickSequence = 0;
+        schedulerGeneration = 0;
     }
 };
 

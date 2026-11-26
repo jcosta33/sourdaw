@@ -77,7 +77,7 @@
             }
         },
         {
-            "files": ["src/{app,helpers,infra,routes,utils}/**/*.{ts,tsx}"],
+            "files": ["src/{app,components,helpers,infra,modules,routes,utils}/**/*.{ts,tsx}"],
             "excludeFiles": [
                 "**/*.d.ts",
                 "**/*.{spec,test,mock}.{ts,tsx}",

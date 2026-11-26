@@ -58,10 +58,8 @@ export function settleRetainedSectionRenderManualReview(input: {
                 'Missing evidence cannot be acknowledged while the exact retained render remains available.'
             );
         }
-    } else {
-        if (current.jobs.some((candidate) => candidate.availability !== 'available')) {
-            throw new Error('The exact retained render is no longer available.');
-        }
+    } else if (current.jobs.some((candidate) => candidate.availability !== 'available')) {
+        throw new Error('The exact retained render is no longer available.');
     }
     agentRunLifecycle.settlePendingEffectManualReview({
         runId: input.binding.runId,

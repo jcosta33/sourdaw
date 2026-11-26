@@ -338,16 +338,12 @@ function tensorDataToOrt(ort: OrtModule, td: TensorData): OrtTensor {
     const type = (() => {
         if (td.type === 'int64') {
             return 'int64';
+        } else if (td.type === 'int32') {
+            return 'int32';
+        } else if (td.type === 'bool') {
+            return 'bool';
         } else {
-            if (td.type === 'int32') {
-                return 'int32';
-            } else {
-                if (td.type === 'bool') {
-                    return 'bool';
-                } else {
-                    return 'float32';
-                }
-            }
+            return 'float32';
         }
     })();
     return new ort.Tensor(type, td.data, td.dims);

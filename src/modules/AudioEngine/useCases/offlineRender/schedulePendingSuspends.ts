@@ -96,20 +96,18 @@ export function schedulePendingSuspends(
                 }
                 evt.instrumentControls.noteOn(request);
             }
-        } else {
-            if (evt.isToaster) {
-                const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : resolveToasterPadIndex(evt.pitch);
-                if (pad === null) {
-                    continue;
-                }
-                evt.instrumentControls.noteOff({ noteOrPad: pad, sampleFrame });
-            } else {
-                const request: MutableNoteOffRequest = { noteOrPad: evt.pitch, sampleFrame };
-                if (evt.channel !== undefined) {
-                    request.channel = evt.channel;
-                }
-                evt.instrumentControls.noteOff(request);
+        } else if (evt.isToaster) {
+            const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : resolveToasterPadIndex(evt.pitch);
+            if (pad === null) {
+                continue;
             }
+            evt.instrumentControls.noteOff({ noteOrPad: pad, sampleFrame });
+        } else {
+            const request: MutableNoteOffRequest = { noteOrPad: evt.pitch, sampleFrame };
+            if (evt.channel !== undefined) {
+                request.channel = evt.channel;
+            }
+            evt.instrumentControls.noteOff(request);
         }
     }
 }

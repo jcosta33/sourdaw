@@ -216,17 +216,15 @@ function createPostCommitRuntimeEffect(
                 operation: 'replace-device-chain',
                 batchContext,
             });
+        } else if (!authoritativeTarget) {
+            result = {
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: `Cannot initialize preset runtime strip for track ${after.id}`,
+            };
         } else {
-            if (!authoritativeTarget) {
-                result = {
-                    acceptance: 'rejected',
-                    application: 'not-applied',
-                    reason: `Cannot initialize preset runtime strip for track ${after.id}`,
-                };
-            } else {
-                runtimeTarget = authoritativeTarget;
-                result = initializeMissingLiveStrip(authoritativeTarget);
-            }
+            runtimeTarget = authoritativeTarget;
+            result = initializeMissingLiveStrip(authoritativeTarget);
         }
         if (!settleRuntimeResult(result)) {
             return;

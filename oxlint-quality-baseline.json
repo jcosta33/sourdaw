@@ -6084,7 +6084,7 @@
             "count": 9
         },
         "eslint/no-else-return": {
-            "count": 2
+            "count": 1
         },
         "typescript/no-non-null-assertion": {
             "count": 3
@@ -11178,7 +11178,7 @@
             "count": 2
         },
         "eslint/no-else-return": {
-            "count": 3
+            "count": 1
         },
         "sourdaw-craft/no-silent-catch": {
             "count": 1
@@ -15782,7 +15782,7 @@
             "count": 2
         },
         "eslint/no-else-return": {
-            "count": 8
+            "count": 2
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 1
@@ -19213,7 +19213,7 @@
             "count": 1
         },
         "eslint/no-else-return": {
-            "count": 3
+            "count": 1
         },
         "typescript/no-non-null-assertion": {
             "count": 9
