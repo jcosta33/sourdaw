@@ -21,6 +21,8 @@ vi.mock('../handleRestoreChordTrackState', () => ({
             payload: { expected: { enabled: false, events: [] }, replacement: { enabled: false, events: [] } },
         },
     })),
+    findChordTrackRefusal: vi.fn(() => null),
+    isChordTrackSessionEntry: vi.fn(() => true),
 }));
 
 import { toggleChordTrack } from '../../../useCases/chordTrack/toggleChordTrack';
@@ -61,13 +63,14 @@ describe('handleToggleChordTrack — describe', () => {
         handleToggleChordTrack.describe({ type: 'toggleChordTrack', payload: { enabled: true } });
         expect(mockedDescribe).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toggleChordTrack', payload: { enabled: true } }),
-            'Enable chord track'
+            'Enable chord track',
+            undefined
         );
     });
 
     it('uses "Disable chord track" when target is false', () => {
         handleToggleChordTrack.describe({ type: 'toggleChordTrack', payload: { enabled: false } });
-        expect(mockedDescribe).toHaveBeenCalledWith(expect.anything(), 'Disable chord track');
+        expect(mockedDescribe).toHaveBeenCalledWith(expect.anything(), 'Disable chord track', undefined);
     });
 });
 

@@ -1,0 +1,189 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../stores/chordTrackStore', () => ({
+    chordTrackStore: {
+        get value() {
+            return mockValue;
+        },
+        set: vi.fn((state: ChordTrackState) => {
+            mockValue = state;
+        }),
+    },
+    defaultChordTrackState: { enabled: false, events: [] },
+}));
+
+import { type AppAction } from '#/utils/handlerContract';
+
+import { type ChordTrackState } from '../../../stores/chordTrackStore';
+import { handleAddChordEvent } from '../handleAddChordEvent';
+import { handleClearChordTrack } from '../handleClearChordTrack';
+import { handleRemoveChordEvent } from '../handleRemoveChordEvent';
+import { handleRestoreChordTrackState } from '../handleRestoreChordTrackState';
+import { handleToggleChordTrack } from '../handleToggleChordTrack';
+
+let mockValue: ChordTrackState | null = null;
+
+const THREE_CHORDS: ChordTrackState = {
+    enabled: true,
+    events: [
+        { id: 'c-1', beat: 0, root: 0, quality: 'major', duration: 4 },
+        { id: 'c-2', beat: 4, root: 7, quality: '7', duration: 2.5 },
+        { id: 'c-3', beat: 8, root: 9, quality: 'min7', duration: 4 },
+    ],
+};
+
+type RestoreAction = Extract<AppAction, { type: 'restoreChordTrackState' }>;
+
+function requireRestore(action: AppAction | null | undefined): RestoreAction {
+    if (action?.type !== 'restoreChordTrackState') {
+        throw new Error('Expected a restoreChordTrackState inverse');
+    }
+    return action;
+}
+
+beforeEach(() => {
+    mockValue = structuredClone(THREE_CHORDS);
+});
+
+describe('clearChordTrack as an agent command', () => {
+    it('restores every removed event exactly through its inverse, and redoes through the forward action', () => {
+        const action: AppAction = { type: 'clearChordTrack' };
+        const inverse = requireRestore(handleClearChordTrack.describe({ type: 'clearChordTrack' }).inverseAction);
+
+        void handleClearChordTrack.execute(action);
+        expect(mockValue).toEqual({ enabled: true, events: [] });
+
+        expect(handleRestoreChordTrackState.execute(inverse)).toEqual({ status: 'written' });
+        expect(mockValue).toEqual(THREE_CHORDS);
+
+        void handleClearChordTrack.execute(action);
+        expect(mockValue).toEqual({ enabled: true, events: [] });
+    });
+
+    it('is a no-op on an empty chord track', () => {
+        mockValue = { enabled: true, events: [] };
+        expect(handleClearChordTrack.isNoop?.({ type: 'clearChordTrack' })).toBe(true);
+    });
+
+    it('describes against the track the earlier actions of its batch leave, not the live track', () => {
+        const added: AppAction = {
+            type: 'addChordEvent',
+            payload: { beat: 12, root: 5, quality: 'minor', duration: 2, eventId: 'c-4' },
+        };
+        const clear: AppAction = { type: 'clearChordTrack' };
+        const inverse = requireRestore(
+            handleClearChordTrack.describe({ type: 'clearChordTrack' }, { actions: [added, clear], actionIndex: 1 })
+                .inverseAction
+        );
+
+        expect(inverse.payload.expected).toEqual({ enabled: true, events: [] });
+        expect(inverse.payload.replacement.events.map((event) => event.id)).toEqual(['c-1', 'c-2', 'c-3', 'c-4']);
+    });
+
+    it('refuses a project without a chord track', () => {
+        mockValue = null;
+        expect(handleClearChordTrack.validate?.({ type: 'clearChordTrack' }, { actions: [], actionIndex: 0 })).toBe(
+            false
+        );
+        expect(
+            handleClearChordTrack.validationRefusalReason?.(
+                { type: 'clearChordTrack' },
+                { actions: [], actionIndex: 0 }
+            )
+        ).toBe('The project has no chord track');
+    });
+});
+
+describe('addChordEvent as an agent command', () => {
+    it('keeps the application-minted event id it was given, in describe, no-op detection and execute', () => {
+        const action: Extract<AppAction, { type: 'addChordEvent' }> = {
+            type: 'addChordEvent',
+            payload: { beat: 12, root: 5, quality: 'minor', eventId: 'chord-command-fixed' },
+        };
+
+        const inverse = requireRestore(handleAddChordEvent.describe(action).inverseAction);
+        expect(handleAddChordEvent.isNoop?.(action)).toBe(false);
+        void handleAddChordEvent.execute(action);
+
+        expect(mockValue?.events.map((event) => event.id)).toContain('chord-command-fixed');
+        expect(inverse.payload.expected).toEqual(mockValue);
+        expect(inverse.payload.replacement).toEqual(THREE_CHORDS);
+        expect(action.payload.eventId).toBe('chord-command-fixed');
+    });
+
+    it('refuses an event id that the track or an earlier action of the batch already holds', () => {
+        const duplicateOfTrack: AppAction = {
+            type: 'addChordEvent',
+            payload: { beat: 1, root: 0, quality: 'major', eventId: 'c-2' },
+        };
+        const first: AppAction = {
+            type: 'addChordEvent',
+            payload: { beat: 1, root: 0, quality: 'major', eventId: 'c-9' },
+        };
+        const second: AppAction = {
+            type: 'addChordEvent',
+            payload: { beat: 2, root: 0, quality: 'major', eventId: 'c-9' },
+        };
+
+        expect(handleAddChordEvent.validate?.(duplicateOfTrack, { actions: [duplicateOfTrack], actionIndex: 0 })).toBe(
+            false
+        );
+        expect(handleAddChordEvent.validate?.(first, { actions: [first, second], actionIndex: 0 })).toBe(true);
+        expect(handleAddChordEvent.validate?.(second, { actions: [first, second], actionIndex: 1 })).toBe(false);
+    });
+});
+
+describe('toggleChordTrack as an agent command', () => {
+    it('is a no-op when the chord track is already in the requested state and restores the prior state otherwise', () => {
+        expect(handleToggleChordTrack.isNoop?.({ type: 'toggleChordTrack', payload: { enabled: true } })).toBe(true);
+
+        const action: AppAction = { type: 'toggleChordTrack', payload: { enabled: false } };
+        const inverse = requireRestore(handleToggleChordTrack.describe(action).inverseAction);
+        void handleToggleChordTrack.execute(action);
+        expect(mockValue?.enabled).toBe(false);
+
+        expect(handleRestoreChordTrackState.execute(inverse)).toEqual({ status: 'written' });
+        expect(mockValue).toEqual(THREE_CHORDS);
+    });
+});
+
+describe('chord track restores', () => {
+    it('refuses to overwrite a chord edit made after the command it undoes', () => {
+        const inverse = requireRestore(
+            handleRemoveChordEvent.describe({ type: 'removeChordEvent', payload: { eventId: 'c-2' } }).inverseAction
+        );
+        void handleRemoveChordEvent.execute({ type: 'removeChordEvent', payload: { eventId: 'c-2' } });
+        void handleToggleChordTrack.execute({ type: 'toggleChordTrack', payload: { enabled: false } });
+
+        expect(handleRestoreChordTrackState.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreChordTrackState.execute(inverse)).toEqual({ status: 'conflict' });
+        expect(mockValue?.enabled).toBe(false);
+        expect(mockValue?.events.map((event) => event.id)).toEqual(['c-1', 'c-3']);
+    });
+
+    it('admits only a well-formed snapshot pair into the session replay', () => {
+        const valid = { expected: THREE_CHORDS, replacement: { enabled: false, events: [] } };
+        expect(handleRestoreChordTrackState.validateSessionActionArguments?.(valid)).toBe(true);
+        for (const invalid of [
+            { expected: THREE_CHORDS },
+            { expected: THREE_CHORDS, replacement: { enabled: 'yes', events: [] } },
+            {
+                expected: THREE_CHORDS,
+                replacement: { enabled: true, events: [{ id: 'x', beat: -1, root: 0, quality: 'major', duration: 4 }] },
+            },
+            {
+                expected: THREE_CHORDS,
+                replacement: { enabled: true, events: [{ id: 'x', beat: 0, root: 12, quality: 'major', duration: 4 }] },
+            },
+            {
+                expected: THREE_CHORDS,
+                replacement: {
+                    enabled: true,
+                    events: [{ id: 'x', beat: 0, root: 0, quality: 'toString', duration: 4 }],
+                },
+            },
+        ]) {
+            expect(handleRestoreChordTrackState.validateSessionActionArguments?.(invalid)).toBe(false);
+        }
+    });
+});

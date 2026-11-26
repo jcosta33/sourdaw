@@ -465,6 +465,15 @@ describe('MIDI note transforms through AppAction execution', () => {
             expectedNotes: [atomicNote('a', 60, 0.125, { velocity: 40 }), atomicNote('b', 67, 1.25, { velocity: 51 })],
         },
         {
+            name: 'scale velocities by curve',
+            label: 'Scale velocities (compress)',
+            action: {
+                type: 'scaleVelocities',
+                payload: { clipId: CLIP_ID, curve: 'compress', minVelocity: 10, maxVelocity: 110 },
+            } as const,
+            expectedNotes: [atomicNote('a', 60, 0.125, { velocity: 40 }), atomicNote('b', 67, 1.25, { velocity: 80 })],
+        },
+        {
             name: 'set velocities',
             label: 'Set all velocities to 96',
             action: { type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } } as const,

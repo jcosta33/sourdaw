@@ -770,6 +770,112 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'scaleVelocities',
+        'Remap the velocity of every note in one MIDI clip through a named curve, so the softest note lands on minVelocity and the loudest on maxVelocity.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            curve: {
+                type: 'string',
+                enum: ['linear', 'exponential', 'logarithmic', 's-curve', 'compress', 'expand'],
+                description: 'Velocity response curve',
+            },
+            minVelocity: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 127,
+                description: 'Velocity the softest note maps to, from 1 through 127; defaults to 1',
+            },
+            maxVelocity: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 127,
+                description: 'Velocity the loudest note maps to, from 1 through 127; defaults to 127',
+            },
+        },
+        ['clipId', 'curve'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'humanizeNotes',
+        'Loosen the timing and velocity of every note in one MIDI clip by a seeded random offset; the application fixes the seed when the command is compiled, so redo lands every note exactly where it first landed.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            amount: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                description:
+                    'Timing looseness from 0 (none) through 1; each note moves by up to a quarter of this many beats either way, and its velocity too unless velocityAmount is given',
+            },
+            velocityAmount: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                description:
+                    'Velocity looseness from 0 through 1; each note moves by up to ten times this many velocity steps either way; defaults to amount',
+            },
+        },
+        ['clipId', 'amount'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'addChordEvent',
+        'Add one chord to the project chord track at an explicit beat.',
+        {
+            beat: { type: 'number', minimum: 0, description: 'Chord start in beats (bar 1 = beat 0)' },
+            root: { type: 'integer', minimum: 0, maximum: 11, description: 'Root pitch class, C = 0 through B = 11' },
+            quality: {
+                type: 'string',
+                enum: [
+                    'major',
+                    'minor',
+                    'dim',
+                    'aug',
+                    'sus2',
+                    'sus4',
+                    '7',
+                    'maj7',
+                    'min7',
+                    'dim7',
+                    'aug7',
+                    '6',
+                    'min6',
+                    '9',
+                    'add9',
+                    'min9',
+                    '7sus4',
+                ],
+                description: 'Chord quality',
+            },
+            duration: {
+                type: 'number',
+                minimum: 0.25,
+                description: 'Chord length in beats, at least 0.25; defaults to 4',
+            },
+        },
+        ['beat', 'root', 'quality'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'clearChordTrack',
+        'Remove every chord from the project chord track.',
+        {},
+        [],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
+        'toggleChordTrack',
+        'Turn the project chord track on or off without changing its chords.',
+        { enabled: { type: 'boolean', description: 'true=enable the chord track, false=disable it' } },
+        ['enabled'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'renameTrack',
         'Rename a track.',
         { trackId: { type: 'string' }, name: { type: 'string' } },
@@ -2273,6 +2379,60 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['set midi velocities', 'set note velocities', 'set all velocities'],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
         valueRules: [{ argument: 'velocity', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+    },
+    {
+        actionType: 'scaleVelocities',
+        intentPhrases: ['scale velocity curve', 'apply velocity curve', 'remap midi velocities', 'compress velocities'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [
+            {
+                argument: 'curve',
+                kind: 'enum-if-present',
+                values: ['linear', 'exponential', 'logarithmic', 's-curve', 'compress', 'expand'],
+                requiredInPrompt: true,
+            },
+        ],
+    },
+    {
+        actionType: 'humanizeNotes',
+        intentPhrases: ['humanize notes', 'humanize midi', 'humanize the notes', 'humanize the clip'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [
+            {
+                argument: 'amount',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                scale: 'percentage-only',
+            },
+        ],
+    },
+    {
+        actionType: 'addChordEvent',
+        intentPhrases: ['add chord', 'add a chord', 'insert chord', 'insert a chord', 'place a chord'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, match: 'exact', connector: 'beat' },
+        ],
+    },
+    {
+        actionType: 'clearChordTrack',
+        intentPhrases: ['clear chord track', 'clear the chord track', 'remove all chords', 'delete all chords'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
+        actionType: 'toggleChordTrack',
+        intentPhrases: ['enable chord track', 'disable chord track', 'turn on chord track', 'turn off chord track'],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable chord track', 'turn on chord track'],
+                falsePhrases: ['disable chord track', 'turn off chord track'],
+            },
+        ],
     },
     {
         actionType: 'renameTrack',

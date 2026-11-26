@@ -19,12 +19,7 @@ import { getGlutenHandlers } from '#/modules/Gluten/useCases';
 import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';
 import { getLevainHandlers } from '#/modules/Levain/useCases';
-import {
-    getChordTrackHandlers,
-    getMidiGrooveHandlers,
-    getMidiNoteTransformHandlers,
-    getWebMidiInputHandlers,
-} from '#/modules/MIDI/useCases';
+import { getMidiGrooveHandlers, getMidiNoteTransformHandlers, getWebMidiInputHandlers } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
@@ -56,7 +51,6 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getPluginHostHandlers(),
         getAiMidiHandlers(),
         getAiOrganizationHandlers(),
-        getChordTrackHandlers(),
         getMidiNoteTransformHandlers(),
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: input.canMutateBranchMetadata }),
         getMidiGrooveHandlers(),

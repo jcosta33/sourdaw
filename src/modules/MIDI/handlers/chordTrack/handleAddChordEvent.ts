@@ -3,7 +3,12 @@ import { createHandler } from '#/utils/createHandler';
 import { type ChordType, CHORD_TYPES } from '../../models/ChordTypes';
 import { addChordEvent } from '../../useCases/chordTrack/addChordEvent';
 
-import { describeChordTrackMutation } from './handleRestoreChordTrackState';
+import {
+    describeChordTrackMutation,
+    findChordTrackRefusal,
+    isChordTrackMutationNoop,
+    isChordTrackSessionEntry,
+} from './handleRestoreChordTrackState';
 
 function isChordType(value: string): value is ChordType {
     return Object.prototype.hasOwnProperty.call(CHORD_TYPES, value);
@@ -26,9 +31,20 @@ export const handleAddChordEvent = createHandler<'addChordEvent'>({
         const duration = alpha.payload.duration ?? 4;
         addChordEvent(beat, root, quality, duration, ensureEventId(alpha));
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         ensureEventId(alpha);
-        return describeChordTrackMutation(alpha, `Add ${alpha.payload.quality} chord at beat ${alpha.payload.beat}`);
+        return describeChordTrackMutation(
+            alpha,
+            `Add ${alpha.payload.quality} chord at beat ${alpha.payload.beat}`,
+            context
+        );
     },
+    validate: (action, context) => findChordTrackRefusal(action, context) === null,
+    validationRefusalReason: findChordTrackRefusal,
+    isNoop: (alpha) => {
+        ensureEventId(alpha);
+        return isChordTrackMutationNoop(alpha);
+    },
+    validateSessionEntry: isChordTrackSessionEntry,
     undoable: true,
 });

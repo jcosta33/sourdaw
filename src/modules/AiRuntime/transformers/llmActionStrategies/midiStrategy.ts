@@ -21,6 +21,11 @@ export const midiActionNames = [
     'quantizeNoteLengths',
     'scaleAllVelocities',
     'setAllVelocities',
+    'scaleVelocities',
+    'humanizeNotes',
+    'addChordEvent',
+    'clearChordTrack',
+    'toggleChordTrack',
 ] as const satisfies readonly Extract<RuntimeActionType, string>[];
 
 export type MidiCallName = (typeof midiActionNames)[number];
@@ -86,6 +91,32 @@ function clipContentWindow(clip: ProjectContextClip): ClipContentWindowInput | u
     };
 }
 
+const VELOCITY_CURVES = ['linear', 'exponential', 'logarithmic', 's-curve', 'compress', 'expand'] as const;
+
+const CHORD_QUALITIES = [
+    'major',
+    'minor',
+    'dim',
+    'aug',
+    'sus2',
+    'sus4',
+    '7',
+    'maj7',
+    'min7',
+    'dim7',
+    'aug7',
+    '6',
+    'min6',
+    '9',
+    'add9',
+    'min9',
+    '7sus4',
+] as const;
+
+function isOneOf<Value extends string>(values: readonly Value[], candidate: unknown): candidate is Value {
+    return values.some((value) => value === candidate);
+}
+
 function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= maximum;
 }
@@ -108,6 +139,75 @@ function isBridgedMidiNote(value: unknown): value is BridgedMidiNote {
         note.duration >= MIDI_NOTE_MIN_DURATION_BEATS &&
         (!hasVelocity || isIntegerInRange(note.velocity, 1, 127))
     );
+}
+
+type ScaleVelocitiesPayload = Extract<RuntimeAction, { type: 'scaleVelocities' }>['payload'];
+type HumanizeNotesPayload = Extract<RuntimeAction, { type: 'humanizeNotes' }>['payload'];
+type AddChordEventPayload = Extract<RuntimeAction, { type: 'addChordEvent' }>['payload'];
+
+function hasOnlyKeys(args: Record<string, unknown>, allowedKeys: readonly string[]): boolean {
+    return Object.keys(args).every((key) => allowedKeys.includes(key));
+}
+
+function readScaleVelocitiesPayload(args: Record<string, unknown>, clipId: string): ScaleVelocitiesPayload | null {
+    if (
+        !hasOnlyKeys(args, ['clipId', 'curve', 'minVelocity', 'maxVelocity']) ||
+        !isOneOf(VELOCITY_CURVES, args.curve)
+    ) {
+        return null;
+    }
+    const payload: ScaleVelocitiesPayload = { clipId, curve: args.curve };
+    if (Object.hasOwn(args, 'minVelocity')) {
+        if (!isIntegerInRange(args.minVelocity, 1, 127)) {
+            return null;
+        }
+        payload.minVelocity = args.minVelocity;
+    }
+    if (Object.hasOwn(args, 'maxVelocity')) {
+        if (!isIntegerInRange(args.maxVelocity, 1, 127)) {
+            return null;
+        }
+        payload.maxVelocity = args.maxVelocity;
+    }
+    return payload;
+}
+
+function isUnitInterval(value: unknown): value is number {
+    return isFiniteNumber(value) && value >= 0 && value <= 1;
+}
+
+function readHumanizeNotesPayload(args: Record<string, unknown>, clipId: string): HumanizeNotesPayload | null {
+    if (!hasOnlyKeys(args, ['clipId', 'amount', 'velocityAmount']) || !isUnitInterval(args.amount)) {
+        return null;
+    }
+    const payload: HumanizeNotesPayload = { clipId, amount: args.amount };
+    if (Object.hasOwn(args, 'velocityAmount')) {
+        if (!isUnitInterval(args.velocityAmount)) {
+            return null;
+        }
+        payload.velocityAmount = args.velocityAmount;
+    }
+    return payload;
+}
+
+function readAddChordEventPayload(args: Record<string, unknown>): AddChordEventPayload | null {
+    if (
+        !hasOnlyKeys(args, ['beat', 'root', 'quality', 'duration']) ||
+        !isFiniteNumber(args.beat) ||
+        args.beat < 0 ||
+        !isIntegerInRange(args.root, 0, 11) ||
+        !isOneOf(CHORD_QUALITIES, args.quality)
+    ) {
+        return null;
+    }
+    const payload: AddChordEventPayload = { beat: args.beat, root: args.root, quality: args.quality };
+    if (Object.hasOwn(args, 'duration')) {
+        if (!isFiniteNumber(args.duration) || args.duration < 0.25) {
+            return null;
+        }
+        payload.duration = args.duration;
+    }
+    return payload;
 }
 
 const midiStrategyDefinitions = [
@@ -360,6 +460,69 @@ const midiStrategyDefinitions = [
                 );
             }
             return { type: 'setAllVelocities', payload: { clipId: target.clip.id, velocity: args.velocity } };
+        },
+    },
+    {
+        name: 'scaleVelocities',
+        transform: ({ call, context, index }) => {
+            const target = findEditableMidiClip(context, call.arguments.clipId);
+            const payload = target ? readScaleVelocitiesPayload(call.arguments, target.clip.id) : null;
+            if (!payload) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected an unlocked non-empty MIDI clip, a known velocity curve, and integer minVelocity and maxVelocity from 1 through 127 when given'
+                );
+            }
+            return { type: 'scaleVelocities', payload };
+        },
+    },
+    {
+        name: 'humanizeNotes',
+        transform: ({ call, context, index }) => {
+            const target = findEditableMidiClip(context, call.arguments.clipId);
+            const payload = target ? readHumanizeNotesPayload(call.arguments, target.clip.id) : null;
+            if (!payload) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected an unlocked non-empty MIDI clip and amount and velocityAmount from 0 through 1'
+                );
+            }
+            return { type: 'humanizeNotes', payload };
+        },
+    },
+    {
+        name: 'addChordEvent',
+        transform: ({ call, index }) => {
+            const payload = readAddChordEventPayload(call.arguments);
+            if (!payload) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected a non-negative beat, an integer root from 0 through 11, a known chord quality, and a duration of at least 0.25 beats when given'
+                );
+            }
+            return { type: 'addChordEvent', payload };
+        },
+    },
+    {
+        name: 'clearChordTrack',
+        transform: ({ call, index }) => {
+            if (!hasExactKeys(call.arguments, [])) {
+                return rejection(index, call.name, 'Expected no arguments');
+            }
+            return { type: 'clearChordTrack' };
+        },
+    },
+    {
+        name: 'toggleChordTrack',
+        transform: ({ call, index }) => {
+            const args = call.arguments;
+            if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
+                return rejection(index, call.name, 'Expected a boolean enabled');
+            }
+            return { type: 'toggleChordTrack', payload: { enabled: args.enabled } };
         },
     },
 ] as const satisfies readonly MidiStrategyDefinition<MidiCallName>[];

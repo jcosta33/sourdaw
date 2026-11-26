@@ -155,6 +155,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreAudioClipSlip'),
         createInternalReplayContract('restoreDrawnClip'),
         createInternalReplayContract('restoreMidiClipNotes'),
+        createInternalReplayContract('restoreChordTrackState'),
         createInternalReplayContract('restoreAutomationPointPresence'),
         createInternalReplayContract('removeTrackGainAutomationRange'),
         createInternalReplayContract('removeSendAutomationRange'),

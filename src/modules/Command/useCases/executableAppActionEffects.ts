@@ -235,6 +235,29 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
         noteFields: ['velocity'],
     },
+    scaleVelocities: {
+        dimensions: ['midi-content'],
+        scope: 'target',
+        noteFields: ['velocity'],
+    },
+    humanizeNotes: {
+        dimensions: ['midi-content'],
+        scope: 'target',
+        noteFields: ['startBeat', 'velocity'],
+    },
+    // The chord track is one project-wide harmony lane; it sounds nothing itself but steers chord-follow tracks.
+    addChordEvent: {
+        dimensions: ['midi-content'],
+        scope: 'project',
+    },
+    clearChordTrack: {
+        dimensions: ['midi-content'],
+        scope: 'project',
+    },
+    toggleChordTrack: {
+        dimensions: ['midi-content'],
+        scope: 'project',
+    },
     renameTrack: {
         dimensions: ['arrangement'],
         scope: 'target',

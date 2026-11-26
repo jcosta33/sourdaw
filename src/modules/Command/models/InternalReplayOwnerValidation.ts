@@ -23,6 +23,7 @@ export const internalReplayOwnerValidationByActionType = {
     restoreAudioClipSlip: 'owner-only',
     restoreDrawnClip: 'optional',
     restoreMidiClipNotes: 'required',
+    restoreChordTrackState: 'required',
     restoreAutomationPointPresence: 'required',
     removeTrackGainAutomationRange: 'required',
     removeSendAutomationRange: 'required',

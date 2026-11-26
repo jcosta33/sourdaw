@@ -60,20 +60,27 @@ describe('getMidiNoteTransformHandlers', () => {
         const handlers = getMidiNoteTransformHandlers();
 
         expect(Object.keys(handlers).sort()).toEqual([
+            'addChordEvent',
             'addNotes',
+            'clearChordTrack',
             'copyMidiArticulations',
             'humanizeNotes',
             'invertNotes',
+            'moveChordEvent',
             'quantizeNoteLengths',
             'quantizeNotes',
+            'removeChordEvent',
             'removeShortMidiOverlaps',
             'replaceOriginalMidiBaseRow',
+            'restoreChordTrackState',
             'restoreMidiClipNotes',
             'retrogradeNotes',
             'scaleAllVelocities',
             'scaleVelocities',
             'setAllVelocities',
+            'toggleChordTrack',
             'transposeNotes',
+            'updateChordEvent',
         ]);
     });
 

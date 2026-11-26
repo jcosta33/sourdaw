@@ -116,6 +116,36 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
  */
 const MAX_LEVEL_DELTA_DB = 60;
 
+const VELOCITY_CURVE_NAMES = new Set(['linear', 'exponential', 'logarithmic', 's-curve', 'compress', 'expand']);
+
+function isVelocityCurve(value: unknown): value is string {
+    return isString(value) && VELOCITY_CURVE_NAMES.has(value);
+}
+
+function isMidiVelocity(value: unknown): value is number {
+    return isInRange(value, 1, 127) && Number.isInteger(value);
+}
+
+const CHORD_QUALITY_NAMES: Readonly<Record<string, true>> = {
+    major: true,
+    minor: true,
+    dim: true,
+    aug: true,
+    sus2: true,
+    sus4: true,
+    '7': true,
+    maj7: true,
+    min7: true,
+    dim7: true,
+    aug7: true,
+    '6': true,
+    min6: true,
+    '9': true,
+    add9: true,
+    min9: true,
+    '7sus4': true,
+};
+
 function isLevelDelta(value: unknown): value is number {
     return isInRange(value, -MAX_LEVEL_DELTA_DB, MAX_LEVEL_DELTA_DB);
 }
@@ -1127,8 +1157,24 @@ const validators = {
         param.fadeInBeats + param.fadeOutBeats <= param.endBeat - param.startBeat,
 
     // MIDI-note ops (non-destructive enough: they're scoped by clipId on the handler)
-    humanizeNotes: 'unchecked',
-    scaleVelocities: 'unchecked',
+    humanizeNotes: (param): param is PayloadOf<'humanizeNotes'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipId', 'amount', 'velocityAmount', 'seed']) &&
+        Object.hasOwn(param, 'clipId') &&
+        Object.hasOwn(param, 'amount') &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.amount, 0, 1) &&
+        isOptionalOwn(param, 'velocityAmount', (value): value is number => isInRange(value, 0, 1)) &&
+        isOptionalOwn(param, 'seed', isNumber),
+    scaleVelocities: (param): param is PayloadOf<'scaleVelocities'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipId', 'curve', 'minVelocity', 'maxVelocity']) &&
+        Object.hasOwn(param, 'clipId') &&
+        Object.hasOwn(param, 'curve') &&
+        isNonEmptyString(param.clipId) &&
+        isVelocityCurve(param.curve) &&
+        isOptionalOwn(param, 'minVelocity', isMidiVelocity) &&
+        isOptionalOwn(param, 'maxVelocity', isMidiVelocity),
     addNotes: (param): param is PayloadOf<'addNotes'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'notes']) &&
@@ -1211,10 +1257,23 @@ const validators = {
     toggleScratchPad: 'unchecked',
 
     // Chord track
-    addChordEvent: 'unchecked',
+    addChordEvent: (param): param is PayloadOf<'addChordEvent'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['beat', 'root', 'quality', 'duration', 'eventId']) &&
+        Object.hasOwn(param, 'beat') &&
+        Object.hasOwn(param, 'root') &&
+        Object.hasOwn(param, 'quality') &&
+        isNonNegativeNumber(param.beat) &&
+        isInRange(param.root, 0, 11) &&
+        Number.isInteger(param.root) &&
+        isString(param.quality) &&
+        Object.hasOwn(CHORD_QUALITY_NAMES, param.quality) &&
+        isOptionalOwn(param, 'duration', (value): value is number => isNumber(value) && value >= 0.25) &&
+        isOptionalOwn(param, 'eventId', isNonEmptyString),
     removeChordEvent: 'unchecked',
-    clearChordTrack: 'unchecked',
-    toggleChordTrack: 'unchecked',
+    clearChordTrack: hasNoPayload,
+    toggleChordTrack: (param): param is PayloadOf<'toggleChordTrack'> =>
+        isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
 
     // MIDI routing + output
     setMidiOutput: 'unchecked',

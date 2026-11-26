@@ -7,6 +7,7 @@ import { type MidiNote } from '../../models/MidiNote';
 import { humanizeNotes } from '../../useCases/midiNoteTransforms/humanizeNotes';
 import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
+import { isMidiNoteTransformSessionEntry } from './isMidiNoteTransformSessionEntry';
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
 type HumanizeNotesAction = Extract<AppAction, { type: 'humanizeNotes' }>;
@@ -74,5 +75,17 @@ export const handleHumanizeNotes = createHandler<'humanizeNotes'>({
     },
     describe: (action) => prepareHumanizeNotes(action).description,
     isNoop: (action) => prepareHumanizeNotes(action).isNoop,
+    validateSessionEntry: (entry) => {
+        const { action } = entry;
+        if (action.type !== 'humanizeNotes' || action.payload.seed === undefined) {
+            return false;
+        }
+        const { clipId, amount, velocityAmount = amount, seed } = action.payload;
+        return isMidiNoteTransformSessionEntry({
+            entry,
+            clipId,
+            transform: (notes) => previewHumanizedNotes(notes, amount, velocityAmount, seed),
+        });
+    },
     undoable: true,
 });

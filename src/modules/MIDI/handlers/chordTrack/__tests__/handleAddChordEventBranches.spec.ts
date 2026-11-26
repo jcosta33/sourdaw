@@ -6,6 +6,9 @@ vi.mock('../../../useCases/chordTrack/addChordEvent', () => ({
 
 vi.mock('../handleRestoreChordTrackState', () => ({
     describeChordTrackMutation: vi.fn(() => ({ label: 'Mock', inverseAction: null })),
+    findChordTrackRefusal: vi.fn(() => null),
+    isChordTrackSessionEntry: vi.fn(() => true),
+    isChordTrackMutationNoop: vi.fn(() => false),
 }));
 
 import { addChordEvent } from '../../../useCases/chordTrack/addChordEvent';

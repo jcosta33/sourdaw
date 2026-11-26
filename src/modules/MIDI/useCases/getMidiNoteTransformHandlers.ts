@@ -15,6 +15,8 @@ import { handleScaleVelocities } from '../handlers/noteTransform/handleScaleVelo
 import { handleSetAllVelocities } from '../handlers/noteTransform/handleSetAllVelocities';
 import { handleTransposeNotes } from '../handlers/noteTransform/handleTransposeNotes';
 
+import { type ChordTrackHandlersMap, getChordTrackHandlers } from './getChordTrackHandlers';
+
 type MidiNoteTransformAppAction =
     | Extract<AppAction, { type: 'addNotes' }>
     | Extract<AppAction, { type: 'copyMidiArticulations' }>
@@ -31,12 +33,15 @@ type MidiNoteTransformAppAction =
     | Extract<AppAction, { type: 'setAllVelocities' }>
     | Extract<AppAction, { type: 'transposeNotes' }>;
 
-export type MidiNoteTransformHandlersMap = {
+type MidiNoteTransformOwnHandlersMap = {
     [Action in MidiNoteTransformAppAction as Action['type']]: ActionHandler<Action>;
 };
 
+export type MidiNoteTransformHandlersMap = MidiNoteTransformOwnHandlersMap & ChordTrackHandlersMap;
+
 /**
- * Merges MIDI note-transform `ActionHandler` maps for Command. Does **not** call `createHandler` here.
+ * Merges MIDI note-transform and chord-track `ActionHandler` maps for Command. The chord track rides this
+ * map because every executable command registers through one of the maps the registry census names. Does **not** call `createHandler` here.
  */
 export function getMidiNoteTransformHandlers(): MidiNoteTransformHandlersMap {
     return {
@@ -54,5 +59,6 @@ export function getMidiNoteTransformHandlers(): MidiNoteTransformHandlersMap {
         scaleVelocities: handleScaleVelocities,
         setAllVelocities: handleSetAllVelocities,
         transposeNotes: handleTransposeNotes,
+        ...getChordTrackHandlers(),
     };
 }
