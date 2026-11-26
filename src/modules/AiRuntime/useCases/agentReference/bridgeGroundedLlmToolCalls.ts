@@ -3281,30 +3281,14 @@ function parseExplicitSectionName(value: string): string | null {
     return trimmed.replace(/[,:;.?!]+$/u, '').trim() || null;
 }
 
-/**
- * The text a section request states beside its beat range, or null: between the last section intent
- * ending before the range and the range, or, when no intent precedes the range, after the first intent
- * following it to the end of the request.
- */
+/** The text a section request states between its section intent and its beat range, or null. */
 function getSectionNameSlot(promptText: string): string | null {
+    const intent = /\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/iu.exec(promptText);
     const range = getSectionRangeFromPrompt(promptText);
-    if (!range) {
+    if (!intent || !range || range.startIndex <= intent.index + intent[0].length) {
         return null;
     }
-    const intents = [...promptText.matchAll(/\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/giu)];
-    const before = intents.findLast((intent) => intent.index + intent[0].length <= range.startIndex);
-    if (before) {
-        return promptText.slice(before.index + before[0].length, range.startIndex).trim();
-    }
-    const after = intents.find((intent) => intent.index >= range.endIndex);
-    if (!after) {
-        return null;
-    }
-    return promptText
-        .slice(after.index + after[0].length)
-        .trim()
-        .replace(/[,:;.?!]+$/u, '')
-        .trim();
+    return promptText.slice(intent.index + intent[0].length, range.startIndex).trim();
 }
 
 function getSectionNameFromPrompt(promptText: string): string | null {
