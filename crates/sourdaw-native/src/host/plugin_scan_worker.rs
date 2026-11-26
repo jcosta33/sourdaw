@@ -2403,6 +2403,7 @@ impl HelperRegistry {
 
     /// Drop a scan's tree token once its own sweep has returned. Once
     /// stopped, the caller parks instead, as on every other entry point.
+    #[cfg(unix)]
     fn release_tree_token(&self, tree_token: &str) {
         let mut state = self.lock_unless_stopped();
         state.tree_tokens.remove(tree_token);
@@ -4583,21 +4584,32 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         std::thread::sleep(Duration::from_secs(30));
     }
 
-    /// #7122: a scan sweeps by its tree token only after its supervisor is
-    /// reaped, and so after the supervisor has left the registry's live set.
-    /// A stop that lands in that gap parks the scan before its sweep, so the
-    /// token must still be registered for the stop to sweep it. Here the
-    /// supervisor's entry is gone (`forget`) while its token stays, and an
-    /// escaped process carries it. Mutation this catches: a token released
-    /// with its supervisor's entry rather than after the scan's sweep.
+    /// How a scan's supervisor leaves the registry's live set before the
+    /// scan's own sweep by tree token runs.
     #[cfg(unix)]
-    #[test]
-    fn a_stop_sweeps_the_token_of_a_scan_whose_supervisor_is_already_reaped() {
+    enum SupervisorExit {
+        /// `try_reap` reaps it: the scan ended on its own.
+        Reaped,
+        /// `forget` drops it and the scan reaps it itself: the scan's bound.
+        Forgotten,
+    }
+
+    /// #7122: a scan sweeps by its tree token only after its supervisor has
+    /// left the registry's live set, through `try_reap` when the scan ends
+    /// and through `forget` at its bound. A stop that lands in that gap parks
+    /// the scan before its sweep, so the token must still be registered for
+    /// the stop to sweep it. A short-lived stand-in supervisor leaves by
+    /// `exit`, while a carrier outside the registry holds the same token in
+    /// its environment; the stop must kill the carrier.
+    #[cfg(unix)]
+    fn stop_after_the_supervisor_leaves(exit: SupervisorExit) {
+        use std::os::unix::process::CommandExt;
         let registry = HelperRegistry::new();
         let tree_token = uuid::Uuid::new_v4().to_string();
-        let mut command =
+        let mut stragglers = Stragglers::cleaning(Vec::new());
+        let mut carrier =
             Command::new(std::env::current_exe().expect("test executable should exist"));
-        command
+        carrier
             .args([
                 "--exact",
                 "host::plugin_scan_worker::tests::token_carrier_child",
@@ -4607,12 +4619,39 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        let carrier = registry
-            .spawn(&mut command, Some(&tree_token))
-            .expect("the token carrier should start");
-        registry.forget(&carrier);
-        let mut stragglers = Stragglers::cleaning(Vec::new());
-        stragglers.children.push(carrier);
+        stragglers
+            .children
+            .push(carrier.spawn().expect("the token carrier should start"));
+        let mut supervisor = Command::new("true");
+        supervisor.process_group(0);
+        let mut supervisor = registry
+            .spawn(&mut supervisor, Some(&tree_token))
+            .expect("the stand-in supervisor should start");
+        match exit {
+            SupervisorExit::Reaped => {
+                let deadline = Instant::now() + Duration::from_secs(2);
+                let reaped = loop {
+                    if let Some(status) = registry
+                        .try_reap(&mut supervisor)
+                        .expect("the stand-in supervisor stays observable")
+                    {
+                        break Some(status);
+                    }
+                    if Instant::now() >= deadline {
+                        break None;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                };
+                assert!(
+                    reaped.is_some(),
+                    "the stand-in supervisor should exit at once"
+                );
+            }
+            SupervisorExit::Forgotten => {
+                registry.forget(&supervisor);
+                let _ = supervisor.wait();
+            }
+        }
 
         registry.stop();
 
@@ -4620,8 +4659,24 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert_eq!(
             status.and_then(|status| std::os::unix::process::ExitStatusExt::signal(&status)),
             Some(libc::SIGKILL),
-            "the escaped process of a reaped scan's tree survived the stop: {status:?}"
+            "the escaped process of a scan whose supervisor left survived the stop: {status:?}"
         );
+    }
+
+    /// Mutation this catches: the token released when `try_reap`
+    /// deregisters the supervisor, rather than after the scan's sweep.
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_sweeps_the_token_of_a_scan_whose_supervisor_is_already_reaped() {
+        stop_after_the_supervisor_leaves(SupervisorExit::Reaped);
+    }
+
+    /// Mutation this catches: the token released when `forget` drops the
+    /// supervisor at the scan's bound, rather than after the scan's sweep.
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_sweeps_the_token_of_a_scan_whose_supervisor_was_forgotten() {
+        stop_after_the_supervisor_leaves(SupervisorExit::Forgotten);
     }
 
     /// A helper that answers and exits 0 still takes the child it left in its
