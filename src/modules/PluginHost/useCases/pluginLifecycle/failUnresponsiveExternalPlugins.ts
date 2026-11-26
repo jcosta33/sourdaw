@@ -7,7 +7,7 @@ import {
 } from '../../stores/externalPluginActivationStore';
 
 import { loadedExternalInstancePluginIds } from './loadedExternalInstances';
-import { pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { letGoKeyedUnloadGenerations, pendingKeyedUnloadGenerations, pendingKeyedUnloads } from './pendingKeyedUnloads';
 import { pluginUnresponsiveMessage } from './pluginUnresponsiveMessage';
 
 /**
@@ -18,14 +18,15 @@ import { pluginUnresponsiveMessage } from './pluginUnresponsiveMessage';
  * once its control gate outlives its own deadline. Each slot shows the
  * unresponsive message, and the user is told by plugin name. A keyed unload
  * among those calls is let go with them, so a reactivation loads afresh rather
- * than waiting on an unload that may never settle. Only an unload admitted
- * before the fence (`admittedUnloads`, read when the fence began) is let go: one
- * scheduled while the fence stood has not reached the plugin yet and still owns
- * the instance, so a reactivation must keep waiting for it.
+ * than waiting on an unload that may never settle, and its late answer writes
+ * nothing onto that reactivation. Only the unloads admitted before the fence
+ * (`admittedUnloads`, the generations pending when the fence began) are let go:
+ * one scheduled while the fence stood has not reached the plugin yet and still
+ * owns the instance, so a reactivation must keep waiting for it.
  */
 export function failUnresponsiveExternalPlugins(
     instanceIds: ReadonlySet<string>,
-    admittedUnloads: ReadonlyMap<string, Promise<void>>
+    admittedUnloads: ReadonlyMap<string, number>
 ): void {
     for (const instanceId of instanceIds) {
         letGoOfAdmittedUnload(instanceId, admittedUnloads.get(instanceId));
@@ -43,8 +44,12 @@ export function failUnresponsiveExternalPlugins(
     }
 }
 
-function letGoOfAdmittedUnload(instanceId: string, admitted: Promise<void> | undefined): void {
-    if (admitted !== undefined && pendingKeyedUnloads.get(instanceId) === admitted) {
+function letGoOfAdmittedUnload(instanceId: string, admittedGeneration: number | undefined): void {
+    if (admittedGeneration === undefined) {
+        return;
+    }
+    letGoKeyedUnloadGenerations.set(instanceId, admittedGeneration);
+    if (pendingKeyedUnloadGenerations.get(instanceId) === admittedGeneration) {
         pendingKeyedUnloads.delete(instanceId);
     }
 }

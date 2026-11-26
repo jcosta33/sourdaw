@@ -164,6 +164,50 @@ describe('ProcessorParams', () => {
         expect(screen.getByText('Pitch')).toBeInTheDocument();
     });
 
+    it('shows saved repeater values and routes a keyboard edit with the processor identity', () => {
+        const onSetParam = vi.fn();
+        const onCommand = vi.fn();
+        const { rerender } = render(
+            <ProcessorParams
+                processorId="repeater-saved"
+                processorType="repeater"
+                params={{ repeat_count: 5, decay: 0.37 }}
+                onSetParam={onSetParam}
+                onCommand={onCommand}
+            />
+        );
+
+        const repeats = screen.getByRole('slider', { name: 'Repeats' });
+        const decay = screen.getByRole('slider', { name: 'Decay' });
+        expect(repeats).toHaveAttribute('aria-valuenow', '5');
+        expect(decay).toHaveAttribute('aria-valuenow', '0.37');
+
+        fireEvent.keyDown(decay, { key: 'ArrowUp' });
+
+        expect(onSetParam).toHaveBeenCalledTimes(1);
+        expect(onSetParam).toHaveBeenCalledWith('repeater-saved', 'decay', 0.38, false);
+
+        onSetParam.mockClear();
+        rerender(
+            <ProcessorParams
+                processorId="repeater-saved"
+                processorType="repeater"
+                params={{ repeat_count: 5, decay: 0.62 }}
+                onSetParam={onSetParam}
+                onCommand={onCommand}
+            />
+        );
+
+        expect(screen.getByRole('slider', { name: 'Decay' })).toBe(decay);
+        expect(repeats).toHaveAttribute('aria-valuenow', '5');
+        expect(decay).toHaveAttribute('aria-valuenow', '0.62');
+
+        fireEvent.keyDown(decay, { key: 'ArrowUp' });
+
+        expect(onSetParam).toHaveBeenCalledTimes(1);
+        expect(onSetParam).toHaveBeenCalledWith('repeater-saved', 'decay', 0.63, false);
+    });
+
     it('renders the velocity processor controls and routes mode/curve changes', () => {
         const { onSetParam } = renderFor('velocity');
         selectChange('Mode', 'Curve');
@@ -201,6 +245,50 @@ describe('ProcessorParams', () => {
         expect(screen.getByText('Hits')).toBeInTheDocument();
         expect(screen.getByText('Steps')).toBeInTheDocument();
         expect(screen.getByText('Rotate')).toBeInTheDocument();
+    });
+
+    it('shows saved Euclidean values including zero and routes a keyboard edit with the processor identity', () => {
+        const onSetParam = vi.fn();
+        const onCommand = vi.fn();
+        const { rerender } = render(
+            <ProcessorParams
+                processorId="euclidean-saved"
+                processorType="euclidean"
+                params={{ hits: 3, rotation: 7 }}
+                onSetParam={onSetParam}
+                onCommand={onCommand}
+            />
+        );
+
+        const hits = screen.getByRole('slider', { name: 'Hits' });
+        const rotate = screen.getByRole('slider', { name: 'Rotate' });
+        expect(hits).toHaveAttribute('aria-valuenow', '3');
+        expect(rotate).toHaveAttribute('aria-valuenow', '7');
+
+        fireEvent.keyDown(hits, { key: 'ArrowUp' });
+
+        expect(onSetParam).toHaveBeenCalledTimes(1);
+        expect(onSetParam).toHaveBeenCalledWith('euclidean-saved', 'hits', 4, false);
+
+        onSetParam.mockClear();
+        rerender(
+            <ProcessorParams
+                processorId="euclidean-saved"
+                processorType="euclidean"
+                params={{ hits: 0, rotation: 7 }}
+                onSetParam={onSetParam}
+                onCommand={onCommand}
+            />
+        );
+
+        expect(screen.getByRole('slider', { name: 'Hits' })).toBe(hits);
+        expect(hits).toHaveAttribute('aria-valuenow', '0');
+        expect(rotate).toHaveAttribute('aria-valuenow', '7');
+
+        fireEvent.keyDown(hits, { key: 'ArrowUp' });
+
+        expect(onSetParam).toHaveBeenCalledTimes(1);
+        expect(onSetParam).toHaveBeenCalledWith('euclidean-saved', 'hits', 1, false);
     });
 
     it('renders the markov controls and the hold-notes hint', () => {

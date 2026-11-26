@@ -50,6 +50,13 @@ export type PluginInstance = {
      */
     tail_samples: number;
     /**
+     * Where that load-time tail read falls in the one order the native host
+     * takes every tail it reports in; see `PluginTailChange.sequence`. A figure
+     * numbered at or below it was read before this load, so it belongs to an
+     * earlier instance that held the same id.
+     */
+    tail_sequence: number;
+    /**
      * The id this instance was given inside the native audio engine, or `null`
      * when the load succeeded but no engine was running to attach it to.
      *
@@ -83,6 +90,12 @@ export type PluginTailChange = {
     instance_id: string;
     /** Frames at the activation rate; see `PluginInstance.tail_samples`. */
     tail_samples: number;
+    /**
+     * Where this figure falls in the one order the native host takes every tail
+     * it reports in, events and read answers alike: a larger sequence was read
+     * later. Below 2^53, so a JSON number carries it exactly.
+     */
+    sequence: number;
 };
 
 /**
@@ -94,7 +107,20 @@ export type PluginTailReading = {
     instance_id: string;
     /** Frames at the activation rate; see `PluginInstance.tail_samples`. */
     tail_samples: number;
+    /**
+     * Where this figure falls in the one order the native host takes every tail
+     * it reports in, events and read answers alike: a larger sequence was read
+     * later. Below 2^53, so a JSON number carries it exactly.
+     */
+    sequence: number;
 };
+
+/**
+ * What `readPluginTails` came back with. A host that did not answer in time is
+ * its own outcome, not an empty answer: an empty answer means the host reached
+ * no instance, which is worth asking again, and a silent host is not.
+ */
+export type PluginTailReadResult = { kind: 'answered'; readings: PluginTailReading[] } | { kind: 'timed-out' };
 
 /**
  * Payload of `plugin-gui-closed`, pushed when the OS ended a plugin editor
