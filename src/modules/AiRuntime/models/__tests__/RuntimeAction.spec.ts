@@ -320,6 +320,10 @@ const RETIRED_RUNTIME_ACTION_TYPES = [
     'createFolder',
     'groupTracks',
     'ungroupTracks',
+    'createTrackAlternative',
+    'switchTrackAlternative',
+    'renameTrackAlternative',
+    'deleteTrackAlternative',
 ] as const;
 
 describe('RuntimeAction', () => {
@@ -361,7 +365,7 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(214);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(210);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).not.toContain('stemSeparate');
@@ -369,7 +373,7 @@ describe('RuntimeAction', () => {
         expect(RUNTIME_ACTION_TYPES).toContain('automateParameterRange');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
         expect(RUNTIME_ACTION_TYPES).toContain('editMidiNotes');
-        expect(digest >>> 0).toBe(4_183_679_757);
+        expect(digest >>> 0).toBe(2_597_075_016);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {

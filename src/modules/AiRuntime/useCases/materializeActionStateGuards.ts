@@ -54,10 +54,6 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     addTrack: materializeAddedTrack,
     removeTrack: passThrough,
     renameTrack: passThrough,
-    createTrackAlternative: passThrough,
-    switchTrackAlternative: passThrough,
-    renameTrackAlternative: passThrough,
-    deleteTrackAlternative: passThrough,
     selectTrack: passThrough,
     muteTrack: (action, state) =>
         guardTrackAction(state, action.payload.trackId, (track) => ({

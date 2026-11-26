@@ -381,8 +381,6 @@ const validators = {
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>
         isObj(param) && isString(param.trackId) && isString(param.name),
     duplicateTrack: hasTrackId,
-    deleteTrackAlternative: (param): param is PayloadOf<'deleteTrackAlternative'> =>
-        isObj(param) && isString(param.trackId) && isString(param.alternativeId),
     freezeTrack: hasTrackId,
     unfreezeTrack: hasTrackId,
     flattenTrack: hasTrackId,
@@ -1308,9 +1306,6 @@ const validators = {
     labelUndoBranch: 'unchecked',
 
     // Track alternatives
-    createTrackAlternative: 'unchecked',
-    switchTrackAlternative: 'unchecked',
-    renameTrackAlternative: 'unchecked',
 
     // Setlist / session
     nextSetlistItem: 'unchecked',
