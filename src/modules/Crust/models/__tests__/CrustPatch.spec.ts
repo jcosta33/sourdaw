@@ -37,11 +37,8 @@ describe('asCrustOversampleFactor', () => {
     });
 
     it('never refuses what the delivery law hands it, anywhere in the declared range', () => {
-        // This is what lets `loadCrustPatchWithAudio` treat `null` as "leave the
-        // value alone" instead of substituting a default it made up: the null
-        // branch is unreachable in production, and this is the proof rather than
-        // the assumption. It reds if the descriptor's legal set and
-        // CRUST_OVERSAMPLE_FACTORS ever stop being the same set.
+        // This proves the descriptor's legal set and the patch model's allowed
+        // factors stay aligned across the full range emitted by the descriptor.
         const declared = getPluginById('crust')?.parameters.find((parameter) => parameter.id === 'oversampling');
         expect(declared, 'crust/oversampling is not in the plugin registry').toBeDefined();
 

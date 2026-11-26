@@ -1288,6 +1288,36 @@ fn a_plugin_under_an_ungranted_folder_is_refused_by_the_offline_re_vet() {
     );
 }
 
+/// An instance live-loaded before a scan quarantined its binary is not
+/// rebuilt offline from that binary: the export is refused by name.
+#[test]
+fn a_plugin_quarantined_after_its_live_load_refuses_the_render_by_name() {
+    let fx = InstalledFx::create("quarantined-after-load");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    state.plugin_registry_store.quarantine_failure(
+        fx.path(Format::Clap),
+        "Plugin scan helper timed out".to_string(),
+        1,
+    );
+    let ui = RecordingUiThread::start();
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect_err("a quarantined binary is never printed through");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("a plugin scan quarantined it (Plugin scan helper timed out)"),
+        "{refusal}"
+    );
+}
+
 #[test]
 fn an_unreadable_live_state_refuses_the_render_by_name_and_builds_nothing() {
     let fx = InstalledFx::create("unreadable-state");

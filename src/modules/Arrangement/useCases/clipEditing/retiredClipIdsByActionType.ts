@@ -103,6 +103,7 @@ const retiredClipIdsByActionType: {
     setGrandBouleDeviceState: retiresNoClip,
     setToasterFactoryKit: retiresNoClip,
     setBacteriaFactoryPatch: retiresNoClip,
+    setCrustFactoryPreset: retiresNoClip,
     setGlutenFactoryPreset: retiresNoClip,
     setProofPatchSelection: retiresNoClip,
     createBus: retiresNoClip,

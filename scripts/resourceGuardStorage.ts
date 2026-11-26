@@ -93,14 +93,15 @@ function parseLsofFile(
     fields: string[],
     knownTypes: Set<string>,
     pid: number,
-    report: (reason: string, detail?: string) => void
+    report: (reason: string, detail?: string, pid?: number) => void
 ): { path?: string; missingType: boolean } | undefined {
     const unavailable = (reason: string) => {
         report(reason);
         return undefined;
     };
-    // macOS lsof prints descriptors numbered 10000 and above as `*` plus the last three digits.
-    if (!/^f(?:\d+|\*\d{3}|cwd|twd|txt|mem|rtd|pd|fp\.)$/.test(fields[0] ?? '')) {
+    // macOS lsof prints descriptors numbered 10000 and above as `*` plus the last three digits,
+    // and a refused descriptor table as the `err` pseudo-descriptor.
+    if (!/^f(?:\d+|\*\d{3}|cwd|twd|txt|mem|rtd|pd|fp\.|err)$/.test(fields[0] ?? '')) {
         return unavailable('invalid-descriptor');
     }
     const type = fields.find((field) => field.startsWith('t'))?.slice(1);
@@ -114,10 +115,13 @@ function parseLsofFile(
     ) {
         return unavailable('invalid-file-fields');
     }
-    const inspectionMatch = name === undefined ? undefined : lsofInspectionMatch(name, type);
+    const inspectionMatch = lsofInspectionMatch(name, type);
     if (inspectionMatch !== undefined) {
-        report('file-inspection-diagnostic', describeLsofInspection(pid, fields[0], type, name, inspectionMatch));
+        report('file-inspection-diagnostic', describeLsofInspection(pid, fields[0], type, name, inspectionMatch), pid);
         return undefined;
+    }
+    if (fields[0] === 'ferr') {
+        return unavailable('invalid-descriptor');
     }
     if (type === undefined && (fields.length !== 2 || name === undefined || name === '')) {
         return unavailable('invalid-file-fields');
@@ -133,7 +137,7 @@ function parseLsofFile(
 
 export function parseLsofCensus(
     output: string,
-    report: (reason: string, detail?: string) => void = () => {}
+    report: (reason: string, detail?: string, pid?: number) => void = () => {}
 ): { pids: Set<number>; paths: string[] } | undefined {
     const unavailable = (reason: string) => {
         report(reason);
