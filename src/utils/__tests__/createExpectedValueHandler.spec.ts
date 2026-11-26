@@ -103,12 +103,13 @@ describe('createExpectedValueHandler', () => {
         expect(writes).toEqual([]);
     });
 
-    it('is a no-op only when the target already holds the requested value and the guard holds', () => {
+    it('is a no-op exactly when the target already holds the requested value, whatever the guard expects', () => {
         const { handler } = createFixture({ a: 'same' });
 
         expect(handler.isNoop?.(rename('same'))).toBe(true);
         expect(handler.isNoop?.(rename('same', 'same'))).toBe(true);
-        expect(handler.isNoop?.(rename('same', 'other'))).toBe(false);
+        expect(handler.isNoop?.(rename('same', 'other'))).toBe(true);
+        expect(handler.isNoop?.(rename('different', 'same'))).toBe(false);
         expect(handler.isNoop?.(rename('different'))).toBe(false);
         expect(createFixture({}).handler.isNoop?.(rename('same'))).toBe(false);
     });
