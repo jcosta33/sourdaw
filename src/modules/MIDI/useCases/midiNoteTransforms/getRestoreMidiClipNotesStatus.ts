@@ -61,6 +61,30 @@ function readLiveNoteTransformReplayTarget(trackId: string, clipId: string): Not
     return target;
 }
 
+function noteTransformReplayMatches({
+    clipId,
+    noteTransformReplayGuard: guard,
+    projectedNoteTransformReplayTarget,
+}: Pick<
+    GetRestoreMidiClipNotesStatusInput,
+    'clipId' | 'noteTransformReplayGuard' | 'projectedNoteTransformReplayTarget'
+>): boolean {
+    if (!guard) {
+        return true;
+    }
+    if (guard.requiresEditableBaseClip && !findEditableBaseMidiClip(clipId, guard.trackId)) {
+        return false;
+    }
+    const target = projectedNoteTransformReplayTarget ?? readLiveNoteTransformReplayTarget(guard.trackId, clipId);
+    return (
+        target !== undefined &&
+        target.trackId === guard.trackId &&
+        target.trackFrozen === guard.expectedTrackFrozen &&
+        target.clipLocked === guard.expectedClipLocked &&
+        (guard.expectedTempo === undefined || transportStore.value?.tempo === guard.expectedTempo)
+    );
+}
+
 export function getRestoreMidiClipNotesStatus({
     clipId,
     notes,
@@ -109,32 +133,8 @@ export function getRestoreMidiClipNotesStatus({
             return 'conflict';
         }
     }
-    if (noteTransformReplayGuard) {
-        if (
-            noteTransformReplayGuard.requiresEditableBaseClip &&
-            !findEditableBaseMidiClip(clipId, noteTransformReplayGuard.trackId)
-        ) {
-            return 'conflict';
-        }
-        const replayTarget =
-            projectedNoteTransformReplayTarget ??
-            readLiveNoteTransformReplayTarget(noteTransformReplayGuard.trackId, clipId);
-        if (!replayTarget) {
-            return 'conflict';
-        }
-        if (
-            replayTarget.trackId !== noteTransformReplayGuard.trackId ||
-            replayTarget.trackFrozen !== noteTransformReplayGuard.expectedTrackFrozen ||
-            replayTarget.clipLocked !== noteTransformReplayGuard.expectedClipLocked
-        ) {
-            return 'conflict';
-        }
-        if (
-            noteTransformReplayGuard.expectedTempo !== undefined &&
-            transportStore.value?.tempo !== noteTransformReplayGuard.expectedTempo
-        ) {
-            return 'conflict';
-        }
+    if (!noteTransformReplayMatches({ clipId, noteTransformReplayGuard, projectedNoteTransformReplayTarget })) {
+        return 'conflict';
     }
     const storedNotes = projectedNotes ?? state.notesByClipId[clipId];
     const storedNotesPresent = projectedNotesBucketPresent ?? Object.hasOwn(state.notesByClipId, clipId);
