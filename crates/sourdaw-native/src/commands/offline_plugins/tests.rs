@@ -13,7 +13,9 @@
 
 use super::*;
 use crate::block_on_test;
-use crate::commands::graph::{render_graph_offline_with, OfflineRenderHead, OfflineRenderRequest};
+use crate::commands::graph::{
+    render_graph_offline_with, OfflineRenderHead, OfflineRenderRequest, MAX_OFFLINE_RENDER_FRAMES,
+};
 use crate::commands::plugins::{
     create_hosted_runtime, read_plugin_state_chunk, VettedRegistryEntry,
 };
@@ -913,6 +915,48 @@ fn a_trimmed_clap_print_starts_on_the_masters_timeline_frame_zero() {
 #[test]
 fn a_trimmed_vst3_print_starts_on_the_masters_timeline_frame_zero() {
     a_trimmed_print_starts_on_the_masters_timeline_frame_zero_in(Format::Vst3);
+}
+
+/// A trimmed print whose requested frames sit on the ceiling, behind a hosted
+/// instance that declares latency, is refused as a head past the ceiling —
+/// the distinct refusal the caller answers by rendering elsewhere — before a
+/// block renders.
+fn a_trimmed_print_whose_head_passes_the_ceiling_is_refused_as_such_in(format: Format) {
+    let fx = InstalledFx::create(&format!("pdc-head-ceiling-{format:?}"));
+    let (state, _live) = state_with_live_fx(&fx, format);
+    let ui = RecordingUiThread::start();
+    let seams = fx.seams();
+    let frames = u32::try_from(MAX_OFFLINE_RENDER_FRAMES).expect("the ceiling fits a u32");
+
+    let refusal = render_frames_from(
+        batch(impulse_track(json!([fx_device()]))),
+        frames,
+        OfflineRenderHead::MasterCompensationTrimmed,
+        &state,
+        &ui,
+        &seams,
+        None,
+    )
+    .expect_err("the head takes the print past the ceiling");
+
+    assert_eq!(
+        refusal,
+        format!(
+            "offline-render-head-past-ceiling: frame count {MAX_OFFLINE_RENDER_FRAMES} plus the \
+             {LATENCY_FRAMES}-frame compensation head exceeds the offline render ceiling of \
+             {MAX_OFFLINE_RENDER_FRAMES}"
+        )
+    );
+}
+
+#[test]
+fn a_trimmed_clap_print_whose_head_passes_the_ceiling_is_refused_as_such() {
+    a_trimmed_print_whose_head_passes_the_ceiling_is_refused_as_such_in(Format::Clap);
+}
+
+#[test]
+fn a_trimmed_vst3_print_whose_head_passes_the_ceiling_is_refused_as_such() {
+    a_trimmed_print_whose_head_passes_the_ceiling_is_refused_as_such_in(Format::Vst3);
 }
 
 #[test]

@@ -48,7 +48,11 @@
  *   - **Render phase.** `backend.render` catches nothing. Every batch was
  *     accepted whole by then, so a failure there describes the render request
  *     or the runtime, and falling back would hide it behind a second render
- *     that silently succeeded.
+ *     that silently succeeded. The one exception is a trimmed render whose
+ *     compensation head takes it past the engine's frame ceiling
+ *     (`offline-render-head-past-ceiling`): the selection gate cannot see
+ *     that head, which includes hosted plugin latency, so the refusal
+ *     declines exactly as the gate would have.
  *
  * A clip whose loop expansion is past the strip's remaining native clip
  * capacity is a third case, and it is neither: `admitNativeClipExpansion`
@@ -77,7 +81,6 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
-import { createExportError } from '../../errors/ExportError';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
@@ -86,7 +89,7 @@ import {
 } from '../../models/AudioGraphBackend';
 import { STEREO_CHANNEL_COUNT } from '../../models/ChannelLaw';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
-import { isNativeOfflineRenderCancelled } from '../../repositories/nativeGraph/isNativeOfflineRenderCancelled';
+import { type PlanarStereo } from '../../repositories/nativeGraph/deinterleaveStereoPcm';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
@@ -103,6 +106,7 @@ import { nativeDeviceParameterLaw } from '../livePlayback/nativeDeviceParameterL
 import { projectDeviceForNativeBody } from '../livePlayback/projectDeviceForNativeBody';
 
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeClipExpansion';
+import { answerNativeRenderFailure } from './answerNativeRenderFailure';
 import { automationWriteCommand } from './automationWriteCommand';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
@@ -188,16 +192,6 @@ function writeCommands(
     writes: readonly AudioGraphParameterWrite[]
 ): AudioGraphCommand[] {
     return writes.map((write) => automationWriteCommand(target, write));
-}
-
-/**
- * What a failed native render throws: the export's own `Export cancelled` when
- * this export's cancel stopped it — the flag or signal `checkCancel` reads, or
- * the native side's own cancelled refusal — and the failure itself otherwise.
- */
-function nativeRenderFailure(error: unknown, abortSignal: AbortSignal | undefined): unknown {
-    checkCancel(abortSignal);
-    return isNativeOfflineRenderCancelled(error) ? createExportError('Export cancelled', error) : error;
 }
 
 /**
@@ -571,11 +565,16 @@ export async function renderOfflineWithNativeEngine(
         checkCancel(abortSignal);
         onProgress?.(0.5);
 
-        const { left, right } = await backend
-            .render(frameCount, { abortSignal, printsCompensationHead: input.printsCompensationHead ?? false })
-            .catch((error: unknown) => {
-                throw nativeRenderFailure(error, abortSignal);
+        let rendered: PlanarStereo;
+        try {
+            rendered = await backend.render(frameCount, {
+                abortSignal,
+                printsCompensationHead: input.printsCompensationHead ?? false,
             });
+        } catch (error: unknown) {
+            return answerNativeRenderFailure(error, abortSignal);
+        }
+        const { left, right } = rendered;
         checkCancel(abortSignal);
         // The master level is the web path's `masterGain` node, applied here
         // in the one place the native render's output crosses back.

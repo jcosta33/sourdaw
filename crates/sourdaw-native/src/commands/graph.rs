@@ -251,6 +251,13 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// twice over.
 pub(super) const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
+/// The text a trimmed render starts with when its requested frames fit the
+/// ceiling but the master's compensation head rendered ahead of them does not.
+/// The caller cannot see that head, so it answers this one by rendering
+/// elsewhere (`isNativeOfflineRenderHeadPastCeiling.ts`). A seam contract —
+/// never reword one side alone.
+pub(super) const OFFLINE_RENDER_HEAD_PAST_CEILING: &str = "offline-render-head-past-ceiling";
+
 /// The sample rates an offline render accepts, in Hz. A plugin is activated at
 /// the export rate, so a rate no plugin supports is refused before any state is
 /// read or any instance is built, rather than handed to the plugin.
@@ -6717,8 +6724,9 @@ fn render_offline_ops(
     };
     let rendered_frames = frames + head_frames;
     if rendered_frames > MAX_OFFLINE_RENDER_FRAMES {
-        return Err(GraphRefusal::OfflineFrameCountTooLarge {
-            frames: rendered_frames,
+        return Err(GraphRefusal::OfflineHeadPastCeiling {
+            frames,
+            head_frames,
         });
     }
 

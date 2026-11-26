@@ -322,6 +322,23 @@ function printingNativeTransport(requests: RenderGraphOfflineInput[]): NativeGra
     });
 }
 
+/**
+ * A native engine double that refuses every render with `refusal`, prefixed
+ * the way the desktop IPC prefixes a rejected invoke.
+ */
+function refusingNativeTransport(requests: RenderGraphOfflineInput[], refusal: string): NativeGraphTransport {
+    const transport = printingNativeTransport(requests);
+    return {
+        ...transport,
+        renderGraphOffline: (input) => {
+            requests.push(input);
+            return Promise.reject(
+                new Error(`Error invoking remote method 'sourdaw:invoke:render_graph_offline': Error: ${refusal}`)
+            );
+        },
+    };
+}
+
 const exportOptions = { durationBeats: REGION_SECONDS, sampleRate: SAMPLE_RATE, tailSeconds: 0 };
 
 describe('an export prints its latency compensation from the head', () => {
@@ -406,6 +423,62 @@ describe('an export prints its latency compensation from the head', () => {
         expect(requests[0]).toMatchObject({ frames: OUTPUT_FRAMES, printsCompensationHead: true });
         expect(rendered.length).toBe(OUTPUT_FRAMES);
         expect(soundingSpan(rendered)?.first).toBe(CLIP_START_SECONDS * SAMPLE_RATE);
+    });
+
+    it('keeps an agent section render on its base span, compensation and all', async () => {
+        const rendered = await renderOfflineInput(captureOfflineRenderInput(exportOptions), {
+            lockHolder: 'agent-section-render',
+        });
+
+        expect(createdContextFrames).toEqual([OUTPUT_FRAMES]);
+        expect(rendered.length).toBe(OUTPUT_FRAMES);
+        expect(soundingSpan(rendered)).toEqual({
+            first: (CLIP_START_SECONDS + LATENCY_SECONDS) * SAMPLE_RATE,
+            last: OUTPUT_FRAMES - 1,
+        });
+    });
+
+    it('declines to Web Audio, warning, when the engine head takes the native print past its frame ceiling', async () => {
+        const requests: RenderGraphOfflineInput[] = [];
+        const warnings: string[] = [];
+        mocks.selectOfflineRenderEngine.mockResolvedValue({
+            engine: 'native/offline',
+            transport: refusingNativeTransport(
+                requests,
+                'offline-render-head-past-ceiling: frame count 28800000 plus the 512-frame compensation head ' +
+                    'exceeds the offline render ceiling of 28800000'
+            ),
+        });
+
+        const rendered = await renderOffline({ ...exportOptions, onWarning: (message) => warnings.push(message) });
+
+        expect(requests).toHaveLength(1);
+        expect(warnings).toEqual([
+            'The native engine declined this export (its printed compensation head takes it past the native ' +
+                "render's frame ceiling); rendering through Web Audio.",
+        ]);
+        expect(createdContextFrames).toEqual([HEAD_FRAMES + OUTPUT_FRAMES]);
+        expect(rendered.length).toBe(OUTPUT_FRAMES);
+        expect(soundingSpan(rendered)).toEqual({
+            first: CLIP_START_SECONDS * SAMPLE_RATE,
+            last: CLIP_END_SECONDS * SAMPLE_RATE - 1,
+        });
+    });
+
+    it('still fails a native export the engine refuses for its requested frames alone', async () => {
+        const requests: RenderGraphOfflineInput[] = [];
+        mocks.selectOfflineRenderEngine.mockResolvedValue({
+            engine: 'native/offline',
+            transport: refusingNativeTransport(
+                requests,
+                'Frame count 28800001 exceeds the offline render ceiling of 28800000'
+            ),
+        });
+
+        await expect(renderOffline(exportOptions)).rejects.toThrow(
+            'Frame count 28800001 exceeds the offline render ceiling of 28800000'
+        );
+        expect(createdContextFrames).toEqual([]);
     });
 
     it('renders an agent measurement natively from the engine head, untrimmed', async () => {
