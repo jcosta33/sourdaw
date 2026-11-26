@@ -31,7 +31,7 @@ import { readFamilyStatement, type FamilyStatement } from './readFamilyStatement
 import { readOnce } from './readOnce';
 import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
-import { scopeToInstruction } from './scopeToInstruction';
+import { scopeToInstruction, type BackReference } from './scopeToInstruction';
 
 /*
  * Compiled target authority (#5295).
@@ -490,17 +490,34 @@ function statesTracks(text: string, context: ProjectContext): boolean {
 /** "them", "their" or "those", which refer back to the tracks an earlier instruction states. */
 const PLURAL_BACK_REFERENCE = /\b(?:them|their|those)\b/iu;
 
+/** "these" or "both", which refer back only when no track named after them is what they point at. */
+const LIST_BACK_REFERENCE = /\b(?:these|both)\b/iu;
+
+/** Where a list word refers back: "pan both left", never "pan both Vocals and Keys left". */
+function findListBackReference(masked: string, instruction: string, context: ProjectContext): number | undefined {
+    const match = LIST_BACK_REFERENCE.exec(masked);
+    if (match === null || statesTracks(instruction.slice(match.index + match[0].length), context)) {
+        return undefined;
+    }
+    return match.index;
+}
+
 /**
- * Where the instruction first refers back with "it", "its", "them", "their", "those" or "that track",
- * outside every object name.
+ * Where the instruction first refers back to earlier tracks, outside every object name, and whether
+ * it refers to several ("them", "their", "those", "these", "both") or one ("it", "its", "that track").
  */
-function findBackReference(instruction: string, context: ProjectContext): number | undefined {
+function findBackReference(instruction: string, context: ProjectContext): BackReference | undefined {
     const masked = maskObjectNames(instruction, context);
-    const pronoun = SELECTION_PRONOUN.exec(masked)?.index;
-    const plural = PLURAL_BACK_REFERENCE.exec(masked)?.index;
-    const demonstrative = DEMONSTRATIVE_TRACK_REFERENCE.exec(normalizeAgentReferenceText(instruction))?.index;
-    const positions = [pronoun, plural, demonstrative].filter((position) => position !== undefined);
-    return positions.length === 0 ? undefined : Math.min(...positions);
+    const references: { index: number | undefined; plural: boolean }[] = [
+        { index: SELECTION_PRONOUN.exec(masked)?.index, plural: false },
+        { index: DEMONSTRATIVE_TRACK_REFERENCE.exec(normalizeAgentReferenceText(instruction))?.index, plural: false },
+        { index: PLURAL_BACK_REFERENCE.exec(masked)?.index, plural: true },
+        { index: findListBackReference(masked, instruction, context), plural: true },
+    ];
+    return references
+        .flatMap(({ index, plural }) => (index === undefined ? [] : [{ index, plural }]))
+        .toSorted((left, right) => left.index - right.index)
+        .at(0);
 }
 
 /** The whole request with its restrictions and the values the batch writes blanked. */

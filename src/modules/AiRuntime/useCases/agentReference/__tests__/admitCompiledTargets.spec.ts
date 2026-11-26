@@ -338,6 +338,21 @@ describe('a compiled pick reads the request less the other instructions that nam
             ).toEqual(UNAUTHORIZED);
         });
 
+        it.each([
+            ['Mute Vocals. Mute Keys. Pan them left.', 'Pan them left', 'Vocals', ADMITTED],
+            ['Mute Vocals. Mute Keys. Pan them left.', 'Pan them left', 'Keys', ADMITTED],
+            ['Mute Vocals. Mute Keys. Pan it left.', 'Pan it left', 'Vocals', UNAUTHORIZED],
+            ['Mute Vocals. Mute Keys. Pan it left.', 'Pan it left', 'Keys', ADMITTED],
+            ['Mute Vocals, then mute Keys, then pan both left', 'pan both left', 'Vocals', ADMITTED],
+            ['Mute Vocals, then pan both Keys and Drums left', 'pan both Keys and Drums left', 'Vocals', UNAUTHORIZED],
+        ])('reads "%s" for the "%s" call on %s', (prompt, clause, name, verdict) => {
+            expect(
+                admitPick(prompt, clause, (instruction) =>
+                    pickTerms(trackNamed(name), [`track-${name.toLowerCase()}`], instruction)
+                )
+            ).toEqual(verdict);
+        });
+
         it('admits Vocals for "Mute Vocals, then set the tempo to 120, then pan them left"', () => {
             const prompt = 'Mute Vocals, then set the tempo to 120, then pan them left';
 
