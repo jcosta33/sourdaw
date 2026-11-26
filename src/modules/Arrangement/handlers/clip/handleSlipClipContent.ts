@@ -142,34 +142,29 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
                 offset: previousOffset,
                 expectedOffset: slippedMidiOffset(action.payload, clip),
             };
-            if (action.payload.clipType === 'midi') {
-                // The forward slip's raising wrap lifts the stored rows; the
-                // undo must un-lift them or the restored clip keeps its rows a
-                // loop above the unmoved window and plays total silence
-                // (#5198). Capture the lift the forward pass is about to
-                // apply — computed from the same pre-action clip the offset
-                // reads — carried negative, zero included: the replay keys
-                // verbatim restoration on the key's presence, so omitting it
-                // at lift 0 would send the undo through the fresh-action wrap
-                // law, re-wrapping a captured figure that is not a phase of
-                // the live loop config instead of restoring it.
-                const lift = slipWrapRowLiftBeats({
-                    loopEnabled: clip.loopEnabled ?? false,
-                    clipDurationBeats: clip.endBeat - clip.startBeat,
-                    configuredLoopLengthBeats: clip.loopLength,
-                    offsetBeats: action.payload.offset,
-                });
-                inversePayload.rowLiftBeats = lift === 0 ? 0 : -lift;
-            }
+            // The forward slip's raising wrap lifts the stored rows; the
+            // undo must un-lift them or the restored clip keeps its rows a
+            // loop above the unmoved window and plays total silence
+            // (#5198). Capture the lift the forward pass is about to
+            // apply — computed from the same pre-action clip the offset
+            // reads — carried negative, zero included: the replay keys
+            // verbatim restoration on the key's presence, so omitting it
+            // at lift 0 would send the undo through the fresh-action wrap
+            // law, re-wrapping a captured figure that is not a phase of
+            // the live loop config instead of restoring it.
+            const lift = slipWrapRowLiftBeats({
+                loopEnabled: clip.loopEnabled ?? false,
+                clipDurationBeats: clip.endBeat - clip.startBeat,
+                configuredLoopLengthBeats: clip.loopLength,
+                offsetBeats: action.payload.offset,
+            });
+            inversePayload.rowLiftBeats = lift === 0 ? 0 : -lift;
             const inverseAction = { type: 'slipClipContent' as const, payload: inversePayload };
             const redoAction = {
                 type: 'slipClipContent' as const,
                 payload: { ...structuredClone(action.payload), expectedOffset: previousOffset },
             };
-            if (action.payload.clipType === 'midi') {
-                return { label, ...rowReplay.describe(action, inverseAction, redoAction) };
-            }
-            return { label, inverseAction, redoAction };
+            return { label, ...rowReplay.describe(action, inverseAction, redoAction) };
         } catch {
             return { label, inverseAction: null };
         }
