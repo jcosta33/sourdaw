@@ -180,6 +180,10 @@ function captureReorder({ before, after, rebind, proof }: Reorder) {
     );
 }
 
+function assertNever(_change: never): never {
+    throw new Error('Unknown device history change');
+}
+
 export function captureDeviceHistoryCommitValidation(change: Change) {
     switch (change.kind) {
         case 'remove':
@@ -188,5 +192,7 @@ export function captureDeviceHistoryCommitValidation(change: Change) {
             return captureRestoration(change.target, change.removed, change.rebind);
         case 'reorder':
             return captureReorder(change);
+        default:
+            return assertNever(change);
     }
 }
