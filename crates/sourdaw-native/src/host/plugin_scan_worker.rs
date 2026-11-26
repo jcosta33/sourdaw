@@ -1241,11 +1241,11 @@ const TREE_SUPERVISOR_TICK: Duration = Duration::from_millis(10);
 #[cfg(unix)]
 const TREE_SUPERVISOR_DEADLINE: Duration = Duration::from_secs(HELPER_DEADLINE.as_secs() + 2);
 
-/// The wall-clock bound on the tree supervisor's final sweep. A process the
-/// kernel cannot kill yet, such as one in uninterruptible sleep, holds the
-/// sweep no longer than this: it has already been sent `SIGKILL`, and dies
-/// when it wakes.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+/// The wall-clock bound on the tree supervisor's final sweep, on a scan's
+/// own sweep by tree token, and on all of a stop's token sweeps together. A
+/// process the kernel cannot kill yet, such as one in uninterruptible sleep,
+/// holds the sweep no longer than this: it has already been sent `SIGKILL`,
+/// and dies when it wakes.
 const TREE_SWEEP_BOUND: Duration = Duration::from_secs(1);
 
 /// How long the application waits, after releasing a tree supervisor at the
@@ -2338,9 +2338,12 @@ struct HelperRegistry {
 
 struct HelperRegistryState {
     stopping: bool,
-    /// Each live supervisor's pid, with its scan's tree token where it has
-    /// one ([`SCAN_TREE_TOKEN_ENV`]).
-    live: BTreeMap<u32, Option<String>>,
+    live: BTreeSet<u32>,
+    /// The tree token of every scan whose own sweep has not yet returned
+    /// ([`SCAN_TREE_TOKEN_ENV`]). A token outlives its supervisor's entry in
+    /// `live`: the scan sweeps only after the supervisor is reaped, and a
+    /// stop that lands in between must still sweep for it.
+    tree_tokens: BTreeSet<String>,
 }
 
 /// Stop exists only for a process about to exit, and a stopped scan has no
@@ -2359,7 +2362,8 @@ impl HelperRegistry {
         Self {
             state: Mutex::new(HelperRegistryState {
                 stopping: false,
-                live: BTreeMap::new(),
+                live: BTreeSet::new(),
+                tree_tokens: BTreeSet::new(),
             }),
         }
     }
@@ -2390,8 +2394,18 @@ impl HelperRegistry {
             .map_err(|error| ScanFailure::HelperUnstartable {
                 cause: error.to_string(),
             })?;
-        state.live.insert(child.id(), tree_token.map(str::to_owned));
+        state.live.insert(child.id());
+        if let Some(tree_token) = tree_token {
+            state.tree_tokens.insert(tree_token.to_owned());
+        }
         Ok(child)
+    }
+
+    /// Drop a scan's tree token once its own sweep has returned. Once
+    /// stopped, the caller parks instead, as on every other entry point.
+    fn release_tree_token(&self, tree_token: &str) {
+        let mut state = self.lock_unless_stopped();
+        state.tree_tokens.remove(tree_token);
     }
 
     /// Reap the helper if it has exited, deregistering it under the same lock.
@@ -2413,17 +2427,22 @@ impl HelperRegistry {
     }
 
     /// Kill every live helper's tree and park every later caller, so the
-    /// stopped scan never answers. A parked scan never reaches its own sweep
-    /// by tree token ([`sweep_scan_tree`]), so the stop runs it, after the
-    /// kill by parentage, for each scan that has one.
+    /// stopped scan never answers. A parked scan never finishes its own sweep
+    /// by tree token ([`sweep_scan_tree`]), so the stop sweeps, after the
+    /// kills by parentage, for every token still registered. The sweeps
+    /// share one [`TREE_SWEEP_BOUND`], so a stop with many scans live delays
+    /// the process's exit by that bound, plus one pass for each later token,
+    /// rather than by one bound per scan. A scan thread sweeping the same
+    /// token at the same time kills the same processes.
     fn stop(&self) {
         let mut state = self.lock();
         state.stopping = true;
-        for (pid, tree_token) in &state.live {
+        for pid in &state.live {
             kill_helper_tree(*pid);
-            if let Some(tree_token) = tree_token {
-                sweep_scan_tree(tree_token);
-            }
+        }
+        let deadline = Instant::now() + TREE_SWEEP_BOUND;
+        for tree_token in &state.tree_tokens {
+            sweep_scan_tree(tree_token, deadline);
         }
     }
 }
@@ -2691,8 +2710,8 @@ const SCAN_TREE_TOKEN_ENV: &str = "SOURDAW_SCAN_TREE_TOKEN";
 /// it has not already killed whose environment holds exactly `NAME=token`
 /// as soon as it has read it; once the pass is done it kills them all. A
 /// stopped process cannot fork before its kill. The sweep ends after a pass
-/// that finds nothing new, or at [`DESCENDANT_SWEEP_PASSES`] passes or
-/// [`TREE_SWEEP_BOUND`]. A killed process is a zombie whose environment no
+/// that finds nothing new, at [`DESCENDANT_SWEEP_PASSES`] passes, or after
+/// the first pass that ends past `deadline`. A killed process is a zombie whose environment no
 /// longer reads, so it drops out of later passes.
 ///
 /// Residual limits:
@@ -2713,9 +2732,8 @@ const SCAN_TREE_TOKEN_ENV: &str = "SOURDAW_SCAN_TREE_TOKEN";
 ///   accepted on [`RecordedDescendants`]. Once stopped, a process can end
 ///   only by another's kill.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn sweep_scan_tree(token: &str) {
+fn sweep_scan_tree(token: &str, deadline: Instant) {
     let entry = format!("{SCAN_TREE_TOKEN_ENV}={token}");
-    let bound = Instant::now() + TREE_SWEEP_BOUND;
     let mut killed = BTreeSet::new();
     for _ in 0..DESCENDANT_SWEEP_PASSES {
         let stopped = stop_processes_carrying(entry.as_bytes(), &killed);
@@ -2726,7 +2744,7 @@ fn sweep_scan_tree(token: &str) {
             send_signal(pid, libc::SIGKILL);
             killed.insert(pid);
         }
-        if Instant::now() >= bound {
+        if Instant::now() >= deadline {
             return;
         }
     }
@@ -2736,7 +2754,7 @@ fn sweep_scan_tree(token: &str) {
 /// by: on other Unix systems containment is the tree supervisor's alone, and
 /// on Windows the kill-on-close job bounds the whole tree.
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn sweep_scan_tree(_token: &str) {}
+fn sweep_scan_tree(_token: &str, _deadline: Instant) {}
 
 /// One pass of [`sweep_scan_tree`]: stop every process of this effective
 /// user, other than this one and those in `killed`, whose initial
@@ -2942,7 +2960,8 @@ fn run_bounded_in(
     // both still carries the scan's token.
     let report = tie.report();
     kill_orphaned_helper_group(&report);
-    sweep_scan_tree(&tree_token);
+    sweep_scan_tree(&tree_token, Instant::now() + TREE_SWEEP_BOUND);
+    registry.release_tree_token(&tree_token);
     let status = waited?;
     match tree_report_refusal(&report) {
         Some(refusal) => Err(refusal),
@@ -3535,7 +3554,7 @@ mod tests {
             r#"use std::ffi::{c_char,c_void};
 #[repr(C)] struct Version{major:u32,minor:u32,revision:u32}
 #[repr(C)] struct Entry{version:Version,init:Option<unsafe extern "C" fn(*const c_char)->bool>,deinit:Option<unsafe extern "C" fn()>,get_factory:Option<unsafe extern "C" fn(*const c_char)->*const c_void>}
-#[cfg(unix)] unsafe extern "C" { fn fork()->i32; fn setsid()->i32; fn _exit(code:i32)->!; fn kill(pid:i32,signal:i32)->i32; fn getppid()->i32; fn getpid()->i32; fn execve(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->i32; }
+#[cfg(unix)] unsafe extern "C" { fn fork()->i32; fn setsid()->i32; fn _exit(code:i32)->!; fn kill(pid:i32,signal:i32)->i32; fn getppid()->i32; fn getpid()->i32; fn getsid(pid:i32)->i32; fn execve(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->i32; }
 #[cfg(unix)] fn fork_a_lingering_child(pid_file:std::ffi::OsString){
  let marker=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_MARKER");
  let leaves_group=std::env::var_os("SOURDAW_TEST_PLUGIN_LINGER_SETSID").is_some();
@@ -3545,6 +3564,10 @@ mod tests {
   std::thread::sleep(std::time::Duration::from_secs(30));
   if let Some(marker)=marker{let _=std::fs::File::create(marker);}
   unsafe{_exit(0)}
+ }
+ if leaves_group{
+  let deadline=std::time::Instant::now()+std::time::Duration::from_secs(2);
+  while unsafe{getsid(child)==getsid(0)}&&std::time::Instant::now()<deadline{std::thread::sleep(std::time::Duration::from_millis(1));}
  }
  let _=std::fs::write(pid_file,child.to_string());
 }
@@ -4545,6 +4568,62 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         );
     }
 
+    #[cfg(unix)]
+    const TOKEN_CARRIER_ENV: &str = "SOURDAW_TEST_TOKEN_CARRIER";
+
+    /// A process that carries a scan's tree token and nothing else of its
+    /// tree: this test binary, so the token is readable on macOS, where an
+    /// Apple platform binary's environment is not.
+    #[cfg(unix)]
+    #[test]
+    fn token_carrier_child() {
+        if std::env::var_os(TOKEN_CARRIER_ENV).is_none() {
+            return;
+        }
+        std::thread::sleep(Duration::from_secs(30));
+    }
+
+    /// #7122: a scan sweeps by its tree token only after its supervisor is
+    /// reaped, and so after the supervisor has left the registry's live set.
+    /// A stop that lands in that gap parks the scan before its sweep, so the
+    /// token must still be registered for the stop to sweep it. Here the
+    /// supervisor's entry is gone (`forget`) while its token stays, and an
+    /// escaped process carries it. Mutation this catches: a token released
+    /// with its supervisor's entry rather than after the scan's sweep.
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_sweeps_the_token_of_a_scan_whose_supervisor_is_already_reaped() {
+        let registry = HelperRegistry::new();
+        let tree_token = uuid::Uuid::new_v4().to_string();
+        let mut command =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        command
+            .args([
+                "--exact",
+                "host::plugin_scan_worker::tests::token_carrier_child",
+            ])
+            .env(TOKEN_CARRIER_ENV, "1")
+            .env(SCAN_TREE_TOKEN_ENV, &tree_token)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let carrier = registry
+            .spawn(&mut command, Some(&tree_token))
+            .expect("the token carrier should start");
+        registry.forget(&carrier);
+        let mut stragglers = Stragglers::cleaning(Vec::new());
+        stragglers.children.push(carrier);
+
+        registry.stop();
+
+        let status = exit_status_within(&mut stragglers.children[0], Duration::from_secs(2));
+        assert_eq!(
+            status.and_then(|status| std::os::unix::process::ExitStatusExt::signal(&status)),
+            Some(libc::SIGKILL),
+            "the escaped process of a reaped scan's tree survived the stop: {status:?}"
+        );
+    }
+
     /// A helper that answers and exits 0 still takes the child it left in its
     /// process group with it: the spawner kills the group on a clean exit too.
     #[cfg(unix)]
@@ -4893,6 +4972,10 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     /// leaves no tick for the macOS supervisor's walk to record the child
     /// in, and with no subreaper there the child is out of every later walk.
     /// The application's sweep by the scan's tree token is what ends it.
+    /// This case discriminates on macOS only: on Linux the supervisor is the
+    /// tree's subreaper and reaps the child itself, and only
+    /// `a_plugin_that_kills_its_supervisor_leaves_no_setsid_child_behind`
+    /// needs the sweep there.
     #[cfg(unix)]
     #[test]
     fn a_plugin_that_aborts_at_once_leaves_no_setsid_child_behind() {
@@ -4911,7 +4994,8 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert!(!marker.exists(), "the setsid child ran to completion");
     }
 
-    /// The same for a plugin that exits 0 at once from its entry point.
+    /// The same for a plugin that exits 0 at once from its entry point, and
+    /// likewise discriminating on macOS only.
     #[cfg(unix)]
     #[test]
     fn a_plugin_that_exits_at_once_leaves_no_setsid_child_behind() {
