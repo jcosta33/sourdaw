@@ -75,6 +75,9 @@ describe('maskProjectReferences', () => {
         ['mute "8 Bars"', '8 Bars', 'mute "clip□□"'],
         ['mute the clips 8 Bars', '8 Bars', 'mute the clips clip□□'],
         ['mute the 8 Bars section', '8 Bars', 'mute the □□□□□□ section'],
+        ['mute the Verse clips on Vocals and Keys', 'Verse', 'mute the clip□ clips on Vocals and Keys'],
+        ['mute the Verse clips but leave Keys alone', 'Verse', 'mute the clip□ clips but leave Keys alone'],
+        ['mute the Verse clip', 'Verse', 'mute the □□□□□ clip'],
     ])('still masks a clip reference in %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });
