@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ tracks: vi.fn(), strip: vi.fn(), subscribe: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    tracks: vi.fn(),
+    strip: vi.fn(),
+    subscribe: vi.fn<(callback: (deviceId: string) => void) => () => void>(),
+}));
 vi.mock('#/modules/Arrangement/useCases', () => ({ getAllTracks: mocks.tracks }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({ getTrackStrip: mocks.strip }));
 vi.mock('#/modules/Crumbs/stores', () => ({ subscribeToCrumbsSamples: mocks.subscribe }));
@@ -27,7 +31,10 @@ describe('initCrumbsSamplePush', () => {
             return { deviceNodes: [ownerNode] };
         });
         expect(initCrumbsSamplePush()).toBe(stop);
-        const publish = mocks.subscribe.mock.calls[0][0];
+        const publish = mocks.subscribe.mock.calls[0]?.[0];
+        if (!publish) {
+            throw new Error('Expected the sample subscription');
+        }
         publish('sampler');
         expect(mocks.strip).toHaveBeenCalledExactlyOnceWith('track');
         expect(refresh).toHaveBeenCalledOnce();
