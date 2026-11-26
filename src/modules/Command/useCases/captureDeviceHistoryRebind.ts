@@ -1,4 +1,4 @@
-import { type AppAction, type HandlerDeviceOwnerChange } from '#/utils/handlerContract';
+import { type AppAction, type HandlerDeviceOwnerChange, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { undoStore } from '../stores/undoStore';
 
@@ -7,7 +7,7 @@ import { rebindDeviceHistory } from './rebindDeviceHistory';
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 
 /** The exact pending inverse, together with the owned restore publication, carries history forward. */
-export function captureDeviceRemovalUndo(inverse: RestoreDeviceAction, entryId: string) {
+function captureDeviceRemovalUndo(inverse: RestoreDeviceAction, entryId: string) {
     const entry = undoStore.value?.past.find((candidate) => candidate.id === entryId);
     if (
         entry?.kind !== 'action' ||
@@ -32,4 +32,18 @@ export function captureDeviceRemovalUndo(inverse: RestoreDeviceAction, entryId: 
         }
         rebindDeviceHistory(owner);
     };
+}
+
+export function captureDeviceHistoryRebind(
+    requestedAction: AppAction,
+    undoEntryId: string | undefined,
+    actionCount = 1
+): HandlerValidationContext['rebindDeviceHistory'] {
+    if (requestedAction.type === 'reorderDevices' && actionCount === 1) {
+        return rebindDeviceHistory;
+    }
+    if (requestedAction.type === 'restoreDevice' && requestedAction.payload.removedOwner && undoEntryId !== undefined) {
+        return captureDeviceRemovalUndo(requestedAction, undoEntryId) ?? undefined;
+    }
+    return undefined;
 }

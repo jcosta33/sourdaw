@@ -94,6 +94,8 @@ export type HandlerValidationContext = {
     readonly actionIndex: number;
     /** Original history identity when a producer refreshes a saved capture. */
     readonly undoEntryId?: string;
+    /** Command grants this to live executions that can report a re-created device from their owned publication. */
+    readonly rebindDeviceHistory?: (owner: HandlerDeviceOwnerChange) => void;
     /** Command-owned pending history identity, never an action argument or persisted capability. */
     readonly recordedRedo?: {
         readonly inverseAction: AppAction | null;

@@ -36,6 +36,7 @@ import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionH
 import { admitAppAction } from './admitAppAction';
 import { appendAbortFailures } from './appendAbortFailures';
 import { bindCanonicalRedoAction } from './bindCanonicalRedoAction';
+import { captureDeviceHistoryRebind } from './captureDeviceHistoryRebind';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
@@ -171,6 +172,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
             const requestedAction = action;
+            const undoEntryId = options?.undoEntryId;
+            const rebindDeviceHistory = captureDeviceHistoryRebind(requestedAction, undoEntryId);
             const recordedRedo = options?.skipUndo ? captureRecordedRedoContext(action) : undefined;
             const materialized = options?.commandEnvelope
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
@@ -192,10 +195,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
             type Context = NonNullable<Parameters<typeof materializeCommandHandlerArguments>[2]>;
             let materializationContext: { -readonly [K in keyof Context]: Context[K] } | undefined;
-            if (options?.undoEntryId !== undefined || recordedRedo !== undefined) {
+            if (undoEntryId !== undefined || recordedRedo !== undefined) {
                 materializationContext = { actions: [action], actionIndex: 0 };
-                if (options?.undoEntryId !== undefined) {
-                    materializationContext.undoEntryId = options.undoEntryId;
+                if (undoEntryId !== undefined) {
+                    materializationContext.undoEntryId = undoEntryId;
                 }
                 if (recordedRedo !== undefined) {
                     materializationContext.recordedRedo = recordedRedo;
@@ -368,7 +371,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 ...runtimeAuthorityContext,
                 actions: [action],
                 actionIndex: 0,
-                undoEntryId: options?.undoEntryId ?? command.envelope.commandId,
+                undoEntryId: undoEntryId ?? command.envelope.commandId,
+                rebindDeviceHistory,
                 signal: options?.signal,
                 onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                 workOwner: options?.workOwner,

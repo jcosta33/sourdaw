@@ -1,7 +1,6 @@
-import { rebindDeviceHistory } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerCommitValidation, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type Track } from '../../models/Track';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
@@ -112,15 +111,16 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
 
         const before = structuredClone(resolution.track);
         const after = moveDevice(before, resolution.sourceIndex, action.payload.targetIndex);
-        const commitValidation =
-            context?.actions.length === 1 && context.executionMode !== 'isolated-preview'
-                ? (captureDeviceHistoryCommitValidation({
-                      kind: 'reorder',
-                      before,
-                      after,
-                      rebind: rebindDeviceHistory,
-                  }) ?? undefined)
-                : undefined;
+        let commitValidation: HandlerCommitValidation | undefined;
+        if (context?.rebindDeviceHistory && context.executionMode !== 'isolated-preview') {
+            commitValidation =
+                captureDeviceHistoryCommitValidation({
+                    kind: 'reorder',
+                    before,
+                    after,
+                    rebind: context.rebindDeviceHistory,
+                }) ?? undefined;
+        }
         // The initial dispatch's revision is intentionally consumed once. Its
         // inverse and redo retain exact topology proofs and may run at a later
         // project revision through the same guarded handler.

@@ -19,6 +19,7 @@ import { clearHandlerRegistry, undoHistoryStore } from '#/modules/Command/stores
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     reconcileSessionUndoForProject,
     redo,
     registerProductionCommandHandlers,
@@ -277,17 +278,16 @@ describe('Grinder Rectifier project command', () => {
         if (direction === 'redo') {
             await undo();
         }
+        expect(undoHistoryStore.value?.future).toHaveLength(direction === 'redo' ? 1 : 0);
         installEqualPeerReplacement();
         const heads = getHeads(rawRoot());
         const history = structuredClone(undoHistoryStore.value);
         sync.mockClear();
 
-        if (direction === 'undo') {
-            expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: false });
-        } else {
-            await redo({ stepOverConflicts: false });
-        }
+        const replay = direction === 'undo' ? undo : redo;
+        const result = await replay({ stepOverConflicts: false });
 
+        expect(result).toEqual(direction === 'undo' ? { headConsumed: false } : undefined);
         expect(getHeads(rawRoot())).toEqual(heads);
         expect(undoHistoryStore.value).toEqual(history);
         expect(sync).not.toHaveBeenCalled();
@@ -357,42 +357,64 @@ describe('Grinder Rectifier project command', () => {
         expect(sync).not.toHaveBeenCalled();
     });
 
-    it.each(['same owner', 'peer replacement'] as const)(
-        'preserves preset history through reorder Undo only for the %s',
-        async (owner) => {
-            addTwoNeighbors();
-            const parametersBefore = structuredClone(rawDevice().parameterValues);
-            await executeAppAction(makeAction());
-            if (owner === 'peer replacement') {
-                installEqualPeerReplacement();
-            }
-            const beforeReorder = getObjectId(rawDevice());
-            const action = compileReorderDevicesAction('track', 'amp', 'second');
-            if (!action) {
-                throw new Error('Expected the production device reorder');
-            }
+    it('preserves earlier preset Undo when a local group restores the removed device', async () => {
+        const parametersBefore = structuredClone(rawDevice().parameterValues);
+        const originalId = getObjectId(rawDevice());
+        await executeAppAction(makeAction());
+        const groupId = 'remove-grinder-and-rename-track';
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: 'amp' } }, { groupId });
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'track', name: 'Renamed' } }, { groupId });
 
-            await executeAppAction(action);
-            const afterReorder = getObjectId(rawDevice());
-            expect(afterReorder).not.toBe(beforeReorder);
-            expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['first', 'second', 'amp']);
-            expect(await undo()).toEqual({ headConsumed: true });
-            expect(getObjectId(rawDevice())).not.toBe(afterReorder);
-            expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['amp', 'first', 'second']);
-            const heads = getHeads(rawRoot());
-            sync.mockClear();
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+        expect(getObjectId(rawDevice())).not.toBe(originalId);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rawDevice().parameterValues).toEqual(parametersBefore);
+    });
 
-            if (owner === 'same owner') {
-                expect(await undo()).toEqual({ headConsumed: true });
-                expect(rawDevice().parameterValues).toEqual(parametersBefore);
-                expect(sync).toHaveBeenCalledOnce();
-            } else {
-                expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: false });
-                expect(getHeads(rawRoot())).toEqual(heads);
-                expect(sync).not.toHaveBeenCalled();
-            }
+    it.each([
+        { owner: 'same owner', route: 'single command' },
+        { owner: 'same owner', route: 'one-action batch' },
+        { owner: 'peer replacement', route: 'single command' },
+    ] as const)('checks preset Undo ownership after reorder in a $route ($owner)', async ({ owner, route }) => {
+        addTwoNeighbors();
+        const parametersBefore = structuredClone(rawDevice().parameterValues);
+        await executeAppAction(makeAction());
+        if (owner === 'peer replacement') {
+            installEqualPeerReplacement();
         }
-    );
+        const beforeReorder = getObjectId(rawDevice());
+        const action = compileReorderDevicesAction('track', 'amp', 'second');
+        if (!action) {
+            throw new Error('Expected the production device reorder');
+        }
+
+        if (route === 'one-action batch') {
+            const result = await executeAppActionBatch([action]);
+            if (result.status !== 'committed') {
+                throw new Error(`Expected the reorder batch to commit, received ${result.status}`);
+            }
+        } else {
+            await executeAppAction(action);
+        }
+        const afterReorder = getObjectId(rawDevice());
+        expect(afterReorder).not.toBe(beforeReorder);
+        expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['first', 'second', 'amp']);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(getObjectId(rawDevice())).not.toBe(afterReorder);
+        expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['amp', 'first', 'second']);
+        const heads = getHeads(rawRoot());
+        const differentHeads = expect.not.arrayContaining(heads);
+        const parametersAfter = structuredClone(rawDevice().parameterValues);
+        const shouldUndo = owner === 'same owner';
+        sync.mockClear();
+
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: shouldUndo });
+        expect(rawDevice().parameterValues).toEqual(shouldUndo ? parametersBefore : parametersAfter);
+        expect(getHeads(rawRoot())).toEqual(shouldUndo ? differentHeads : heads);
+        expect(sync).toHaveBeenCalledTimes(shouldUndo ? 1 : 0);
+    });
 
     it('does not deliver runtime effects to a same-id replacement after commit', async () => {
         const action = makeAction();
