@@ -90,6 +90,7 @@ export const clipLifecycleKindByActionType: { readonly [Type in AppActionType]: 
     setToasterFactoryKit: 'none',
     setToasterMasterGain: 'none',
     setBacteriaFactoryPatch: 'none',
+    setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',
     setProofPatchSelection: 'none',
     createBus: 'none',

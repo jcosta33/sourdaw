@@ -1,4 +1,4 @@
-import { change, from, type Doc } from '@automerge/automerge';
+import { change, from, getObjectId, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -926,6 +926,127 @@ function createGlutenConflictFixture(): DivergedFixture {
     };
 }
 
+function createCrustConflictFixture(): DivergedFixture {
+    type CrustRoot = { tracks: { tracks: Track[] } };
+    let verifyNonEffects: (() => void) | undefined;
+    return {
+        title: 'setCrustFactoryPreset refuses when a peer changes a captured parameter after validation',
+        actionType: 'setCrustFactoryPreset',
+        createDivergedAction: async () => {
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Crust registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+
+            const after = {
+                gain: 0,
+                ceiling: -0.3,
+                style: 0,
+                algorithm: 0,
+                lookahead: 2,
+                attack: 0,
+                release: 0,
+                attackAuto: 1,
+                releaseAuto: 1,
+                channelLinkTransient: 100,
+                channelLinkRelease: 100,
+                truePeak: 1,
+                oversampling: 8,
+                satEnabled: 0,
+                satAlgorithm: 0,
+                satDrive: 0,
+                satMix: 0,
+                deltaListen: 0,
+                unityGain: 0,
+                multiBand: 0,
+                crossover1: 80,
+                crossover2: 2000,
+                scHpfEnabled: 0,
+                scHpfFreq: 60,
+                stereoMode: 0,
+                dither: 0,
+                outputBitDepth: 24,
+            };
+            const before = Object.fromEntries(Object.keys(after).map((key) => [key, null]));
+            const deviceId = 'crust-conflict';
+            const trackId = 'crust-owner';
+            const rawDevice = () => getCrdtDoc<CrustRoot>('root')?.tracks.tracks[0]?.devices[0];
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({ id: trackId, name: 'Crust', kind: 'audio', withoutDefaultDevice: true }),
+                        devices: [
+                            { id: deviceId, name: 'Crust', type: 'crust', bypassed: false, parameterValues: after },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            const rawTrack = getCrdtDoc<CrustRoot>('root')?.tracks.tracks[0];
+            const original = rawDevice();
+            if (!rawTrack || !original) {
+                throw new Error('Expected the original Crust owner');
+            }
+            expect(original.parameterValues).toEqual(after);
+            const trackObjectId = getObjectId(rawTrack);
+            const deviceObjectId = getObjectId(original);
+            if (!trackObjectId || !deviceObjectId) {
+                throw new Error('Expected raw Crust object identities');
+            }
+
+            const inverse = {
+                type: 'setCrustFactoryPreset',
+                payload: {
+                    trackId,
+                    deviceId,
+                    trackObjectId,
+                    deviceObjectId,
+                    deviceIds: [deviceId],
+                    presetId: 'transparent-master',
+                    before: after,
+                    after: before,
+                },
+            } satisfies AppAction;
+            const handler = getCommandHandler(inverse);
+            const context = { actions: [inverse], actionIndex: 0 };
+            expect(handler?.validate?.(inverse, context)).toBe(true);
+            expect(handler?.describe?.(inverse, context)?.label).toBe('Load Transparent Master');
+
+            mutateCrdtDoc<CrustRoot>({
+                id: 'root',
+                changeFn: (document) => {
+                    const device = document.tracks.tracks[0]?.devices[0];
+                    if (!device) {
+                        throw new Error('Expected Crust before the peer write');
+                    }
+                    device.parameterValues = { ...device.parameterValues, gain: 1 };
+                },
+            });
+            trackStore.hydrate();
+            const peer = { ...after, gain: 1 };
+            expect(rawDevice()?.parameterValues).toEqual(peer);
+            verifyNonEffects = () => {
+                expect(rawDevice()?.parameterValues).toEqual(peer);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => {
+            if (!verifyNonEffects) {
+                throw new Error('Expected the diverged Crust fixture');
+            }
+            verifyNonEffects();
+        },
+    };
+}
+
 function createLevainConflictFixture(): DivergedFixture {
     type LevainRoot = { tracks: { tracks: Track[] } };
     let verifyNonEffects: (() => void) | undefined;
@@ -1090,6 +1211,7 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createToasterConflictFixture('setToasterMasterGain'),
     createBacteriaConflictFixture(),
     createGlutenConflictFixture(),
+    createCrustConflictFixture(),
     createLevainConflictFixture(),
     createProofConflictFixture(),
     ...(['source', 'owner'] as const).map((edit) => ({

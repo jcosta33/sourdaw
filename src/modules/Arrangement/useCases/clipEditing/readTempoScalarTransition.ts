@@ -105,6 +105,7 @@ const tempoScalarTransitionByActionType: {
     setToasterFactoryKit: notATempoAction,
     setToasterMasterGain: notATempoAction,
     setBacteriaFactoryPatch: notATempoAction,
+    setCrustFactoryPreset: notATempoAction,
     setGlutenFactoryPreset: notATempoAction,
     setProofPatchSelection: notATempoAction,
     createBus: notATempoAction,

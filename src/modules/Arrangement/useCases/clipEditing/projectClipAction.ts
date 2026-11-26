@@ -138,6 +138,7 @@ const projectClipActionByActionType: {
     setToasterFactoryKit: keepState,
     setToasterMasterGain: keepState,
     setBacteriaFactoryPatch: keepState,
+    setCrustFactoryPreset: keepState,
     setGlutenFactoryPreset: keepState,
     setProofPatchSelection: keepState,
     createBus: keepState,

@@ -140,6 +140,7 @@ export const macroGeneratedIdByActionType: {
     setToasterFactoryKit: noGeneratedId,
     setToasterMasterGain: noGeneratedId,
     setBacteriaFactoryPatch: noGeneratedId,
+    setCrustFactoryPreset: noGeneratedId,
     setGlutenFactoryPreset: noGeneratedId,
     setProofPatchSelection: noGeneratedId,
     createBus: noGeneratedId,

@@ -102,6 +102,7 @@ export { discardDecodedAudioFile } from './discardDecodedAudioFile';
 export { discardDecodedAudioFileIfCurrent } from './discardDecodedAudioFileIfCurrent';
 
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
+export { updateDeviceParameters } from './deviceControls/updateDeviceParameters';
 export { captureDeviceParameterRuntimeWriteAuthority } from './deviceControls/captureDeviceParameterRuntimeWriteAuthority';
 export { captureNativeBuiltinParameterWriter } from './deviceControls/captureNativeBuiltinParameterWriter';
 export { writeNativeBuiltinParameters } from './deviceControls/writeNativeBuiltinParameters';

@@ -229,6 +229,7 @@ const projectTakeLaneOwnersByActionType: {
     setToasterFactoryKit: keepOwners,
     setToasterMasterGain: keepOwners,
     setBacteriaFactoryPatch: keepOwners,
+    setCrustFactoryPreset: keepOwners,
     setGlutenFactoryPreset: keepOwners,
     setProofPatchSelection: keepOwners,
     createBus: keepOwners,

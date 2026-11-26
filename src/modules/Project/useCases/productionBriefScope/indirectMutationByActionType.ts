@@ -94,6 +94,7 @@ export const indirectMutationByActionType: {
     setToasterFactoryKit: indirectMutationRules.none,
     setToasterMasterGain: indirectMutationRules.none,
     setBacteriaFactoryPatch: indirectMutationRules.none,
+    setCrustFactoryPreset: indirectMutationRules.none,
     setGlutenFactoryPreset: indirectMutationRules.none,
     setProofPatchSelection: indirectMutationRules.none,
     createBus: indirectMutationRules.none,

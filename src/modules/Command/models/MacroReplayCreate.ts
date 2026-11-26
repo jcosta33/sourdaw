@@ -269,6 +269,7 @@ export const macroReplayCreateByActionType: {
     setToasterFactoryKit: notAGeneratedCreate,
     setToasterMasterGain: notAGeneratedCreate,
     setBacteriaFactoryPatch: notAGeneratedCreate,
+    setCrustFactoryPreset: notAGeneratedCreate,
     setGlutenFactoryPreset: notAGeneratedCreate,
     setProofPatchSelection: notAGeneratedCreate,
     createBus: notAGeneratedCreate,

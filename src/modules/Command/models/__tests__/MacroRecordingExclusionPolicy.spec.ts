@@ -15,6 +15,7 @@ const EXPECTED = new Set<string>([
     'setToasterFactoryKit',
     'setToasterMasterGain',
     'setBacteriaFactoryPatch',
+    'setCrustFactoryPreset',
     'setGlutenFactoryPreset',
     'setProofPatchSelection',
 ]);

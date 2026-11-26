@@ -85,6 +85,7 @@ export const projectsClipsByTempoActionType: { readonly [Type in AppActionType]:
     setToasterFactoryKit: false,
     setToasterMasterGain: false,
     setBacteriaFactoryPatch: false,
+    setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
     setProofPatchSelection: false,
     createBus: false,

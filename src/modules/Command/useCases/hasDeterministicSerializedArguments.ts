@@ -104,6 +104,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setToasterFactoryKit: anyArguments,
     setToasterMasterGain: anyArguments,
     setBacteriaFactoryPatch: anyArguments,
+    setCrustFactoryPreset: anyArguments,
     setGlutenFactoryPreset: anyArguments,
     setProofPatchSelection: anyArguments,
     createBus: (value) =>

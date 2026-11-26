@@ -85,6 +85,7 @@ export const projectsTakeLaneStateByActionType: { readonly [Type in AppActionTyp
     setToasterFactoryKit: false,
     setToasterMasterGain: false,
     setBacteriaFactoryPatch: false,
+    setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
     setProofPatchSelection: false,
     createBus: false,

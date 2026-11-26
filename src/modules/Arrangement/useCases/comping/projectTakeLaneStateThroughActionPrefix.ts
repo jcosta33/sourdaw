@@ -240,6 +240,7 @@ const projectTakeLaneActionByActionType: {
     setToasterFactoryKit: keepLanes,
     setToasterMasterGain: keepLanes,
     setBacteriaFactoryPatch: keepLanes,
+    setCrustFactoryPreset: keepLanes,
     setGlutenFactoryPreset: keepLanes,
     setProofPatchSelection: keepLanes,
     createBus: keepLanes,

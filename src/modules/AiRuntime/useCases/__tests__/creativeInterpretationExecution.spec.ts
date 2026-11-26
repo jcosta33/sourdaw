@@ -500,12 +500,9 @@ const JAZZ_AND_RADIO_PROMPT = 'create a jazz MIDI track for 4 beats and make Gui
  * The same combined request with the creation duration in the rest of the arrangement vocabulary:
  * bars, measures, and the hyphenated beat form. Each figure is still creation evidence, so the
  * treatment half must confirm beside it exactly as it does when the duration says "for 4 beats".
- * The hyphenated case states the plural because the batch's own planned clip is named "Beat": the
- * prompt masker would replace a singular "beat" with that reference before any unit exclusion runs.
  */
 const BAR_AND_RADIO_PROMPT = 'create a jazz MIDI track for 2 bars and make Guitar sound like a radio';
-const HYPHENATED_BEAT_AND_RADIO_PROMPT =
-    'create a jazz MIDI track as a 4-beats loop and make Guitar sound like a radio';
+const HYPHENATED_BEAT_AND_RADIO_PROMPT = 'create a jazz MIDI track as a 4-beat loop and make Guitar sound like a radio';
 const MEASURE_AND_RADIO_PROMPT = 'create a jazz MIDI track for 2 measures and make Guitar sound like a radio';
 const BEAT_AND_RADIO_COMMAND_NAMES = ['addTrack', 'addClip', 'addNotes', PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
 

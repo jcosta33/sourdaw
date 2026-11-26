@@ -103,6 +103,7 @@ export const legacyRangeRemovalByActionType: {
     setToasterFactoryKit: notLegacyRangeWrite,
     setToasterMasterGain: notLegacyRangeWrite,
     setBacteriaFactoryPatch: notLegacyRangeWrite,
+    setCrustFactoryPreset: notLegacyRangeWrite,
     setGlutenFactoryPreset: notLegacyRangeWrite,
     setProofPatchSelection: notLegacyRangeWrite,
     createBus: notLegacyRangeWrite,

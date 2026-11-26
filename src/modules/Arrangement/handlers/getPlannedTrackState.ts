@@ -213,6 +213,7 @@ export const plannedTrackByActionType: {
     setToasterFactoryKit: noPlannedTrack,
     setToasterMasterGain: noPlannedTrack,
     setBacteriaFactoryPatch: noPlannedTrack,
+    setCrustFactoryPreset: noPlannedTrack,
     setGlutenFactoryPreset: noPlannedTrack,
     setProofPatchSelection: noPlannedTrack,
     createBus: planCreatedBus,

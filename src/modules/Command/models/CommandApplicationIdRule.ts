@@ -92,6 +92,7 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     setToasterFactoryKit: noApplicationIdRule,
     setToasterMasterGain: noApplicationIdRule,
     setBacteriaFactoryPatch: noApplicationIdRule,
+    setCrustFactoryPreset: noApplicationIdRule,
     setGlutenFactoryPreset: noApplicationIdRule,
     setProofPatchSelection: noApplicationIdRule,
     createBus: { argument: 'busId', prefix: 'bus-command-' },
