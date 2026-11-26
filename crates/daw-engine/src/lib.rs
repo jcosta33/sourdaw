@@ -769,6 +769,22 @@ impl EngineHandle {
         Ok(())
     }
 
+    /// Make room for `headroom` single pushes the caller is about to make,
+    /// with no batch in front of them.
+    ///
+    /// The reservation [`Self::send_graph_batch_with_headroom`] makes, for a
+    /// caller that pushes outside a batch: a ring a batch left full refuses
+    /// the next push as "queue full", so the room is provisioned first. The
+    /// audio thread only pops, so room seen here can only grow; what keeps it
+    /// for the caller's pushes, which may follow under a later acquisition of
+    /// the engine lock, is that the caller is the only one pushing meanwhile.
+    pub fn ensure_command_headroom(&mut self, headroom: usize) -> Result<(), CommandError> {
+        if self.command_tx.slots() < headroom {
+            self.provision_command_channel(headroom)?;
+        }
+        Ok(())
+    }
+
     /// Reallocate the command channel to hold `needed` commands and hand the
     /// audio thread the new ends through a swap fence on the old ring.
     ///
@@ -3792,6 +3808,28 @@ mod tests {
             engine.drain_engine_events().is_empty(),
             "the slot swaps back to zero, so a second drain reports nothing further"
         );
+    }
+
+    /// A caller pushing outside a batch onto a ring a batch nearly filled gets
+    /// the room it reserved: the loose pushes that follow all land. Mutation:
+    /// make `ensure_command_headroom` return `Ok(())` without provisioning, and
+    /// the second push is refused as `QueueFull`.
+    #[test]
+    fn command_headroom_makes_room_for_the_loose_pushes_that_follow() {
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(4).unwrap();
+        for id in 0..3 {
+            engine
+                .remove_plugin(id)
+                .expect("the ring has room for three");
+        }
+
+        engine
+            .ensure_command_headroom(2)
+            .expect("a ring with one slot left can swap in a larger one");
+
+        engine.remove_plugin(10).expect("the first reserved slot");
+        engine.remove_plugin(11).expect("the second reserved slot");
     }
 
     /// A fresh fixture starts rendering with no fault recorded — the same

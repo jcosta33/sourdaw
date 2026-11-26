@@ -30,6 +30,7 @@ use std::sync::{Arc, MutexGuard, PoisonError, TryLockError};
 
 use super::plugins::lock_plugin_lifecycle;
 use crate::events::{EventSink, EventSinkExt};
+use crate::host::dormant_attach_wake::{DormantRuntimeRelease, RuntimeClone};
 use crate::host::native_bridge::{PluginControlError, PluginControlRefusal, SharedHostedPlugin};
 use crate::host::plugin_editor_asks::editor_window_host;
 use crate::host::plugin_window::{
@@ -233,14 +234,14 @@ const EDITOR_CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 fn command_owned_runtime(
     state: &AppState,
     instance_id: &str,
-) -> Result<Option<Arc<SharedHostedPlugin>>, PluginGuiError> {
+) -> Result<Option<RuntimeClone>, PluginGuiError> {
     let plugins = state
         .plugins
         .lock()
         .map_err(PluginGuiError::lock("plugins"))?;
     Ok(plugins
         .get(instance_id)
-        .map(|instance| Arc::clone(&instance.plugin)))
+        .map(|instance| RuntimeClone::dormant(&instance.plugin)))
 }
 
 /// Make one call into an instance's plugin, through whichever map owns it and
@@ -453,7 +454,10 @@ async fn open_editor_in_new_window(
                     .ensure_public_control_allowed()
                     .map_err(PluginGuiError::from)?;
 
-                (instance.name.clone(), Arc::clone(&instance.plugin))
+                (
+                    instance.name.clone(),
+                    RuntimeClone::dormant(&instance.plugin),
+                )
             }
             None => {
                 let engine_plugins = state
@@ -472,7 +476,7 @@ async fn open_editor_in_new_window(
 
                     (
                         engine_instance.name.clone(),
-                        Arc::clone(&engine_instance.runtime),
+                        RuntimeClone::engine_owned(&engine_instance.runtime),
                     )
                 } else {
                     return Err(PluginGuiError::no_instance(&instance_id));
@@ -926,7 +930,7 @@ const _: () = assert!(
 fn owning_runtime(
     state: &AppState,
     instance_id: &str,
-) -> Result<Option<Arc<SharedHostedPlugin>>, PluginGuiError> {
+) -> Result<Option<RuntimeClone>, PluginGuiError> {
     if let Some(runtime) = command_owned_runtime(state, instance_id)? {
         return Ok(Some(runtime));
     }
@@ -936,7 +940,7 @@ fn owning_runtime(
         .map_err(PluginGuiError::lock("engine_plugins"))?;
     Ok(engine_plugins
         .get(instance_id)
-        .map(|instance| Arc::clone(&instance.runtime)))
+        .map(|instance| RuntimeClone::engine_owned(&instance.runtime)))
 }
 
 /// The instance's runtime, waiting out an attach that is moving it between the
@@ -955,7 +959,7 @@ fn owning_runtime(
 async fn owning_runtime_after_attach_transit(
     instance_id: &str,
     state: &AppState,
-) -> Result<Option<Arc<SharedHostedPlugin>>, PluginGuiError> {
+) -> Result<Option<RuntimeClone>, PluginGuiError> {
     #[cfg(test)]
     tests::reach_owner_lookup(instance_id);
     if let Some(runtime) = owning_runtime(state, instance_id)? {
@@ -1235,6 +1239,10 @@ pub(crate) fn close_every_plugin_gui(
                 .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.plugin)))
                 .collect();
             drop(plugins);
+            // Bound after the clones, so it drops after the loop has let each
+            // of them go: the attach those clones refused is woken by it.
+            let _dormant_release =
+                DormantRuntimeRelease::watching(command_owned.iter().map(|(_, runtime)| runtime));
             for (instance_id, runtime) in command_owned {
                 let close_result = close_command_owned_editor(&runtime, editor_thread);
                 record_plugin_gui_close_outcome(&mut report, &instance_id, close_result);

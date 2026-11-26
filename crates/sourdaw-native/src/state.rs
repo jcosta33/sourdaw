@@ -20,7 +20,7 @@ use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 #[cfg(test)]
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
@@ -434,6 +434,10 @@ pub struct AppState {
     /// that commits — a same-window reload replaces its renderer). See
     /// [`AppState::begin_renderer_session`].
     pub session_generation: Arc<AtomicU64>,
+    /// Set once by the quit cascade, after which the dormant re-attach worker
+    /// takes nothing from this state. A plain flag, so its position reorders
+    /// no teardown. See `commands::dormant_reattach::close_dormant_reattach`.
+    pub dormant_reattach_closed: AtomicBool,
     /// The durable half of `plugin_registry`: the file a scan writes and the
     /// first plugin-touching command reads back, so a relaunched app resolves
     /// a saved project's plugins without a manual scan. Control-side only —
@@ -826,6 +830,7 @@ impl Default for AppState {
             )),
             retrospective_arm: Arc::new(Mutex::new(None)),
             session_generation: Arc::new(AtomicU64::new(0)),
+            dormant_reattach_closed: AtomicBool::new(false),
             plugin_registry_store: Arc::new(
                 crate::host::plugin_registry_store::PluginRegistryStore::in_memory_only(),
             ),

@@ -16,9 +16,13 @@
 //! 3. Release the open MIDI input. The device handle is quick to close and
 //!    nothing after this step needs it; leaving it open pins the controller
 //!    for every other application until the OS notices the process is gone.
-//! 4. Give every open plugin editor its CLAP `gui.destroy` while there is still
+//! 4. Close the dormant re-attach, waiting out a pass already running, then
+//!    give every open plugin editor its CLAP `gui.destroy` while there is still
 //!    a process to run it in. A plugin that refuses is reported, never fatal:
-//!    exit must not be blocked by a third-party editor.
+//!    exit must not be blocked by a third-party editor. Closing an editor lets
+//!    go of a dormant runtime's clone, which wakes the re-attach; a pass that
+//!    ran after step 6 took the live instances would register one into the
+//!    engine store that nothing then terminates.
 //! 5. Sweep the retirement vec. Load and unload are the only other sweep sites,
 //!    so without this terminal one the last retirement of a session is never
 //!    freed and a plugin that persists settings in `destroy` never gets to.
@@ -46,6 +50,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::commands::collab::{shutdown_discovery, CollabState};
+use crate::commands::dormant_reattach::close_dormant_reattach;
 use crate::commands::midi::MidiState;
 use crate::commands::offline_plugins::{cancel_every_offline_render, offline_renders_in_flight};
 use crate::commands::plugin_gui::close_every_plugin_gui;
@@ -171,6 +176,7 @@ fn shutdown_with_wait(
         closed_midi_input,
         ..ShutdownReport::default()
     };
+    close_dormant_reattach(app_state);
     match close_every_plugin_gui(windows, app_state) {
         Ok(gui_report) => {
             report.closed_editors = gui_report.closed_instance_ids;
@@ -707,6 +713,109 @@ mod tests {
                 .expect("retirement lock should be available")
                 .is_empty(),
             "the terminal reclamation point must not depend on a window host"
+        );
+    }
+
+    /// Runs a dormant re-attach pass from inside the editor close, standing in
+    /// for the wake a closed editor's dormant clone raises once quit has begun.
+    struct ReattachingHost {
+        state: Arc<AppState>,
+        events: ChannelEventSink,
+        attached_at_destroy: Mutex<Option<bool>>,
+    }
+
+    struct ChannelEventSink(Mutex<mpsc::Sender<String>>);
+
+    impl crate::events::EventSink for ChannelEventSink {
+        fn emit_json(&self, event: &str, _payload: serde_json::Value) {
+            let _ = self
+                .0
+                .lock()
+                .expect("event sender lock")
+                .send(event.to_string());
+        }
+    }
+
+    impl crate::host::ui_thread::UiThread for ReattachingHost {}
+
+    impl PluginWindowHost for ReattachingHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            true
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, crate::host::plugin_window::PluginWindowError>
+        {
+            Err("test host creates no windows".to_string().into())
+        }
+
+        fn destroy_window(&self, _label: &str) {
+            crate::commands::dormant_reattach::reattach_dormant_plugins(&self.state, &self.events);
+            let attached = self
+                .state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available")
+                .contains_key("dormant-during-quit");
+            *self.attached_at_destroy.lock().expect("record lock") = Some(attached);
+        }
+
+        fn hide_window(&self, _label: &str) {}
+
+        fn show_window(&self, _label: &str) {}
+    }
+
+    /// A wake raised once quit has begun moves nothing: an instance a pass took
+    /// out of the dormant store after the cascade took the live ones would be
+    /// registered where nothing terminates it. Mutation: drop the cascade's
+    /// `close_dormant_reattach` call, and the pass attaches the instance and
+    /// says so.
+    #[test]
+    fn a_reattach_woken_after_quit_began_attaches_nothing_and_says_nothing() {
+        let _gate_serial = crate::commands::plugins::serialize_against_exclusive_gate_holds();
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64).unwrap();
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        insert_command_owned_plugin(&state, "dormant-during-quit");
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock should be available")
+            .insert("editor-a".to_string(), "plugin-editor-a".to_string());
+        let (sender, events) = mpsc::channel();
+        let host = ReattachingHost {
+            state: Arc::clone(&state),
+            events: ChannelEventSink(Mutex::new(sender)),
+            attached_at_destroy: Mutex::new(None),
+        };
+
+        shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&host),
+        );
+
+        assert_eq!(
+            *host.attached_at_destroy.lock().expect("record lock"),
+            Some(false),
+            "the pass ran inside the editor close and took nothing"
+        );
+        drop(host);
+        assert_eq!(
+            events.try_iter().collect::<Vec<_>>(),
+            Vec::<String>::new(),
+            "and it told the renderer nothing"
+        );
+        assert_eq!(
+            engine_plugin_count(&state),
+            0,
+            "the cascade left nothing in the engine store"
         );
     }
 
