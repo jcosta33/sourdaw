@@ -683,12 +683,13 @@ function findReasonStart(clause: LevelClause, tailStart: number, context: Projec
 }
 
 /**
- * Whether the figure is followed by a reason opener that opens no reason ("turn Drums up 2 dB so"): the
- * opener's word is then no word of the level, though "or so" shares it.
+ * Whether the words after the figure hold a reason opener that opens no reason ("turn Drums up 2 dB so"):
+ * the opener's word is then no word of the level, though "or so" shares it. An opener past where the
+ * tail closes ("relative to the current level") belongs to what closes it.
  */
-function opensNoReason(clause: LevelClause, tailStart: number, context: ProjectContext): boolean {
-    const opener = findReasonOpener(clause, tailStart);
-    return opener !== null && !opensReason(clause, opener, context);
+function opensNoReason(clause: LevelClause, tail: ReadSpan, context: ProjectContext): boolean {
+    const opener = findReasonOpener(clause, tail.start);
+    return opener !== null && opener.start < tail.end && !opensReason(clause, opener, context);
 }
 
 /**
@@ -761,20 +762,10 @@ function findHeadEnd(input: {
 }
 
 /**
- * Whether a clause stating a decibel figure reads as one level change of this action and nothing else:
- * one target, one decibel figure the level lands on or moves by (beside the figures it starts `from`),
- * and around them any words that say how the level is asked for. A word before or after the target and
- * figure is allowed unless it names an object or a control: a project reference other than the target, a
- * kind of object or a destination ("the send", "the low band", "the master"), a control or parameter, a
- * second figure, musical time or a stretch of the song. After the figure, a closing phrase, a trailing
- * range phrase where the action declares one (`closesOnRange`), a stated reason that names nothing but
- * tracks, a measured constraint, a comparison or a protection ends what the clause reads, while a clause
- * or comparison no reader reads refuses it. A constraint's "-1 dBTP" lies past what it reads and is the
- * metric reader's. A clause stating no decibel figure is no decibel level clause, so this reader passes
- * it through and leaves it to the readers of its own shape.
- *
- * Every masked reference is the slot, so one whose whole text names a clip, device, parameter or VCA
- * group and no track names that object, never a fader.
+ * Whether a clause stating a decibel figure reads as one level change of this action and nothing else,
+ * by the reading the module's AGENTS.md states for a track level clause: the words before the target
+ * open, those from the target to the figure and after it closed, each read from its shared table. A
+ * clause stating no decibel figure passes through to the readers of its own shape.
  */
 export function readsAsLevelClause(input: {
     clause: LevelClause;
@@ -804,9 +795,9 @@ export function readsAsLevelClause(input: {
         headStart,
     });
     const readClause = { ...clause, masked };
+    const tail = { start: tailStart, end: findClosingEnd(readClause, tailStart, context) };
     return (
-        sources.every((source) => source.index < figure.index) &&
-        !opensNoReason(readClause, tailStart, context) &&
+        !opensNoReason(readClause, tail, context) &&
         readsHeadAndTail({
             context,
             head: {
@@ -815,7 +806,7 @@ export function readsAsLevelClause(input: {
                 end: headEnd,
             },
             levelWords: getLevelClauseWords(entry, masked),
-            tail: { clause: readClause, start: tailStart, end: findClosingEnd(readClause, tailStart, context) },
+            tail: { clause: readClause, ...tail },
         })
     );
 }

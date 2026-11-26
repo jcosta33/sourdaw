@@ -1542,7 +1542,9 @@ describe('a track level clause reads its qualifiers, closings and tails from the
     ])('grounds "%s"', (prompt, value) => {
         const result = bridgeDrums(prompt, value);
 
-        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
+        expect(result.actions, JSON.stringify(result.rejections)).toEqual([
+            { type: 'setTrackGain', payload: { trackId: drums.id, ...value } },
+        ]);
     });
 
     it.each([

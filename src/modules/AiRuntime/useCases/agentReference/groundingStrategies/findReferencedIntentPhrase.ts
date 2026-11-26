@@ -1,3 +1,6 @@
+import { words } from '../../perceptualConstraints/words';
+import { TRACK_KIND_NOUNS } from '../protectionObjectForms';
+
 import { escapeRegExp } from './escapeRegExp';
 import { POLITE_COMMAND_PREFIX_SOURCE } from './getPoliteCommandPrefixLength';
 import { normalizePromptText } from './normalizePromptText';
@@ -12,8 +15,11 @@ export type ReferencedIntentPhraseMatch = {
 /** The registry writes the project object a phrase acts on as this placeholder. */
 export const REFERENCE_PLACEHOLDER = '{reference}';
 
-/** `maskProjectReferences.ts` writes each project reference as one run of mask glyphs. */
-const MASKED_REFERENCE = '(?:the\\s+)?(□+)';
+/**
+ * `maskProjectReferences.ts` writes each project reference as one run of mask glyphs, optionally after
+ * "the" and a track kind noun that says only what it is: "set channel Drums to -6 dB".
+ */
+const MASKED_REFERENCE = `(?:the\\s+)?(?:${words([...TRACK_KIND_NOUNS])}\\s+)?(□+)`;
 
 /** A signed decibel figure and its unit, the way `classifyPromptDecibelFigures.ts` reads one. */
 const DECIBEL_FIGURE = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*d\\s?b';
