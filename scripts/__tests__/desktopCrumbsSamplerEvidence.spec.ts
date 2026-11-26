@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { isCaptureWindowFailure } from '../desktopCrumbsSamplerDrive.ts';
 import {
     crumbsSamplerFailure,
     freshCrumbsSamplerObservations,
@@ -82,6 +83,8 @@ function complete() {
         savedClean: true,
         savedSnapshot: snapshot,
         reopenedSnapshot: structuredClone(snapshot),
+        savedHeads: ['d'.repeat(64)],
+        reopenedHeads: ['e'.repeat(64)],
         reopenedTrackId: 'track',
         reopenedDeviceId: 'device',
         quits: [
@@ -94,6 +97,11 @@ function complete() {
 }
 
 describe('Crumbs sampler evidence admission', () => {
+    it('classifies only known capture-window failures', () => {
+        expect(isCaptureWindowFailure(new Error('jsHandle.evaluate: Error: capture-clock-stale\nstack'))).toBe(true);
+        expect(isCaptureWindowFailure(new Error('capture-window-invalid'))).toBe(true);
+        expect(isCaptureWindowFailure(new Error('unexpected decoder failure'))).toBe(false);
+    });
     it('separates 431 Hz sample, 220 Hz sentinel and 619 Hz control', () => {
         const values = Array.from(
             { length: 32768 },
@@ -113,6 +121,13 @@ describe('Crumbs sampler evidence admission', () => {
         const crashed = complete();
         crashed.quits[1] = { code: null, signal: 'SIGSEGV', forced: false };
         expect(crumbsSamplerFailure(crashed)).toBe('crumbs-observations-incomplete');
+    });
+    it.each(['savedHeads', 'reopenedHeads'] as const)('rejects missing or malformed %s', (field) => {
+        for (const heads of [[], ['not-a-hash'], ['a'.repeat(63)]]) {
+            const observation = complete();
+            observation[field] = heads;
+            expect(crumbsSamplerFailure(observation)).toBe('crumbs-observations-incomplete');
+        }
     });
     it('rejects lost sentinel and unreleased sample', () => {
         const lost = complete();

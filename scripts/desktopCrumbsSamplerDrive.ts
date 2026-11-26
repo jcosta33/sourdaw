@@ -22,6 +22,17 @@ const RATE = 44100;
 const DEVICE = 'BlackHole 2ch';
 type Capture = Awaited<ReturnType<typeof captureBlackHole>>;
 
+class CaptureWindowUnavailable extends Error {}
+
+export function isCaptureWindowFailure(error: unknown): boolean {
+    return (
+        error instanceof Error &&
+        /(?:^|: )(?:capture-clock-unavailable|capture-clock-stale|capture-message-invalid|capture-window-invalid)(?:\n|$)/u.test(
+            error.message
+        )
+    );
+}
+
 function wav(seconds: number, tone: (frame: number) => number): Buffer {
     const frames = RATE * seconds;
     const data = Buffer.alloc(44 + frames * 2);
@@ -49,9 +60,12 @@ async function captureWindow(observer: Capture, observations: CrumbsSamplerObser
         return measureCrumbsWindow(
             await observer.evaluate((c, args) => c.sample(args.start, args.count), { start, count })
         );
-    } catch {
+    } catch (error) {
+        if (!isCaptureWindowFailure(error)) {
+            throw error;
+        }
         observations.unavailable = 'capture-clock-or-input-unavailable';
-        throw new Error(observations.unavailable);
+        throw new CaptureWindowUnavailable(observations.unavailable);
     }
 }
 
@@ -406,6 +420,10 @@ export async function driveDesktopCrumbsSampler(
             if (observations.unavailable) {
                 return;
             }
+        }
+    } catch (error) {
+        if (!(error instanceof CaptureWindowUnavailable)) {
+            throw error;
         }
     } finally {
         if (priorScope === undefined) {

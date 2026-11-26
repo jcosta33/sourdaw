@@ -182,6 +182,8 @@ function validIdentity(observation: CrumbsSamplerObservations): boolean {
         observation.trustedDrop &&
         observation.sampleSha256 === '230e1149ce88caad99849d11ddcfb6b823e12ca8deb8e3029b97984e91205477' &&
         observation.savedClean &&
+        validHeads(observation.savedHeads) &&
+        validHeads(observation.reopenedHeads) &&
         validSnapshot(observation.savedSnapshot, observation.trackId, observation.deviceId) &&
         JSON.stringify(observation.savedSnapshot) === JSON.stringify(observation.reopenedSnapshot) &&
         observation.reopenedTrackId === observation.trackId &&
@@ -189,6 +191,10 @@ function validIdentity(observation: CrumbsSamplerObservations): boolean {
         observation.quits.length === 2 &&
         observation.quits.every(validQuit)
     );
+}
+
+function validHeads(heads: string[]): boolean {
+    return heads.length > 0 && heads.every((head) => /^[a-f0-9]{64}$/u.test(head));
 }
 
 function validQuit(quit: CrumbsSamplerObservations['quits'][number]): boolean {

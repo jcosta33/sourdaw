@@ -417,11 +417,7 @@ export async function runCrumbsSamplerProof(
         }
     });
     const result: CrumbsRecord = { ...record, scope: 'packaged-crumbs-sampler', observations };
-    if (
-        record.failureCode === 'capture-unavailable' ||
-        record.failureCode === 'crumbs-not-scheduled-main' ||
-        (record.failureCode === 'driver-failed' && observations.unavailable)
-    ) {
+    if (record.failureCode === 'capture-unavailable' || record.failureCode === 'crumbs-not-scheduled-main') {
         result.verdict = 'not-run';
     }
     return result;
