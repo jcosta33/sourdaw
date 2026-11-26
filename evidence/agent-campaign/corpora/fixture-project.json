@@ -70,6 +70,15 @@
                     "minValue": 0,
                     "maxValue": 30,
                     "unit": "dB"
+                },
+                {
+                    "id": "comp-auto-makeup",
+                    "name": "Auto Makeup",
+                    "type": "bool",
+                    "value": 0,
+                    "minValue": 0,
+                    "maxValue": 1,
+                    "unit": ""
                 }
             ]
         },
