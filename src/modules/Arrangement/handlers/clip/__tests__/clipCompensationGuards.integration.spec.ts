@@ -113,7 +113,7 @@ const cases: GuardCase[] = [
         after: 2,
         foreignWrite: () => trimClipStart('clip-1', 1),
         foreign: 1,
-        expectedKeys: ['expectedStartBeat'],
+        expectedKeys: ['expectedStartBeat', 'expectedMidiOffsetBeats'],
     },
     {
         type: 'nudgeClip',
@@ -428,6 +428,56 @@ describe('clip edit compensation guards', () => {
 
             expect(held).toEqual({ status: 'committed', authorizations: 1 });
             expect(stale).toEqual({ status: 'conflicted', authorizations: 0 });
+        });
+    });
+
+    describe('a MIDI trim of the start guards the offset it leaves', () => {
+        const midiSeed: Partial<Clip> = {
+            type: 'midi',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetBeats: 0,
+            midiOffsetBeats: 0,
+        };
+        const trimBatch: AppAction[] = [{ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } }];
+
+        it('refuses the undo and keeps a peer slip made after the trim', async () => {
+            registerHandlers();
+            seedClip(midiSeed);
+            await executeAppActionBatch(trimBatch, { source: 'prompt', requireCompensation: true });
+            slipClipContent('clip-1', 'midi', 5);
+            const diverged = structuredClone(currentClip());
+            const notificationsBefore = notifications.length;
+
+            await undo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(currentClip().midiOffsetBeats).toBe(5);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toHaveLength(0);
+            expect(notifications.slice(notificationsBefore)).toEqual([
+                expect.objectContaining({ level: 'warning', message: expect.stringContaining('Cannot undo') }),
+            ]);
+        });
+
+        it('refuses the redo and keeps a peer slip made while undone', async () => {
+            registerHandlers();
+            seedClip(midiSeed);
+            await executeAppActionBatch(trimBatch, { source: 'prompt', requireCompensation: true });
+            await undo();
+            slipClipContent('clip-1', 'midi', 5);
+            const diverged = structuredClone(currentClip());
+            const notificationsBefore = notifications.length;
+
+            await redo();
+
+            expect(currentClip()).toEqual(diverged);
+            expect(currentClip().midiOffsetBeats).toBe(5);
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(1);
+            expect(notifications.slice(notificationsBefore)).toEqual([
+                expect.objectContaining({ level: 'warning', message: expect.stringContaining('Cannot redo') }),
+            ]);
         });
     });
 

@@ -4,6 +4,7 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { type Clip } from '../models/Track';
 import { type Track } from '../stores/trackStore';
 import { planClipNudge } from '../useCases/clipEditing/planClipNudge';
+import { planEndTrim } from '../useCases/clipEditing/planEndTrim';
 import { planStartTrim } from '../useCases/clipEditing/planStartTrim';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
@@ -52,8 +53,9 @@ export function projectClipFade(action: ActionOf<'setClipFade'>, projected: Trac
 
 export function projectClipEnd(action: ActionOf<'trimClipEnd'>, projected: Track): void {
     const clip = findProjectedClip(projected, action.payload.clipId);
-    if (clip && Number.isFinite(action.payload.newEndBeat) && action.payload.newEndBeat > clip.startBeat) {
-        clip.endBeat = action.payload.newEndBeat;
+    const plan = clip && planEndTrim(clip, action.payload.newEndBeat);
+    if (clip && plan) {
+        clip.endBeat = plan.endBeat;
     }
 }
 
@@ -109,6 +111,19 @@ export function trimmedStartBeat(clip: Clip, newStartBeat: number): number {
         return clip.startBeat;
     }
     return plan.clip.startBeat;
+}
+
+/** The stored MIDI offset a trim of the start leaves, from the writer's own law, wrap included. */
+export function trimmedMidiOffset(clip: Clip, payload: ActionOf<'trimClipStart'>['payload']): number {
+    const unchanged = clip.midiOffsetBeats ?? 0;
+    if (!Number.isFinite(payload.newStartBeat)) {
+        return unchanged;
+    }
+    const plan = planStartTrim(clip, payload.newStartBeat, payload.loopOriginBeat, payload.midiOffsetBeats);
+    if (plan === null || plan === 'refused') {
+        return unchanged;
+    }
+    return plan.clip.midiOffsetBeats ?? 0;
 }
 
 export function projectMidiClipStart(action: ActionOf<'trimClipStart'>, projected: Track): void {

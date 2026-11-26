@@ -9,7 +9,6 @@ import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipSta
 import { prepareAudioClipSlip } from '../../useCases/clipEditing/prepareAudioClipSlip';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { slipWrapRowLiftBeats } from '../../useCases/clipEditing/slipWrapRowLiftBeats';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { slippedMidiOffset } from '../projectClipFieldActions';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
@@ -19,12 +18,6 @@ const rowReplay = createMidiRowCoordinateReplay('slipClipContent');
 
 type SlipAction = Extract<AppAction, { type: 'slipClipContent' }>;
 const preparedAudioSlips = new WeakMap<object, AudioClipSlipCapture>();
-
-function liveClip(clipId: string): Clip | undefined {
-    return getTrackStoreState()
-        ?.tracks.flatMap((track) => track.clips)
-        .find((row) => row.id === clipId);
-}
 
 function captureAudioSlip(action: SlipAction, clip: Clip | undefined): AudioClipSlipCapture | null {
     if (action.payload.clipType !== 'audio' || Object.hasOwn(action.payload, 'rowLiftBeats')) {
@@ -68,7 +61,8 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
             return { status: 'conflict' };
         }
         if (action.payload.clipType === 'audio') {
-            const capture = preparedAudioSlips.get(action) ?? captureAudioSlip(action, liveClip(action.payload.clipId));
+            const capture =
+                preparedAudioSlips.get(action) ?? captureAudioSlip(action, readPlannedClip(action.payload.clipId));
             if (!capture || !audioClipSlipOwner.matches(capture.before, capture.clock)) {
                 return { status: 'conflict' };
             }

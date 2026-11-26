@@ -13,6 +13,7 @@ import {
     projectClipSlip,
     projectMidiClipStart,
     slippedMidiOffset,
+    trimmedMidiOffset,
     trimmedStartBeat,
 } from '../projectClipFieldActions';
 
@@ -132,6 +133,38 @@ describe('projectClipFieldActions', () => {
 
         projectClipSlip({ type: 'slipClipContent', payload: { clipId: 'm', clipType: 'midi', offset: 1 } }, projected);
         expect(midi.midiOffsetBeats).toBe(1);
+    });
+
+    it('projects a fresh MIDI slip wrapped into the loop', () => {
+        const looped = ClipDummy.create({
+            id: 'm',
+            type: 'midi',
+            startBeat: 0,
+            endBeat: 16,
+            loopEnabled: true,
+            loopLength: 8,
+            midiOffsetBeats: 0,
+        });
+        const projected = trackWith(looped);
+
+        projectClipSlip({ type: 'slipClipContent', payload: { clipId: 'm', clipType: 'midi', offset: 10 } }, projected);
+
+        expect(looped.midiOffsetBeats).toBe(2);
+    });
+
+    it('reads the offset a start trim leaves, wrapped into the loop, and the stored one when nothing is written', () => {
+        const looped = ClipDummy.create({
+            type: 'midi',
+            startBeat: 0,
+            endBeat: 16,
+            loopEnabled: true,
+            loopLength: 8,
+            midiOffsetBeats: 0,
+        });
+
+        expect(trimmedMidiOffset(looped, { clipId: looped.id, newStartBeat: 10 })).toBe(2);
+        expect(trimmedMidiOffset(looped, { clipId: looped.id, newStartBeat: 16 })).toBe(0);
+        expect(trimmedMidiOffset(looped, { clipId: looped.id, newStartBeat: Number.NaN })).toBe(0);
     });
 
     it('wraps a fresh slip into the loop and restores a recorded one verbatim', () => {

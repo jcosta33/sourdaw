@@ -14,7 +14,9 @@ function hasCapture(action: RowAction): boolean {
 }
 function withoutExpectedState(payload: object): Record<string, unknown> {
     return Object.fromEntries(
-        Object.entries(payload).filter(([key]) => key !== 'expectedStartBeat' && key !== 'expectedOffset')
+        Object.entries(payload).filter(
+            ([key]) => key !== 'expectedStartBeat' && key !== 'expectedOffset' && key !== 'expectedMidiOffsetBeats'
+        )
     );
 }
 function isFiniteBeat(value: unknown): value is number {

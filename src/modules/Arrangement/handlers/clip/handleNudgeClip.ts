@@ -5,18 +5,11 @@ import { type Clip } from '../../models/Track';
 import { nudgeClip } from '../../useCases/clipEditing/nudgeClip';
 import { planClipNudge } from '../../useCases/clipEditing/planClipNudge';
 import { type ClipPlacement, readClipPlacement } from '../../useCases/clipEditing/readClipPlacement';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { readPlannedClip } from './readPlannedClip';
 
 type NudgePayload = Extract<AppAction, { type: 'nudgeClip' }>['payload'];
-
-function liveClip(clipId: string): Clip | undefined {
-    return getTrackStoreState()
-        ?.tracks.flatMap((track) => track.clips)
-        .find((candidate) => candidate.id === clipId);
-}
 
 function hasExpectation(payload: NudgePayload): boolean {
     return payload.expectedPlacement !== undefined || payload.expectedStartBeat !== undefined;
@@ -73,7 +66,10 @@ export const handleNudgeClip = createHandler<'nudgeClip'>({
             return { status: 'conflict' };
         }
         // An unguarded nudge never reads the live clip here; the writer owns its own malformed-state refusal.
-        if (hasExpectation(alpha.payload) && !holdsExpectedPlacement(alpha.payload, liveClip(alpha.payload.clipId))) {
+        if (
+            hasExpectation(alpha.payload) &&
+            !holdsExpectedPlacement(alpha.payload, readPlannedClip(alpha.payload.clipId))
+        ) {
             return { status: 'conflict' };
         }
         if (alpha.payload.placement) {

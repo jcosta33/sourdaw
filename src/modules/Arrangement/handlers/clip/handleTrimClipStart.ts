@@ -15,7 +15,7 @@ import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAud
 import { prepareLegacyAudioClipStartTrim } from '../../useCases/clipEditing/prepareLegacyAudioClipStartTrim';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { trimmedStartBeat } from '../projectClipFieldActions';
+import { trimmedMidiOffset, trimmedStartBeat } from '../projectClipFieldActions';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
@@ -160,6 +160,7 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
         loopOriginBeat: number | null;
         midiOffsetBeats?: number;
         expectedStartBeat?: number;
+        expectedMidiOffsetBeats?: number;
     } = {
         clipId: clip.id,
         // The inverse records the pre-action anchor exactly (#5198): a
@@ -180,6 +181,7 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
         // midi-only, the only type whose trim re-bases offset and rows
         // through the wrap law.
         inversePayload.midiOffsetBeats = clip.midiOffsetBeats ?? 0;
+        inversePayload.expectedMidiOffsetBeats = trimmedMidiOffset(clip, alpha.payload);
     }
     // The writer moves the head only to a start before the clip's end, clamped at beat 0.
     inversePayload.expectedStartBeat = trimmedStartBeat(clip, alpha.payload.newStartBeat);
@@ -189,24 +191,34 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
         payload: { ...structuredClone(alpha.payload), expectedStartBeat: clip.startBeat },
     };
     if (clip.type === 'midi') {
+        redoAction.payload.expectedMidiOffsetBeats = clip.midiOffsetBeats ?? 0;
+    }
+    if (clip.type === 'midi') {
         return { label, ...rowReplay.describe(alpha, inverseAction, redoAction) };
     }
     return { label, inverseAction, redoAction };
 }
 
+/** Whether the clip is where a recorded leg expects it: the head, and for MIDI the stored offset. */
+function holdsExpectedState(payload: TrimClipStartAction['payload'], clip: Clip | undefined): boolean {
+    if (payload.expectedStartBeat !== undefined && clip?.startBeat !== payload.expectedStartBeat) {
+        return false;
+    }
+    return (
+        payload.expectedMidiOffsetBeats === undefined ||
+        (clip?.midiOffsetBeats ?? 0) === payload.expectedMidiOffsetBeats
+    );
+}
+
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     canReportConflict: true,
-    canReapplyAfterDivergence: (alpha) => alpha.payload.expectedStartBeat !== undefined,
-    validate: (alpha, context) =>
-        alpha.payload.expectedStartBeat === undefined ||
-        readPlannedClip(alpha.payload.clipId, context)?.startBeat === alpha.payload.expectedStartBeat,
+    canReapplyAfterDivergence: (alpha) =>
+        alpha.payload.expectedStartBeat !== undefined || alpha.payload.expectedMidiOffsetBeats !== undefined,
+    validate: (alpha, context) => holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
     validateSessionEntry: (entry) =>
         audioClipStartTrimState.isSessionEntry(entry) && rowReplay.validateSessionEntry(entry),
     execute: (alpha) => {
-        if (
-            alpha.payload.expectedStartBeat !== undefined &&
-            readPlannedClip(alpha.payload.clipId)?.startBeat !== alpha.payload.expectedStartBeat
-        ) {
+        if (!holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId))) {
             return { status: 'conflict' };
         }
         if (!rowReplay.canExecute(alpha)) {

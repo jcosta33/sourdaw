@@ -7326,6 +7326,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             clipId: 1,
+            expectedMidiOffsetBeats: 0,
             expectedStartBeat: 0,
             loopOriginBeat: 361,
             midiOffsetBeats: 0,

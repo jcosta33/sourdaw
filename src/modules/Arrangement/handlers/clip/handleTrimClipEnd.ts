@@ -1,16 +1,10 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { planEndTrim } from '../../useCases/clipEditing/planEndTrim';
 import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { readPlannedClip } from './readPlannedClip';
-
-function liveEndBeat(clipId: string): number | undefined {
-    return getTrackStoreState()
-        ?.tracks.flatMap((track) => track.clips)
-        .find((candidate) => candidate.id === clipId)?.endBeat;
-}
 
 export const handleTrimClipEnd = createHandler<'trimClipEnd'>({
     canReapplyAfterDivergence: (alpha) => alpha.payload.expectedEndBeat !== undefined,
@@ -20,7 +14,7 @@ export const handleTrimClipEnd = createHandler<'trimClipEnd'>({
     execute: (alpha) => {
         if (
             alpha.payload.expectedEndBeat !== undefined &&
-            liveEndBeat(alpha.payload.clipId) !== alpha.payload.expectedEndBeat
+            readPlannedClip(alpha.payload.clipId)?.endBeat !== alpha.payload.expectedEndBeat
         ) {
             return { status: 'conflict' };
         }
@@ -33,11 +27,7 @@ export const handleTrimClipEnd = createHandler<'trimClipEnd'>({
             if (!clip) {
                 return { label, inverseAction: null };
             }
-            // The writer ignores a request that is not past the clip's start.
-            const writtenEndBeat =
-                Number.isFinite(alpha.payload.newEndBeat) && alpha.payload.newEndBeat > clip.startBeat
-                    ? alpha.payload.newEndBeat
-                    : clip.endBeat;
+            const writtenEndBeat = planEndTrim(clip, alpha.payload.newEndBeat)?.endBeat ?? clip.endBeat;
             return {
                 label,
                 inverseAction: {

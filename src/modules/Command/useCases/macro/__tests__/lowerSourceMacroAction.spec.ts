@@ -177,7 +177,10 @@ describe('lowerSourceMacroAction on captured source actions', () => {
         ],
         [
             'trimClipStart',
-            { type: 'trimClipStart', payload: { clipId: 'clip', newStartBeat: 6, expectedStartBeat: 4 } },
+            {
+                type: 'trimClipStart',
+                payload: { clipId: 'clip', newStartBeat: 6, expectedStartBeat: 4, expectedMidiOffsetBeats: 2 },
+            },
             { type: 'trimClipStart', payload: { clipId: 'clip', newStartBeat: 6 } },
         ],
         [

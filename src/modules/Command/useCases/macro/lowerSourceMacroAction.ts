@@ -73,6 +73,7 @@ function cloneNudgeClipForReplay(action: ActionOf<'nudgeClip'>): AppAction {
 function cloneTrimClipStartForReplay(action: ActionOf<'trimClipStart'>): AppAction {
     const replay = structuredClone(action);
     delete replay.payload.expectedStartBeat;
+    delete replay.payload.expectedMidiOffsetBeats;
     return replay;
 }
 

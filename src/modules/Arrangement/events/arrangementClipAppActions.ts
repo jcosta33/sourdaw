@@ -251,6 +251,12 @@ export type ArrangementClipAppAction =
                * divergent edit of the start is a conflict. Only recorded replays set it.
                */
               expectedStartBeat?: number;
+              /**
+               * The stored `midiOffsetBeats` a recorded MIDI inverse or redo requires before it
+               * writes, so a peer slip between the trim and its replay is a conflict. Only
+               * recorded replays set it.
+               */
+              expectedMidiOffsetBeats?: number;
               /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
               midiRowCoordinates?: MidiRowCoordinateCapture;
           };
