@@ -735,13 +735,17 @@ const largestGrantableRssBytes = Math.max(
     ...measuredScriptBudgets.values()
 );
 
-type ReservationRead = { readable: true; owner: ReservationRecord } | { readable: false };
+type ReservationProbe =
+    { status: 'live'; owner: ReservationRecord } | { status: 'dead' } | { status: 'unusable'; reason: string };
 
-function readReservationRecord(path: string): ReservationRead {
+// A record that cannot be read, or whose fields make the liveness check throw (for example a
+// non-iterable trackedProcesses), is unusable: its command may still run.
+function probeReservation(path: string, host: ProcessTreeHost): ReservationProbe {
     try {
-        return { readable: true, owner: reservationWithState(path) };
-    } catch {
-        return { readable: false };
+        const owner = reservationWithState(path);
+        return reservationIsLive(owner, host) ? { status: 'live', owner } : { status: 'dead' };
+    } catch (error) {
+        return { status: 'unusable', reason: errorMessage(error) };
     }
 }
 
@@ -773,21 +777,17 @@ function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: R
             continue;
         }
         const path = join(root, name);
-        const read = readReservationRecord(path);
-        if (!read.readable) {
-            // Records are written atomically, so an unreadable one is external damage and its
-            // command may still run: hold the largest budget until the file is provably stale.
-            if (reservationFileIsStale(path)) {
-                removeReservation(path);
-            } else if (existsSync(path)) {
-                live.push({ owner: unreadableReservationOwner(path), path });
-            }
-            continue;
-        }
-        if (reservationIsLive(read.owner, host)) {
-            live.push({ owner: read.owner, path });
-        } else {
+        const probe = probeReservation(path, host);
+        if (probe.status === 'live') {
+            live.push({ owner: probe.owner, path });
+        } else if (probe.status === 'dead') {
             removeReservation(path);
+        } else if (reservationFileIsStale(path)) {
+            // Records are written atomically, so an unusable one is external damage and its
+            // command may still run: hold the largest budget until the file is provably stale.
+            removeReservation(path);
+        } else if (existsSync(path)) {
+            live.push({ owner: unreadableReservationOwner(path), path });
         }
     }
     return live;
