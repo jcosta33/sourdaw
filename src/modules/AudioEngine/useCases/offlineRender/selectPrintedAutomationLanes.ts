@@ -19,14 +19,15 @@ type SelectPrintedAutomationLanesInput = {
  * starts on the target stops at one of them and reads nothing past it. Any other track's lanes
  * resolve over the full list, so its chain reads those lanes and walks on through them.
  */
-function addLeaderIds(lanes: readonly AutomationLane[], ids: Set<string>, targetTrackId: string): void {
+function addLeaderIds(
+    lanes: readonly AutomationLane[],
+    starts: readonly AutomationLane[],
+    ids: Set<string>,
+    targetTrackId: string
+): void {
     const byId = new Map(lanes.map((lane) => [lane.id, lane]));
-    for (const id of [...ids]) {
-        const follower = byId.get(id);
-        if (!follower) {
-            continue;
-        }
-        const seen = new Set([id]);
+    for (const follower of starts) {
+        const seen = new Set([follower.id]);
         let leaderId = follower.linkedLaneId;
         while (leaderId !== undefined && !seen.has(leaderId)) {
             const leader = byId.get(leaderId);
@@ -53,12 +54,9 @@ export function selectPrintedAutomationLanes({
     targetTrackId,
     takeRefs,
 }: SelectPrintedAutomationLanesInput): AutomationLane[] {
-    const ids = new Set(
-        lanes
-            .filter((lane) => memberIds.has(lane.trackId) && !drivesTrackMixer(lane, targetTrackId))
-            .map((lane) => lane.id)
-    );
-    addLeaderIds(lanes, ids, targetTrackId);
+    const starts = lanes.filter((lane) => memberIds.has(lane.trackId) && !drivesTrackMixer(lane, targetTrackId));
+    const ids = new Set(starts.map((lane) => lane.id));
+    addLeaderIds(lanes, starts, ids, targetTrackId);
     const selected = lanes.filter((lane) => ids.has(lane.id));
     for (const lane of selected) {
         takeRefs(listPrintedFieldRefs(readPrintedAutomationLane(lane)));

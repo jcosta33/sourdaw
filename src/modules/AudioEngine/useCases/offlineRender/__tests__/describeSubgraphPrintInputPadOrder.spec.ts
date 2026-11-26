@@ -73,6 +73,20 @@ const bypassedChildTwo: Track = {
     parentId: bypassedToaster.id,
 };
 
+const secondToaster: Track = {
+    ...createTrack({ id: 'track-second-toaster', name: 'Second', kind: 'folder' }),
+    outputId: TOASTER_ID,
+    devices: [{ ...toasterDevice, id: 'device-second-toaster' }],
+};
+const secondPadOne: Track = {
+    ...createTrack({ id: 'track-second-pad-1', name: 'Pad 1', kind: 'midi' }),
+    parentId: secondToaster.id,
+};
+const secondPadTwo: Track = {
+    ...createTrack({ id: 'track-second-pad-2', name: 'Pad 2', kind: 'midi' }),
+    parentId: secondToaster.id,
+};
+
 const baseline = read([toaster, padOne, padTwo, sourceOne, sourceTwo]);
 
 describe('describeSubgraphPrintInput Toaster pad order', () => {
@@ -97,5 +111,21 @@ describe('describeSubgraphPrintInput Toaster pad order', () => {
         const before = read([toaster, bypassedToaster, bypassedChildOne, bypassedChildTwo]);
         const after = read([toaster, bypassedToaster, bypassedChildTwo, bypassedChildOne]);
         expect(after).toEqual(before);
+    });
+
+    describe('with two Toasters in one subgraph', () => {
+        const both = [toaster, padOne, padTwo, secondToaster, secondPadOne, secondPadTwo];
+
+        it('selects and describes another input when the pads of the second Toaster swap places', () => {
+            const before = read(both);
+            const after = read([toaster, padOne, padTwo, secondToaster, secondPadTwo, secondPadOne]);
+            expect(after.description).not.toEqual(before.description);
+            expect(after.refs).not.toEqual(before.refs);
+        });
+
+        it('selects and describes the same input when the two Toasters swap places in project order', () => {
+            const swapped = read([secondToaster, secondPadOne, secondPadTwo, toaster, padOne, padTwo]);
+            expect(swapped).toEqual(read(both));
+        });
     });
 });
