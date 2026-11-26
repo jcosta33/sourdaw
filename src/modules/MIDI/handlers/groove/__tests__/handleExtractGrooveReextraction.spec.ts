@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../../../stores/grooveTemplateStore';
+import { createGrooveTemplate } from '../../../useCases/grooveTemplates/createGrooveTemplate';
 import { handleExtractGroove } from '../handleExtractGroove';
 
 const mocks = vi.hoisted(() => ({
@@ -93,6 +94,31 @@ describe('handleExtractGroove re-extraction', () => {
             templateId: `groove-${CLIP_ID}-v2`,
             expectedTemplate: storedTemplates()[1],
         });
+    });
+
+    it('takes the lowest free version when the clip versions have a gap', () => {
+        for (const version of [1, 3]) {
+            createGrooveTemplate({
+                id: `groove-${CLIP_ID}-v${version}`,
+                name: `Other groove ${version}`,
+                subdivision: '1/16',
+                slots: [{ index: version, timingOffset: 0.1, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: `other-${version}` },
+            });
+        }
+        const before = structuredClone(storedTemplates());
+        setNotes(0.02);
+
+        const extraction = extractIdLess();
+
+        expect(extraction.result).toMatchObject({ status: 'written' });
+        expect(extraction.action.payload.templateId).toBe(`groove-${CLIP_ID}-v2`);
+        expect(
+            storedTemplates()
+                .map((template) => template.id)
+                .toSorted()
+        ).toEqual([`groove-${CLIP_ID}-v1`, `groove-${CLIP_ID}-v2`, `groove-${CLIP_ID}-v3`]);
+        expect(storedTemplates().filter((template) => template.id !== `groove-${CLIP_ID}-v2`)).toEqual(before);
     });
 
     it('still refuses a different template already holding the id the action carries', () => {
