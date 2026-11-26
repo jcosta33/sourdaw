@@ -385,12 +385,16 @@ export const ElasticEditorPanel = (): ReactElement => {
         }
         dragRef.current = null;
         const preview = previewRef.current;
+        previewRef.current = null;
         if (preview === null || preview.clipId !== clipId || preview.markerId !== drag.markerId) {
             clearMarkerPreview();
             return;
         }
         const moved = preview.field === 'originalBeat' ? { originalBeat: preview.beat } : { warpedBeat: preview.beat };
-        void commitWarpMarkerBeatDrag({ clipId, markerId: drag.markerId, ...moved }).finally(clearMarkerPreview);
+        // The preview stays drawn until its commit settles, unless a newer drag has replaced it by then.
+        void commitWarpMarkerBeatDrag({ clipId, markerId: drag.markerId, ...moved }).finally(() =>
+            setMarkerPreview((current) => (current === preview ? null : current))
+        );
     };
 
     // A cancelled gesture leaves the document untouched.

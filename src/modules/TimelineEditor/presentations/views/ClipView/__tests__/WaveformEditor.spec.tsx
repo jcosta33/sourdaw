@@ -722,6 +722,80 @@ describe('WaveformEditor', () => {
         });
     });
 
+    it('should keep a second drag preview when the first drag commit settles during it', async () => {
+        const firstCommit = Promise.withResolvers<void>();
+        vi.mocked(commitWarpMarkerBeatDrag).mockReturnValueOnce(firstCommit.promise);
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [
+                { id: 'm1', originalBeat: 0.5, warpedBeat: 1 },
+                { id: 'm2', originalBeat: 1.5, warpedBeat: 3 },
+            ],
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        const canvas = screen.getByLabelText('Waveform editor');
+        canvas.setPointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+            fireEvent.pointerUp(canvas, { pointerId: 7 });
+        });
+        fireEvent.pointerDown(canvas, { clientX: 120, pointerId: 8 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 140, pointerId: 8 });
+        });
+
+        await act(async () => {
+            firstCommit.resolve();
+            await firstCommit.promise;
+        });
+        await act(async () => {
+            fireEvent.pointerUp(canvas, { pointerId: 8 });
+        });
+
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenLastCalledWith({
+            clipId: 'clip-1',
+            markerId: 'm2',
+            warpedBeat: 3.5,
+        });
+    });
+
+    it('should write nothing for an unmoved click on another marker while the first drag commit is pending', async () => {
+        const firstCommit = Promise.withResolvers<void>();
+        vi.mocked(commitWarpMarkerBeatDrag).mockReturnValueOnce(firstCommit.promise);
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [
+                { id: 'm1', originalBeat: 0.5, warpedBeat: 1 },
+                { id: 'm2', originalBeat: 1.5, warpedBeat: 3 },
+            ],
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        const canvas = screen.getByLabelText('Waveform editor');
+        canvas.setPointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+            fireEvent.pointerUp(canvas, { pointerId: 7 });
+        });
+
+        fireEvent.pointerDown(canvas, { clientX: 120, pointerId: 8 });
+        await act(async () => {
+            fireEvent.pointerUp(canvas, { pointerId: 8 });
+        });
+
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            firstCommit.resolve();
+            await firstCommit.promise;
+        });
+    });
+
     it('should write nothing for a click without movement on a second marker after an earlier drag', async () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,

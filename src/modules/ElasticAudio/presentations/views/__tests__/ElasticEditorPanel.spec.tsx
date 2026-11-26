@@ -183,10 +183,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
             mocks.toggleMarkerLock(...args);
             return Promise.resolve();
         },
-        commitWarpMarkerBeatDrag: (...args: unknown[]) => {
-            mocks.commitWarpMarkerBeatDrag(...args);
-            return Promise.resolve();
-        },
+        commitWarpMarkerBeatDrag: (...args: unknown[]): Promise<void> =>
+            (mocks.commitWarpMarkerBeatDrag(...args) as Promise<void> | undefined) ?? Promise.resolve(),
     };
 });
 
@@ -962,6 +960,64 @@ describe('ElasticEditorPanel', () => {
             clipId: 'c1',
             markerId: 'm1',
             warpedBeat: 1.725,
+        });
+    });
+
+    it('keeps a second drag preview when the first drag commit settles during it', async () => {
+        const firstCommit = Promise.withResolvers<void>();
+        mocks.commitWarpMarkerBeatDrag.mockReturnValueOnce(firstCommit.promise);
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+            fireEvent.pointerUp(canvas, { pointerId: 4 });
+        });
+        fireEvent.pointerDown(canvas, { clientX: 80, pointerId: 5 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 100, pointerId: 5 });
+        });
+
+        await act(async () => {
+            firstCommit.resolve();
+            await firstCommit.promise;
+        });
+        await act(async () => {
+            fireEvent.pointerUp(canvas, { pointerId: 5 });
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledTimes(2);
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenLastCalledWith({
+            clipId: 'c1',
+            markerId: 'm2',
+            warpedBeat: 2.5,
+        });
+    });
+
+    it('writes nothing for an unmoved click on another marker while the first drag commit is pending', async () => {
+        const firstCommit = Promise.withResolvers<void>();
+        mocks.commitWarpMarkerBeatDrag.mockReturnValueOnce(firstCommit.promise);
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+            fireEvent.pointerUp(canvas, { pointerId: 4 });
+        });
+
+        fireEvent.pointerDown(canvas, { clientX: 80, pointerId: 5 });
+        await act(async () => {
+            fireEvent.pointerUp(canvas, { pointerId: 5 });
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            firstCommit.resolve();
+            await firstCommit.promise;
         });
     });
 

@@ -452,13 +452,15 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
             return;
         }
         const preview = previewRef.current;
+        previewRef.current = null;
         endMarkerDrag();
         if (preview === null || preview.clipId !== clipId || preview.id !== drag.id) {
             clearMarkerPreview();
             return;
         }
-        void commitWarpMarkerBeatDrag({ clipId, markerId: drag.id, warpedBeat: preview.warpedBeat }).finally(
-            clearMarkerPreview
+        // The preview stays drawn until its commit settles, unless a newer drag has replaced it by then.
+        void commitWarpMarkerBeatDrag({ clipId, markerId: drag.id, warpedBeat: preview.warpedBeat }).finally(() =>
+            setMarkerPreview((current) => (current === preview ? null : current))
         );
     };
 
