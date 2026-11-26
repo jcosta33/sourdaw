@@ -14,22 +14,37 @@ type Target = Parameters<typeof readRawDevicePatchOwner>[1];
 type Guard = NonNullable<HandlerCommitValidation['beforeMutation']>;
 type Rebind = (owner: HandlerDeviceOwnerChange) => void;
 type Chain = Pick<Track, 'id' | 'devices'>;
-type Reorder = { kind: 'reorder'; before: Chain; after: Chain; rebind: Rebind };
+type ProofRequirement = 'required' | 'optional';
+type Reorder = { kind: 'reorder'; before: Chain; after: Chain; rebind: Rebind; proof: ProofRequirement };
 type Change =
     | { kind: 'remove'; target: Target; removed: DeviceOwnerIncarnation }
     | { kind: 'restore'; target: Target; removed: DeviceOwnerIncarnation; rebind: Rebind }
     | Reorder;
 
-function validateCommit(source: Guard, validateDocument: Guard, rebind?: () => void): HandlerCommitValidation | null {
+function validateCommit(
+    source: Guard,
+    validateCandidate: Guard,
+    rebind?: () => void,
+    proof: ProofRequirement = 'required'
+): HandlerCommitValidation | null {
     const identity = captureProjectIdentity();
+    let proofAvailable = true;
+    function recordFailure(reason: string | null): string | null {
+        proofAvailable &&= reason === null;
+        return proof === 'required' ? reason : null;
+    }
     function beforeMutation(document: Parameters<Guard>[0]): string | null {
-        return captureProjectIdentity() === identity
-            ? source(document)
-            : 'The project changed during device history replay';
+        if (captureProjectIdentity() !== identity) {
+            return recordFailure('The project changed during device history replay');
+        }
+        return recordFailure(source(document));
     }
     function beforeCommit(): string | null {
         const root = getCrdtDoc('root');
-        return root ? beforeMutation(root) : 'The project root disappeared during device history replay';
+        if (!root) {
+            return recordFailure('The project root disappeared during device history replay');
+        }
+        return beforeMutation(root);
     }
     if (beforeCommit() !== null) {
         return null;
@@ -38,12 +53,17 @@ function validateCommit(source: Guard, validateDocument: Guard, rebind?: () => v
         documentId: 'root',
         beforeCommit,
         beforeMutation,
-        validateDocument,
+        validateDocument: (document) => {
+            if (!proofAvailable) {
+                return null;
+            }
+            return recordFailure(validateCandidate(document));
+        },
         release: () => undefined,
         afterPublication:
             rebind &&
             (() => {
-                if (captureProjectIdentity() === identity) {
+                if (proofAvailable && captureProjectIdentity() === identity) {
                     rebind();
                 }
             }),
@@ -116,7 +136,7 @@ function readGrinderOwners(
     return owners;
 }
 
-function captureReorder({ before, after, rebind }: Reorder) {
+function captureReorder({ before, after, rebind, proof }: Reorder) {
     const trackId = before.id;
     const deviceIds = before.devices.filter(({ type }) => type === 'grinder').map(({ id }) => id);
     const originalChain = before.devices.map(({ id }) => id);
@@ -155,7 +175,8 @@ function captureReorder({ before, after, rebind }: Reorder) {
             for (const owner of transferredOwners) {
                 rebind(owner);
             }
-        }
+        },
+        proof
     );
 }
 

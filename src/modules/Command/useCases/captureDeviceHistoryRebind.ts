@@ -36,10 +36,9 @@ function captureDeviceRemovalUndo(inverse: RestoreDeviceAction, entryId: string)
 
 export function captureDeviceHistoryRebind(
     requestedAction: AppAction,
-    undoEntryId: string | undefined,
-    actionCount = 1
+    undoEntryId: string | undefined
 ): HandlerValidationContext['rebindDeviceHistory'] {
-    if (requestedAction.type === 'reorderDevices' && actionCount === 1) {
+    if (requestedAction.type === 'reorderDevices') {
         return rebindDeviceHistory;
     }
     if (requestedAction.type === 'restoreDevice' && requestedAction.payload.removedOwner && undoEntryId !== undefined) {

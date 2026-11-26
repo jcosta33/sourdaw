@@ -416,6 +416,62 @@ describe('Grinder Rectifier project command', () => {
         expect(sync).toHaveBeenCalledTimes(shouldUndo ? 1 : 0);
     });
 
+    it.each([
+        { scenario: 'one reorder', targets: ['second'], replacement: false },
+        { scenario: 'two same-rack reorders', targets: ['first', 'second'], replacement: false },
+        { scenario: 'an equal peer replacement', targets: ['second'], replacement: true },
+    ] as const)('checks preset history after grouped rack reorder with $scenario', async ({ targets, replacement }) => {
+        addTwoNeighbors();
+        const originalParameters = structuredClone(rawDevice().parameterValues);
+        await executeAppAction(makeAction());
+        if (replacement) {
+            installEqualPeerReplacement();
+        }
+        const groupId = 'reorder-grinder-and-rename-track';
+        for (const target of targets) {
+            const action = compileReorderDevicesAction('track', 'amp', target);
+            if (!action) {
+                throw new Error('Expected the production device reorder');
+            }
+            await executeAppAction(action, { groupId });
+        }
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'track', name: 'Renamed' } }, { groupId });
+        const movedId = getObjectId(rawDevice());
+        expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['first', 'second', 'amp']);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(undoHistoryStore.value?.future).toHaveLength(targets.length + 1);
+        expect(rawRoot().tracks.tracks[0]).toMatchObject({ name: 'Guitar' });
+        expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['amp', 'first', 'second']);
+        expect(getObjectId(rawDevice())).not.toBe(movedId);
+
+        const heads = getHeads(rawRoot());
+        const changedHeads = expect.not.arrayContaining(heads);
+        const presetParameters = structuredClone(rawDevice().parameterValues);
+        sync.mockClear();
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: !replacement });
+        expect(rawDevice().parameterValues).toEqual(replacement ? presetParameters : originalParameters);
+        expect(getHeads(rawRoot())).toEqual(replacement ? heads : changedHeads);
+        expect(sync).toHaveBeenCalledTimes(replacement ? 0 : 1);
+    });
+
+    it('keeps grouped Undo legal when another inverse changes the rack membership', async () => {
+        addTwoNeighbors();
+        await executeAppAction(makeAction());
+        const groupId = 'reorder-grinder-and-remove-device';
+        const action = compileReorderDevicesAction('track', 'amp', 'second');
+        if (!action) {
+            throw new Error('Expected the production device reorder');
+        }
+        await executeAppAction(action, { groupId });
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: 'first' } }, { groupId });
+        expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['second', 'amp']);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rawRoot().tracks.tracks[0]?.devices.map(({ id }) => id)).toEqual(['amp', 'first', 'second']);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+    });
+
     it('does not deliver runtime effects to a same-id replacement after commit', async () => {
         const action = makeAction();
         let replaced = false;

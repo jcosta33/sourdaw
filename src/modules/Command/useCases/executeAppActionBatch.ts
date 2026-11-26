@@ -907,8 +907,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     commitValidation: null,
                     rebindDeviceHistory: captureDeviceHistoryRebind(
                         canonicalized.requestedAction,
-                        undoEntryIds?.[index],
-                        canonicalizedActions.length
+                        undoEntryIds?.[index]
                     ),
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
