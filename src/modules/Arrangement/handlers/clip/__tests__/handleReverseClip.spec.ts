@@ -824,7 +824,7 @@ describe('handleReverseClip', () => {
         beforeEach(() => {
             // Only the clip's own buffer and another clip's are cached; the id this reverse mints is not.
             mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
-                bufferId === 'buffer-1' || bufferId === 'foreign-buffer' ? { length: 32, sampleRate: 8 } : undefined
+                bufferId === 'buffer-1' || bufferId === 'foreign-buffer' ? { length: 32, sampleRate: 8 } : null
             );
         });
 

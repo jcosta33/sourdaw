@@ -9,8 +9,10 @@ import { captureClipAudioSource } from '../../useCases/clipEditing/clipAudioSour
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
 import { reversedClipAudioOffsetBeats } from '../../useCases/clipEditing/reversedClipAudioOffsetBeats';
 import { reversedClipAudioSource } from '../../useCases/clipEditing/reversedClipAudioSource';
+import { collectAudioBufferIdFields } from '../../useCases/collectAudioBufferIdFields';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { liveTempoTimeline } from '../../useCases/liveTempoTimeline';
+import { readUndoHistoryAudioBufferIds } from '../../useCases/readUndoHistoryAudioBufferIds';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { isReverseClipSessionEntry } from './isReverseClipSessionEntry';
@@ -80,13 +82,24 @@ function findRefusal(action: Extract<AppAction, { type: 'reverseClip' }>): strin
     return findAudioRefusal(clip, action.payload.reversedBufferId);
 }
 
+/**
+ * The reverse caches its mirrored audio under its minted id, so an id the cache, any clip of the project
+ * or any undo entry already names, the clip's own among them, would overwrite audio a clip or a later
+ * undo replay still needs. The cache is bounded, so it alone cannot say an id is free.
+ */
+function isAudioBufferInUse(bufferId: string): boolean {
+    return (
+        getCachedAudioBuffer({ bufferId }) !== null ||
+        collectAudioBufferIdFields(getTrackStoreState()).includes(bufferId) ||
+        readUndoHistoryAudioBufferIds().has(bufferId)
+    );
+}
+
 function findAudioRefusal(clip: Clip, reversedBufferId: string | undefined): string | null {
     if (!clip.audioBufferId || !getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
         return `The audio of clip "${clip.id}" is not loaded`;
     }
-    // The reverse caches its mirrored audio under this id, so an id already cached, the clip's own among
-    // them, would overwrite audio another clip or this undo still needs.
-    if (reversedBufferId !== undefined && getCachedAudioBuffer({ bufferId: reversedBufferId })) {
+    if (reversedBufferId !== undefined && isAudioBufferInUse(reversedBufferId)) {
         return `Audio buffer "${reversedBufferId}" already exists, so it cannot hold the reversed audio`;
     }
     if (resolveReversedSource(clip).audioSource === null) {

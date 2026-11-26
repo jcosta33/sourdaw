@@ -132,7 +132,21 @@ function seedProject(): void {
                 kind: 'audio',
                 clips: [ClipDummy.create({ id: 'sample', trackId: 'audio-1' })],
             }),
-            TrackDummy.create({ id: 'frozen-midi', kind: 'midi', frozen: true }),
+            TrackDummy.create({
+                id: 'frozen-midi',
+                kind: 'midi',
+                frozen: true,
+                clips: [
+                    ClipDummy.create({
+                        id: 'frozen-instance',
+                        trackId: 'frozen-midi',
+                        type: 'midi',
+                        audioBufferId: undefined,
+                        parentClipId: 'pattern',
+                        overrides: {},
+                    }),
+                ],
+            }),
         ],
         selectedTrackId: null,
         ghostClips: [],
@@ -190,11 +204,13 @@ describe('pattern instance commands through the versioned envelope route', () =>
     it.each([
         ['a clip that does not exist', 'ghost', 'rejected', 'Command batch target does not exist: ghost'],
         ['a locked clip', 'locked-instance', 'conflicted', 'Clip "locked-instance" is locked'],
+        ['a clip on a frozen track', 'frozen-instance', 'conflicted', 'Track "frozen-midi" is frozen'],
     ])('refuses to detach %s and writes nothing', async (_name, clipId, status, reason) => {
         const result = await runThroughEnvelope({ type: 'detachPatternInstance', payload: { clipId } }, `d-${clipId}`);
 
         expect(outcomeOf(result)).toEqual({ status, reason: expect.stringContaining(reason) });
         expect(readClip('locked-instance')?.parentClipId).toBe('pattern');
+        expect(readClip('frozen-instance')?.parentClipId).toBe('pattern');
         expect(readClip('instance')?.parentClipId).toBe('pattern');
     });
 

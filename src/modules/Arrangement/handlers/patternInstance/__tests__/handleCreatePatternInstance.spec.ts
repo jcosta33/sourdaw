@@ -87,6 +87,7 @@ describe('handleCreatePatternInstance', () => {
             'The start beat must be a finite, non-negative beat',
         ],
         ['an empty target id', { targetClipId: '' }, undefined, 'The instance clip ID must not be empty'],
+        ['a blank target id', { targetClipId: '   ' }, undefined, 'The instance clip ID must not be empty'],
         ['a target id already in use', { targetClipId: 'source-clip' }, undefined, 'Clip "source-clip" already exists'],
     ])('refuses %s', (_name, payload, project, reason) => {
         seedProject(project);

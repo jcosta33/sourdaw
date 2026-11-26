@@ -48,21 +48,29 @@ function clipExists(clipId: string): boolean {
     );
 }
 
-/** The batch is a singleton, so the live stores are the state this action plans against. */
-function findRefusal(action: CreateAction): string | null {
-    const { sourceClipId, targetTrackId, startBeat, targetClipId } = action.payload;
-    if (!Number.isFinite(startBeat) || startBeat < 0) {
-        return 'The start beat must be a finite, non-negative beat';
-    }
-    if (targetClipId === '') {
-        return 'The instance clip ID must not be empty';
-    }
+function findSourceRefusal(sourceClipId: string): string | null {
     const source = findSourceClip(sourceClipId);
     if (!source) {
         return `Clip "${sourceClipId}" does not exist`;
     }
     if (source.type !== 'midi') {
         return `Clip "${sourceClipId}" is not a MIDI clip, so it has no pattern to instance`;
+    }
+    return null;
+}
+
+/** The batch is a singleton, so the live stores are the state this action plans against. */
+function findRefusal(action: CreateAction): string | null {
+    const { sourceClipId, targetTrackId, startBeat, targetClipId } = action.payload;
+    if (!Number.isFinite(startBeat) || startBeat < 0) {
+        return 'The start beat must be a finite, non-negative beat';
+    }
+    if (targetClipId !== undefined && targetClipId.trim() === '') {
+        return 'The instance clip ID must not be empty';
+    }
+    const sourceRefusal = findSourceRefusal(sourceClipId);
+    if (sourceRefusal !== null) {
+        return sourceRefusal;
     }
     const destination = getTrackStoreState()?.tracks.find((track) => track.id === targetTrackId);
     if (!destination) {

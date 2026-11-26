@@ -6,7 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
@@ -27,6 +27,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -135,6 +136,7 @@ function seedProject(): void {
                     }),
                     ClipDummy.create({ id: 'unloaded', trackId: 'audio-1', audioBufferId: 'unloaded' }),
                     ClipDummy.create({ id: 'other', trackId: 'audio-1', name: 'Other', audioBufferId: 'foreign' }),
+                    ClipDummy.create({ id: 'evicted', trackId: 'audio-1', name: 'Evicted', audioBufferId: 'dangling' }),
                     ClipDummy.create({
                         id: 'looped',
                         trackId: 'audio-1',
@@ -264,4 +266,51 @@ describe('reverseClip through the versioned envelope route', () => {
             expect(JSON.stringify(readClip(clipId))).toBe(clipBefore);
         }
     );
+
+    it('refuses a supplied reversed buffer id only a clip holds, though the cache has evicted it', async () => {
+        expect(getCachedAudioBuffer({ bufferId: 'dangling' })).toBeNull();
+        const clipBefore = JSON.stringify(readClip('verse'));
+
+        const result = await reverseThroughEnvelope('verse', 'supplied-dangling', 'dangling');
+
+        expect(outcomeOf(result)).toEqual({
+            status: 'conflicted',
+            reason: expect.stringContaining('Audio buffer "dangling" already exists'),
+        });
+        expect(getCachedAudioBuffer({ bufferId: 'dangling' })).toBeNull();
+        expect(JSON.stringify(readClip('verse'))).toBe(clipBefore);
+    });
+
+    it('refuses a supplied reversed buffer id only the undo history names, though the cache has evicted it', async () => {
+        const restore = (expected: string, restored: string): AppAction => ({
+            type: 'restoreReversedClip',
+            payload: { clipId: 'other', expectedAudioBufferId: expected, audioBufferId: restored, name: 'Other' },
+        });
+        undoHistoryStore.set({
+            past: [
+                {
+                    id: 'earlier-reverse',
+                    label: 'Reverse clip',
+                    timestamp: 0,
+                    source: 'manual',
+                    kind: 'action',
+                    action: { type: 'reverseClip', payload: { clipId: 'other', reversedBufferId: 'history-only' } },
+                    inverseAction: restore('history-only', 'foreign'),
+                    redoAction: restore('foreign', 'history-only'),
+                },
+            ],
+            future: [],
+        });
+        expect(getCachedAudioBuffer({ bufferId: 'history-only' })).toBeNull();
+        const clipBefore = JSON.stringify(readClip('verse'));
+
+        const result = await reverseThroughEnvelope('verse', 'supplied-history', 'history-only');
+
+        expect(outcomeOf(result)).toEqual({
+            status: 'conflicted',
+            reason: expect.stringContaining('Audio buffer "history-only" already exists'),
+        });
+        expect(getCachedAudioBuffer({ bufferId: 'history-only' })).toBeNull();
+        expect(JSON.stringify(readClip('verse'))).toBe(clipBefore);
+    });
 });

@@ -493,10 +493,18 @@ export const executableAppActionDescriptors = [
             'Place a linked instance of an existing MIDI clip on an existing unfrozen MIDI track at an absolute start beat; the instance starts with the source clip notes and stays linked to it.',
         intentPhrases: ['pattern instance', 'instance of the pattern', 'linked copy', 'linked instance'],
         targetRules: [
-            { argument: 'sourceClipId', capability: 'clip', promptRole: 'source' },
-            { argument: 'targetTrackId', capability: 'track', allowBatchLocal: false, promptRole: 'destination' },
+            { argument: 'sourceClipId', capability: 'clip' },
+            { argument: 'targetTrackId', capability: 'track', allowBatchLocal: false },
         ],
-        valueRules: [{ argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' }],
+        valueRules: [
+            {
+                argument: 'startBeat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
         parameters: {
             properties: {
                 sourceClipId: { type: 'string', description: 'Existing MIDI clip ID to instance' },

@@ -1909,10 +1909,18 @@ const EXPECTED_GROUNDING = [
         actionType: 'createPatternInstance',
         intentPhrases: ['pattern instance', 'instance of the pattern', 'linked copy', 'linked instance'],
         targetRules: [
-            { argument: 'sourceClipId', capability: 'clip', promptRole: 'source' },
-            { argument: 'targetTrackId', capability: 'track', allowBatchLocal: false, promptRole: 'destination' },
+            { argument: 'sourceClipId', capability: 'clip' },
+            { argument: 'targetTrackId', capability: 'track', allowBatchLocal: false },
         ],
-        valueRules: [{ argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' }],
+        valueRules: [
+            {
+                argument: 'startBeat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
     },
     {
         actionType: 'detachPatternInstance',
