@@ -150,7 +150,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
                 deviceType: 'builtin-stereo-widener',
                 parameters: [
                     { paramId: 'width-amount', minimum: 1.1, maximum: 1.35 },
-                    { paramId: 'width-mono-bass', minimum: 200, maximum: 300 },
+                    { paramId: 'width-mono-bass', minimum: 120, maximum: 200 },
                     { paramId: 'width-side', minimum: 0, maximum: 2 },
                 ],
             },
@@ -160,11 +160,8 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip on a mono bass part, where widening produces phase differences rather than image.',
             'Skip when the release target includes vinyl cutting or other mono-summed low-end delivery.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'decrease' },
-        ],
-        source: 'Only the harmonic content above the mono crossover is widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. The crossover sits at 200 Hz to 300 Hz, high enough that the side signal below 120 Hz falls while the upper harmonics carry the image.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Only the harmonic content above the mono crossover is widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. The crossover sits at 120 Hz to 200 Hz and removes the side signal below it, though a fundamental close to the crossover keeps part of its side, so no low-frequency stereo claim is made.',
     },
     {
         id: 'bass-intimate',

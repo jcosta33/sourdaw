@@ -6,9 +6,9 @@ type Catalog = ReturnType<typeof getMixRecipeCatalog>;
 const WIDE_RECIPE_IDS: readonly string[] = ['bass-wide', 'drums-wide'];
 
 /**
- * The catalog with a low-frequency stereo hold on the bass and drums wide recipes. The authored recipes
- * claim a fall of that content or none, and no authored recipe holds it (mixRecipeRenderLaw.spec.ts renders
- * the widener's high-pass), so a spec of how a hold is priced, admitted and printed reads the hold here.
+ * The catalog with a low-frequency stereo hold on the bass and drums wide recipes. No authored recipe claims
+ * that content (mixRecipeRenderLaw.spec.ts renders the widener's high-pass, which leaves content near its
+ * crossover partly in the side), so a spec of how a hold is priced, admitted and printed reads the hold here.
  */
 export function withLowFrequencyStereoHold(catalog: Catalog): Catalog {
     return { ...catalog, recipes: catalog.recipes.map(holdLowFrequencyStereoContent) };

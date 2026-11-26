@@ -129,7 +129,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
                 deviceType: 'builtin-stereo-widener',
                 parameters: [
                     { paramId: 'width-amount', minimum: 1.15, maximum: 1.4 },
-                    { paramId: 'width-mono-bass', minimum: 200, maximum: 300 },
+                    { paramId: 'width-mono-bass', minimum: 100, maximum: 160 },
                     { paramId: 'width-mid', minimum: -1, maximum: 1 },
                 ],
             },
@@ -141,11 +141,8 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the group contains the only centred anchor of the mix.',
             'Skip when a downstream bus already widens this material.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'decrease' },
-        ],
-        source: 'Widening compounds down the bus chain, so a group stays under about 1.4 to leave the parent bus somewhere to go. A crossover at 200 Hz to 300 Hz removes the side signal below it, so the summed low end of several sources does not decorrelate, which is where width damage shows first.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Widening compounds down the bus chain, so a group stays under about 1.4 to leave the parent bus somewhere to go. A crossover at 100 Hz to 160 Hz removes the side signal below it, which is where width damage on the summed low end of several sources shows first, though content near the crossover keeps part of its side, so no low-frequency stereo claim is made.',
     },
     {
         id: 'bus-intimate',

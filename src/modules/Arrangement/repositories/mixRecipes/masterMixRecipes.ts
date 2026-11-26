@@ -131,7 +131,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 deviceType: 'builtin-stereo-widener',
                 parameters: [
                     { paramId: 'width-amount', minimum: 1.05, maximum: 1.25 },
-                    { paramId: 'width-mono-bass', minimum: 200, maximum: 300 },
+                    { paramId: 'width-mono-bass', minimum: 100, maximum: 150 },
                     { paramId: 'width-mid', minimum: -1, maximum: 0 },
                 ],
             },
@@ -143,11 +143,8 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when individual sources or group buses have already been widened.',
             'Skip when the delivery target sums to mono, such as a club system or a vinyl cut.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'decrease' },
-        ],
-        source: 'Width applied at the master compounds with every widening move already made below it, so the amount stops near 1.25. A crossover at 200 Hz to 300 Hz removes the side signal below it, which is the low-frequency side content that costs level on mono fold-down and destabilises a vinyl cut.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Width applied at the master compounds with every widening move already made below it, so the amount stops near 1.25. A crossover at 100 Hz to 150 Hz removes the side signal below it, which is the low-frequency side content that costs level on mono fold-down and destabilises a vinyl cut, though content near the crossover keeps part of its side, so no low-frequency stereo claim is made.',
     },
     {
         id: 'master-intimate',
