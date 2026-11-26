@@ -1,4 +1,4 @@
-import { change, from, getHeads, type Doc } from '@automerge/automerge';
+import { change, clone, from, getConflicts, getHeads, merge, type Doc } from '@automerge/automerge';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -37,6 +37,15 @@ function createDocumentPort(initial: RootDocument) {
         applyPeerChange: (changeFn: (draft: RootDocument) => void): void => {
             doc = change(doc, changeFn);
         },
+        /** Two collaborators each replacing the slot concurrently, so the document holds both values. */
+        applyConcurrentSlotReplacements: (first: EntrySlot, second: EntrySlot): void => {
+            const replaceSlot = (value: EntrySlot): Doc<RootDocument> =>
+                change(clone(doc), (draft) => {
+                    draft.slot = value;
+                });
+            doc = merge(merge(doc, replaceSlot(first)), replaceSlot(second));
+        },
+        countSlotValues: (): number => Object.keys(getConflicts(doc, 'slot') ?? {}).length,
     };
 }
 
@@ -172,6 +181,50 @@ describe('createAutomergeStorage rebasing a pending write over a peer change', (
         flushAutomergeStorageWrites();
         expect(document.readSlot()).toEqual({ entries: { A: entry(1), B: entry(2) } });
         expect(storage.get()).toEqual({ entries: { A: entry(1), B: entry(2) } });
+    });
+
+    it('shows the pending write as is in a slot whose mutation hook owns its encoding', () => {
+        const document = createDocumentPort({ slot: { entries: { A: entry(1) } } });
+        configureAutomergeStoragePort(document.port);
+        const storage = createAutomergeStorage<EntrySlot>('root', 'slot', {
+            hydrateMissing: () => ({ entries: {} }),
+            // The hook writes the slot whole, so the flush replaces what a peer added.
+            mutateCrdt: ({ doc, key, value }) => {
+                doc[key] = { entries: value.entries };
+            },
+        });
+        storage.hydrate?.();
+        storage.set({ entries: { ...readEntries(storage), B: entry(2) } });
+
+        document.applyPeerChange((draft) => {
+            peerEntries(draft).C = entry(3);
+        });
+        storage.hydrate?.();
+
+        expect(readEntries(storage)).toEqual({ A: entry(1), B: entry(2) });
+        flushAutomergeStorageWrites();
+        expect(document.readEntries()).toEqual({ A: entry(1), B: entry(2) });
+        expect(readEntries(storage)).toEqual({ A: entry(1), B: entry(2) });
+    });
+
+    it('shows the pending write as is while the document holds several concurrent slot values', () => {
+        const document = createDocumentPort({ slot: { entries: { A: entry(1) } } });
+        configureAutomergeStoragePort(document.port);
+        const storage = createAutomergeStorage<EntrySlot>('root', 'slot', {
+            hydrateMissing: () => ({ entries: {} }),
+            resolveConflicts: (values) => ({ entries: Object.assign({}, ...values.map(({ entries }) => entries)) }),
+        });
+        storage.hydrate?.();
+        storage.set({ entries: { ...readEntries(storage), B: entry(2) } });
+
+        document.applyConcurrentSlotReplacements(
+            { entries: { A: entry(1), C: entry(3) } },
+            { entries: { A: entry(1), D: entry(4) } }
+        );
+        expect(document.countSlotValues()).toBe(2);
+        storage.hydrate?.();
+
+        expect(readEntries(storage)).toEqual({ A: entry(1), B: entry(2) });
     });
 
     it('merges rows by identity in a slot whose durable fields are narrowed by toCrdt', () => {
