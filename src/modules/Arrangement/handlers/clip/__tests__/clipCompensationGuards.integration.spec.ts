@@ -397,27 +397,28 @@ describe('clip edit compensation guards', () => {
             payload: { clipId: 'clip-1', clipType: 'midi', offset: 2, expectedOffset },
         });
 
-        async function authorizationsUntilVerdict(action: AppAction): Promise<{ status: string; calls: number }> {
+        async function runWithAuthorizationCount(
+            action: AppAction
+        ): Promise<{ status: string; authorizations: number }> {
             registerHandlers();
             seedClip({ type: 'midi', startBeat: 0, endBeat: 8, audioOffsetBeats: 0, midiOffsetBeats: 0 });
-            let calls = 0;
+            let authorizations = 0;
             const result = await executeAppActionBatch([action], {
                 source: 'prompt',
-                shouldExecute: () => {
-                    calls += 1;
-                    return true;
+                authorizeFirstHandler: () => {
+                    authorizations += 1;
+                    return null;
                 },
             });
-            return { status: result.status, calls };
+            return { status: result.status, authorizations };
         }
 
-        it('refuses a stale expected offset at validation, before any handler is authorized to execute', async () => {
-            const held = await authorizationsUntilVerdict(slipExpecting(0));
-            const stale = await authorizationsUntilVerdict(slipExpecting(5));
+        it('refuses a stale expected offset at validation, before the first handler is authorized to execute', async () => {
+            const held = await runWithAuthorizationCount(slipExpecting(0));
+            const stale = await runWithAuthorizationCount(slipExpecting(5));
 
-            expect(held.status).toBe('committed');
-            expect(stale.status).toBe('conflicted');
-            expect(stale.calls).toBeLessThan(held.calls);
+            expect(held).toEqual({ status: 'committed', authorizations: 1 });
+            expect(stale).toEqual({ status: 'conflicted', authorizations: 0 });
         });
     });
 
