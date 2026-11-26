@@ -751,8 +751,6 @@ const validators = {
     togglePlayback: 'unchecked',
     stopPlayback: hasNoPayload,
     toggleRecording: 'unchecked',
-    toggleLoop: 'unchecked',
-    toggleMetronome: 'unchecked',
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
     setPunchIn: hasValidPunchInBeat,
@@ -803,7 +801,6 @@ const validators = {
         hasExactKeys(param, ['trackId', 'soloSafe']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.soloSafe === 'boolean',
-    toggleSoloSafe: 'unchecked',
     armTrack: (param): param is PayloadOf<'armTrack'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'armed']) &&
@@ -920,9 +917,6 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isNonNegativeNumber(param.fadeInBeats) &&
         isNonNegativeNumber(param.fadeOutBeats),
-    copyClip: 'unchecked',
-    cutClip: 'unchecked',
-    pasteClip: 'unchecked',
     setClipGain: (param): param is PayloadOf<'setClipGain'> =>
         isObj(param) &&
         hasOnlyKeys(param, ['clipId', 'gain', 'gainDb', 'deltaDb']) &&
@@ -1205,12 +1199,10 @@ const validators = {
 
     // Analysis
     analyzeMix: 'unchecked',
-    autoFixMix: 'unchecked',
     getLatencyReport: 'unchecked',
     enableMpe: 'unchecked',
     disableMpe: 'unchecked',
     scanPlugins: 'unchecked',
-    audioToMidi: 'unchecked',
     detectTempo: 'unchecked',
     detectKey: 'unchecked',
     consolidateAllTracks: 'unchecked',
@@ -1281,7 +1273,6 @@ const validators = {
     detachPatternInstance: 'unchecked',
 
     // Warp
-    enableWarping: 'unchecked',
     // A provider names the edit; the plan is application-materialized and never accepted from it.
     quantizeTransients: (param): param is PayloadOf<'quantizeTransients'> =>
         isObj(param) &&

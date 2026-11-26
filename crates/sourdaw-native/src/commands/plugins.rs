@@ -7,13 +7,14 @@ use crate::host::native_bridge::{
     PluginStateError, SharedHostedPlugin,
 };
 use crate::host::plugin_registry_store::{
-    plugin_file_fingerprint, plugin_file_path, FileFingerprint, InconclusiveOutcome,
-    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanAttempt,
-    RescanClaim, ScanRow,
+    plugin_file_fingerprint, plugin_file_path, CompletedScanScope, FileFingerprint,
+    InconclusiveOutcome, PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore,
+    RescanAttempt, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::{PluginScanPolicy, ScanPathRefusal};
 use crate::host::plugin_scan_worker::{self, ScanAttempt, ScanFailure};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
+use crate::host::tail_watcher::next_tail_sequence;
 use crate::host::ui_thread::{
     call_on_ui_thread, lend_on_ui_thread, release_on_ui_thread, UiThread, UiThreadError,
 };
@@ -470,7 +471,7 @@ pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
     PLUGIN_RUNTIME_GATE.try_write().ok()
 }
 
-struct PluginLifecycleLease {
+pub(super) struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
     _guard: tokio::sync::OwnedMutexGuard<()>,
@@ -488,7 +489,7 @@ impl Drop for PluginLifecycleLease {
         }
     }
 }
-fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+pub(super) fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     let mut gates = PLUGIN_LIFECYCLE_GATES
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -498,7 +499,7 @@ fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
     )
 }
-async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
+pub(super) async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).lock_owned().await;
     PluginLifecycleLease {
@@ -511,10 +512,10 @@ async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
 ///
 /// For [`attach_dormant_plugins`], which runs inside a graph batch holding the
 /// registry guard and so cannot await anything. A lease it cannot take means a
-/// load or unload owns this instance right now: the attach leaves it dormant
-/// and the next batch tries again, which is the same answer an engine refusal
-/// gets.
-fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
+/// load, an unload or another attach owns this instance right now: the attach
+/// leaves it dormant and the next batch tries again, which is the same answer
+/// an engine refusal gets.
+pub(super) fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).try_lock_owned().ok()?;
     Some(PluginLifecycleLease {
@@ -748,20 +749,19 @@ fn publish_scan_results_in_registry(
     plugins: &[ScannedPlugin],
     fingerprints: &ScanFingerprints,
 ) {
-    let survives_this_scan = |path: &Path| {
-        if scan_complete {
-            return !authorized_paths.iter().any(|root| path.starts_with(root));
-        }
-        !scanned_paths.iter().any(|scanned| scanned == path)
-    };
+    let scope = CompletedScanScope::new(
+        scan_complete,
+        authorized_paths.to_vec(),
+        scanned_paths.to_vec(),
+    );
 
-    registry_store.apply_completed_scan_removals(survives_this_scan);
+    registry_store.apply_completed_scan_removals(scope.clone());
 
     let indexed = index_scanned_plugins(plugins, fingerprints);
     let mut registry = plugin_registry
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.retain(|_, entry| survives_this_scan(Path::new(&entry.path)));
+    registry.retain(|_, entry| scope.keeps(Path::new(&entry.path)));
     registry.extend(indexed);
 }
 
@@ -1653,6 +1653,12 @@ fn resolve_registry_entry_once<Rescan>(
 where
     Rescan: FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, RescanFailure>,
 {
+    // The scan runs in another process, so a plugin it just found reaches
+    // this one only through the file.
+    if read_registry_entry(plugin_registry, plugin_id).is_none() {
+        registry_store.adopt_entry_written_elsewhere(plugin_registry, scan_policy, plugin_id);
+    }
+
     if let Some(entry) = read_registry_entry(plugin_registry, plugin_id) {
         return vet_registry_hit(
             plugin_registry,
@@ -4134,6 +4140,10 @@ pub struct PluginTailReading {
     /// formats' infinite sentinel would not survive a conversion (see
     /// `PluginInstance::tail_samples`).
     pub tail_samples: u32,
+    /// Where this reading falls in the order of every tail the host reported,
+    /// the `plugin-tail-changed` events included; see
+    /// `host::tail_watcher::next_tail_sequence`.
+    pub sequence: u64,
 }
 
 /// Re-read the tail of each named instance from the plugin itself.
@@ -4143,6 +4153,16 @@ pub struct PluginTailReading {
 /// unknown instance, or one the control path could not be reached for, is left
 /// out of the answer: a fabricated tail would read downstream as a shorter decay.
 pub async fn read_plugin_tails(
+    instance_ids: Vec<String>,
+    state: &AppState,
+) -> Result<Vec<PluginTailReading>, String> {
+    read_plugin_tails_within(TAIL_READ_TIMEOUT, instance_ids, state)
+}
+
+/// `read_plugin_tails` with the per-instance wait as a parameter, so a test that
+/// holds the audio seam can give the read a deadline only its own release beats.
+fn read_plugin_tails_within(
+    timeout: Duration,
     instance_ids: Vec<String>,
     state: &AppState,
 ) -> Result<Vec<PluginTailReading>, String> {
@@ -4162,28 +4182,44 @@ pub async fn read_plugin_tails(
             })
             .collect::<Vec<_>>()
     };
-    Ok(read_tails(runtimes))
+    Ok(read_tails_within(timeout, runtimes))
 }
 
-fn read_tails<Runtime: HostedPluginRuntime>(
+/// The control path being in use is the expected way an instance goes unread
+/// during an export: the caller keeps its stored figure and asks again, so it
+/// is not a failure to log.
+fn is_expected_tail_refusal(error: &PluginControlError<std::convert::Infallible>) -> bool {
+    matches!(
+        error,
+        PluginControlError::Refused(PluginControlRefusal::GateBusy { .. })
+    )
+}
+
+fn read_tails_within<Runtime: HostedPluginRuntime>(
+    timeout: Duration,
     runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
 ) -> Vec<PluginTailReading> {
     runtimes
         .into_iter()
         .filter_map(|(instance_id, runtime)| {
-            let read = runtime.try_with_control(TAIL_READ_TIMEOUT, |plugin| {
-                Ok::<_, std::convert::Infallible>(plugin.tail_samples())
+            // The sequence is taken inside the control closure, with the read,
+            // so it orders this figure against an event for the same instance.
+            let read = runtime.try_with_control(timeout, |plugin| {
+                Ok::<_, std::convert::Infallible>((plugin.tail_samples(), next_tail_sequence()))
             });
             match read {
-                Ok(tail_samples) => Some(PluginTailReading {
+                Ok((tail_samples, sequence)) => Some(PluginTailReading {
                     instance_id,
                     tail_samples,
+                    sequence,
                 }),
                 Err(error) => {
-                    eprintln!(
-                        "[Plugin] tail read failed for instance {}: {}",
-                        instance_id, error
-                    );
+                    if !is_expected_tail_refusal(&error) {
+                        eprintln!(
+                            "[Plugin] tail read failed for instance {}: {}",
+                            instance_id, error
+                        );
+                    }
                     None
                 }
             }
@@ -11867,25 +11903,125 @@ mod tests {
         (runtime, tail_samples)
     }
 
+    /// A read's wait when the test holds the seam and releases it itself: long
+    /// enough that only the release, never the clock, ends the read.
+    const HELD_SEAM_READ_DEADLINE: Duration = Duration::from_secs(10);
+
+    fn read_tails<Runtime: HostedPluginRuntime>(
+        runtimes: Vec<(String, Arc<SharedHostedPlugin<Runtime>>)>,
+    ) -> Vec<PluginTailReading> {
+        read_tails_within(TAIL_READ_TIMEOUT, runtimes)
+    }
+
+    /// A reading with its sequence blanked, for assertions about the figure.
+    fn figure_of(readings: Vec<PluginTailReading>) -> Vec<(String, u32)> {
+        readings
+            .into_iter()
+            .map(|reading| (reading.instance_id, reading.tail_samples))
+            .collect()
+    }
+
     #[test]
     fn a_tail_that_changed_after_load_is_read_back_from_the_plugin() {
         let (runtime, tail_samples) = movable_tail_runtime(96_000);
-        let reading = |tail| PluginTailReading {
-            instance_id: "inst-1".to_string(),
-            tail_samples: tail,
-        };
+        let figure = |tail| vec![("inst-1".to_string(), tail)];
 
         assert_eq!(
-            read_tails(vec![("inst-1".to_string(), Arc::clone(&runtime))]),
-            vec![reading(96_000)]
+            figure_of(read_tails(vec![(
+                "inst-1".to_string(),
+                Arc::clone(&runtime)
+            )])),
+            figure(96_000)
         );
 
         tail_samples.store(240_000, std::sync::atomic::Ordering::SeqCst);
 
         assert_eq!(
-            read_tails(vec![("inst-1".to_string(), runtime)]),
-            vec![reading(240_000)],
+            figure_of(read_tails(vec![("inst-1".to_string(), runtime)])),
+            figure(240_000),
             "a tail revised after load must be the one the read answers"
+        );
+    }
+
+    /// The same guarantee from the read's side: a number taken while the read
+    /// still waits for the audio thread's seam is older than an event that got in
+    /// first, so the read must take its own once the control path is reached.
+    #[test]
+    fn a_tail_read_takes_its_sequence_once_the_control_path_is_reached() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let reading_runtime = Arc::clone(&runtime);
+        let (started, reading_started) = std::sync::mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            started.send(()).expect("the test is listening");
+            // A deadline only the release below can beat, so a slow machine
+            // cannot end the read before the test has taken its marker.
+            read_tails_within(
+                HELD_SEAM_READ_DEADLINE,
+                vec![("engine-owned-fixture".to_string(), reading_runtime)],
+            )
+        });
+        reading_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the reader starts");
+        // Let the reader reach the seam wait. A stall that delays it past the
+        // marker can only make this test pass vacuously (the read then takes its
+        // sequence after the marker either way); it can never make it fail.
+        std::thread::sleep(Duration::from_millis(50));
+        let marker = next_tail_sequence();
+        drop(seam);
+        let readings = reader.join().expect("the reader thread finishes");
+
+        let sequence = readings
+            .first()
+            .expect("the seam was released inside the deadline, so the read answered")
+            .sequence;
+        assert!(
+            sequence > marker,
+            "the read's sequence {sequence} was taken before the control path was reached ({marker} came later)"
+        );
+    }
+
+    #[test]
+    fn only_a_busy_control_path_is_an_expected_tail_refusal() {
+        let refused = |refusal| PluginControlError::Refused(refusal);
+        let plugin = || "fixture".to_string();
+
+        assert!(is_expected_tail_refusal(&refused(
+            PluginControlRefusal::GateBusy { plugin: plugin() }
+        )));
+        assert!(!is_expected_tail_refusal(&refused(
+            PluginControlRefusal::TimedOut { plugin: plugin() }
+        )));
+        assert!(!is_expected_tail_refusal(&refused(
+            PluginControlRefusal::Retired { plugin: plugin() }
+        )));
+        assert!(!is_expected_tail_refusal(&refused(
+            PluginControlRefusal::Unresponsive { plugin: plugin() }
+        )));
+    }
+
+    #[test]
+    fn a_later_read_of_the_same_instance_carries_a_larger_sequence() {
+        let (runtime, _tail) = movable_tail_runtime(96_000);
+
+        let sequence_of_a_read = || {
+            read_tails(vec![("inst-1".to_string(), Arc::clone(&runtime))])
+                .first()
+                .expect("an idle instance answers")
+                .sequence
+        };
+        let first = sequence_of_a_read();
+        let second = sequence_of_a_read();
+
+        assert!(
+            second > first,
+            "the frontend ranks a read against an event by sequence: {first} then {second}"
         );
     }
 
@@ -11904,11 +12040,8 @@ mod tests {
             .expect("the control path is free for the outer call");
 
         assert_eq!(
-            answer,
-            vec![PluginTailReading {
-                instance_id: "idle".to_string(),
-                tail_samples: 48_000,
-            }],
+            figure_of(answer),
+            vec![("idle".to_string(), 48_000)],
             "an unreached instance must be omitted, not answered with a made-up tail"
         );
     }
@@ -11928,11 +12061,62 @@ mod tests {
         .expect("the tail read should succeed");
 
         assert_eq!(
-            answer,
-            vec![PluginTailReading {
-                instance_id: "engine-owned-fixture".to_string(),
-                tail_samples: 0,
-            }]
+            figure_of(answer),
+            vec![("engine-owned-fixture".to_string(), 0)]
+        );
+    }
+
+    /// The reads wait on the audio thread for up to `TAIL_READ_TIMEOUT` each, so
+    /// they must not do it holding the `engine_plugins` map every other command
+    /// reads. The seam is held by the test, so the read can only end by its
+    /// deadline; the map has to be free while it is still waiting.
+    #[test]
+    fn a_tail_read_waiting_on_the_audio_seam_does_not_hold_the_engine_plugins_map() {
+        let state = Arc::new(AppState::default());
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let (started, reading_started) = std::sync::mpsc::channel();
+        let (answered, answer) = std::sync::mpsc::channel();
+        let reader_state = Arc::clone(&state);
+        let reader = std::thread::spawn(move || {
+            started.send(()).expect("the test is listening");
+            let readings = read_plugin_tails_within(
+                HELD_SEAM_READ_DEADLINE,
+                vec!["engine-owned-fixture".to_string()],
+                &reader_state,
+            );
+            answered.send(readings).expect("the test is listening");
+        });
+        reading_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the reader starts");
+        // The deadline is far away, so the read cannot end before the release
+        // below; the pause only gives the reader time to park on the seam.
+        std::thread::sleep(Duration::from_millis(50));
+
+        let map_is_free = state.engine_plugins.try_lock().is_ok();
+        let still_waiting = answer.try_recv().is_err();
+        drop(seam);
+        let released_answer = answer
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the read answers once the seam is released");
+        reader.join().expect("the reader thread finishes");
+
+        assert!(
+            released_answer.is_ok(),
+            "the read answers once the seam is released"
+        );
+        assert!(
+            still_waiting,
+            "the check ran after the read ended, so it observed nothing"
+        );
+        assert!(
+            map_is_free,
+            "a read parked on the audio seam must not hold the engine_plugins map"
         );
     }
 
@@ -11941,10 +12125,14 @@ mod tests {
         let json = serde_json::to_string(&PluginTailReading {
             instance_id: "inst-7".to_string(),
             tail_samples: 1024,
+            sequence: 31,
         })
         .expect("reading serialises");
 
-        assert_eq!(json, r#"{"instance_id":"inst-7","tail_samples":1024}"#);
+        assert_eq!(
+            json,
+            r#"{"instance_id":"inst-7","tail_samples":1024,"sequence":31}"#
+        );
     }
 
     #[test]
@@ -12251,6 +12439,35 @@ mod tests {
             },
         )
         .expect("the persisted plugin must resolve in a new session")
+        .entry;
+
+        assert_eq!(entry.path, plugin_path.display().to_string());
+        assert_eq!(entry.descriptor_id, "com.vendor.reverb");
+    }
+
+    /// The scan runs in its own process with its own store. A plugin it found
+    /// after this process hydrated loads in the same session, not only after a
+    /// relaunch.
+    #[test]
+    fn an_activation_resolves_a_plugin_the_scan_process_found_after_this_one_hydrated() {
+        let fixture = PersistedRegistryFixture::create("activation-sibling-scan");
+        let session_registry = Mutex::new(HashMap::new());
+        let session_store = fixture.store();
+        session_store.hydrate_into(&session_registry, &fixture.scan_policy());
+        let plugin_path = fixture.write_plugin_file("Reverb.clap", b"clap-bytes");
+        // `persist` writes through a store of its own: the scan process's.
+        fixture.persist("aaaa1111", &plugin_path);
+
+        let entry = resolve_registry_entry(
+            &session_registry,
+            &session_store,
+            &fixture.scan_policy(),
+            "aaaa1111",
+            |_format, path, _plugin_id, _descriptor_id| {
+                panic!("a row the scan process wrote must resolve without rescanning {path:?}")
+            },
+        )
+        .expect("a plugin the scan just found must resolve in the same session")
         .entry;
 
         assert_eq!(entry.path, plugin_path.display().to_string());

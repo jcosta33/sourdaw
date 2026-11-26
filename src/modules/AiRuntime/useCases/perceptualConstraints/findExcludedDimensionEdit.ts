@@ -266,6 +266,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     setToasterFactoryKit: readEffectDeclaredEdits,
     setBacteriaFactoryPatch: readEffectDeclaredEdits,
     setGlutenFactoryPreset: readEffectDeclaredEdits,
+    setProofPatchSelection: readEffectDeclaredEdits,
     createBus: readEffectDeclaredEdits,
     createFolder: readEffectDeclaredEdits,
     setSend: readSendRoutingEdits,

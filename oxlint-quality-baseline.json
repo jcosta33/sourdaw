@@ -1792,11 +1792,6 @@
             "count": 2
         }
     },
-    "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Device.spec.ts": {
         "sourdaw-craft/no-long-array-chain": {
             "count": 1
@@ -8243,15 +8238,12 @@
     },
     "src/modules/AudioEngine/engine/GrinderNode.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         },
         "eslint/max-lines-per-function": {
             "count": 1
         },
         "eslint/max-params": {
-            "count": 1
-        },
-        "sourdaw-craft/no-control-flow-ternary": {
             "count": 1
         },
         "sourdaw-craft/no-silent-catch": {
@@ -9043,7 +9035,7 @@
     },
     "src/modules/AudioEngine/stores/audioBufferCache.ts": {
         "eslint/complexity": {
-            "count": 12
+            "count": 11
         },
         "eslint/max-depth": {
             "count": 3
@@ -9052,7 +9044,7 @@
             "count": 9
         },
         "eslint/max-params": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 2
@@ -9104,7 +9096,7 @@
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferPersistenceAttempts.ts": {
@@ -14053,20 +14045,6 @@
             "count": 1
         }
     },
-    "src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts": {
-        "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
-        },
-        "typescript/no-unnecessary-type-parameters": {
-            "count": 1
-        },
-        "typescript/switch-exhaustiveness-check": {
-            "count": 1
-        }
-    },
     "src/modules/Grinder/useCases/importGrinderNeuralModels.ts": {
         "eslint/complexity": {
             "count": 1
@@ -16429,17 +16407,6 @@
     "src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParamWithPatch.spec.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 1
-        }
-    },
-    "src/modules/Proof/useCases/proofParamBridge/rehydrateRestoredPatch.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 3
         }
     },
     "src/modules/Proof/useCases/proofParamBridge/setProofParam.ts": {
