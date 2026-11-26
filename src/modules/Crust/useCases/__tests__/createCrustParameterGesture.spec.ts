@@ -53,11 +53,17 @@ import {
 import { crustStore, getCrustState } from '../../stores/crustStore';
 import { createCrustParameterGesture } from '../createCrustParameterGesture';
 import { setCrustParamWithAudio } from '../crustParamBridge/setCrustParamWithAudio';
+import { getCrustHandlers } from '../getCrustHandlers';
+import { selectCrustFactoryPreset } from '../selectCrustFactoryPreset';
 
-const audio = vi.hoisted(() => ({ updateDeviceParam: vi.fn() }));
+const audio = vi.hoisted(() => ({
+    updateDeviceParam: vi.fn(),
+    updateDeviceParameters: vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParameters>(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audio.updateDeviceParam,
+    updateDeviceParameters: audio.updateDeviceParameters,
 }));
 
 let recordingContext: AudioContext;
@@ -83,11 +89,11 @@ function projectedDevice() {
     return device;
 }
 
-function rawDevice() {
+function rawDevice(deviceId = DEVICE) {
     const root = getCrdtDoc<{ tracks: { tracks: Track[] } }>('root');
     const device = root?.tracks.tracks
         .find((track) => track.id === TRACK)
-        ?.devices.find((device) => device.id === DEVICE);
+        ?.devices.find((device) => device.id === deviceId);
     if (!device) {
         throw new Error('Crust device is missing from raw authority');
     }
@@ -181,6 +187,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         crustStore.set({});
         flushAutomergeStorageWrites();
         audio.updateDeviceParam.mockReset();
+        audio.updateDeviceParameters.mockReset();
         setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 0 });
         transportStore.set({ ...defaultTransportState, isPlaying: false });
         vi.stubGlobal(
@@ -236,6 +243,96 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(rawDevice().parameterValues.gain).toBe(18);
         await undo();
         expect(rawDevice().parameterValues.gain).toBe(0);
+    });
+
+    it('retires held previews on the preset device while preserving another Crust edit', async () => {
+        registerHandlerMap(getCrustHandlers());
+        const state = trackStore.value;
+        const track = state?.tracks[0];
+        if (!state || !track) {
+            throw new Error('Missing Crust track');
+        }
+        const otherDeviceId = 'other-crust';
+        trackStore.set({
+            ...state,
+            tracks: [
+                {
+                    ...track,
+                    devices: [
+                        ...track.devices,
+                        { ...projectedDevice(), id: otherDeviceId, parameterValues: { gain: 4 } },
+                    ],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        const edit = controller();
+        const otherEdit = controller(otherDeviceId);
+        const gainToken = edit.start('gain');
+        const otherGainToken = otherEdit.start('gain');
+        await edit.change('gain', 9, true);
+        await edit.change('ceiling', -6, true);
+        await otherEdit.change('gain', 11, true);
+        expect(edit.isCurrent('gain', gainToken)).toBe(true);
+        expect(getCrustState(DEVICE).patch).toMatchObject({ name: 'Init', gain: 9, ceiling: -6 });
+        expect(getCrustState(otherDeviceId).patch.gain).toBe(11);
+        expect(rawDevice().parameterValues).toEqual({ gain: 0, ceiling: -0.3 });
+        audio.updateDeviceParam.mockClear();
+
+        const readPatch = () => {
+            const { name, gain, ceiling } = getCrustState(DEVICE).patch;
+            return { name, gain, ceiling };
+        };
+        const patchSnapshots = [readPatch()];
+        const unsubscribe = crustStore.subscribe(() => {
+            const next = readPatch();
+            const previous = patchSnapshots.at(-1);
+            if (next.name !== previous?.name || next.gain !== previous.gain || next.ceiling !== previous.ceiling) {
+                patchSnapshots.push(next);
+            }
+        });
+        try {
+            await selectCrustFactoryPreset(DEVICE, 'punchy-bus');
+        } finally {
+            unsubscribe();
+        }
+
+        expect(patchSnapshots).toEqual([
+            { name: 'Init', gain: 9, ceiling: -6 },
+            { name: 'Punchy Bus', gain: 2, ceiling: -0.3 },
+        ]);
+        expect(audio.updateDeviceParam).not.toHaveBeenCalled();
+        expect(audio.updateDeviceParameters).toHaveBeenCalledTimes(1);
+        const [trackId, deviceId, values] = audio.updateDeviceParameters.mock.calls[0]!;
+        expect([trackId, deviceId]).toEqual([TRACK, DEVICE]);
+        expect(values).toHaveLength(27);
+        expect(values.slice(0, 2)).toEqual([
+            ['gain', 2],
+            ['ceiling', -0.3],
+        ]);
+        expect(rawDevice().parameterValues).toMatchObject({ gain: 2, ceiling: -0.3 });
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(captureUndoHistory().past).toMatchObject([{ action: { type: 'setCrustFactoryPreset' } }]);
+        audio.updateDeviceParameters.mockClear();
+
+        const presetRevision = crdtApi.captureProjectRevision();
+        expect(edit.isCurrent('gain', gainToken)).toBe(false);
+        await edit.change('gain', 9);
+        await edit.settle('ceiling');
+        expect(crdtApi.captureProjectRevision()).toBe(presetRevision);
+        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(getCrustState(DEVICE).patch).toMatchObject({ name: 'Punchy Bus', gain: 2, ceiling: -0.3 });
+        expect(audio.updateDeviceParam).not.toHaveBeenCalled();
+        expect(audio.updateDeviceParameters).not.toHaveBeenCalled();
+        expect(notices).toEqual([]);
+
+        expect(rawDevice(otherDeviceId).parameterValues.gain).toBe(4);
+        expect(getCrustState(otherDeviceId).patch.gain).toBe(11);
+        expect(otherEdit.isCurrent('gain', otherGainToken)).toBe(true);
+        await otherEdit.settle('gain');
+        expect(rawDevice(otherDeviceId).parameterValues.gain).toBe(11);
+        expect(captureUndoHistory().past).toHaveLength(2);
     });
 
     it('keeps independent settled parameters and gestures as distinct history entries', async () => {

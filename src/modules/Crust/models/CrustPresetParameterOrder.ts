@@ -1,0 +1,32 @@
+import { type CrustPatch } from './CrustPatch';
+
+// Style derives the limiter algorithm. Apply an explicit algorithm after it.
+export const CRUST_PRESET_PARAMETER_ORDER = [
+    'gain',
+    'ceiling',
+    'style',
+    'algorithm',
+    'lookahead',
+    'attack',
+    'release',
+    'attackAuto',
+    'releaseAuto',
+    'channelLinkTransient',
+    'channelLinkRelease',
+    'truePeak',
+    'oversampling',
+    'satEnabled',
+    'satAlgorithm',
+    'satDrive',
+    'satMix',
+    'deltaListen',
+    'unityGain',
+    'multiBand',
+    'crossover1',
+    'crossover2',
+    'scHpfEnabled',
+    'scHpfFreq',
+    'stereoMode',
+    'dither',
+    'outputBitDepth',
+] as const satisfies readonly (keyof CrustPatch)[];
