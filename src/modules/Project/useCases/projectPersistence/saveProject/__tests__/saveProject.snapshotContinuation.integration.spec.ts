@@ -153,6 +153,8 @@ async function startSaveHeldInPreflight(
     return { release, saving };
 }
 
+type ArrangementStore = typeof import('../../../../stores/arrangementStore').arrangementStore;
+
 type SlowWorkerRequest = {
     signal: AbortSignal;
     /** Runs the callback in a later task, so a write is not part of the save's own action. */
@@ -545,7 +547,7 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
-        'retries and saves the latest revision when an edit lands after the Worker admitted its answer',
+        'never materializes a stale Worker answer and saves the edit that made it stale',
         async () => {
             const indexedDb = installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
@@ -553,7 +555,7 @@ describe('saveProject snapshot continuation', () => {
                 afterTask(() => {
                     opened.renameTrack(opened.track.id, 'Edited after admission');
                 });
-                // The answer is admitted regardless of the abort that the edit raises.
+                // The Worker answers although the edit already made that answer stale.
                 await new Promise<void>((resolve) => afterTask(resolve));
             });
 
@@ -563,6 +565,49 @@ describe('saveProject snapshot continuation', () => {
             expect(worker.materializeCalls()).toBe(0);
             expect(opened.persistenceFailures()).toEqual([]);
             expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited after admission']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it.each([
+        {
+            changed: 'the project',
+            change: (opened: OpenedProject) => {
+                opened.project.renameProject('Renamed during preparation');
+            },
+        },
+        {
+            changed: 'the arrangements',
+            change: (_opened: OpenedProject, arrangementStore: ArrangementStore) => {
+                const current = arrangementStore.value!;
+                arrangementStore.set({
+                    ...current,
+                    arrangements: current.arrangements.map((row) =>
+                        row.id === current.activeArrangementId ? { ...row, name: 'Renamed during preparation' } : row
+                    ),
+                });
+            },
+        },
+    ])(
+        'abandons the Worker request when only $changed changes, then saves the latest value',
+        async ({ change }) => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const { arrangementStore } = await import('../../../../stores/arrangementStore');
+            const workerFinished = Promise.withResolvers<void>();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    change(opened, arrangementStore);
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await vi.waitFor(() => expect(worker.signals[0]?.aborted).toBe(true));
+            workerFinished.resolve();
+
+            expect(await saving).toBe(true);
+            expect(opened.persistenceFailures()).toEqual([]);
         },
         CASE_TIMEOUT_MS
     );
