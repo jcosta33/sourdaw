@@ -44,6 +44,15 @@ describe('projectTrackAction', () => {
         expect(marking).toEqual(
             [
                 'discardDuplicatedClip',
+                'lockClip',
+                'muteClip',
+                'nudgeClip',
+                'renameClip',
+                'setClipColor',
+                'setClipFade',
+                'slipClipContent',
+                'trimClipEnd',
+                'trimClipStart',
                 'setTrackGain',
                 'renameTrack',
                 'setTrackColor',

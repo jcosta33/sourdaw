@@ -60,6 +60,40 @@ function cloneForReplay(action: AppAction): AppAction {
     return structuredClone(action);
 }
 
+// A recorded inverse guards itself against the state it was captured from. A macro replays intent on
+// whatever the project holds now, so it keeps the request and drops the guard and the captured beats.
+function cloneNudgeClipForReplay(action: ActionOf<'nudgeClip'>): AppAction {
+    const replay = structuredClone(action);
+    delete replay.payload.expectedStartBeat;
+    delete replay.payload.expectedPlacement;
+    delete replay.payload.placement;
+    return replay;
+}
+
+function cloneTrimClipStartForReplay(action: ActionOf<'trimClipStart'>): AppAction {
+    const replay = structuredClone(action);
+    delete replay.payload.expectedStartBeat;
+    return replay;
+}
+
+function cloneTrimClipEndForReplay(action: ActionOf<'trimClipEnd'>): AppAction {
+    const replay = structuredClone(action);
+    delete replay.payload.expectedEndBeat;
+    return replay;
+}
+
+function cloneSlipClipContentForReplay(action: ActionOf<'slipClipContent'>): AppAction {
+    const replay = structuredClone(action);
+    delete replay.payload.expectedOffset;
+    return replay;
+}
+
+function cloneRenameClipForReplay(action: ActionOf<'renameClip'>): AppAction {
+    const replay = structuredClone(action);
+    delete replay.payload.expectedName;
+    return replay;
+}
+
 const lowerByActionType: {
     readonly [Type in AppActionType]: (action: ActionOf<Type>, tempoIds: ReadonlyMap<string, string>) => AppAction;
 } = {
@@ -118,14 +152,14 @@ const lowerByActionType: {
     duplicateClipToNextBar: cloneForReplay,
     duplicateTrack: cloneForReplay,
     removeClip: cloneForReplay,
-    renameClip: cloneForReplay,
+    renameClip: cloneRenameClipForReplay,
     splitClip: cloneForReplay,
     restoreClipSplitState: cloneForReplay,
-    trimClipStart: cloneForReplay,
-    trimClipEnd: cloneForReplay,
+    trimClipStart: cloneTrimClipStartForReplay,
+    trimClipEnd: cloneTrimClipEndForReplay,
     restoreAudioClipStartTrim: lowerRestoreAudioClipStartTrim,
     restoreAudioClipSlip: lowerRestoreAudioClipSlip,
-    slipClipContent: cloneForReplay,
+    slipClipContent: cloneSlipClipContentForReplay,
     drawClip: cloneForReplay,
     discardDrawnClip: cloneForReplay,
     restoreDrawnClip: cloneForReplay,
@@ -231,7 +265,7 @@ const lowerByActionType: {
     setCompRegion: cloneForReplay,
     removeCompRegion: cloneForReplay,
     restoreCompRegionInterval: cloneForReplay,
-    nudgeClip: cloneForReplay,
+    nudgeClip: cloneNudgeClipForReplay,
     crossfadeClips: cloneForReplay,
     restoreCrossfadeClips: cloneForReplay,
     setClipGain: cloneForReplay,

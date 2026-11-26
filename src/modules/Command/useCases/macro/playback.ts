@@ -136,6 +136,10 @@ function findRefusalReason(actions: readonly AppAction[]): string | null {
     return refusal?.reason ?? null;
 }
 
+// An exact MIDI row capture is undone one entry at a time, so these replays stay out of the macro's Undo group
+// even though their handlers accept batch compensation.
+const ungroupedReplayTypes: ReadonlySet<AppActionType> = new Set(['slipClipContent', 'trimClipStart']);
+
 async function executeMacroAction(
     action: AppAction,
     mappings: MacroReplayIdMappings,
@@ -159,7 +163,7 @@ async function executeMacroAction(
         return;
     }
     lookupRemap(replayAction, mappings);
-    await executeAppAction(replayAction, options);
+    await executeAppAction(replayAction, ungroupedReplayTypes.has(replayAction.type) ? undefined : options);
 }
 
 /**

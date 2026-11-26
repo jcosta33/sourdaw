@@ -18,6 +18,10 @@ function liveClip(clipId: string): Clip | undefined {
         .find((candidate) => candidate.id === clipId);
 }
 
+function hasExpectation(payload: NudgePayload): boolean {
+    return payload.expectedPlacement !== undefined || payload.expectedStartBeat !== undefined;
+}
+
 /** Whether two placements hold the same beats; an absent anchor equals only an absent anchor. */
 function isSamePlacement(a: ClipPlacement, b: ClipPlacement): boolean {
     return (
@@ -40,11 +44,11 @@ function holdsExpectedPlacement(payload: NudgePayload, clip: Clip | undefined): 
 }
 
 export const handleNudgeClip = createHandler<'nudgeClip'>({
-    canReapplyAfterDivergence: (alpha) =>
-        alpha.payload.expectedPlacement !== undefined || alpha.payload.expectedStartBeat !== undefined,
+    canReapplyAfterDivergence: (alpha) => hasExpectation(alpha.payload),
     validate: (alpha, context) => holdsExpectedPlacement(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
     execute: (alpha) => {
-        if (!holdsExpectedPlacement(alpha.payload, liveClip(alpha.payload.clipId))) {
+        // An unguarded nudge never reads the live clip here; the writer owns its own malformed-state refusal.
+        if (hasExpectation(alpha.payload) && !holdsExpectedPlacement(alpha.payload, liveClip(alpha.payload.clipId))) {
             return { status: 'conflict' };
         }
         if (alpha.payload.placement) {

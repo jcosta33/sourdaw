@@ -159,4 +159,46 @@ describe('lowerSourceMacroAction on captured source actions', () => {
 
         expect(() => lowerSourceMacroAction(malformed, new Map())).toThrow(AppActionConflictError);
     });
+
+    it.each<[string, AppAction, AppAction]>([
+        [
+            'nudgeClip',
+            {
+                type: 'nudgeClip',
+                payload: {
+                    clipId: 'clip',
+                    beats: 2,
+                    expectedStartBeat: 4,
+                    expectedPlacement: { startBeat: 4, endBeat: 12 },
+                    placement: { startBeat: 6, endBeat: 14 },
+                },
+            },
+            { type: 'nudgeClip', payload: { clipId: 'clip', beats: 2 } },
+        ],
+        [
+            'trimClipStart',
+            { type: 'trimClipStart', payload: { clipId: 'clip', newStartBeat: 6, expectedStartBeat: 4 } },
+            { type: 'trimClipStart', payload: { clipId: 'clip', newStartBeat: 6 } },
+        ],
+        [
+            'trimClipEnd',
+            { type: 'trimClipEnd', payload: { clipId: 'clip', newEndBeat: 10, expectedEndBeat: 12 } },
+            { type: 'trimClipEnd', payload: { clipId: 'clip', newEndBeat: 10 } },
+        ],
+        [
+            'slipClipContent',
+            { type: 'slipClipContent', payload: { clipId: 'clip', clipType: 'midi', offset: 1, expectedOffset: 0 } },
+            { type: 'slipClipContent', payload: { clipId: 'clip', clipType: 'midi', offset: 1 } },
+        ],
+        [
+            'renameClip',
+            { type: 'renameClip', payload: { clipId: 'clip', name: 'New', expectedName: 'Clip' } },
+            { type: 'renameClip', payload: { clipId: 'clip', name: 'New' } },
+        ],
+    ])(
+        'drops the recorded undo guard of a %s so a macro replays its intent on the current state',
+        (_, guarded, replay) => {
+            expect(lowerSourceMacroAction(guarded, new Map())).toEqual(replay);
+        }
+    );
 });
