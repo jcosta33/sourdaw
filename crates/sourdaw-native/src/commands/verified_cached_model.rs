@@ -265,10 +265,7 @@ fn read_verified_cached_model_bytes_with_hooks(
         });
     }
     #[cfg(windows)]
-    if {
-        use std::os::windows::fs::FileTypeExt;
-        link_metadata.file_type().is_reparse_point()
-    } {
+    if is_reparse_point(&link_metadata) {
         return Err(ModelCacheError::CachedReparsePoint {
             filename: model.filename,
         });
@@ -386,6 +383,14 @@ fn verify_model_bytes_for_write(
     Ok(())
 }
 
+#[cfg(windows)]
+fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+}
+
 fn refuse_link_target(target: &Path, model: &VerifiedCachedModel) -> Result<(), ModelCacheError> {
     let Ok(metadata) = std::fs::symlink_metadata(target) else {
         return Ok(());
@@ -396,10 +401,7 @@ fn refuse_link_target(target: &Path, model: &VerifiedCachedModel) -> Result<(), 
         });
     }
     #[cfg(windows)]
-    if {
-        use std::os::windows::fs::FileTypeExt;
-        metadata.file_type().is_reparse_point()
-    } {
+    if is_reparse_point(&metadata) {
         return Err(ModelCacheError::ReplaceReparsePoint {
             filename: model.filename,
         });
