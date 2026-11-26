@@ -5795,19 +5795,19 @@ impl ActiveEffect {
     /// holds for it on the same terms as for a device on a chain. Discarding
     /// its work instead would strand the note-offs against the keys its own
     /// ring has already sounded.
-    /// Where a span's first frame sits in the block this device is handed,
-    /// which every event stamp for the span is measured from.
-    #[inline]
-    fn stamp_base(&self, span_offset: usize) -> u32 {
-        stamp_base_for(self.placement, span_offset)
-    }
-
     #[inline]
     fn receives_no_block(&self) -> bool {
         if self.runs_discarded() {
             return false;
         }
         self.bypassed || self.runs_nowhere()
+    }
+
+    /// Where a span's first frame sits in the block this device is handed,
+    /// which every event stamp for the span is measured from.
+    #[inline]
+    fn stamp_base(&self, span_offset: usize) -> u32 {
+        stamp_base_for(self.placement, span_offset)
     }
 
     /// Queue one live note at the head of whatever this device renders next.
@@ -6259,14 +6259,6 @@ fn scheduled_note_offs_from(store: &MidiNoteStore, from_frame: u64) -> NoteAddre
     covered
 }
 
-/// The note-off that ends a note a store sounded, supplied by the engine
-/// rather than read from the store.
-///
-/// Velocity zero is the release a MIDI source sends for a key let go without
-/// pressure. The probability cutoff passes: the gate decides whether a note
-/// sounds, and a release owed for a note that already did must never be rolled
-/// away, or the instrument holds that key for good. Delivery hands a stored
-/// note-off over on those same terms, for that same reason.
 /// The offset a span's first frame takes in the block a device at `placement`
 /// is handed. A chain device is handed each span on its own, so its stamps run
 /// from the span's head; a master insert drains once per callback over the
@@ -6280,6 +6272,14 @@ fn stamp_base_for(placement: EffectPlacement, span_offset: usize) -> u32 {
     }
 }
 
+/// The note-off that ends a note a store sounded, supplied by the engine
+/// rather than read from the store.
+///
+/// Velocity zero is the release a MIDI source sends for a key let go without
+/// pressure. The probability cutoff passes: the gate decides whether a note
+/// sounds, and a release owed for a note that already did must never be rolled
+/// away, or the instrument holds that key for good. Delivery hands a stored
+/// note-off over on those same terms, for that same reason.
 fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
     MidiNoteEvent {
         note,
@@ -8245,7 +8245,8 @@ impl AudioScheduler {
     /// device's offsets run from the span's first frame, a master insert's
     /// from the callback's, `span_offset` being where the span begins inside
     /// the callback. A stamp the playhead has already passed lands at the
-    /// head. Several stamps for one parameter in one span are each delivered,
+    /// head of its span: offset 0 for a chain device, the span's own offset in
+    /// the callback for a master insert. Several stamps for one parameter in one span are each delivered,
     /// in stamp order, because the queue pops them that way.
     ///
     /// A built-in owns its own parameter smoothing and holds no per-sample
@@ -15364,6 +15365,59 @@ mod timeline_tests {
             *offsets.lock().expect("the offset log"),
             vec![(4, 0.7, 40)],
             "only the stamp the un-bypassed block renders arrives, at its own frame"
+        );
+    }
+
+    /// A hosted stamp is measured from where the block its device is handed
+    /// begins. A span after a loop seam begins `SPAN_OFFSET` frames into the
+    /// callback; a master insert, handed the whole callback in one block,
+    /// takes that offset into its stamp and a track device does not.
+    ///
+    /// Driven through `apply_due_device_params` because no callback can place
+    /// a due stamp in a span after the seam: a stamp the playhead has passed
+    /// is already popped by the span before it, at that span's own head.
+    const SPAN_OFFSET: usize = 256;
+
+    #[test]
+    fn a_hosted_stamp_on_a_master_insert_is_measured_from_the_callback() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let (plugin, _queued, offsets) = offset_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(
+            3,
+            plugin,
+            Some(MidiNoteStore::new()),
+        ));
+        automate_hosted(&mut harness, 3, 4, 0.6, 40);
+
+        harness
+            .scheduler
+            .apply_due_device_params(0, 128, SPAN_OFFSET);
+
+        assert_eq!(
+            *offsets.lock().expect("the offset log"),
+            vec![(4, 0.6, SPAN_OFFSET as u32 + 40)],
+            "the master insert's block began at the callback, so the span's \
+             offset is part of the stamp"
+        );
+    }
+
+    #[test]
+    fn a_hosted_stamp_on_a_track_device_is_measured_from_its_span() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let offsets = hosted_on_a_track(&mut harness, 3);
+        automate_hosted(&mut harness, 3, 4, 0.6, 40);
+
+        harness
+            .scheduler
+            .apply_due_device_params(0, 128, SPAN_OFFSET);
+
+        assert_eq!(
+            *offsets.lock().expect("the offset log"),
+            vec![(4, 0.6, 40)],
+            "a track device is handed each span on its own, so the span's \
+             offset in the callback is not part of the stamp"
         );
     }
 

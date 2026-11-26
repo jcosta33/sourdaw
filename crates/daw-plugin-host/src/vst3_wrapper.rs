@@ -291,19 +291,21 @@ impl HostParameterChanges {
             .filter_map(|queue| Some((queue.param_id.get(), queue.last_value()?)))
     }
 
-    /// Whether any point the list holds for `param_id` carries `value`, at
-    /// single precision. RT-safe: a linear scan of the staged points.
+    /// Whether the value the list ends `param_id` on is `value`, at single
+    /// precision. RT-safe: a scan of the staged queues' last points.
     ///
     /// A processor that holds its parameters as `f32` — most do — echoes a
     /// host write rounded to that precision, and the echo is still the host's
-    /// value, not a move of the plugin's own. Any point of a ramp the host
-    /// staged is a value the host wrote, so an echo of any of them is dropped.
+    /// value, not a move of the plugin's own. What the processor reports is the
+    /// state it settled in, so only the value the host's points end on can be
+    /// repeated back: an earlier point of a ramp equal to the report is a
+    /// coincidence, and the report may be the plugin clamping the later ones.
     fn carries(&self, param_id: ParamID, value: ParamValue) -> bool {
         self.queues[..self.used.get()]
             .iter()
             .filter(|queue| queue.param_id.get() == param_id)
-            .flat_map(|queue| queue.points())
-            .any(|(_, staged_value)| staged_value as f32 == value as f32)
+            .filter_map(|queue| queue.last_value())
+            .any(|staged_value| staged_value as f32 == value as f32)
     }
 }
 

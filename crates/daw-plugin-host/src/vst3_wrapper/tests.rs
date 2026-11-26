@@ -4408,8 +4408,8 @@ fn a_render_block_performs_no_heap_allocation() {
 
 /// Every point the host stages for one parameter is a point the plugin reads,
 /// at its own offset and in order, and a second value for the sample the last
-/// point already names replaces it. An echo of any staged point is the host's
-/// own value, so `carries` matches every one of them and nothing else.
+/// point already names replaces it. Only the value the points end on can be
+/// an echo of the host's own write, so `carries` matches that one and nothing else.
 #[test]
 fn a_parameter_queue_hands_the_plugin_every_staged_point_at_its_offset() {
     let changes = HostParameterChanges::new();
@@ -4440,10 +4440,29 @@ fn a_parameter_queue_hands_the_plugin_every_staged_point_at_its_offset() {
     assert_eq!(unsafe { changes.getParameterCount() }, 2);
     assert_eq!(read(0), (5, vec![(0, 0.3), (10, 0.2), (200, 0.8)]));
     assert_eq!(read(1), (9, vec![(100, 0.5)]));
-    assert!(changes.carries(5, 0.2) && changes.carries(5, 0.8) && changes.carries(5, 0.3));
+    assert!(
+        changes.carries(5, 0.8),
+        "the final value is the host's echo"
+    );
+    assert!(
+        !changes.carries(5, 0.2) && !changes.carries(5, 0.3),
+        "an intermediate point is not the value the block ends on"
+    );
     assert!(!changes.carries(5, 0.1), "a replaced value is not staged");
     assert!(
         !changes.carries(9, 0.2),
         "a point of another parameter is not an echo"
     );
+}
+
+/// The plugin clamps the ramp's last point to a value an earlier point already
+/// carried. What it reports is its own correction, not the host's echo.
+#[test]
+fn a_report_equal_to_an_earlier_point_but_not_the_last_is_not_an_echo() {
+    let changes = HostParameterChanges::new();
+    changes.stage(5, 0, 1.0);
+    changes.stage(5, 200, 1.2);
+
+    assert!(!changes.carries(5, 1.0));
+    assert!(changes.carries(5, 1.2));
 }

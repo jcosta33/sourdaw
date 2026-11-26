@@ -368,23 +368,59 @@ impl PendingParameterQueue {
     /// retained note. A slot mid-publish is its producer's, so it is left to
     /// publish the offset it chose: that producer is writing for the block
     /// about to run.
+    ///
+    /// Every late write of one parameter now names the same sample, so they
+    /// are one write: the slots of a parameter fold into its latest (highest
+    /// sequence) and the rest are freed. Kept apart, the points of a ramp from
+    /// consecutive unserved blocks would fill the queue and refuse the newest
+    /// writes of that ramp.
     fn restamp_to_block_head(&self) {
-        for slot in &self.slots {
-            if slot
-                .state
-                .compare_exchange(
-                    PENDING_PARAMETER_READY,
-                    PENDING_PARAMETER_WRITING,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_err()
-            {
+        for (index, slot) in self.slots.iter().enumerate() {
+            if !Self::claim_ready(slot) {
                 continue;
             }
             slot.sample_offset.store(0, Ordering::Relaxed);
+            let param_id = slot.param_id.load(Ordering::Relaxed);
+            for other in &self.slots[index + 1..] {
+                if other.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY
+                    || other.param_id.load(Ordering::Relaxed) != param_id
+                    || !Self::claim_ready(other)
+                {
+                    continue;
+                }
+                // Re-read under the claim: the slot may have been freed and
+                // republished for another parameter since the unclaimed check.
+                if other.param_id.load(Ordering::Relaxed) != param_id {
+                    other
+                        .state
+                        .store(PENDING_PARAMETER_READY, Ordering::Release);
+                    continue;
+                }
+                if other.sequence.load(Ordering::Relaxed) > slot.sequence.load(Ordering::Relaxed) {
+                    slot.value_bits
+                        .store(other.value_bits.load(Ordering::Relaxed), Ordering::Relaxed);
+                    slot.sequence
+                        .store(other.sequence.load(Ordering::Relaxed), Ordering::Relaxed);
+                }
+                other
+                    .state
+                    .store(PENDING_PARAMETER_EMPTY, Ordering::Release);
+            }
             slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
         }
+    }
+
+    /// Take a published slot for this thread alone, or report that it is empty
+    /// or mid-publish and so someone else's.
+    fn claim_ready(slot: &PendingParameterSlot) -> bool {
+        slot.state
+            .compare_exchange(
+                PENDING_PARAMETER_READY,
+                PENDING_PARAMETER_WRITING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_ok()
     }
 
     /// Drop every write this queue holds, leaving any slot mid-publish to the
@@ -2353,6 +2389,38 @@ mod tests {
             vec![vec![(4, 0.2, 0), (4, 0.8, 100)]],
             "the unserved block's write arrives once, at the head, ahead of the \
              next block's own point"
+        );
+    }
+
+    /// Every late point of one parameter lands at the same sample, so they are
+    /// one write: the queue folds them into the latest on the restamp rather
+    /// than holding a slot each until the next served block. Held, the points
+    /// of a ramp from consecutive unserved blocks would fill the queue and the
+    /// newest writes of that ramp would be the ones refused.
+    #[test]
+    fn late_points_of_one_parameter_do_not_hold_a_slot_each() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        for offset in 1..=PENDING_PARAMETER_CAPACITY as u32 {
+            assert!(slot.apply_parameter_on_audio_thread(4, f64::from(offset) / 100.0, offset));
+        }
+        let control = shared
+            .try_claim_control()
+            .expect("an idle seam can be claimed");
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+        drop(control);
+
+        assert!(
+            slot.apply_parameter_on_audio_thread(4, 0.99, 5),
+            "the unserved block's points hold one slot, so the next write has room"
+        );
+        slot.process_audio(&mut [0.0f32; 256], &mut [0.0f32; 256], 256);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(4, 0.64, 0), (4, 0.99, 5)]],
+            "the late points arrive as their last value at the head, ahead of \
+             the next block's own point"
         );
     }
 
