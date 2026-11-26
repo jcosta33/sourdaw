@@ -9,7 +9,7 @@ import {
     warpStateStore,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
-import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
+import { exportCachedAudioBuffers, isMidiTransformDevice } from '#/modules/AudioEngine/useCases';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
@@ -52,7 +52,7 @@ function collectYeastDeviceIds(
     const ids = new Set<string>();
     for (const track of trackList) {
         for (const device of track.devices ?? []) {
-            if (device.type === 'yeast') {
+            if (isMidiTransformDevice(device.type)) {
                 ids.add(device.id);
             }
         }

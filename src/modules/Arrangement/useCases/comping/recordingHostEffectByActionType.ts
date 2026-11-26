@@ -97,6 +97,7 @@ export const recordingHostEffectByActionType: {
     setGrandBouleDeviceState: leaveHosts,
     setToasterFactoryKit: leaveHosts,
     setBacteriaFactoryPatch: leaveHosts,
+    setCrustFactoryPreset: leaveHosts,
     setGlutenFactoryPreset: leaveHosts,
     setProofPatchSelection: leaveHosts,
     createBus: leaveHosts,
