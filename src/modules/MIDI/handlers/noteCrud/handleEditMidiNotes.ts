@@ -3,7 +3,7 @@ import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
-import { valuesEqual } from '#/utils/structuralEquality';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { planGuardedMidiNoteEdits } from '../../services/planGuardedMidiNoteEdits';
 import { midiStore } from '../../stores/midiStore';
@@ -64,11 +64,12 @@ function editFitsClip(plan: EditPlan, clip: Clip): boolean {
 }
 
 function planAgainstProject(action: EditAction, context?: HandlerValidationContext): EditPlan | null {
-    const { clipId, guard } = action.payload;
-    const trackId = guard?.trackId;
-    if (typeof trackId !== 'string') {
+    const { clipId } = action.payload;
+    const guard: unknown = action.payload.guard;
+    if (!isRecord(guard) || typeof guard.trackId !== 'string') {
         return null;
     }
+    const { trackId } = guard;
     const clip = findEditableBaseMidiClip(clipId, trackId);
     if (!clip) {
         return null;
