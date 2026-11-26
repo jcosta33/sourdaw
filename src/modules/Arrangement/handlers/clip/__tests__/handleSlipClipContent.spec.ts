@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type Clip } from '../../../models/Track';
+import { audioClipSlipOwner } from '../../../useCases/clipEditing/audioClipSlipOwner';
 import { handleSlipClipContent } from '../handleSlipClipContent';
 
 const mocks = vi.hoisted(() => ({
@@ -112,6 +113,25 @@ describe('handleSlipClipContent', () => {
             })
         ).toEqual({ status: 'conflict' });
         expect(mocks.slipClipContent).not.toHaveBeenCalled();
+    });
+
+    it('captures an audio slip from the live clip the store holds and refuses when the owner no longer matches', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [ClipDummy.create({ id: 'c1', trackId: 't1', type: 'audio' })] }],
+        });
+        const matches = vi.spyOn(audioClipSlipOwner, 'matches').mockReturnValue(false);
+
+        expect(
+            handleSlipClipContent.execute({
+                type: 'slipClipContent',
+                payload: { clipId: 'c1', clipType: 'audio', offset: 1 },
+            })
+        ).toEqual({ status: 'conflict' });
+        expect(matches).toHaveBeenCalledWith(
+            expect.objectContaining({ clip: expect.objectContaining({ id: 'c1' }) }),
+            expect.anything()
+        );
+        matches.mockRestore();
     });
 
     it('records the actual MIDI owner capture and passes reciprocal data on its real inverse', () => {

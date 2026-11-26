@@ -100,6 +100,29 @@ describe('handleNudgeClip', () => {
         expect(desc.inverseAction).toBeNull();
     });
 
+    it('refuses a nudge whose expected start is not the live start, and runs one whose start holds', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 2, endBeat: 6 }] }],
+        });
+        mocks.nudgeClip.mockReturnValue(true);
+
+        expect(
+            handleNudgeClip.execute({
+                type: 'nudgeClip',
+                payload: { clipId: 'c1', beats: 1, expectedStartBeat: 5 },
+            })
+        ).toEqual({ status: 'conflict' });
+        expect(mocks.nudgeClip).not.toHaveBeenCalled();
+
+        expect(
+            handleNudgeClip.execute({
+                type: 'nudgeClip',
+                payload: { clipId: 'c1', beats: 1, expectedStartBeat: 2 },
+            })
+        ).toEqual({ status: 'written' });
+        expect(mocks.nudgeClip).toHaveBeenCalledWith('c1', 1);
+    });
+
     it('is undoable', () => {
         expect(handleNudgeClip.undoable).toBe(true);
     });
