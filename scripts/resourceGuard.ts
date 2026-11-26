@@ -743,7 +743,12 @@ type ReservationProbe =
 function probeReservation(path: string, host: ProcessTreeHost): ReservationProbe {
     try {
         const owner = reservationWithState(path);
-        return reservationIsLive(owner, host) ? { status: 'live', owner } : { status: 'dead' };
+        if (!reservationIsLive(owner, host)) {
+            return { status: 'dead' };
+        }
+        // A live owner short-circuits liveness, so validate the tracked list the sampler will iterate.
+        reservationProcessTree(owner);
+        return { status: 'live', owner };
     } catch (error) {
         return { status: 'unusable', reason: errorMessage(error) };
     }
@@ -763,7 +768,8 @@ function unreadableReservationOwner(path: string): ReservationRecord {
 
 function reservationFileIsStale(path: string): boolean {
     try {
-        return Date.now() - statSync(path).mtimeMs > staleUnreadableReservationMs;
+        // An mtime further ahead than the horizon is clock damage, not a record written by a live command.
+        return Math.abs(Date.now() - statSync(path).mtimeMs) > staleUnreadableReservationMs;
     } catch {
         return false;
     }
@@ -772,8 +778,10 @@ function reservationFileIsStale(path: string): boolean {
 function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: ReservationRecord; path: string }> {
     mkdirSync(root, { recursive: true });
     const live: Array<{ owner: ReservationRecord; path: string }> = [];
-    for (const name of readdirSync(root)) {
-        if (!name.endsWith('.json') || name.includes('.state.')) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+        const name = entry.name;
+        // Only regular files are records; anything else here is not ours to read or delete.
+        if (!entry.isFile() || !name.endsWith('.json') || name.includes('.state.')) {
             continue;
         }
         const path = join(root, name);
@@ -1223,6 +1231,18 @@ function killedByTimeout(error: Error | undefined): boolean {
     return error !== undefined && 'code' in error && error.code === 'ETIMEDOUT';
 }
 
+// lsof lists a forked same-UID process, then is refused its files once it execs a set-user-ID
+// binary such as `ps`, which every concurrent guard runs. A refused process that then exited or
+// left this account is outside the census, like one lsof never listed; any heir appears in a fresh
+// observation's lists.
+function inspectedProcessLeft(pid: number, uid: number, deadline: number): boolean {
+    if (processIsGone(pid)) {
+        return true;
+    }
+    const snapshot = processFileSnapshot(pid, Math.max(1, deadline - Date.now()));
+    return snapshot === undefined ? processIsGone(pid) : snapshot.uid !== uid;
+}
+
 type ScopedFileState =
     | { kind: 'alive' }
     | { kind: 'uncovered'; pids: number[]; reason?: string }
@@ -1253,14 +1273,23 @@ function scopedDarwinFileState(
     }
     let parseReason = 'unclassified';
     let parseDetail: string | undefined;
+    let parsePid: number | undefined;
     const census =
         result.stdout === ''
             ? { pids: new Set<number>(), paths: [] }
-            : parseLsofCensus(result.stdout, (reason, detail) => {
+            : parseLsofCensus(result.stdout, (reason, detail, pid) => {
                   parseReason = reason;
                   parseDetail = detail;
+                  parsePid = pid;
               });
     if (census === undefined) {
+        if (
+            parseReason === 'file-inspection-diagnostic' &&
+            parsePid !== undefined &&
+            inspectedProcessLeft(parsePid, uid, deadline)
+        ) {
+            return { kind: 'uncovered', pids };
+        }
         if (parseReason === 'file-inspection-diagnostic') {
             return {
                 kind: 'uncovered',
@@ -1776,13 +1805,24 @@ export function storageFileState(
                 }
                 let parseReason = 'unclassified';
                 let parseDetail: string | undefined;
-                const census = parseLsofCensus(result.stdout, (reason, detail) => {
+                let parsePid: number | undefined;
+                const census = parseLsofCensus(result.stdout, (reason, detail, pid) => {
                     parseReason = reason;
                     parseDetail = detail;
+                    parsePid = pid;
                 });
                 if (census === undefined) {
                     // A descriptor can close or become uninspectable between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
+                    if (
+                        parseReason === 'file-inspection-diagnostic' &&
+                        parseDetail !== undefined &&
+                        parsePid !== undefined &&
+                        inspectedProcessLeft(parsePid, uid, deadline)
+                    ) {
+                        uncovered = `lsof-inspected-pid-left:${parseDetail}`;
+                        continue;
+                    }
                     if (parseReason === 'file-inspection-diagnostic') {
                         inspectionDiagnostic ??= `lsof-fields-unusable:${parseReason}${parseDetail === undefined ? '' : `:${parseDetail}`}`;
                         continue;
