@@ -134,6 +134,13 @@ the mutation that must fail it. Report the concrete break or none.
     present/value capture; an older restore payload that omits the alias still means leave live, not delete.
     Reject malformed capture unions at serialized argument admission. A default-zero fixture or an equality that
     drops absent keys cannot prove this contract.
+15. **Every source reader reads every channel (#6304, fixed by #6339).** The Strip Silence scanner, from
+    e415a55cc4 and kept by #2169, read only `getChannelData(0)` and dropped right-only islands. Drive stereo PCM at
+    120 BPM, 48 kHz, -40 dB and a 0.5-beat minimum (left at beats 0-2 and 8-10, right at 4-6: islands 0-2, 4-6,
+    8-10), then channel-swapped, right-only, third-channel-only and opposite-polarity PCM with common source-frame
+    windows; a mono fixture cannot prove all-channel retention. Scanning channel 0 only, or averaging channels
+    (which cancels anti-phase PCM), must fail the `all-channel physical PCM islands` cases in
+    `src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts`.
 
 ## Relocated
 

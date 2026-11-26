@@ -226,6 +226,11 @@ impl HostCallbackState {
         }
     }
 
+    /// Whether a latency change is pending, without consuming it.
+    pub fn is_latency_dirty(&self) -> bool {
+        self.latency_dirty.load(Ordering::Acquire)
+    }
+
     /// Atomically read-and-clear the latency-dirty flag. Returns `true` if a
     /// latency change was pending since the last call.
     pub fn take_latency_dirty(&self) -> bool {

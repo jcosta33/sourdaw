@@ -48,6 +48,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
+        engineSampleRateOf: vi.fn((): number | null => null),
         acceptsSidechainInput: actual.acceptsSidechainInput,
         getSidechainTargetCapability: actual.getSidechainTargetCapability,
         findPadOutputHost: actual.findPadOutputHost,
@@ -217,6 +218,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
+        refreshExternalPluginTails: vi.fn(async () => {}),
         isFaustModule: actual.isFaustModule,
         compileFaustDSP: actual.compileFaustDSP,
         createFaustNode: actual.createFaustNode,

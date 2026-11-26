@@ -30,11 +30,15 @@ mocks.subscribeTail.mockImplementation((handler) => {
     return Promise.resolve(() => {});
 });
 
-function emitTailChange(change: PluginTailChange): void {
+/** The host numbers every event; each one emitted here is later than the one before. */
+let lastSequence = 0;
+
+function emitTailChange(change: Omit<PluginTailChange, 'sequence'>): void {
     if (!nativeTailHandler) {
         throw new Error('no native tail subscription is live');
     }
-    nativeTailHandler(change);
+    lastSequence += 1;
+    nativeTailHandler({ ...change, sequence: lastSequence });
 }
 
 function loadedInstance(instanceId: string, tailSamples: number): PluginInstance {

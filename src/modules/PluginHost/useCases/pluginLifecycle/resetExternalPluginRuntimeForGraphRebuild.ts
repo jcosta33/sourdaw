@@ -4,7 +4,7 @@ import { externalPluginActivationEpoch, externalPluginActivationTasks } from './
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { failUnresponsiveExternalPlugins } from './failUnresponsiveExternalPlugins';
 import { loadedExternalInstances } from './loadedExternalInstances';
-import { pendingKeyedUnloads } from './pendingKeyedUnloads';
+import { pendingKeyedUnloadAdmissions } from './pendingKeyedUnloads';
 import { readLiveStatesForTeardown } from './readLiveStatesForTeardown';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { unloadEveryPluginKeepingCarries } from './unloadEveryPluginKeepingCarries';
@@ -21,7 +21,7 @@ export function resetExternalPluginRuntimeForGraphRebuild(): Promise<void> {
     externalPluginActivationEpoch.current += 1;
     const rebuild = pluginLifecycleScheduler.beginRebuild();
     const admittedActivations = new Map(externalPluginActivationTasks);
-    const admittedUnloads = new Map(pendingKeyedUnloads);
+    const admittedUnloads = pendingKeyedUnloadAdmissions();
     const reset = (async () => {
         try {
             failUnresponsiveExternalPlugins(

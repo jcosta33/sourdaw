@@ -20,6 +20,7 @@ pub mod clap_wrapper;
 /// The format-neutral pump every open editor's run loop is serviced from.
 #[cfg(unix)]
 pub mod editor_run_loop;
+pub mod output_notes;
 pub mod parameter_events;
 pub mod params;
 pub mod runtime;
