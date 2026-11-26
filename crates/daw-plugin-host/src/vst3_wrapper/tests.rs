@@ -1170,11 +1170,9 @@ macro_rules! fake_controller_impls {
                     write_tchar(unsafe { &mut *string }, "Refused");
                     return kResultFalse;
                 }
+                let text = format!("{value_normalized:.2} dB");
                 // SAFETY: `string` is non-null (checked above) and the host's writable String128.
-                write_tchar(
-                    unsafe { &mut *string },
-                    &format!("{value_normalized:.2} dB"),
-                );
+                write_tchar(unsafe { &mut *string }, &text);
                 kResultOk
             }
 

@@ -7945,7 +7945,9 @@ mod tests {
         assert!(text.len() <= out_buffer_capacity as usize);
         for (offset, byte) in text.bytes().enumerate() {
             // SAFETY: `offset` is within the capacity the host passed (asserted above).
-            unsafe { *out_buffer.add(offset) = byte as std::os::raw::c_char };
+            let slot = unsafe { out_buffer.add(offset) };
+            // SAFETY: `slot` points inside the host's writable buffer, per the bound above.
+            unsafe { *slot = byte as std::os::raw::c_char };
         }
         id == 21
     }
