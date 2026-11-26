@@ -15,7 +15,9 @@
 //! purpose-built bus and restart classes of [`crate::vst3_probe`].
 
 use crate::clap_front::GAIN_PARAM_ID;
-use crate::echo::{Echo, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES};
+use crate::echo::{
+    Echo, GainPoints, ProcessCalls, CHANNELS, ECHO_FRAMES, GAIN_DEFAULT, LATENCY_FRAMES,
+};
 use crate::note_voice::NoteVoice;
 use crate::state::CHUNK_BYTES;
 use std::ffi::{c_char, c_void};
@@ -338,8 +340,9 @@ impl IAudioProcessorTrait for Vst3Echo {
         kResultOk
     }
 
-    /// Apply the block's `Gain` changes, then render it. Allocation- and
-    /// lock-free: pointer arithmetic over host-owned buffers only.
+    /// Render the block, applying each `Gain` point on the sample its
+    /// `sampleOffset` names. Allocation- and lock-free: pointer arithmetic over
+    /// host-owned buffers only.
     unsafe fn process(&self, data: *mut ProcessData) -> tresult {
         if data.is_null() {
             return kInvalidArgument;
@@ -351,14 +354,17 @@ impl IAudioProcessorTrait for Vst3Echo {
         }
         self.echo.record_block_mode(data.processMode);
         // SAFETY: every pointer inside `data` is valid for this call.
-        unsafe { apply_parameter_changes(&self.echo, data) };
+        let mut gain_points = unsafe { read_parameter_changes(data) };
         if self.instrument {
             // SAFETY: as above.
-            unsafe { render_notes(&self.echo, &self.voice, data) };
+            unsafe { render_notes(&self.echo, &self.voice, &mut gain_points, data) };
         } else {
             // SAFETY: as above.
-            unsafe { render_block(&self.echo, data) };
+            unsafe { render_block(&self.echo, &mut gain_points, data) };
         }
+        // A block with no bus to render — a parameter flush — still ends on
+        // its last point.
+        gain_points.apply_all(&self.echo);
         kResultOk
     }
 
@@ -370,12 +376,15 @@ impl IAudioProcessorTrait for Vst3Echo {
     }
 }
 
+/// Collect every `Gain` point of the block, each at its own `sampleOffset`.
+///
 /// # Safety
 /// `data.inputParameterChanges`, when non-null, must be live for this call.
-unsafe fn apply_parameter_changes(echo: &Echo, data: &ProcessData) {
+unsafe fn read_parameter_changes(data: &ProcessData) -> GainPoints {
+    let mut gain_points = GainPoints::new();
     // SAFETY: the caller guarantees the list is live.
     let Some(changes) = (unsafe { ComRef::from_raw(data.inputParameterChanges) }) else {
-        return;
+        return gain_points;
     };
     // SAFETY: the list is live for this call.
     let parameter_count = unsafe { changes.getParameterCount() };
@@ -392,22 +401,22 @@ unsafe fn apply_parameter_changes(echo: &Echo, data: &ProcessData) {
         }
         // SAFETY: the queue is live for this call.
         let points = unsafe { queue.getPointCount() };
-        if points <= 0 {
-            continue;
-        }
-        let mut offset = 0;
-        let mut value = 0.0;
-        // SAFETY: the queue is live and the out-pointers are local.
-        let read = unsafe { queue.getPoint(points - 1, &mut offset, &mut value) };
-        if read == kResultOk {
-            echo.set_gain(value);
+        for point in 0..points {
+            let mut offset = 0;
+            let mut value = 0.0;
+            // SAFETY: the queue is live and the out-pointers are local.
+            let read = unsafe { queue.getPoint(point, &mut offset, &mut value) };
+            if read == kResultOk {
+                gain_points.push(offset.max(0) as u32, value);
+            }
         }
     }
+    gain_points
 }
 
 /// # Safety
 /// The bus arrays `data` names must be valid for its `numSamples`.
-unsafe fn render_block(echo: &Echo, data: &ProcessData) {
+unsafe fn render_block(echo: &Echo, gain_points: &mut GainPoints, data: &ProcessData) {
     if data.numOutputs < 1 || data.outputs.is_null() {
         return;
     }
@@ -447,6 +456,7 @@ unsafe fn render_block(echo: &Echo, data: &ProcessData) {
                 *sample = unsafe { *source };
             }
         }
+        gain_points.apply_due(echo, frame as u32);
         let sample_out = echo.next_frame(sample_in);
         for (channel, sample) in sample_out.iter().enumerate() {
             // SAFETY: as above, for the output bus.
@@ -467,7 +477,12 @@ unsafe fn render_block(echo: &Echo, data: &ProcessData) {
 /// # Safety
 /// `data.inputEvents`, when non-null, must be live for this call and the output
 /// bus array `data` names must be valid for its `numSamples`.
-unsafe fn render_notes(echo: &Echo, voice: &NoteVoice, data: &ProcessData) {
+unsafe fn render_notes(
+    echo: &Echo,
+    voice: &NoteVoice,
+    gain_points: &mut GainPoints,
+    data: &ProcessData,
+) {
     if data.numOutputs < 1 || data.outputs.is_null() {
         return;
     }
@@ -483,12 +498,12 @@ unsafe fn render_notes(echo: &Echo, voice: &NoteVoice, data: &ProcessData) {
     let events = unsafe { ComRef::from_raw(data.inputEvents) };
     // SAFETY: the list is live for this call.
     let count = events.map_or(0, |events| unsafe { events.getEventCount() });
-    let gain = echo.gain() as f32;
     let mut next_event = 0;
     // SAFETY: `Event` is a plain `repr(C)` POD for which zero is valid.
     let mut event: Event = unsafe { std::mem::zeroed() };
     let mut pending = false;
     for frame in 0..data.numSamples.max(0) {
+        gain_points.apply_due(echo, frame as u32);
         while next_event < count || pending {
             if !pending {
                 let Some(events) = events else { break };
@@ -515,7 +530,7 @@ unsafe fn render_notes(echo: &Echo, voice: &NoteVoice, data: &ProcessData) {
                 voice.note_off(note.pitch);
             }
         }
-        let level = voice.level(gain);
+        let level = voice.level(echo.gain() as f32);
         for channel in 0..CHANNELS {
             // SAFETY: `channel < CHANNELS <= numChannels`, inside the channel table.
             let entry = unsafe { out_channels.add(channel) };

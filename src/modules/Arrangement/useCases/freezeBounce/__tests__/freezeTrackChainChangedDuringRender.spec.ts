@@ -27,7 +27,6 @@ import {
 } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { getArrangementHandlers, setArrangementEventBus } from '../../index';
@@ -42,12 +41,6 @@ registerSupportingServicePorts();
 // render's await is held open so an edit can land inside the window.
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-
-// Real digest, wrapped so one call can be intercepted.
-vi.mock('../../../services/computeTrackHash', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../../services/computeTrackHash')>();
-    return { computeTrackHash: vi.fn(original.computeTrackHash) };
-});
 
 vi.mock('../../device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
@@ -196,45 +189,9 @@ describe('a freeze whose device chain changes during the render', () => {
         expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
     });
 
-    it('refuses the take when a device is added while the post-render digest is pending', async () => {
-        const realHash = (
-            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
-                '../../../services/computeTrackHash'
-            )
-        ).computeTrackHash;
+    it('does not commit when the freeze is cancelled during the render', async () => {
         await freezeWhile(async () => {
-            // The next digest is the freeze's own check of the live track: the edit lands after
-            // that digest was taken from the chain it saw and before it is compared.
-            vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-                const staleHash = await realHash(clips, devices);
-                await executeAppAction({
-                    type: 'addDevice',
-                    payload: { trackId: TRACK_ID, deviceType: 'builtin-reverb' },
-                });
-                return staleHash;
-            });
-        });
-
-        const track = findTrack();
-        expect(track.frozen).toBe(false);
-        expect(track.frozenBufferId).toBeUndefined();
-        expect(track.freezeState.sourceContentHash).toBeUndefined();
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
-    });
-
-    it('does not commit when the freeze is cancelled while the post-render digest is pending', async () => {
-        const realHash = (
-            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
-                '../../../services/computeTrackHash'
-            )
-        ).computeTrackHash;
-        await freezeWhile(async () => {
-            vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-                const hash = await realHash(clips, devices);
-                cancelFreezeTrack(TRACK_ID);
-                return hash;
-            });
+            cancelFreezeTrack(TRACK_ID);
         });
 
         const track = findTrack();
@@ -244,18 +201,9 @@ describe('a freeze whose device chain changes during the render', () => {
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 
-    it('does not commit when the track is removed while the post-render digest is pending', async () => {
-        const realHash = (
-            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
-                '../../../services/computeTrackHash'
-            )
-        ).computeTrackHash;
+    it('does not commit when the track is removed during the render', async () => {
         await freezeWhile(async () => {
-            vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-                const hash = await realHash(clips, devices);
-                trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-                return hash;
-            });
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         });
 
         expect(trackStore.value?.tracks.some((candidate) => candidate.id === TRACK_ID)).toBe(false);

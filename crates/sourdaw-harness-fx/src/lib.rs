@@ -4,8 +4,10 @@
 //!
 //! Per channel the effect is `y[n] = g * (x[n - L] + 0.5 * x[n - L - E])`: `L`
 //! is the latency it reports, `E` the tail it declares, and `g` its one
-//! parameter, `Gain`. Its state chunk also records the process mode the host
-//! gave the instance (see [`state`]).
+//! parameter, `Gain`. Every `Gain` point applies from the sample its format's
+//! event offset names, so where a host delivered each point inside a block is
+//! read straight off the printed samples. Its state chunk also records the
+//! process mode the host gave the instance (see [`state`]).
 //!
 //! Its instrument classes (CLAP and VST3) sound the notes they are sent: while a
 //! note is held every output sample is `Gain * velocity`, from the sample its

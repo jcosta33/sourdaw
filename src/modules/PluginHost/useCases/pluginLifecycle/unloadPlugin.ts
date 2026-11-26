@@ -15,7 +15,7 @@ import { unloadWithRetractedMirror } from './unloadWithRetractedMirror';
  */
 export function unloadPlugin(instanceId?: string): Promise<void> {
     if (instanceId !== undefined) {
-        return scheduleKeyedUnload(instanceId, () => unloadWithRetractedMirror(instanceId));
+        return scheduleKeyedUnload(instanceId, (wasLetGo) => unloadWithRetractedMirror(instanceId, wasLetGo));
     }
     return unloadEveryPluginKeepingCarries().finally(() => carriedExternalPluginStateFence.dropAll());
 }
