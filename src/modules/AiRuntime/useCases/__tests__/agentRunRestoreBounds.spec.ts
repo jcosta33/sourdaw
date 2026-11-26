@@ -128,7 +128,9 @@ function schedule(
     };
 }
 
-function protections(facts: Partial<{ unchanged: number; controls: number; clauses: number; operations: number }>) {
+function protections(
+    facts: Partial<{ unchanged: number; controls: number; clauses: number; operations: number; exceptions: number }>
+) {
     const clauseCount = facts.clauses ?? 1;
     return {
         request: 'x'.repeat(clauseCount + 1),
@@ -137,6 +139,7 @@ function protections(facts: Partial<{ unchanged: number; controls: number; claus
             protectedControls: ids('control', facts.controls ?? 1).map((trackId) => ({
                 trackId,
                 operations: ids('operation', facts.operations ?? 1),
+                exceptOperations: ids('exception', facts.exceptions ?? 1),
             })),
         },
         resolvedTrackClauses: Array.from({ length: clauseCount }, (_, index) => ({ start: index, end: index + 1 })),
@@ -183,6 +186,12 @@ const collectionRows: Array<PlanWithRow & { bound: number }> = [
         bound: BOUND,
         plan: withSchedule((count) => schedule(1, { requestProtections: protections({ operations: count }) })),
         kept: (plan) => plan?.batchSchedule?.requestProtections?.facts.protectedControls[0]?.operations.length,
+    },
+    {
+        field: 'batchSchedule.requestProtections.protectedControls.exceptOperations',
+        bound: BOUND,
+        plan: withSchedule((count) => schedule(1, { requestProtections: protections({ exceptions: count }) })),
+        kept: (plan) => plan?.batchSchedule?.requestProtections?.facts.protectedControls[0]?.exceptOperations?.length,
     },
     {
         field: 'batchSchedule.requestProtections.resolvedTrackClauses',
