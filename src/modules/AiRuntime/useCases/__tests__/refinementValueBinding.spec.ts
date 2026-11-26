@@ -3527,8 +3527,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(
                 [first, second].map(
                     (command) =>
-                        readStoredCardRemoval({ prompt, command, pendingActions: pending, context: PAIRING_CONTEXT })
-                            .status
+                        readStoredCardRemoval({
+                            prompt,
+                            command,
+                            pendingActions: pending,
+                            actions: [],
+                            context: PAIRING_CONTEXT,
+                        }).status
                 )
             ).toEqual(['keeps', 'keeps']);
             for (const next of [[vocalGain(0.5)], [second, vocalGain(0.5)], [first, vocalGain(0.5)]]) {
@@ -3543,7 +3548,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             const prompt = 'drop the snare gain a bit and the vocal gain';
 
             expect(
-                readStoredCardRemoval({ prompt, command: vocalGain(0.5), pendingActions: pending, context }).status
+                readStoredCardRemoval({
+                    prompt,
+                    command: vocalGain(0.5),
+                    pendingActions: pending,
+                    actions: [],
+                    context,
+                }).status
             ).toBe('keeps');
             expect(admission(pending, [snareGain], prompt, context)).toBe('refused');
             // The same bare name after a removal that ends at its object continues it.
@@ -3552,6 +3563,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     prompt: 'drop the snare gain and the vocal gain',
                     command: vocalGain(0.5),
                     pendingActions: pending,
+                    actions: [],
                     context,
                 }).status
             ).toBe('removes');
@@ -3567,8 +3579,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             for (const [prompt, command] of rows) {
                 expect({
                     prompt,
-                    read: readStoredCardRemoval({ prompt, command, pendingActions: pending, context: PAIRING_CONTEXT })
-                        .status,
+                    read: readStoredCardRemoval({
+                        prompt,
+                        command,
+                        pendingActions: pending,
+                        actions: [],
+                        context: PAIRING_CONTEXT,
+                    }).status,
                 }).toEqual({ prompt, read: 'keeps' });
             }
             expect(admission(pending, [vocalGain(0.5)], 'remove "Compressor')).toBe('refused');
@@ -6813,5 +6830,326 @@ describe('recorded protection facet owners', () => {
         expect(
             validate({ name: 'renameTrack', arguments: { trackId: 'track-keys', name: 'Piano' } }, 'track-keys').status
         ).toBe('refused');
+    });
+});
+
+describe('#5541 and #5479: a refinement asks a retraction, negation or mark it cannot read', () => {
+    const bassMute: ProviderCall = { name: 'muteTrack', arguments: { trackId: 'track-bass', muted: true } };
+    const keysBy = (deltaDb: number): ProviderCall => ({
+        name: 'setTrackGain',
+        arguments: { trackId: 'track-keys', deltaDb },
+    });
+    const keysArm: ProviderCall = { name: 'armTrack', arguments: { trackId: 'track-keys', armed: true } };
+    const CUT_AND_MUTE_CARD = { prompt: 'turn Vocals down 3 dB and mute Bass', calls: [vocalsBy(-3), bassMute] };
+    const NAMED_CONTEXT = projectContext([
+        ...BASE_TRACKS,
+        projectTrack('track-cafe', 'Café'),
+        projectTrack('track-lead-vox', 'Lead-Vox'),
+    ]);
+    const muteOf = (trackId: string): ProviderCall => ({ name: 'muteTrack', arguments: { trackId, muted: true } });
+
+    function outcomeOf(result: ReturnType<typeof ground>) {
+        if (result.status === 'rejected') {
+            return { status: result.status, said: result.rejectionReason };
+        }
+        if (result.status === 'clarify') {
+            return { status: result.status, said: result.planningOutcome.questions.join(' ') };
+        }
+        return { status: result.status, said: commandsOf(result) };
+    }
+
+    const negationBesideAddition = (clause: string) => ({
+        status: 'clarify',
+        said: expect.stringContaining(`"${clause}" beside an added change does not say whether that change stands`),
+    });
+    const unreadMark = { status: 'clarify', said: expect.stringContaining('What does') };
+
+    it.each([
+        ['mute Bass, never mind', [vocalsBy(-3), bassMute], 'never mind'],
+        ['mute Bass, or not', [vocalsBy(-3), bassMute], 'or not'],
+        ['mute Bass, maybe not', [vocalsBy(-3), bassMute], 'maybe not'],
+        ['mute Bass, not sure', [vocalsBy(-3), bassMute], 'not sure'],
+        ['mute Bass, not now', [vocalsBy(-3), bassMute], 'not now'],
+        ['mute Bass, not yet', [vocalsBy(-3), bassMute], 'not yet'],
+        ['mute Bass, never', [vocalsBy(-3), bassMute], 'never'],
+        ["mute Bass, don't touch it", [vocalsBy(-3), bassMute], "don't touch it"],
+        ["mute Bass, don't do that", [vocalsBy(-3), bassMute], "don't do that"],
+        ['mute Bass, without it', [vocalsBy(-3), bassMute], 'without it'],
+        ['never mind, mute Bass', [vocalsBy(-3), bassMute], 'never mind'],
+        ['turn Keys down 2 dB, never mind', [vocalsBy(-3), keysBy(-2)], 'never mind'],
+        ['arm Keys, never mind', [vocalsBy(-3), keysArm], 'never mind'],
+    ] as const)(
+        'asks "%s" on a "turn Vocals down 3 dB" card: a negation naming nothing beside an addition',
+        (refinement, calls, clause) => {
+            expect(outcomeOf(refine(P0_CARD, refinement, calls))).toEqual(negationBesideAddition(clause));
+        }
+    );
+
+    it.each([
+        "don't change the rest of the mix",
+        "don't touch the rest of the song",
+        "don't change the rest of the project",
+        "don't change the rest of the tracks",
+        "don't touch the other tracks",
+        "don't change everything else in the mix",
+        'keep the rest of the mix as is',
+        'keep everything else in the mix unchanged',
+        'the other tracks stay',
+        'the rest of the mix as is',
+    ])('asks "mute Bass, %s" as restricting the pending changes, as "nothing else" does', (clause) => {
+        expect(outcomeOf(refine(P0_CARD, `mute Bass, ${clause}`, [vocalsBy(-3), bassMute]))).toEqual({
+            status: 'clarify',
+            said: expect.stringContaining('adds a change and says it replaces or restricts'),
+        });
+    });
+
+    it.each([
+        "don't change anything else",
+        'do not change anything else',
+        "don't touch anything else",
+        "don't change the rest",
+    ])('reads "mute Bass, %s" as the rest-of-mix protection "without changing anything else" reads', (clause) => {
+        const calls = [vocalsBy(-3), bassMute];
+
+        expect(outcomeOf(refine(P0_CARD, `mute Bass, ${clause}`, calls))).toEqual(
+            outcomeOf(refine(P0_CARD, 'mute Bass, without changing anything else', calls))
+        );
+    });
+
+    it.each([
+        ["mute Bass, don't touch Bass", [vocalsBy(-3), bassMute], "don't touch Bass"],
+        ["mute Bass, don't change Snare", [vocalsBy(-3), bassMute], "don't change Snare"],
+        ["turn Vocals down 3 dB, don't touch Bass", [vocalsBy(-3)], "don't touch Bass"],
+    ] as const)('asks the named "%s", which is no protection of that object', (refinement, calls, clause) => {
+        expect(outcomeOf(refine(P0_CARD, refinement, calls))).toEqual({
+            status: 'clarify',
+            said: expect.stringContaining(`"${clause}" says what not to do`),
+        });
+    });
+
+    it.each([
+        [
+            'an addition with no negation',
+            P0_CARD,
+            'mute Bass',
+            [vocalsBy(-3), bassMute],
+            CONTEXT,
+            ['track-vocals', 'track-bass'],
+        ],
+        ['a plain restatement', P0_CARD, 'turn Vocals down 3 dB', [vocalsBy(-3)], CONTEXT, ['track-vocals']],
+        [
+            'a negation naming nothing beside a restatement',
+            P1_CARD,
+            'turn Vocals down, not too loud',
+            P1_PLAN,
+            CONTEXT,
+            ['track-vocals', 'track-snare'],
+        ],
+        [
+            'a composed accent in a name',
+            P0_CARD,
+            'mute Café',
+            [vocalsBy(-3), muteOf('track-cafe')],
+            NAMED_CONTEXT,
+            ['track-vocals', 'track-cafe'],
+        ],
+        [
+            'a decomposed accent in a name',
+            P0_CARD,
+            'mute Cafe\u0301',
+            [vocalsBy(-3), muteOf('track-cafe')],
+            NAMED_CONTEXT,
+            ['track-vocals', 'track-cafe'],
+        ],
+        [
+            'a hyphen inside a name',
+            P0_CARD,
+            'mute Lead-Vox',
+            [vocalsBy(-3), muteOf('track-lead-vox')],
+            NAMED_CONTEXT,
+            ['track-vocals', 'track-lead-vox'],
+        ],
+    ] as const)('admits %s', (_kind, card, refinement, calls, context, trackIds) => {
+        const result = refine(card, refinement, calls, context);
+
+        expect({
+            status: result.status,
+            tracks: result.status === 'grounded' ? result.actions.map((action) => payloadOf(action).trackId) : [],
+        }).toEqual({
+            status: 'grounded',
+            tracks: trackIds,
+        });
+    });
+
+    it.each([
+        ['mute Bass\u20E0', [vocalsBy(-3), bassMute]],
+        ['mute Bass \u20E0', [vocalsBy(-3), bassMute]],
+        ['mute Bass\u0336', [vocalsBy(-3), bassMute]],
+        ['turn Vocals down 2 dB\u0338', [vocalsBy(-2), bassMute]],
+        ['turn Vocals down 2 dB \u0336', [vocalsBy(-2), bassMute]],
+    ] as const)('asks the combining mark in %j, which composes no read character', (refinement, calls) => {
+        expect(outcomeOf(refine(CUT_AND_MUTE_CARD, refinement, calls))).toEqual(unreadMark);
+    });
+
+    it.each([' - ', ' — ', ': ', ' / ', ' -- ', '? ', '! ', ' ('])(
+        'asks a retraction after %j on the refinement route rather than applying the cuts',
+        (separator) => {
+            const refinement = `turn Vocals down 2 dB and turn Snare down 2 dB${separator}forget that`;
+
+            expect(outcomeOf(refine(P1_CARD, refinement, [vocalsBy(-2), snareBy(-2)]))).toEqual(unreadMark);
+        }
+    );
+
+    describe('a card without a basis, held against its stored batch', () => {
+        const STORED_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-guitar', 'Guitar'),
+            projectTrack('track-vocal', 'Vocal'),
+        ]);
+        const pendingActions = [
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: 20 } },
+            { type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.5 } },
+        ];
+        const admit = (prompt: string) =>
+            validateRefinedProposalActions({
+                pendingActions,
+                actions: [{ type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.6 } }],
+                prompt,
+                context: STORED_CONTEXT,
+                createdObject: proposalCommandShape.createdObject,
+                readRemoval: readStoredCardRemoval,
+            });
+
+        // The splitter cuts at `but`, so the asked clause is the qualifier after it.
+        it.each([
+            ['actually keep it', 'actually keep it'],
+            ['no wait', 'no wait'],
+            ['never mind', 'never mind'],
+            ['scratch that', 'scratch that'],
+            ['forget that', 'forget that'],
+            ['or not', 'or not'],
+            ['maybe not', 'maybe not'],
+            ['not sure', 'not sure'],
+            ["but only if it's loud", "only if it's loud"],
+        ] as const)('asks "%s" beside a removal instead of dropping the pan', (clause, asked) => {
+            expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining(
+                    `"${asked}" beside a removal does not say whether that change is removed`
+                ),
+            });
+        });
+
+        it.each([
+            'Remove the guitar pan too',
+            'Remove the guitar pan, too',
+            'Remove the guitar pan, for now',
+            'Remove the guitar pan, from the card',
+            'Remove the guitar pan, entirely',
+        ])('reads the reference trailer in "%s" as part of the removal', (prompt) => {
+            expect(admit(prompt)).toEqual({ status: 'valid' });
+        });
+
+        const importStems = { type: 'importStemSet', payload: { selectionId: 'selection-1' } };
+        const admitWithImport = (prompt: string) =>
+            validateRefinedProposalActions({
+                pendingActions,
+                actions: [{ type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.6 } }, importStems],
+                prompt,
+                context: STORED_CONTEXT,
+                createdObject: proposalCommandShape.createdObject,
+                readRemoval: readStoredCardRemoval,
+            });
+
+        it.each([
+            'import the selected stems using the published role-based gain and pan values',
+            'import the selected stems, using the published role-based gain and pan values',
+        ])('admits the described addition "%s" beside a removal', (clause) => {
+            expect(admitWithImport(`Remove the guitar pan and ${clause}`)).toEqual({ status: 'valid' });
+        });
+
+        it.each([
+            ['import the selected stems, or not', 'or not'],
+            ["import the selected stems, don't do that", "don't do that"],
+            ['import the selected stems, never mind', 'never mind'],
+        ])('asks "%s" beside a removal, which may withdraw it', (clause, asked) => {
+            expect(admitWithImport(`Remove the guitar pan and ${clause}`)).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining(
+                    `"${asked}" beside a removal does not say whether that change is removed`
+                ),
+            });
+        });
+
+        it.each([
+            ['actually keep it', 'on the Drum Bus'],
+            ['no wait', 'for the Bass'],
+        ])(
+            'asks "%s" after the clause "%s", which names its own object and does not continue the described addition',
+            (qualifier, objectClause) => {
+                expect(
+                    admitWithImport(
+                        `Remove the guitar pan and import the selected stems using the published gain values, ${objectClause}, ${qualifier}`
+                    )
+                ).toEqual({
+                    status: 'refused',
+                    reason: expect.stringContaining(
+                        `"${qualifier}" beside a removal does not say whether that change is removed`
+                    ),
+                });
+            }
+        );
+
+        it('asks a qualifier beside a removal when the batch adds nothing the clause names', () => {
+            expect(admit('Remove the guitar pan and import the selected stems')).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining('beside a removal does not say whether that change is removed'),
+            });
+        });
+
+        it.each([
+            "don't touch Bass",
+            "don't change Snare",
+            'do not touch Bass',
+            "don't touch the drum bus",
+            "don't change the rest of the mix",
+            "don't touch the other tracks",
+            'keep the rest of the mix as is',
+            "don't change everything else in the mix",
+            'the other tracks stay',
+        ])('admits "%s" beside a removal, which names nothing the removal drops', (clause) => {
+            expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
+                status: 'valid',
+            });
+        });
+
+        it.each([
+            "don't touch the guitar pan",
+            "don't touch the guitar",
+            "don't touch the vocal",
+            "don't touch it",
+            "don't worry about the rest",
+        ])('asks "%s" beside a removal, which names a change the batch makes or nothing', (clause) => {
+            expect(admit(`Set the vocal gain to 60%, remove the guitar pan, ${clause}`)).toEqual({
+                status: 'refused',
+                reason: expect.stringContaining(
+                    `"${clause}" beside a removal does not say whether that change is removed`
+                ),
+            });
+        });
+
+        it.each([
+            'Set the vocal gain to 60%, remove the guitar pan',
+            'Set the vocal gain to 60%, remove the guitar pan, please',
+            'Set the vocal gain to 60%, remove the guitar pan, thanks',
+            'Set the vocal gain to 60%, remove the guitar pan, leaving the Drum Bus unchanged',
+            'Set the vocal gain to 60%, remove the guitar pan, keep the rest as is',
+            'Set the vocal gain to 60%, remove the guitar pan, everything else stays',
+            'Set the vocal gain to 60%, remove the guitar pan, nothing else',
+            'Set the vocal gain to 60%, remove the guitar pan, keep everything else unchanged',
+            'Set the vocal gain to 60%, remove the guitar pan, without changing anything else',
+        ])('admits "%s", whose every other clause it reads', (prompt) => {
+            expect(admit(prompt)).toEqual({ status: 'valid' });
+        });
     });
 });

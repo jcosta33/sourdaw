@@ -56,9 +56,12 @@ const PROTECTION_FORMS: readonly FormPattern[] = [
     form(new RegExp(String.raw`^(.+?)\s+(?:(?:stays|stay|remains|remain)\s+)?${CLOSING_PHRASE}$`, 'u')),
     form(/^no\s+changes?\s+to\s+(.+)$/u),
     form(/^(?:keep|keeping)\s+(.+)$/u, { restOnly: true }),
+    form(/^(.+?)\s+(?:stays|stay|remains|remain)$/u, { restOnly: true }),
+    form(/^(?:do\s+not|don\s+t)\s+(?:change|touch)\s+(.+)$/u),
 ];
 /** The slot a protection states when it keeps the rest of the mix as it is, naming nothing. */
-const REST_OF_MIX = /^(?:everything\s+else|anything\s+else|all\s+else|the\s+rest)$/u;
+const REST_OF_MIX =
+    /^(?:(?:everything|anything|all)\s+else(?:\s+in\s+the\s+(?:mix|song|project))?|the\s+rest(?:\s+of\s+the\s+(?:mix|song|project|tracks))?|the\s+other\s+tracks)$/u;
 /** The whole clauses that keep the rest of the mix as it is without a slot. */
 const REST_CLAUSE = /^(?:nothing\s+else(?:\s+should\s+change)?|no\s+other\s+changes?)$/u;
 

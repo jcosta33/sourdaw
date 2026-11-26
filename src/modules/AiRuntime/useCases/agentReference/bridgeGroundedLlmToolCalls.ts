@@ -6601,6 +6601,7 @@ function findSilentOmission(input: {
             prompt: input.prompt,
             command: pendingActions[index]!,
             pendingActions,
+            actions: [],
             context: input.context,
         });
         if (removal.status === 'ambiguous') {
@@ -6948,7 +6949,7 @@ function withRefinement(
  * value a refinement clause binds. Every other call grounds in the refinement text alone. A batch
  * changing one pending command twice is refused, and a clause holding a mark the grammar does not read
  * is asked, before either route. Whichever route grounds it, the
- * result then passes one check: a negation naming nothing stands beside no changed value, a pending
+ * result then passes one check: a negation naming nothing stands beside no addition or changed value, a pending
  * command may leave the batch only by name, every clause must be answered, and nothing the chain
  * protects may change.
  */
@@ -7027,8 +7028,10 @@ function bridgeRefinedLlmToolCalls(
     }
     const unreadNegation = refinementClauseReader.unreadNegation({
         text: prompt,
+        basis,
         context,
         unreadNegations: removals.unreadNegations,
+        removalClauseStarts: removals.removalClauseStarts,
         removedCommandIndexes: removals.removedCommandIndexes,
         bindsValue: changesPendingValue(calls, inheritedCommandIndexes, basis),
     });
