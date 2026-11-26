@@ -447,12 +447,38 @@ export function resolveAudioLoopStartSeconds(clip: LoopedAudioSource, tempoAtCli
     );
 }
 
+export type AudioLoopPassSegment = { startOffsetBeats: number; endOffsetBeats: number; sourceStartSeconds: number };
+
+/**
+ * A pass segment with the entry its part was anchored on: the part enters the
+ * source at `anchorSourceSeconds` on `anchorBeat`. The seconds law reads
+ * `sourceStartSeconds`; the warp mapping reads the anchor alone, so a part that
+ * starts partway in does not depend on the tempo map.
+ */
+export type AudioLoopPassAnchoredSegment = AudioLoopPassSegment & {
+    anchorBeat: number;
+    anchorSourceSeconds: number;
+};
+
+type AudioLoopPassInput = Parameters<typeof projectAudioLoopPassAnchoredSegments>[0];
+
+/** The pass segments in the shape callers have always read; the anchors stay with the warp route. */
+export function projectAudioLoopPassSegments(input: AudioLoopPassInput): AudioLoopPassSegment[] {
+    return projectAudioLoopPassAnchoredSegments(input).map(
+        ({ startOffsetBeats, endOffsetBeats, sourceStartSeconds }) => ({
+            startOffsetBeats,
+            endOffsetBeats,
+            sourceStartSeconds,
+        })
+    );
+}
+
 /**
  * Partition one bounded scheduling window on the original pass and wrap grid.
  * A cut window can contain head, wrap, then the next head. The first visible
  * part enters at E; subsequent heads use H and wraps use W, independent of rate.
  */
-export function projectAudioLoopPassSegments({
+export function projectAudioLoopPassAnchoredSegments({
     clip,
     loopLengthBeats,
     iterationStartBeat,
@@ -468,7 +494,7 @@ export function projectAudioLoopPassSegments({
     stretchRatio: number;
     tempoAtClipStart: number;
     secondsAtBeat: (beat: number) => number;
-}): { startOffsetBeats: number; endOffsetBeats: number; sourceStartSeconds: number }[] {
+}): AudioLoopPassAnchoredSegment[] {
     const duration = iterationEndBeat - iterationStartBeat;
     const source = captureAudioSourceState(clip, loopLengthBeats, tempoAtClipStart);
     if (!(duration > 0) || !Number.isFinite(duration) || !source) {
@@ -484,6 +510,8 @@ export function projectAudioLoopPassSegments({
                     secondsAtBeat(iterationStartBeat) - secondsAtBeat(clip.startBeat),
                     stretchRatio
                 ),
+                anchorBeat: clip.startBeat,
+                anchorSourceSeconds: source.audioOffsetSeconds,
             },
         ];
     }
@@ -497,7 +525,7 @@ export function projectAudioLoopPassSegments({
         loopEnabled: true,
     });
     const phase = ((advance % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
-    const segments: { startOffsetBeats: number; endOffsetBeats: number; sourceStartSeconds: number }[] = [];
+    const segments: AudioLoopPassAnchoredSegment[] = [];
     let cursor = iterationStartBeat;
     let passIndex = Math.floor((cursor - passOrigin) / loopLengthBeats);
     while (cursor < iterationEndBeat) {
@@ -529,6 +557,8 @@ export function projectAudioLoopPassSegments({
                 secondsAtBeat(cursor) - secondsAtBeat(beatAnchor),
                 stretchRatio
             ),
+            anchorBeat: beatAnchor,
+            anchorSourceSeconds: sourceAnchor,
         });
         cursor = endBeat;
         if (cursor === passEnd) {
