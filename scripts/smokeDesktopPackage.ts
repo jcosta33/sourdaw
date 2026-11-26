@@ -6,11 +6,13 @@ import { createHash } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import { access, chmod, copyFile, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, toNamespacedPath } from 'node:path';
+
+import { type Page } from 'playwright';
 
 import { type SourdawBridge } from '../electron/channels.ts';
 
-import { emptyDiagnostics, printDiagnostics } from './desktopLatencyDiagnostics.ts';
+import { type Diagnostics, emptyDiagnostics, printDiagnostics } from './desktopLatencyDiagnostics.ts';
 import { waitForVisibleLaunchScreen } from './desktopLatencyLaunch.ts';
 import { harnessPluginDestination } from './installHarnessPlugin.ts';
 import { launchPackagedApp, step } from './packagedAppSession.ts';
@@ -37,7 +39,9 @@ type DesktopWindow = Window & { readonly sourdaw?: SourdawBridge };
 const STARTUP_TIMEOUT_MS = 45_000;
 const SCAN_TIMEOUT_MS = 60_000;
 const INSTALL_TIMEOUT_MS = 300_000;
+const RENDERER_URL_PREFIX = 'app://sourdaw/';
 const SAMPLE = 'levain/bassoon/PSBassoon_A1_v1_1.wav';
+const SAMPLE_URL = `${RENDERER_URL_PREFIX}samples/${SAMPLE}`;
 const PLUGIN_DESCRIPTOR = 'com.sourdaw.harness-tone';
 
 function parseFormat(value: string | undefined): Format {
@@ -123,7 +127,7 @@ async function withFreshHarnessPlugin(verify: (pluginPath: string) => Promise<vo
     }
 }
 
-function findHarnessPlugin(result: unknown): { descriptorId: string; path: string } {
+function findHarnessPluginPath(result: unknown): string {
     assert(
         result !== null && typeof result === 'object' && 'plugins' in result && Array.isArray(result.plugins),
         'scan_plugins returned no plugin list'
@@ -142,7 +146,82 @@ function findHarnessPlugin(result: unknown): { descriptorId: string; path: strin
         'path' in plugin && typeof plugin.path === 'string',
         'scan_plugins did not return a path for the harness plugin'
     );
-    return { descriptorId: PLUGIN_DESCRIPTOR, path: plugin.path };
+    return plugin.path;
+}
+
+async function verifyBundledSample(page: Page): Promise<void> {
+    const { sampleUrl, signature } = await step('read a packaged WAV via app://', () =>
+        page.evaluate(async (sample) => {
+            const bridge = (window as DesktopWindow).sourdaw;
+            if (bridge === undefined) {
+                throw new Error('Sourdaw desktop bridge is not available');
+            }
+            const sampleUrl = `${await bridge.paths.samplesBase()}/${sample}`;
+            const response = await fetch(sampleUrl);
+            if (!response.ok) {
+                throw new Error(`sample fetch returned HTTP ${response.status}: ${sampleUrl}`);
+            }
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            return { sampleUrl, signature: String.fromCharCode(...bytes.slice(0, 4), ...bytes.slice(8, 12)) };
+        }, SAMPLE)
+    );
+    assert.equal(sampleUrl, SAMPLE_URL);
+    assert.equal(signature, 'RIFFWAVE');
+}
+
+async function verifyNativePluginScan(page: Page, pluginPath: string): Promise<void> {
+    const scanRoot = dirname(pluginPath);
+    const authorized = await step('authorize the fixture folder through native IPC', () =>
+        page.evaluate((root) => {
+            const bridge = (window as DesktopWindow).sourdaw;
+            if (bridge === undefined) {
+                throw new Error('Sourdaw desktop bridge is not available');
+            }
+            return bridge.invoke('is_scan_path_authorized', [root]);
+        }, scanRoot)
+    );
+    assert.equal(authorized, true, `the native addon did not authorize ${scanRoot}`);
+    const scan = await step(
+        'scan the real CLAP fixture with the packaged helper',
+        () =>
+            page.evaluate((root) => {
+                const bridge = (window as DesktopWindow).sourdaw;
+                if (bridge === undefined) {
+                    throw new Error('Sourdaw desktop bridge is not available');
+                }
+                return bridge.invoke('scan_plugins', [[root], false]);
+            }, scanRoot),
+        SCAN_TIMEOUT_MS
+    );
+    const actual = findHarnessPluginPath(scan);
+    const expected = await realpath(pluginPath);
+    // Rust canonicalization returns a verbatim namespace path on Windows.
+    assert(
+        actual === expected || actual === toNamespacedPath(expected),
+        'scan_plugins must return the installed fixture'
+    );
+}
+
+async function verifyInstalledApp(
+    binary: string,
+    scratch: string,
+    pluginPath: string,
+    diagnostics: Diagnostics
+): Promise<void> {
+    await access(binary, constants.X_OK);
+    const app = await launchPackagedApp(binary, join(scratch, 'profile'), diagnostics, scratch);
+    try {
+        await waitForVisibleLaunchScreen(app.page, STARTUP_TIMEOUT_MS);
+        assert(app.page.url().startsWith(RENDERER_URL_PREFIX), 'expected the packaged app:// renderer');
+        await verifyBundledSample(app.page);
+        await verifyNativePluginScan(app.page, pluginPath);
+    } finally {
+        try {
+            await app.quit();
+        } finally {
+            process.stdout.write(`\n--- packaged app output ---\n${app.output().trim()}\n`);
+        }
+    }
 }
 
 async function main(): Promise<void> {
@@ -151,18 +230,11 @@ async function main(): Promise<void> {
     assert(receipts !== undefined, 'Pass a directory for the package smoke receipts');
     const target = FORMATS[format];
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    assert.match(head, /^[0-9a-f]{40}$/u);
     const diagnostics = emptyDiagnostics();
-    const receipt: Record<string, unknown> = {
-        head,
-        platform: process.platform,
-        arch: process.arch,
-        format,
-        launchMethod: target.method,
-        status: 'failed',
-        diagnostics,
-    };
+    let status: 'passed' | 'failed' = 'failed';
+    let artifact: { name: string; sha256: string } | undefined;
     try {
-        assert.match(head, /^[0-9a-f]{40}$/u);
         assert.equal(head, process.env.SOURDAW_PACKAGE_HEAD ?? head, 'checkout differs from the requested head');
         assert.equal(process.platform, target.platform);
         assert.equal(process.arch, target.arch);
@@ -177,90 +249,42 @@ async function main(): Promise<void> {
         assert(name !== undefined);
         const scratch = await mkdtemp(join(tmpdir(), 'sourdaw-package-'));
         try {
-            const artifact = join(scratch, name);
-            await copyFile(join(output, name), artifact);
-            receipt.artifact = { name, sha256: await sha256(artifact) };
-            await withFreshHarnessPlugin(async (pluginPath) => {
-                const scanRoot = dirname(pluginPath);
-                await withInstalledPackage(format, artifact, scratch, async (binary) => {
-                    await access(binary, constants.X_OK);
-                    const app = await launchPackagedApp(binary, join(scratch, 'profile'), diagnostics, scratch);
-                    try {
-                        receipt.rendererUrl = app.page.url();
-                        receipt.browser = app.version.browser;
-                        receipt.renderer = await waitForVisibleLaunchScreen(app.page, STARTUP_TIMEOUT_MS);
-                        const { sampleUrl, signature } = await step('read a packaged WAV via app://', () =>
-                            app.page.evaluate(async (sample) => {
-                                const bridge = (window as DesktopWindow).sourdaw;
-                                if (bridge === undefined) {
-                                    throw new Error('Sourdaw desktop bridge is not available');
-                                }
-                                const sampleUrl = `${await bridge.paths.samplesBase()}/${sample}`;
-                                const response = await fetch(sampleUrl);
-                                if (!response.ok) {
-                                    throw new Error(`sample fetch returned HTTP ${response.status}: ${sampleUrl}`);
-                                }
-                                const bytes = new Uint8Array(await response.arrayBuffer());
-                                return {
-                                    sampleUrl,
-                                    signature: String.fromCharCode(...bytes.slice(0, 4), ...bytes.slice(8, 12)),
-                                };
-                            }, SAMPLE)
-                        );
-                        assert.equal(sampleUrl, `app://sourdaw/samples/${SAMPLE}`);
-                        assert.equal(signature, 'RIFFWAVE');
-                        receipt.sample = sampleUrl;
-                        const authorized = await step('authorize the fixture folder through native IPC', () =>
-                            app.page.evaluate((root) => {
-                                const bridge = (window as DesktopWindow).sourdaw;
-                                if (bridge === undefined) {
-                                    throw new Error('Sourdaw desktop bridge is not available');
-                                }
-                                return bridge.invoke('is_scan_path_authorized', [root]);
-                            }, scanRoot)
-                        );
-                        assert.equal(authorized, true, `the native addon did not authorize ${scanRoot}`);
-                        receipt.nativeIpc = 'is_scan_path_authorized returned true';
-                        const scan = await step(
-                            'scan the real CLAP fixture with the packaged helper',
-                            () =>
-                                app.page.evaluate((root) => {
-                                    const bridge = (window as DesktopWindow).sourdaw;
-                                    if (bridge === undefined) {
-                                        throw new Error('Sourdaw desktop bridge is not available');
-                                    }
-                                    return bridge.invoke('scan_plugins', [[root], false]);
-                                }, scanRoot),
-                            SCAN_TIMEOUT_MS
-                        );
-                        const plugin = findHarnessPlugin(scan);
-                        assert.equal(
-                            await realpath(plugin.path),
-                            pluginPath,
-                            'scan_plugins must return the installed fixture'
-                        );
-                        receipt.plugin = plugin;
-                    } finally {
-                        try {
-                            await app.quit();
-                        } finally {
-                            receipt.appOutput = app.output();
-                        }
-                    }
-                });
-            });
+            const copy = join(scratch, name);
+            await copyFile(join(output, name), copy);
+            artifact = { name, sha256: await sha256(copy) };
+            await withFreshHarnessPlugin((pluginPath) =>
+                withInstalledPackage(format, copy, scratch, (binary) =>
+                    verifyInstalledApp(binary, scratch, pluginPath, diagnostics)
+                )
+            );
         } finally {
             await rm(scratch, { recursive: true, force: true, maxRetries: 3, retryDelay: 250 });
         }
-        receipt.status = 'passed';
-    } catch (error) {
-        receipt.error = error instanceof Error ? error.stack : String(error);
-        throw error;
+        status = 'passed';
     } finally {
         printDiagnostics(diagnostics);
+        const receipt = {
+            head,
+            platform: process.platform,
+            arch: process.arch,
+            format,
+            launchMethod: target.method,
+            status,
+            artifact,
+            // Only locally defined outcomes reach the receipt. Raw diagnostics stay in the CI log.
+            ...(status === 'passed'
+                ? {
+                      renderer: 'launch-screen',
+                      rendererUrlPrefix: RENDERER_URL_PREFIX,
+                      sample: SAMPLE_URL,
+                      nativeIpc: 'is_scan_path_authorized returned true',
+                      plugin: { descriptorId: PLUGIN_DESCRIPTOR, format: 'clap', matchesInstalledFixture: true },
+                  }
+                : {}),
+        };
         await mkdir(receipts, { recursive: true });
         await writeFile(join(receipts, `${format}.json`), `${JSON.stringify(receipt, null, 2)}\n`);
-        console.log(`${format}: ${String(receipt.status)} ${JSON.stringify(receipt.artifact)}`);
+        console.log(`${format}: ${status} ${JSON.stringify(artifact)}`);
     }
 }
 
