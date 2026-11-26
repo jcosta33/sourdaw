@@ -274,6 +274,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
             latency_samples: 0,
             latency_ms: 0,
             tail_samples: 0,
+            tail_sequence: 0,
             engine_plugin_id: 1000,
         });
         mocks.setPluginStateRepo.mockResolvedValue(undefined);

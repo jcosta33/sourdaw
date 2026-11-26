@@ -29,6 +29,22 @@ describe('transportPresets', () => {
         expect(stop?.buildAction(context)).toEqual({ type: 'stopPlayback' });
     });
 
+    it.each([
+        ['loop', 'setLoopEnabled', 'loopEnabled'],
+        ['metronome', 'setMetronomeEnabled', 'metronomeEnabled'],
+    ] as const)('%s emits the negation of the current state through %s', (id, type, stateKey) => {
+        const preset = transportPresets.find((candidate) => candidate.id === id);
+
+        expect(preset?.buildAction({ ...context, [stateKey]: false })).toEqual({ type, payload: { enabled: true } });
+        expect(preset?.buildAction({ ...context, [stateKey]: true })).toEqual({ type, payload: { enabled: false } });
+    });
+
+    it.each(['loop', 'metronome'])('%s emits nothing when the current state is unknown', (id) => {
+        const preset = transportPresets.find((candidate) => candidate.id === id);
+
+        expect(preset?.buildAction(context)).toBeNull();
+    });
+
     it('does not expose state-dependent playback or recording toggles', () => {
         const actions = transportPresets.flatMap((preset) => {
             const action = preset.buildAction(context);

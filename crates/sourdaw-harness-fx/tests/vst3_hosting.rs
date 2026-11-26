@@ -12,8 +12,9 @@ mod support;
 
 use daw_plugin_host::vst3_wrapper::decode_state as decode_vst3_container;
 use daw_plugin_host::{
-    take_pending_process_refusal_signal, AudioPlugin, HostParameterUpdate, HostedPluginRuntime,
-    PluginHostRequest, ProcessMode, Vst3Wrapper,
+    take_pending_process_refusal_signal, take_pending_service_change_signal, AudioPlugin,
+    HostParameterUpdate, HostedPluginRuntime, PluginHostRequest, ProcessMode, ServiceChange,
+    Vst3Wrapper,
 };
 use sourdaw_harness_fx::state::decode;
 use sourdaw_harness_fx::{
@@ -38,6 +39,7 @@ fn refusal_hint_guard() -> std::sync::MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     take_pending_process_refusal_signal();
+    take_pending_service_change_signal();
     guard
 }
 
@@ -294,6 +296,88 @@ fn a_bus_change_the_host_cannot_route_takes_the_slot_out_of_service() {
     );
 }
 
+/// The refused layout is published to the slot once with the line naming it,
+/// again as back in service once a restart the host can route lands, and the
+/// hint that wakes the visit rises on both transitions.
+#[test]
+fn a_refused_layout_is_published_once_and_again_when_the_slot_recovers() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-io-unroutable-service");
+    let (mut wrapper, _requests) = wrapper_recording_requests(&plugin);
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 1.0);
+    wrapper
+        .apply_component_restart()
+        .expect_err("six output channels cannot be routed");
+    assert!(
+        take_pending_service_change_signal(),
+        "the refusal wakes the service visit"
+    );
+
+    let reason = match wrapper.take_service_change() {
+        Some(ServiceChange::OutOfService { reason }) => Some(reason),
+        _ => None,
+    }
+    .expect("a standing refusal is published as out of service");
+    assert!(
+        reason.contains("Sourdaw Harness Fx Reconfiguring")
+            && reason.contains("main output bus runs 6 channels")
+            && reason.ends_with("its blocks pass through unprocessed"),
+        "{reason}"
+    );
+    assert_eq!(
+        wrapper.take_service_change(),
+        None,
+        "the same refusal is published once"
+    );
+
+    wrapper.set_parameter(SURROUND_OUTPUT_PARAM_ID, 0.0);
+    assert_eq!(wrapper.apply_component_restart().ok(), Some(true));
+    assert!(
+        take_pending_service_change_signal(),
+        "the recovery wakes the service visit"
+    );
+    assert_eq!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::BackInService)
+    );
+    assert_eq!(wrapper.take_service_change(), None);
+}
+
+/// A plugin that declines `setProcessing` is published as out of service by
+/// the block that finds it so, and not again by the blocks after it.
+#[test]
+fn a_refused_start_of_processing_is_published_once() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-start-refused-service");
+    let mut wrapper = plugin.vst3_class(&VST3_START_REFUSED_CLASS_ID, ProcessMode::Realtime);
+    let (left, right) = distinct_pair();
+
+    assert_eq!(
+        wrapper.take_service_change(),
+        None,
+        "served until a block says otherwise"
+    );
+    process(&mut wrapper, &left, &right);
+    process(&mut wrapper, &left, &right);
+
+    assert!(
+        take_pending_service_change_signal(),
+        "the refused start wakes the service visit"
+    );
+    let reason = match wrapper.take_service_change() {
+        Some(ServiceChange::OutOfService { reason }) => Some(reason),
+        _ => None,
+    }
+    .expect("a refused start is published as out of service");
+    assert!(
+        reason.contains("refused to start processing")
+            && reason.ends_with("its blocks pass through unprocessed"),
+        "{reason}"
+    );
+    assert_eq!(wrapper.take_service_change(), None);
+}
+
 /// The control path's reporter is what takes the refusal's one report, so a
 /// slot out of service says so in the running app and only once.
 #[test]
@@ -333,6 +417,7 @@ fn a_write_made_while_out_of_service_lands_once_the_slot_recovers() {
     let level = HostParameterUpdate {
         param_id: LEVEL_PARAM_ID,
         value: 0.5,
+        sample_offset: 0,
     };
     let inputs: [&[f32]; 2] = [&left, &right];
     let (mut skipped_left, mut skipped_right) =
@@ -490,6 +575,7 @@ fn a_write_in_a_block_the_plugin_refused_to_start_lands_on_its_first_processed_b
         &[HostParameterUpdate {
             param_id: GAIN_PARAM_ID,
             value: 0.25,
+            sample_offset: 0,
         }],
     );
     assert_ne!(
@@ -500,6 +586,42 @@ fn a_write_in_a_block_the_plugin_refused_to_start_lands_on_its_first_processed_b
 
     block(&mut wrapper, &[]);
     assert_eq!(gain(&wrapper), 0.25);
+}
+
+/// A plugin that refuses its first start and accepts the next is published
+/// out of service by the refused block and back in service by the block that
+/// starts it, each once.
+#[test]
+fn a_refused_start_that_later_succeeds_is_published_back_in_service_once() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-late-start-service");
+    let mut wrapper = plugin.vst3_class(
+        &VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID,
+        ProcessMode::Realtime,
+    );
+    let (left, right) = distinct_pair();
+
+    process(&mut wrapper, &left, &right);
+    assert!(
+        take_pending_service_change_signal(),
+        "the refused start wakes the service visit"
+    );
+    assert!(matches!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::OutOfService { .. })
+    ));
+    assert_eq!(wrapper.take_service_change(), None);
+
+    process(&mut wrapper, &left, &right);
+    assert!(
+        take_pending_service_change_signal(),
+        "the start that succeeds wakes the service visit"
+    );
+    assert_eq!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::BackInService)
+    );
+    assert_eq!(wrapper.take_service_change(), None);
 }
 
 /// The idle flush enters the processing state for its one call and leaves it

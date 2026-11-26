@@ -163,6 +163,84 @@ const actualParsing = await vi.importActual<typeof import('../../transformers/pr
     '../../transformers/promptParser/parsing'
 );
 
+const providerDouble = vi.hoisted(() => ({
+    chain: null as ('cloud' | 'webllm')[] | null,
+    generateCloudToolCalls: vi.fn(),
+}));
+
+// Both doubles delegate to the real boundary until a case names a chain, so no other case changes.
+vi.mock('../llmOrchestration/backendResolution/getBackendChain', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../llmOrchestration/backendResolution/getBackendChain')>();
+    return {
+        ...original,
+        getBackendChain: (...args: Parameters<typeof original.getBackendChain>) =>
+            providerDouble.chain ?? original.getBackendChain(...args),
+    };
+});
+vi.mock('../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
+    generateCloudToolCalls: providerDouble.generateCloudToolCalls,
+}));
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+/** Reads the JSON string literal that opens at `start` in `text`, quote included. */
+function readJsonStringLiteral(text: string, start: number): string {
+    let end = start + 1;
+    while (text[end] !== '"') {
+        end += text[end] === '\\' ? 2 : 1;
+    }
+    const decoded: unknown = JSON.parse(text.slice(start, end + 1));
+    if (typeof decoded !== 'string') {
+        throw new TypeError('Expected a string literal');
+    }
+    return decoded;
+}
+
+/** The local message restates the receipts as the last line of its application-tool-loop summary. */
+function readReceiptsFromLocalMessage(message: string): readonly unknown[] {
+    const section = message.indexOf('"application-tool-loop"');
+    const valueStart = message.indexOf('"value":"', section) + '"value":'.length;
+    const summary = readJsonStringLiteral(message, valueStart);
+    const parsed: unknown = JSON.parse(summary.split('\n').at(-1) ?? '');
+    return isRecord(parsed) && Array.isArray(parsed.receipts) ? parsed.receipts : [];
+}
+
+function readReceiptsFromHostedHistory(history: readonly unknown[]): readonly unknown[] {
+    return history.flatMap((record) => {
+        if (!isRecord(record) || !Array.isArray(record.receipts)) {
+            return [];
+        }
+        return record.receipts;
+    });
+}
+
+function readProviderReceipts(
+    backend: 'webllm' | 'cloud',
+    localMessage: string,
+    hostedHistory: readonly unknown[]
+): readonly unknown[] {
+    if (backend === 'webllm') {
+        return readReceiptsFromLocalMessage(localMessage);
+    }
+    return readReceiptsFromHostedHistory(hostedHistory);
+}
+
+function readNotesByClip(receipts: readonly unknown[]): Record<string, { pitch: unknown; velocity: unknown }[]> {
+    const notes: Record<string, { pitch: unknown; velocity: unknown }[]> = {};
+    for (const receipt of receipts) {
+        const items =
+            isRecord(receipt) && isRecord(receipt.data) && Array.isArray(receipt.data.items) ? receipt.data.items : [];
+        for (const item of items) {
+            if (isRecord(item) && item.kind === 'note' && typeof item.ownerClipId === 'string') {
+                (notes[item.ownerClipId] ??= []).push({ pitch: item.pitch, velocity: item.velocity });
+            }
+        }
+    }
+    return notes;
+}
+
 const baseContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
@@ -549,7 +627,7 @@ describe('parsePromptToActions', () => {
         expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
-    it('preserves free-text ambiguity and selects clipboard copy by its ID', async () => {
+    it('preserves free-text ambiguity and selects the loop toggle by its ID against the current state', async () => {
         const context = createMixerContext();
         context.selectedTrackId = 'track-vocals';
         context.selectedClipId = 'clip-vocal';
@@ -557,17 +635,24 @@ describe('parsePromptToActions', () => {
             { id: 'clip-vocal', name: 'Vocal', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 },
         ];
         vi.mocked(tryPresetMatch).mockImplementation(actualParsing.tryPresetMatch);
-        for (const prompt of ['Open Mixer Panel', 'copy clip']) {
+        for (const prompt of ['Open Mixer Panel', 'click track']) {
             const result = await parsePromptToActions({ prompt, context, providerPlanning: 'disabled' });
             expect(result.actions).toEqual([]);
             expect(result.metricGoalState).toBeUndefined();
         }
-        const copied = await parsePromptToActions({
-            prompt: 'Copy Clip',
+        const enabling = await parsePromptToActions({
+            prompt: 'Toggle Loop',
             context,
-            preset: { id: 'copy-clip', expectedContext: buildPresetContext(context) },
+            preset: { id: 'loop', expectedContext: buildPresetContext(context) },
         });
-        expect(copied.actions).toEqual([{ type: 'copyClip' }]);
+        expect(enabling.actions).toEqual([{ type: 'setLoopEnabled', payload: { enabled: true } }]);
+        const looping = { ...context, isLooping: true };
+        const disabling = await parsePromptToActions({
+            prompt: 'Toggle Loop',
+            context: looping,
+            preset: { id: 'loop', expectedContext: buildPresetContext(looping) },
+        });
+        expect(disabling.actions).toEqual([{ type: 'setLoopEnabled', payload: { enabled: false } }]);
         expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
@@ -578,7 +663,7 @@ describe('parsePromptToActions', () => {
         ['missing track', 'add-eq', 'Add EQ', 'none'],
         ['stale track', 'add-eq', 'Add EQ', 'stale-track'],
         ['changed track kind', 'add-eq', 'Add EQ', 'track-kind'],
-        ['changed clip type', 'copy-clip', 'Copy Clip', 'clip-type'],
+        ['changed clip type', 'normalize-clip', 'Normalize Clip', 'clip-type'],
         ['unavailable MIDI clip', 'quantize', 'Quantize Notes', 'audio-clip'],
         ['null builder', 'add-auto-lane', 'Add Automation Lane', 'track'],
         ['readonly', 'play', 'Play', 'readonly'],
@@ -2696,6 +2781,190 @@ describe('parsePromptToActions', () => {
             vi.unstubAllGlobals();
         }
     });
+
+    // The planner and the provider loop are real; only the provider repository answers, so the text
+    // checked is what the repository receives: the local message, or the hosted turn's replayed history.
+    it.each(['webllm', 'cloud'] as const)(
+        'hands the %s provider repository both contrasting phrase readings with their own notes',
+        async (backend) => {
+            const previousTrack = structuredClone(trackStore.value);
+            const previousMidi = structuredClone(midiStore.value);
+            const previousProject = structuredClone(projectStore.value);
+            const networkTrap = vi.fn(() => {
+                throw new Error('The planner must not reach the network');
+            });
+            vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+            vi.stubGlobal('fetch', networkTrap);
+            const database = installTransactionalIndexedDb();
+            try {
+                await createCrdtProject('Two phrases');
+                const track = createTrack({ id: 'track-phrases', name: 'Phrases', kind: 'midi' });
+                track.clips = ['phrase-a', 'phrase-b'].map((id) => ({
+                    id,
+                    trackId: track.id,
+                    name: id,
+                    type: 'midi' as const,
+                    startBeat: 0,
+                    endBeat: 4,
+                    muted: false,
+                    locked: false,
+                    color: '',
+                    gain: 1,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                }));
+                setTrackStoreState({
+                    ...structuredClone(defaultTrackState),
+                    tracks: [track],
+                    selectedTrackId: track.id,
+                });
+                setMidiStoreState({
+                    ...structuredClone(defaultMidiStoreState),
+                    notesByClipId: {
+                        'phrase-a': [
+                            { id: 'a1', pitch: 61, startBeat: 0, duration: 1, velocity: 41 },
+                            { id: 'a2', pitch: 63, startBeat: 2, duration: 1, velocity: 51 },
+                        ],
+                        'phrase-b': [
+                            { id: 'b1', pitch: 78, startBeat: 0, duration: 1, velocity: 118 },
+                            { id: 'b2', pitch: 84, startBeat: 2, duration: 1, velocity: 124 },
+                        ],
+                    },
+                });
+                projectStore.set(structuredClone(defaultProjectStoreState));
+                setPianoRollSelection('phrase-a', [], ['phrase-a']);
+                const musicalContentBinding = captureMusicalContentBinding();
+                mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+                const providerContext: ProjectContext = {
+                    ...baseContext,
+                    tracks: [
+                        {
+                            id: 'track-phrases',
+                            name: 'Phrases',
+                            kind: 'midi',
+                            muted: false,
+                            soloed: false,
+                            soloSafe: false,
+                            armed: false,
+                            gain: 0.8,
+                            pan: 0,
+                            automationMode: 'read',
+                            outputId: 'master',
+                            clipCount: 2,
+                            deviceCount: 0,
+                            clips: ['phrase-a', 'phrase-b'].map((id) => ({
+                                id,
+                                name: id,
+                                type: 'midi' as const,
+                                startBeat: 0,
+                                endBeat: 4,
+                                noteCount: 2,
+                            })),
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                    selectedTrackId: 'track-phrases',
+                    selectedClipId: 'phrase-a',
+                    selectedClipIds: ['phrase-a'],
+                };
+                const query = (stableId: string) => ({
+                    name: 'project.query',
+                    arguments: { type: 'musical-content', filters: { stableId, startBeat: 0, endBeat: 4 } },
+                });
+                const intake = nonAcousticMetricIntakeTurn({
+                    modeId: 'edit',
+                    targetObjectIds: ['phrase-a', 'phrase-b'],
+                    dimensions: ['midi-content'],
+                });
+                let providerTurn = 0;
+                const nextCalls = (userMessage: string, providerView: Parameters<ScriptedTurn>[1]) => {
+                    providerTurn += 1;
+                    if (providerTurn === 1) {
+                        return intake(userMessage, providerView);
+                    }
+                    if (providerTurn === 2) {
+                        return [query('phrase-a'), query('phrase-b')];
+                    }
+                    return [
+                        {
+                            name: 'command.batch.decline',
+                            arguments: { kind: 'clarify', reason: 'Which edit?', questions: ['Which edit?'] },
+                        },
+                    ];
+                };
+                let finalHostedHistory: readonly unknown[] = [];
+                let finalLocalMessage = '';
+                if (backend === 'webllm') {
+                    providerDouble.chain = ['webllm'];
+                    mockGenerateWebLlmToolCalls.mockImplementation((_system: string, userMessage: string, tools) => {
+                        finalLocalMessage = userMessage;
+                        return Promise.resolve({ status: 'complete', toolCalls: nextCalls(userMessage, tools) });
+                    });
+                } else {
+                    providerDouble.chain = ['cloud'];
+                    hostedLlmProviderStatusStore.set({
+                        provider: 'anthropic',
+                        model: 'hosted-model',
+                        baseUrl: 'https://api.anthropic.com',
+                        authentication: 'api-key',
+                        reasoningEffort: null,
+                        thinking: null,
+                    });
+                    providerDouble.generateCloudToolCalls.mockImplementation(
+                        (
+                            _system: string,
+                            userMessage: string,
+                            tools: Parameters<ScriptedTurn>[1],
+                            _maxOutputTokens: unknown,
+                            _directive: unknown,
+                            _signal: unknown,
+                            replayedTurn?: { history: readonly unknown[] }
+                        ) => {
+                            finalHostedHistory = replayedTurn?.history ?? [];
+                            return Promise.resolve({
+                                providerRequestId: null,
+                                calls: nextCalls(userMessage, tools),
+                                assistantItems: [],
+                                strictToolSchemas: false,
+                                usage: null,
+                            });
+                        }
+                    );
+                }
+
+                await parsePromptToActions({
+                    prompt: 'compare the phrase-a and phrase-b clips',
+                    context: providerContext,
+                    musicalContentBinding,
+                    projectRevision: musicalContentBinding.expectedRevision,
+                });
+
+                expect(providerTurn).toBeGreaterThanOrEqual(3);
+                const receipts = readProviderReceipts(backend, finalLocalMessage, finalHostedHistory);
+                expect(readNotesByClip(receipts)).toEqual({
+                    'phrase-a': [
+                        { pitch: 61, velocity: 41 },
+                        { pitch: 63, velocity: 51 },
+                    ],
+                    'phrase-b': [
+                        { pitch: 78, velocity: 118 },
+                        { pitch: 84, velocity: 124 },
+                    ],
+                });
+                expect(networkTrap).not.toHaveBeenCalled();
+            } finally {
+                providerDouble.chain = null;
+                hostedLlmProviderStatusStore.set(null);
+                clearPianoRollSelection();
+                trackStore.set(previousTrack);
+                midiStore.set(previousMidi);
+                projectStore.set(previousProject);
+                await database.dispose();
+                vi.unstubAllGlobals();
+            }
+        }
+    );
 
     it('rejects provider MIDI transforms for audio, locked, empty, or missing selected clips', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);

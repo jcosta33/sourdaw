@@ -30,7 +30,9 @@
 //!
 //! Sourdaw's own audio thread reaches none of this.
 
-use crate::parameter_events::{PluginParameterEvent, PluginParameterEventQueue};
+use crate::parameter_events::{
+    signal_pending_parameter_flush, PluginParameterEvent, PluginParameterEventQueue,
+};
 use crate::traits::{
     HostParameterUpdate, LatencyChangeNotifier, PluginHostRequest, PluginHostRequestNotifier,
 };
@@ -63,7 +65,7 @@ use vst3::{Class, ComPtr, ComWrapper, Interface};
 /// may allocate. A knob drag produces one gesture per parameter per pass — the
 /// slots coalesce by parameter id — so this is a ceiling on *distinct*
 /// parameters moved between two blocks, not on mouse events.
-const MAX_PARAMETER_GESTURES: usize = 64;
+pub(crate) const MAX_PARAMETER_GESTURES: usize = 64;
 
 /// The most off-thread `IConnectionPoint` messages the host will hold for the
 /// control path to deliver.
@@ -206,6 +208,7 @@ impl ParameterGestureQueue {
             out[count] = HostParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Relaxed)),
+                sample_offset: 0,
             };
             count += 1;
             slot.state.store(SLOT_EMPTY, Ordering::Release);
@@ -240,6 +243,7 @@ impl ParameterGestureQueue {
             out[count] = HostParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Acquire)),
+                sample_offset: 0,
             };
             count += 1;
         }
@@ -361,6 +365,15 @@ pub struct Vst3HostState {
     /// the user landed on and nothing in between. This queue keeps every event in
     /// order, because what it carries is the gesture's shape.
     parameter_events: Arc<PluginParameterEventQueue>,
+    /// Values the processor reported in a block's `outputParameterChanges`,
+    /// waiting for the control path to hand them to the edit controller.
+    ///
+    /// VST3 forbids the processor and the controller from talking to each
+    /// other, so a meter, a gain-reduction readout or a value the processor's
+    /// own modulation moved reaches the plugin's editor only if the host
+    /// carries it. Coalesced per parameter like `gestures`: the controller is
+    /// owed the value the processor last reported, not every block's.
+    controller_updates: ParameterGestureQueue,
     deferred_messages: [DeferredMessage; MAX_DEFERRED_MESSAGES],
 }
 
@@ -378,6 +391,7 @@ impl Default for Vst3HostState {
             request_notifier: OnceLock::new(),
             gestures: ParameterGestureQueue::new(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
+            controller_updates: ParameterGestureQueue::new(),
             deferred_messages: std::array::from_fn(|_| DeferredMessage::new()),
         }
     }
@@ -500,6 +514,36 @@ impl Vst3HostState {
     pub fn record_gesture_end(&self, param_id: ParamID) {
         self.parameter_events
             .push(PluginParameterEvent::gesture_end(param_id));
+    }
+
+    /// Record a value the processor reported for one of its parameters.
+    /// **Wait-free; called from the audio thread** after `process` returns.
+    ///
+    /// The controller is always owed it. The host's observers — the renderer's
+    /// parameter snapshot, dirty tracking, automation recording — are owed it
+    /// only when `observed`: a read-only parameter is a readout, and treating a
+    /// meter's every movement as an edit would mark the project dirty on every
+    /// block it moves.
+    ///
+    /// A non-finite value is refused, as `performEdit` refuses one: it is no
+    /// value the controller can hold, and the renderer rejects a whole batch
+    /// that carries one, gesture ends with it.
+    pub fn record_processor_output(&self, param_id: ParamID, value: ParamValue, observed: bool) {
+        if !value.is_finite() {
+            return;
+        }
+        self.controller_updates.record(param_id, value);
+        signal_pending_parameter_flush();
+        if observed {
+            self.parameter_events
+                .push_processor_report(PluginParameterEvent::value(param_id, value));
+        }
+    }
+
+    /// Move the processor's reported values waiting for the controller into
+    /// `out`, in ascending parameter id. Control path.
+    pub fn drain_controller_updates(&self, out: &mut [HostParameterUpdate]) -> usize {
+        self.controller_updates.drain(out)
     }
 
     /// The queue this plugin's own parameter events land in.
@@ -1234,6 +1278,59 @@ mod tests {
         assert_eq!(waiting(&queue), [(7, 0.8)], "the newer edit is not lost");
     }
 
+    #[test]
+    fn a_non_finite_processor_value_reaches_neither_the_controller_nor_the_observers() {
+        let state = Vst3HostState::default();
+
+        for poison in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            state.record_processor_output(4, poison, true);
+        }
+
+        let mut updates = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
+        assert_eq!(state.drain_controller_updates(&mut updates), 0);
+        assert!(observed_events(&state).is_empty());
+    }
+
+    /// The editor's thread and the audio thread report at the same time, each
+    /// into its own lane: every event arrives, none overwritten.
+    #[test]
+    fn the_edit_handler_and_the_processor_report_concurrently_without_losing_an_event() {
+        const EACH: u32 = 400;
+        let state = std::sync::Arc::new(Vst3HostState::default());
+        let editor = std::sync::Arc::clone(&state);
+        let processor = std::sync::Arc::clone(&state);
+
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                for index in 0..EACH {
+                    editor.record_parameter_edit(1, f64::from(index));
+                }
+            });
+            scope.spawn(move || {
+                for index in 0..EACH {
+                    processor.record_processor_output(2, f64::from(index), true);
+                }
+            });
+        });
+
+        assert_eq!(
+            state.parameter_event_queue().take_dropped(),
+            0,
+            "both lanes hold a full run"
+        );
+        let events = observed_events(&state);
+        let lane = |param_id: u32| -> Vec<f64> {
+            events
+                .iter()
+                .filter(|event| event.param_id == param_id)
+                .map(|event| event.value)
+                .collect()
+        };
+        let expected: Vec<f64> = (0..EACH).map(f64::from).collect();
+        assert_eq!(lane(1), expected, "every edit, in order");
+        assert_eq!(lane(2), expected, "every processor report, in order");
+    }
+
     thread_local! {
         static ATTRIBUTE_LIST_DROPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
@@ -1300,7 +1397,8 @@ mod tests {
             drained(&state),
             vec![HostParameterUpdate {
                 param_id: 2,
-                value: 0.3
+                value: 0.3,
+                sample_offset: 0,
             }],
             "the processor is owed the value the user landed on"
         );
@@ -1327,7 +1425,8 @@ mod tests {
             drained(&state),
             vec![HostParameterUpdate {
                 param_id: 6,
-                value: 0.42
+                value: 0.42,
+                sample_offset: 0,
             }]
         );
         assert!(observed_events(&state).is_empty());
@@ -1346,7 +1445,8 @@ mod tests {
             drained(&state),
             vec![HostParameterUpdate {
                 param_id: 7,
-                value: 0.25
+                value: 0.25,
+                sample_offset: 0,
             }]
         );
         assert!(
@@ -1392,11 +1492,13 @@ mod tests {
             vec![
                 HostParameterUpdate {
                     param_id: 3,
-                    value: 0.499
+                    value: 0.499,
+                    sample_offset: 0,
                 },
                 HostParameterUpdate {
                     param_id: 4,
-                    value: 1.0
+                    value: 1.0,
+                    sample_offset: 0,
                 },
             ]
         );

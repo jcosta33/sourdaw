@@ -320,7 +320,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // parameter write now reaches the DSP through instead of the worklet
         // bridge directly, so a natively carried Proof hears the same write.
         'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 2,
-        'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 2,
         // Count provenance: new file entry, measured 2 — the `updateDevicePatch`
         // import and its single call sending the five `chain_order_{n}` keys as
         // one patch, so a natively carried Proof's module order matches a panel
@@ -328,7 +327,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/sendProofChainOrder.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
-        'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
         // Count provenance: measured 2 in code — the `updateDeviceParam`
         // import plus the single canonical call on the tick path (#746/#760
         // slew snap + a-rate gain/pan scheduling restructured around it); the
@@ -798,7 +796,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 4,
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
-        'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
+        // The committed selection applies its decoded patch through the runtime bridge.
+        'src/modules/Proof/useCases/proofParamBridge/syncProofPatchSelection.ts': 3,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
         // `setPadParamImmediate` naming one of the two pad-param entry points
         // that call this transform. `toPadStoreUpdate` is a pure function from
@@ -1223,7 +1222,6 @@ const DEVICE_DATA_COUNTS = {
         // `executeAppAction` — the migration it calls is a pure function that
         // returns its input untouched when nothing applies.
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
-        'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
         // The explicit parameter map and shorthand returned device chain are both
         // part of the owning store write.
@@ -1462,9 +1460,9 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Levain/useCases/commitLevainIdentity.ts',
     'src/modules/Levain/useCases/levainParamBridge/helpers.ts',
     'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts',
+    'src/modules/Proof/useCases/readProofPatchSelectionOwner.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts',
-    'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts',
     'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts',
     'src/modules/Toaster/useCases/setPadParamImmediate.ts',
     'src/modules/Toaster/useCases/loadToasterKit.ts',

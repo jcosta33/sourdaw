@@ -539,6 +539,7 @@ describe('lint entrypoint phase reporting', () => {
 engine="$2"
 if [ "$3" = "--config=.oxlint-plugins.json" ]; then engine="oxlint-plugins"; fi
 if [ "$3" = "--config=.oxlint-quality.json" ]; then
+    if [ "$REPORT_CONFIG" = "1" ]; then echo "quality-args=$*" >&2; fi
     echo '{"number_of_files":1,"diagnostics":[]}'
     exit 0
 fi
@@ -578,7 +579,7 @@ if [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "oxlint-plugins" ]; then echo "pu
         );
     });
 
-    it('routes fixes through ESLint cofix before a non-fixing public-plugin validation', () => {
+    it('routes fixes through ESLint cofix before read-only public-plugin and quality validation', () => {
         const result = runLint('', true);
         expect(result.status, result.stderr).toBe(0);
         expect(result.stdout).toMatch(/lint: oxlint passed[^]*lint: eslint started/);
@@ -590,6 +591,8 @@ if [ "$REPORT_CONFIG" = "1" ] && [ "$engine" = "oxlint-plugins" ]; then echo "pu
         const publicArgs = result.stdout.split('\n').find((line) => line.startsWith('public-args='));
         expect(publicArgs).toContain('--config=.oxlint-plugins.json');
         expect(publicArgs).not.toContain('--fix');
+        expect(result.stderr).toContain('quality-args=exec oxlint --config=.oxlint-quality.json');
+        expect(result.stderr).not.toContain('--fix');
     });
 
     it('retains fail-fast reporting when the explicit cofix engine fails', () => {
