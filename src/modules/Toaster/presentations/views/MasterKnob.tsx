@@ -170,6 +170,7 @@ export const MasterKnob = ({ deviceId, value }: { deviceId: string; value: numbe
                 step={0.01}
                 defaultValue={1}
                 size="sm"
+                paramId="masterGain"
                 aria-label="Master"
                 gestureAuthority={authority}
                 onGestureCancel={cancel}
