@@ -7,10 +7,11 @@ import { PROJECT_REFERENCE_MASK_GLYPH } from './groundingStrategies/maskProjectR
  */
 const SIGN_MARK = /(?:\b(minus|plus)\s+|([\p{Pd}−])\s*)$/iu;
 /**
- * A symbol or punctuation mark: beside a figure it may be a sign this reading does not read ("➖",
- * "⁻", "＋"). The glyph a masked object name is written in is no such mark.
+ * A symbol, punctuation or combining mark: beside a figure it may be a sign this reading does not read
+ * ("➖", "⁻", "＋"), and a combining mark left over once the text is composed ("⃠", "̸", "̶") may strike
+ * out or negate what it marks. The glyph a masked object name is written in is no such mark.
  */
-const UNREAD_MARK = /[\p{S}\p{P}]/u;
+const UNREAD_MARK = /[\p{S}\p{P}\p{M}]/u;
 
 /** The sign a figure's preceding text closes on, as `SIGN_MARK` reads it, or `null` for none. */
 function readSignBefore(before: string): RegExpExecArray | null {
@@ -22,11 +23,12 @@ function readSignBefore(before: string): RegExpExecArray | null {
  * is read by: the decimal mark and percent sign inside the figure, and the sign before it. The text it
  * is read in leaves out the figure, its read sign and its unit word, so any other symbol or punctuation
  * mark, touching the figure or not ("2 dB ↑", "2 dB+", "2 dB 🔊"), may state a sign or direction this
- * reading does not read.
+ * reading does not read. The text is composed first, so an accent written as a combining mark on its
+ * letter ("Cafe\u0301") reads as the one letter it composes, and only a mark composing none is unread.
  */
 function findUnreadMark(text: string): string | null {
     return (
-        Array.from(text).find(
+        Array.from(text.normalize('NFC')).find(
             (character) => character !== PROJECT_REFERENCE_MASK_GLYPH && UNREAD_MARK.test(character)
         ) ?? null
     );

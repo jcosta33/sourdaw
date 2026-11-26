@@ -66,6 +66,8 @@ export type ReadCommandRemoval = (input: {
     prompt: string;
     command: Command;
     pendingActions: readonly Command[];
+    /** The refined batch, whose commands of a type the card does not hold are the request's additions. */
+    actions: readonly Command[];
     context: ProjectContext;
 }) => { status: 'removes' } | { status: 'keeps' } | { status: 'ambiguous'; reason: string };
 
@@ -128,6 +130,13 @@ function targetOf(command: Command, createdObjectOf: CreatedObjectOf): string {
     return [command.type, ...ids, ...names].join('|');
 }
 
+function keptRemoval(old: Command): { status: 'refused'; reason: string } {
+    return {
+        status: 'refused',
+        reason: `Refined proposal keeps the pending ${old.type} command the request removes.`,
+    };
+}
+
 /**
  * A provider may add or change grounded commands, and may remove a command the user expressly
  * dropped. It may not silently lose a command from the full held card, nor create again what the user
@@ -188,11 +197,13 @@ export function validateRefinedProposalActions(input: {
     const oldActions = input.pendingActions;
     const createdObjectOf = readsCreatedObjects(input.createdObject, input.context);
     const removalOf = (old: Command) =>
-        input.readRemoval({ prompt: input.prompt, command: old, pendingActions: oldActions, context: input.context });
-    const keptRemoval = (old: Command): { status: 'refused'; reason: string } => ({
-        status: 'refused',
-        reason: `Refined proposal keeps the pending ${old.type} command the request removes.`,
-    });
+        input.readRemoval({
+            prompt: input.prompt,
+            command: old,
+            pendingActions: oldActions,
+            actions: input.actions,
+            context: input.context,
+        });
     const changed: Command[] = [];
     for (const old of oldActions) {
         const exact = remaining.findIndex((next) => canonicalJson(next) === canonicalJson(old));
