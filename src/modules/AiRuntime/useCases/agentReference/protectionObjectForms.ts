@@ -28,16 +28,15 @@ export const CONNECTIVE_WORDS: ReadonlySet<string> = new Set([
     'into',
     'than',
 ]);
+/** The mixer controls that name a track's level: "the Drums fader", "the volume of the Drums". */
+export const LEVEL_CONTROL_WORDS: readonly string[] = ['gain', 'volume', 'fader', 'level'];
 /** The mixer controls a protection may qualify an object with, in the singular; a plural reads as its singular. */
 export const CONTROL_WORDS: ReadonlySet<string> = new Set([
     'pan',
     'panning',
     'solo',
     'mute',
-    'fader',
-    'gain',
-    'level',
-    'volume',
+    ...LEVEL_CONTROL_WORDS,
     'arm',
     'send',
     'routing',

@@ -154,4 +154,13 @@ describe('range automation grounds the decibel figure and the shared target list
         expect(result.actions).toEqual([]);
         expect(result.rejections).not.toEqual([]);
     });
+
+    it('grounds a shared list whose range phrase stands before its figure', () => {
+        const calls = busCalls({ deltaDb: 1.5 });
+
+        const result = bridge(calls, 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual(calls.map((call) => ({ type: call.name, payload: call.arguments })));
+    });
 });

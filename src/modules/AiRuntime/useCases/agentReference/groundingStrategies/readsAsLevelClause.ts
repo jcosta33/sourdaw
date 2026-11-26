@@ -1,9 +1,11 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { OBJECTIVE_METRIC_LABELS } from '../../objectiveMetricProjection';
 import { KEEP_VERBS, SUBORDINATOR } from '../../perceptualConstraints/constraintClauseWords';
-import { readRequestMetricNumbers } from '../../readRequestMetricNumbers';
-import { CONTROL_WORDS, TRACK_KIND_NOUNS } from '../protectionObjectForms';
+import { words } from '../../perceptualConstraints/words';
+import { METRIC_COMPARATORS, readRequestMetricNumbers } from '../../readRequestMetricNumbers';
+import { CONTROL_WORDS, LEVEL_CONTROL_WORDS, TRACK_KIND_NOUNS } from '../protectionObjectForms';
 import { protectionSlots } from '../readProtectionSlots';
 
 import { AMOUNT_QUALIFIER_PHRASES } from './amountQualifierWords';
@@ -18,6 +20,7 @@ import {
     QUIETER_SCOPE_PHRASES,
     SOURCE_CONNECTORS,
 } from './classifyPromptDecibelFigures';
+import { CLOSING_PHRASES } from './closingPhrases';
 import { findPromptNumbers } from './findPromptNumbers';
 import { BAR_WORD, BEAT_WORD, findRangePhrases } from './findRangePhrases';
 import { REFERENCE_PLACEHOLDER } from './findReferencedIntentPhrase';
@@ -26,14 +29,13 @@ import { getClauseIntentVocabulary } from './getClauseIntentVocabulary';
 import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { isGenericDeviceIntent } from './isGenericDeviceIntent';
+import { MASKED_REFERENCE_PATTERN } from './maskProjectReferences';
 import { namesOnlyNonTrackObject } from './namesOnlyNonTrackObject';
 import { normalizePromptText } from './normalizePromptText';
+import { REASON_OPENER_WORDS } from './reasonOpenerWords';
 import { STRICT_COURTESY_CLAUSES } from './strictCourtesyClauses';
 
 type GroundingCatalogEntry = ReturnType<typeof getExecutableAppActionGroundingCatalog>[number];
-
-/** The nouns a level is named by: "the volume of the Drums", "the Drums fader". */
-export const LEVEL_NOUNS: readonly string[] = ['gain', 'volume', 'fader', 'level'];
 
 /** Verbs that open a level whose own phrase follows the target: "set Drums volume to", "make Drums 3 dB quieter". */
 const LEVEL_CARRIER_VERBS: readonly string[] = ['set', 'make'];
@@ -46,13 +48,20 @@ const LEVEL_NOUN_PREPOSITIONS: ReadonlySet<string> = new Set(['of', 'on', 'for']
  * "... so it sits back", "... to make room for Keys". A reason says why, never where, when or on what,
  * so it is read only for what it names.
  */
-const REASON_BOUNDARY_PATTERN = /\s+(?=(?:because|since|so|to)\b)/iu;
+const REASON_BOUNDARY_PATTERN = new RegExp(String.raw`\s+(?=${words(REASON_OPENER_WORDS)}\b)`, 'iu');
 
 /**
  * Where a measured constraint opens after the figure: "... by 1 dB while keeping true peak below -1 dBTP".
  * Its figures are the metric reader's, never the level's.
  */
 const CONSTRAINT_BOUNDARY_PATTERN = new RegExp(String.raw`\s+(?=${SUBORDINATOR}\s+${KEEP_VERBS}\b)`, 'iu');
+
+const ARTICLE = words(Array.from(ARTICLES));
+const METRIC_COMPARATOR = words(METRIC_COMPARATORS);
+
+const CLOSING_PHRASE_WORDS: readonly string[][] = CLOSING_PHRASES.map((phrase) =>
+    normalizePromptText(phrase).split(' ')
+);
 
 /** A unit of musical time a reason may name: "because it only needs two bars". */
 const MUSICAL_TIME_PATTERN = new RegExp(String.raw`\b(?:${BAR_WORD}|${BEAT_WORD})\b`, 'iu');
@@ -62,9 +71,6 @@ const MUSICAL_TIME_PATTERN = new RegExp(String.raw`\b(?:${BAR_WORD}|${BEAT_WORD}
  * 3 dB like Keys", "... relative to Keys". The object is the comparison's, never the level's.
  */
 const COMPARISON_BOUNDARY_PATTERN = /\s+(?=(?:like|relative\s+to|compared\s+(?:to|with))\s+(?:the\s+)?(?:clip)?□)/iu;
-
-/** A project reference as the masking writes it: a clip name keeps its `clip` prefix. */
-const MASKED_REFERENCE_PATTERN = /clip□+|□+/gu;
 
 type ClauseToken = { kind: 'reference'; start: number; end: number } | { kind: 'word'; word: string };
 
@@ -83,29 +89,33 @@ function readWords(text: string): ClauseToken[] {
         .map((word) => ({ kind: 'word', word }));
 }
 
-/** The masked references of `masked[from, to)`, in order. */
-function findReferences(masked: string, from: number, to: number): ReadSpan[] {
-    return Array.from(masked.slice(0, to).matchAll(MASKED_REFERENCE_PATTERN), (reference) => ({
+/**
+ * The masked references of `clause.masked[from, to)`, in order. The mask writes a four-character clip
+ * name as `clip` alone, so a match the masking left as the text wrote it is the word "clip", no reference.
+ */
+function findReferences(clause: LevelClause, from: number, to: number): ReadSpan[] {
+    return Array.from(clause.masked.slice(0, to).matchAll(MASKED_REFERENCE_PATTERN), (reference) => ({
         start: reference.index,
         end: reference.index + reference[0].length,
-    })).filter((reference) => reference.end > from);
+    })).filter(
+        (reference) =>
+            reference.end > from &&
+            clause.text.slice(reference.start, reference.end) !== clause.masked.slice(reference.start, reference.end)
+    );
 }
 
-/** The words and whole references of `masked[from, to)`, in order. */
-function readTokens(masked: string, from: number, to: number): ClauseToken[] {
+/** The words and whole references of `clause.masked[from, to)`, in order. */
+function readTokens(clause: LevelClause, from: number, to: number): ClauseToken[] {
+    const { masked } = clause;
     const tokens: ClauseToken[] = [];
     let cursor = from;
-    for (const reference of findReferences(masked, from, to)) {
+    for (const reference of findReferences(clause, from, to)) {
         tokens.push(...readWords(masked.slice(cursor, reference.start)));
         tokens.push({ kind: 'reference', ...reference });
         cursor = reference.end;
     }
     tokens.push(...readWords(masked.slice(cursor, to)));
     return tokens;
-}
-
-function isWithin(number: PromptNumber, spans: readonly ReadSpan[]): boolean {
-    return spans.some((span) => number.index >= span.start && number.index < span.end);
 }
 
 function splitPhraseWords(phrases: Iterable<string>): string[] {
@@ -130,7 +140,7 @@ function getLevelClauseWords(entry: GroundingCatalogEntry, masked: string): Read
     ];
     return new Set([
         ...splitPhraseWords(phrases),
-        ...LEVEL_NOUNS,
+        ...LEVEL_CONTROL_WORDS,
         ...LEVEL_CARRIER_VERBS,
         ...LEVEL_DIRECTION_WORDS,
         ...ABSOLUTE_CONNECTORS,
@@ -145,7 +155,7 @@ function isTrackKindNoun(word: string): boolean {
 }
 
 function isLevelNoun(token: ClauseToken | undefined): boolean {
-    return token?.kind === 'word' && LEVEL_NOUNS.includes(token.word);
+    return token?.kind === 'word' && LEVEL_CONTROL_WORDS.includes(token.word);
 }
 
 /**
@@ -153,9 +163,9 @@ function isLevelNoun(token: ClauseToken | undefined): boolean {
  * "change"), a preposition joining a level noun to its object ("the volume on the Drums"), or a kind
  * noun after a reference ("the Strings track").
  */
-function isLevelWord(word: string, previous: ClauseToken | undefined, words: ReadonlySet<string>): boolean {
+function isLevelWord(word: string, previous: ClauseToken | undefined, levelWords: ReadonlySet<string>): boolean {
     return (
-        words.has(word) ||
+        levelWords.has(word) ||
         isGenericDeviceIntent(word) ||
         (LEVEL_NOUN_PREPOSITIONS.has(word) && isLevelNoun(previous)) ||
         (isTrackKindNoun(word) && previous?.kind === 'reference')
@@ -168,12 +178,12 @@ function isLevelWord(word: string, previous: ClauseToken | undefined, words: Rea
  * reading may still resolve ("raise the vocal by 2 dB" for a track called Vocals). Any other word
  * ("peak", "threshold", "only") may name another control or narrow the level, so the clause is not read.
  */
-function readsLevelHead(tokens: readonly ClauseToken[], words: ReadonlySet<string>): boolean {
+function readsLevelHead(tokens: readonly ClauseToken[], levelWords: ReadonlySet<string>): boolean {
     const namesReference = tokens.some((token) => token.kind === 'reference');
     let slotRuns = 0;
     let previousIsSlot = false;
     for (const [index, token] of tokens.entries()) {
-        if (token.kind === 'reference' || isLevelWord(token.word, tokens[index - 1], words)) {
+        if (token.kind === 'reference' || isLevelWord(token.word, tokens[index - 1], levelWords)) {
             previousIsSlot = false;
             continue;
         }
@@ -185,9 +195,25 @@ function readsLevelHead(tokens: readonly ClauseToken[], words: ReadonlySet<strin
     return namesReference ? slotRuns === 0 : slotRuns <= 1;
 }
 
-/** Whether the words after the figure are only the level's own words, naming no object. */
-function readsLevelTail(tokens: readonly ClauseToken[], words: ReadonlySet<string>): boolean {
-    return tokens.every((token, index) => token.kind === 'word' && isLevelWord(token.word, tokens[index - 1], words));
+/** Whether the tokens end on the words of `phrase`. */
+function endsOnPhrase(tokens: readonly ClauseToken[], phrase: readonly string[]): boolean {
+    const end = tokens.slice(-phrase.length);
+    return (
+        end.length === phrase.length &&
+        end.every((token, index) => token.kind === 'word' && token.word === phrase[index])
+    );
+}
+
+/** The tokens without the one closing phrase they may end on: "... by 3 dB if possible". */
+function withoutClosingPhrase(tokens: readonly ClauseToken[]): readonly ClauseToken[] {
+    const closing = CLOSING_PHRASE_WORDS.find((phrase) => endsOnPhrase(tokens, phrase));
+    return closing === undefined ? tokens : tokens.slice(0, tokens.length - closing.length);
+}
+
+/** Whether the words after the figure are only the level's own words and a closing phrase, naming no object. */
+function readsLevelTail(tokens: readonly ClauseToken[], levelWords: ReadonlySet<string>): boolean {
+    const read = withoutClosingPhrase(tokens);
+    return read.every((token, index) => token.kind === 'word' && isLevelWord(token.word, read[index - 1], levelWords));
 }
 
 /** Where the figure's unit ends, or null for a number stated in no decibel unit. */
@@ -234,7 +260,7 @@ function namesOtherControl(masked: string): boolean {
     return readWords(masked).some(
         (token) =>
             token.kind === 'word' &&
-            !LEVEL_NOUNS.includes(token.word) &&
+            !LEVEL_CONTROL_WORDS.includes(token.word) &&
             [token.word, token.word.replace(/s$/u, '')].some((form) => CONTROL_WORDS.has(form))
     );
 }
@@ -251,25 +277,36 @@ function namesNothingButTracks(clause: LevelClause, span: ReadSpan, context: Pro
         !namesOtherControl(masked) &&
         !MUSICAL_TIME_PATTERN.test(masked) &&
         findRangePhrases(clause.text.slice(span.start, span.end), context).length === 0 &&
-        findReferences(clause.masked, span.start, span.end).every(
+        findReferences(clause, span.start, span.end).every(
             (reference) => !namesOnlyNonTrackObject(clause.text.slice(reference.start, reference.end), context)
         )
     );
 }
 
-/** Whether every figure a constraint states is a measured figure the metric reader reads ("-1 dBTP"). */
-function statesOnlyMetricFigures(clause: LevelClause, span: ReadSpan): boolean {
+/**
+ * Whether a constraint reads, in order, as a subordinator, a keep verb, an optional article, the name of
+ * the one metric it states a figure for, a comparator and that figure, with nothing after it: "while
+ * keeping true peak below -1 dBTP". Anything else ("... below -1 dBTP on the send", "while keeping the
+ * low band tame") may name another object or control, so it is not a measured constraint.
+ */
+function readsAsMetricConstraint(clause: LevelClause, span: ReadSpan): boolean {
     const text = clause.text.slice(span.start, span.end);
-    const metricSpans = readRequestMetricNumbers(text).map((number) => ({
-        start: number.start,
-        end: number.start + number.token.length,
-    }));
-    return findPromptNumbers(text).every((number) => isWithin(number, metricSpans));
+    const [metric, ...others] = readRequestMetricNumbers(text);
+    if (metric === undefined || others.length > 0) {
+        return false;
+    }
+    const metricName = words([OBJECTIVE_METRIC_LABELS[metric.metricId]]);
+    const opening = new RegExp(
+        String.raw`^\s*${SUBORDINATOR}\s+${KEEP_VERBS}\s+(?:${ARTICLE}\s+)?${metricName}\s+${METRIC_COMPARATOR}\s*$`,
+        'iu'
+    );
+    const closing = text.slice(metric.start + metric.token.length);
+    return opening.test(text.slice(0, metric.start)) && normalizePromptText(closing).length === 0;
 }
 
 /**
  * Where the words the level closes on end: at a stated reason that names nothing but tracks, at a
- * measured constraint whose figures are all the metric reader's, at a comparison against another
+ * measured constraint on one metric figure, at a comparison against another
  * object ("like Keys"), at a protection the protection reader reads, or at the clause end. A reason or
  * constraint naming anything else is read as the clause itself, so its words refuse it.
  */
@@ -280,7 +317,7 @@ function findClosingEnd(clause: LevelClause, masked: string, tailStart: number, 
         reason !== null && namesNothingButTracks(clause, { start: reason, end: masked.length }, context)
             ? reason
             : null,
-        constraint !== null && statesOnlyMetricFigures(clause, { start: constraint, end: masked.length })
+        constraint !== null && readsAsMetricConstraint(clause, { start: constraint, end: masked.length })
             ? constraint
             : null,
         findBoundary(COMPARISON_BOUNDARY_PATTERN, masked, tailStart),
@@ -319,10 +356,12 @@ function findHeadEnd(input: {
  * Whether a clause stating a decibel figure reads as one level change of this action and nothing else,
  * in one shape: an optional polite carrier, the level's own words around one target slot, one decibel
  * figure the level lands on or moves by (beside the figures it starts `from`), and after it nothing but
- * the level's own words, a trailing range phrase where the action declares one (`closesOnRange`), a
- * stated reason that names nothing but tracks, a measured constraint, a comparison or a protection.
- * Any other figure inside what the clause reads is a word outside the level's own and refuses it, while
- * a constraint's "-1 dBTP" lies past what it reads and is the metric reader's. A clause stating no decibel figure is not a decibel level clause and is not read here.
+ * the level's own words, a closing phrase, a trailing range phrase where the action declares one
+ * (`closesOnRange`), a stated reason that names nothing but tracks, a measured constraint, a comparison
+ * or a protection. Any other figure inside what the clause reads is a word outside the level's own and
+ * refuses it, while a constraint's "-1 dBTP" lies past what it reads and is the metric reader's. A
+ * clause stating no decibel figure is no decibel level clause, so this reader passes it through and
+ * leaves it to the readers of its own shape.
  *
  * Every masked reference is the slot, so one whose whole text names a clip, device, parameter or VCA
  * group and no track names that object, never a fader.
@@ -355,12 +394,12 @@ export function readsAsLevelClause(input: {
         headStart,
     });
     const tailEnd = findClosingEnd(clause, masked, tailStart, context);
-    const words = getLevelClauseWords(entry, masked);
-    const headTokens = readTokens(withoutSourceFigures(masked, sources), headStart, headEnd);
+    const levelWords = getLevelClauseWords(entry, masked);
+    const headTokens = readTokens({ ...clause, masked: withoutSourceFigures(masked, sources) }, headStart, headEnd);
     return (
         sources.every((source) => source.index < figure.index) &&
-        readsLevelHead(headTokens, words) &&
-        readsLevelTail(readTokens(masked, tailStart, tailEnd), words) &&
+        readsLevelHead(headTokens, levelWords) &&
+        readsLevelTail(readTokens({ ...clause, masked }, tailStart, tailEnd), levelWords) &&
         headTokens.every(
             (token) =>
                 token.kind === 'word' || !namesOnlyNonTrackObject(clause.text.slice(token.start, token.end), context)

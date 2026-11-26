@@ -1473,6 +1473,84 @@ describe('a track level clause grounds only when nothing but its figure follows 
     });
 });
 
+describe('a track level clause reads its qualifiers, closings and tails from the shared tables (#5551)', () => {
+    const drums = createTrack({
+        id: 'track-drums',
+        name: 'Drums',
+        sends: [{ busId: 'track-reverb', level: 0.5, preFader: false }],
+    });
+    const bass = createTrack({ id: 'track-bass', name: 'Bass' });
+    const gatedVocals: ProjectTrack = {
+        ...vocals,
+        devices: [{ id: 'device-gate', name: 'Gate', type: 'Gate', bypassed: false, parameters: [] }],
+    };
+    const tailContext: ProjectContext = {
+        ...projectContext,
+        sections: [{ id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 }],
+        tracks: [drums, bass, gatedVocals, reverb, master],
+        selectedTrackId: null,
+    };
+
+    function bridgeDrums(prompt: string, value: Record<string, number>) {
+        return bridge([{ name: 'setTrackGain', arguments: { trackId: drums.id, ...value } }], prompt, tailContext);
+    }
+
+    it.each([
+        ['Lower the Drums by exactly 3 dB', { deltaDb: -3 }],
+        ['Lower the Drums by approximately 3 dB', { deltaDb: -3 }],
+        ['Lower the Drums by a further 3 dB', { deltaDb: -3 }],
+        ['Lower the Drums by an additional 3 dB', { deltaDb: -3 }],
+        ['Lower the Drums by a full 3 dB', { deltaDb: -3 }],
+        ['turn Drums up around 2 dB', { deltaDb: 2 }],
+        ['turn Drums up roughly 2 dB', { deltaDb: 2 }],
+        ['Lower the Drums by 3 dB in the mix', { deltaDb: -3 }],
+        ['Lower the Drums by 3 dB overall', { deltaDb: -3 }],
+        ['Lower the Drums by 3 dB for me', { deltaDb: -3 }],
+        ['lower the volume for the Drums by 2 dB', { deltaDb: -2 }],
+        ['turn Drums down 3 dB since Drums is too loud', { deltaDb: -3 }],
+        ['turn Drums down 3 dB because its level is too hot', { deltaDb: -3 }],
+        ['turn Drums down 3 dB like Vocal Take', { deltaDb: -3 }],
+        ['raise Drums by 1 dB while keeping true peak below -1 dBTP', { deltaDb: 1 }],
+    ])('grounds "%s"', (prompt, value) => {
+        const result = bridgeDrums(prompt, value);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
+    });
+
+    it.each([
+        ['turn Drums down 3 dB because it peaks at 3 dB', { deltaDb: -3 }],
+        ['turn Drums down 3 dB because it is too loud in the Chorus', { deltaDb: -3 }],
+        ['turn Drums down 3 dB because Vocal Take is too quiet', { deltaDb: -3 }],
+        ['turn Drums down 3 dB because Gate is too loud', { deltaDb: -3 }],
+        ['turn Drums down 3 dB because it only lasts two beats', { deltaDb: -3 }],
+        ['turn Drums down 3 dB because the sends need it', { deltaDb: -3 }],
+        ['lower Drums on Reverb by 3 dB', { deltaDb: -3 }],
+        ['turn Drums down for 3 dB', { deltaDb: -3 }],
+        ['turn Drums down the bus 3 dB', { deltaDb: -3 }],
+        ['turn Drums down 3 dB like the snare', { deltaDb: -3 }],
+        ['raise Drums by 1 dB while keeping true peak below -1 dBTP on the send', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping the low band tame', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping gain reduction low', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak below -1 dBTP by 3 dB', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping the send below -1 dBTP', { deltaDb: 1 }],
+        ['turn the clip gain on Drums down 3 dB', { deltaDb: -3 }],
+    ])('puts no fader level on Drums for "%s"', (prompt, value) => {
+        const result = bridgeDrums(prompt, value);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each(['fader', 'volume', 'level'])('grounds a gain automation lane the request names by its %s', (noun) => {
+        const call = { name: 'addAutomationLane', arguments: { trackId: drums.id, parameterId: 'gain' } };
+
+        const result = bridge([call], `add automation lane for Drums ${noun}`, tailContext);
+
+        expect(result.actions).toEqual([
+            { type: 'addAutomationLane', payload: { ...call.arguments, parameterName: 'Gain' } },
+        ]);
+    });
+});
+
 describe('a referenced level continuation or courtesy names only a track (#5600)', () => {
     const drums = createTrack({ id: 'track-drums', name: 'Drums' });
     const okay = createTrack({ id: 'track-okay', name: 'Okay' });

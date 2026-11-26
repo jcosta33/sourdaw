@@ -2,6 +2,7 @@ import { type getAppActionExecutionPolicy } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 
+import { MASKED_REFERENCE_PATTERN } from './groundingStrategies/maskProjectReferences';
 import { type PromptClauseSpan } from './groundingStrategies/splitAttachedSourceClauses';
 import { type AgentReferenceCapability } from './isAgentReferenceCapabilityCandidate';
 import { resolveAgentReference } from './resolveAgentReference';
@@ -131,9 +132,6 @@ function readListTail(clause: PromptClauseSpan): ListTail | null {
     }
     return { member: getReferenceMember(clause, reference), tail };
 }
-
-/** A project reference the masked text holds: a clip name keeps its `clip` prefix in the mask. */
-const MASKED_REFERENCE_PATTERN = /clip□*|□+/gu;
 
 /** Whether the clause names the track as the selected track: "leave this track alone". */
 function namesTrackAsSelection(input: {

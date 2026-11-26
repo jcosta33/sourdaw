@@ -155,9 +155,10 @@ import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTar
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
-import { LEVEL_NOUNS, readsAsLevelClause } from './groundingStrategies/readsAsLevelClause';
+import { readsAsLevelClause } from './groundingStrategies/readsAsLevelClause';
 import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
 import { readStatedRangeBeats } from './groundingStrategies/readStatedRangeBeats';
+import { REASON_OPENER_WORDS } from './groundingStrategies/reasonOpenerWords';
 import { resolveCallRange } from './groundingStrategies/resolveCallRange';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
@@ -170,7 +171,7 @@ import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameter
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
 import { proposalProtection } from './proposalProtection';
-import { protectionObjectForms } from './protectionObjectForms';
+import { LEVEL_CONTROL_WORDS, protectionObjectForms } from './protectionObjectForms';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
@@ -3214,8 +3215,19 @@ function getMarkerNameFromPrompt(promptText: string): string | null {
     return unquotedName || null;
 }
 
+/**
+ * Beside the reason openers, the words that end a marker or section name: a purpose or comparison
+ * ("for the drop", "as a cue") and a relative or temporal clause ("which ...", "when ...", "where ...").
+ * A name never holds them, while after a level figure "for" may name the object the level is for, so
+ * only a name reads them as a boundary.
+ */
+const NAME_END_WORDS: readonly string[] = ['for', 'as', 'which', 'when', 'where'];
+
 /** Where a stated reason opens after a marker or section name, so the reason is never read as part of the name. */
-const RATIONALE_BOUNDARY_PATTERN = /\s+(?=(?:because|since|so|to|for|as|which|when|where)\b)/iu;
+const RATIONALE_BOUNDARY_PATTERN = new RegExp(
+    String.raw`\s+(?=(?:${[...REASON_OPENER_WORDS, ...NAME_END_WORDS].join('|')})\b)`,
+    'iu'
+);
 
 function getMarkerReferenceNameFromPrompt(promptText: string): string | null {
     const intent =
@@ -3932,7 +3944,7 @@ function validateStringLiteralValue(
         const normalizedAssertedValue = normalizePromptText(assertedValue);
         let aliases: readonly string[] = [];
         if (normalizedAssertedValue === 'gain') {
-            aliases = LEVEL_NOUNS;
+            aliases = LEVEL_CONTROL_WORDS;
         } else if (normalizedAssertedValue === 'pan') {
             aliases = ['pan', 'panning'];
         }

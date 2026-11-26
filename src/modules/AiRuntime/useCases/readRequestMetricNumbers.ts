@@ -28,6 +28,22 @@ function canonicalUnit(written: string): RequestMetricNumber['unit'] | undefined
     return canonicalUnits.find((unit) => unit.toLowerCase() === lowered);
 }
 
+/**
+ * The words a request bounds or places a measured figure with, in normalized words: "true peak below
+ * -1 dBTP", "loudness at -14 LUFS", "centroid at least 2 kHz".
+ */
+export const METRIC_COMPARATORS: readonly string[] = [
+    'below',
+    'under',
+    'above',
+    'over',
+    'at',
+    'at most',
+    'at least',
+    'no more than',
+    'no less than',
+];
+
 /** Source spans, not semantic intent: every candidate needs selection or a literal Command witness. */
 export function readRequestMetricNumbers(prompt: string): RequestMetricNumber[] {
     const numbers: RequestMetricNumber[] = [];
