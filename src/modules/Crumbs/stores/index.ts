@@ -8,3 +8,4 @@
 
 export { crumbsEngineAttachmentStore, readAttachedCrumbsInstanceIds } from './crumbsEngineAttachmentStore';
 export { setCrumbsEventBus } from './crumbsEventBus';
+export { subscribeToCrumbsSamples } from './subscribeToCrumbsSamples';
