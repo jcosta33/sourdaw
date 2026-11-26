@@ -69,7 +69,8 @@ export function mapMidiVelocitiesByCurve(input: MapMidiVelocitiesByCurveInput): 
 
     return input.notes.map((node) => {
         const normalized = (node.velocity - currentMin) / range;
-        const curved = applyMidiVelocityCurve(normalized, input.curve);
+        // The expand curve overshoots 1, which would otherwise land above maxVelocity.
+        const curved = Math.min(1, Math.max(0, applyMidiVelocityCurve(normalized, input.curve)));
         const newVelocity = Math.round(input.minVelocity + curved * (input.maxVelocity - input.minVelocity));
         return { ...node, velocity: clampVelocity(newVelocity) };
     });
