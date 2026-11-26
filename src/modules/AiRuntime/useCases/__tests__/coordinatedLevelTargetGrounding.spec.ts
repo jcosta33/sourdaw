@@ -1865,12 +1865,40 @@ describe('a protection grounds what main grounds outside its object forms', () =
             'turn the Drums down 3 dB and keep it "Warm"; keep Loop A unchanged',
             // A quoted name holding the clip noun is no clip noun.
             'turn the Drums down 3 dB and keep "Clip Art" punchy; keep Loop A unchanged',
+            // The clip noun another clause states leaves this one inert.
+            'turn the Drums down 3 dB and keep the Kick level punchy; leave the Loop A clip alone',
         ])('grounds "%s" on the compiled bridge and batch routes', (prompt) => {
             expect(bridgeCompiledGainList(prompt, [drums], context)).toMatchObject({
                 actions: [gainAction(drums.id, { deltaDb: -3 })],
                 rejections: [],
             });
             expect(groundGainList(prompt, [drums], context, true).status).toBe('grounded');
+        });
+    });
+
+    describe('a protection naming a clip by its name in lowercase keeps the compiled refusal', () => {
+        const leadPart = {
+            id: 'clip-lead-part',
+            name: 'Lead Part',
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 8,
+            noteCount: 0,
+            locked: false,
+        };
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) =>
+                track.id === drums.id ? { ...track, clips: [leadPart], clipCount: 1 } : track
+            ),
+        };
+
+        it.each([
+            'turn the Drums down 3 dB and keep the lead part punchy',
+            'turn the Drums down 3 dB; keep the Kick level punchy; keep the lead part punchy',
+        ])('refuses "%s" on the compiled bridge and batch routes', (prompt) => {
+            expect(bridgeCompiledGainList(prompt, [drums], context).actions).toEqual([]);
+            expect(groundGainList(prompt, [drums], context, true).status).toBe('rejected');
         });
     });
 

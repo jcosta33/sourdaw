@@ -7492,8 +7492,8 @@ function refuseWhenProtectionIsUnresolved(
  * the text that reading was taken from. The clauses the track reader classifies are blanked and the
  * request read again only when the whole request does not parse completely, since removing a following
  * track clause can extend an earlier exclusion: a resolved track clause, and a protection clause the
- * track reader reads as protecting nothing (`protectsNothing`) that states no clip noun ("keep the Kick
- * level punchy"). The blanked text keeps every offset of the request.
+ * track reader reads as protecting nothing (`protectsNothing`) that names no clip, by the clip noun or by
+ * a clip's name or close name ("keep the Kick level punchy"). The blanked text keeps every offset of the request.
  */
 function readClipProtection(
     prompt: string,
@@ -7506,7 +7506,7 @@ function readClipProtection(
     }
     const inertClauses = inertProtectionClauses
         .read(prompt, context)
-        .filter(({ start, end }) => !clipProtectionReading.statesClipNoun(prompt.slice(start, end)));
+        .filter(({ start, end }) => !clipProtectionReading.namesClip(prompt.slice(start, end), context));
     const clipPrompt = [...trackProtections.resolvedTrackClauses, ...inertClauses].reduce(
         (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
         prompt
