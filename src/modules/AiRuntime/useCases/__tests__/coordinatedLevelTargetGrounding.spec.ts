@@ -1816,6 +1816,17 @@ describe('a protection grounds what main grounds outside its object forms', () =
         expect(groundGainList(prompt, [drums], context, true).status).toBe('rejected');
     });
 
+    it('refuses a protection naming an empty VCA group on the compiled bridge and batch routes', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            vcaGroups: [{ id: 'vca-brass', name: 'Brass', gain: 1, muted: false, trackIds: [] }],
+        };
+        const prompt = 'turn the Drums down 3 dB and keep the Brass punchy';
+
+        expect(bridgeCompiledGainList(prompt, [drums], context).actions).toEqual([]);
+        expect(groundGainList(prompt, [drums], context, true).status).toBe('rejected');
+    });
+
     describe('a protection pointing at a selected clip keeps the compiled refusal', () => {
         const loop = {
             id: 'clip-loop-a',
