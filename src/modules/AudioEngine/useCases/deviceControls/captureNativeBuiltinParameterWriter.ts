@@ -17,11 +17,14 @@ export function captureNativeBuiltinParameterWriter(trackId: string, deviceId: s
         return null;
     }
 
-    const isCurrent = (): boolean =>
-        nativeLiveGraphSession.backend === backend &&
-        nativeLiveGraphSession.rearmEpoch === rearmEpoch &&
-        readNativeChain(trackId) === chain &&
-        isDeviceCarriedByNativeSession(trackId, deviceId);
+    function isCurrent(): boolean {
+        return (
+            nativeLiveGraphSession.backend === backend &&
+            nativeLiveGraphSession.rearmEpoch === rearmEpoch &&
+            readNativeChain(trackId) === chain &&
+            isDeviceCarriedByNativeSession(trackId, deviceId)
+        );
+    }
 
     return (values) => {
         if (isCurrent()) {

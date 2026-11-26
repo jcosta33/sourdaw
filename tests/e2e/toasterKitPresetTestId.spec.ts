@@ -72,7 +72,9 @@ async function readToasterRuntime(page: Page, deviceId: string) {
         async ({ entryPath, deviceId }) => {
             const { arrangement, toaster }: typeof import('./persistedHydrationEntry') = await import(entryPath);
             const state = toaster.toasterStore.value?.[deviceId];
-            if (!state) throw new Error('Mounted Toaster state is unavailable');
+            if (!state) {
+                throw new Error('Mounted Toaster state is unavailable');
+            }
             return { state, selectedTrackId: arrangement.trackStore.value?.selectedTrackId };
         },
         { entryPath: ENTRY, deviceId }
@@ -86,9 +88,13 @@ async function sampleToasterAudio(page: Page, trackId: string, deviceId: string)
             const device = audio
                 .getTrackStrip(trackId)
                 ?.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
-            if (!device?.toasterControls?.ready) throw new Error('Toaster worklet is not ready');
+            if (!device?.toasterControls?.ready) {
+                throw new Error('Toaster worklet is not ready');
+            }
             const worklet = device.nodes.find((node) => node instanceof AudioWorkletNode);
-            if (!worklet) throw new Error('Mounted Toaster worklet is unavailable');
+            if (!worklet) {
+                throw new Error('Mounted Toaster worklet is unavailable');
+            }
             if (!window.toasterAudioProbe) {
                 const analyser = device.outputNode.context.createAnalyser();
                 analyser.fftSize = 2048;
@@ -100,10 +106,16 @@ async function sampleToasterAudio(page: Page, trackId: string, deviceId: string)
                 throw new Error('The mounted Toaster runtime changed');
             }
             const context = device.outputNode.context;
-            if (!(context instanceof AudioContext)) throw new Error('Toaster is not using a live AudioContext');
-            if (context.state !== 'running') await context.resume();
+            if (!(context instanceof AudioContext)) {
+                throw new TypeError('Toaster is not using a live AudioContext');
+            }
+            if (context.state !== 'running') {
+                await context.resume();
+            }
             const settled = context.currentTime + 0.25;
-            while (context.currentTime < settled) await new Promise(requestAnimationFrame);
+            while (context.currentTime < settled) {
+                await new Promise(requestAnimationFrame);
+            }
             device.toasterControls.noteOn(1, 1);
             const samples = new Float32Array(probe.analyser.fftSize);
             const end = context.currentTime + 0.5;
@@ -111,7 +123,9 @@ async function sampleToasterAudio(page: Page, trackId: string, deviceId: string)
             while (context.currentTime < end) {
                 await new Promise(requestAnimationFrame);
                 probe.analyser.getFloatTimeDomainData(samples);
-                for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+                for (const sample of samples) {
+                    peak = Math.max(peak, Math.abs(sample));
+                }
             }
             device.toasterControls.noteOff(1);
             return peak;
@@ -195,7 +209,9 @@ test.describe('Toaster kit shelf and sequencer', () => {
                     .getTrackStrip(trackId)
                     ?.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
                 const context = device?.outputNode.context;
-                if (!(context instanceof AudioContext)) throw new Error('Toaster is not using a live AudioContext');
+                if (!(context instanceof AudioContext)) {
+                    throw new TypeError('Toaster is not using a live AudioContext');
+                }
                 await context.resume();
             },
             { entryPath: ENTRY, trackId: second.trackId, deviceId: second.deviceId }
@@ -218,7 +234,9 @@ test.describe('Toaster kit shelf and sequencer', () => {
         await expect(master).toHaveAttribute('aria-valuenow', '1');
         expect(await sampleToasterAudio(page, second.trackId, second.deviceId)).toBeGreaterThan(0.0001);
         const box = await master.boundingBox();
-        if (!box) throw new Error('Master knob has no bounds');
+        if (!box) {
+            throw new Error('Master knob has no bounds');
+        }
         let x = box.x + box.width / 2;
         let y = box.y + box.height / 2;
         await page.mouse.move(x, y);
@@ -239,7 +257,9 @@ test.describe('Toaster kit shelf and sequencer', () => {
         await expect(stop).toHaveAttribute('aria-pressed', 'true');
         await master.scrollIntoViewIfNeeded();
         const newBox = await master.boundingBox();
-        if (!newBox) throw new Error('Master knob has no bounds after preview');
+        if (!newBox) {
+            throw new Error('Master knob has no bounds after preview');
+        }
         x = newBox.x + newBox.width / 2;
         y = newBox.y + newBox.height / 2;
         await page.mouse.move(x, y);
@@ -365,7 +385,9 @@ test.describe('Toaster kit shelf and sequencer', () => {
         await expect
             .poll(async () => {
                 const snapshot = await readTarget();
-                if (!snapshot) return null;
+                if (!snapshot) {
+                    return null;
+                }
                 const { history, ...project } = snapshot;
                 return { project, latestType: history.latestType };
             })

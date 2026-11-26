@@ -8,42 +8,116 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { captureToasterMasterGainEdit } from '../../useCases/captureToasterMasterGainEdit';
 import { captureToasterMasterRuntime } from '../../useCases/captureToasterMasterRuntime';
 
-export const MasterKnob = ({ deviceId, value }: { deviceId: string; value: number }): ReactElement => {
+type MasterGesture = {
+    edit: NonNullable<ReturnType<typeof captureToasterMasterGainEdit>>;
+    runtime: ReturnType<typeof captureToasterMasterRuntime>;
+    preview: number | null;
+    frame: number | null;
+    applied: number | null;
+};
+
+type MasterAction = NonNullable<ReturnType<MasterGesture['edit']['createAction']>>;
+
+async function settleMasterEdit({
+    deviceId,
+    gesture,
+    action,
+    isCurrent,
+    setPreview,
+}: {
+    deviceId: string;
+    gesture: MasterGesture;
+    action: MasterAction;
+    isCurrent: () => boolean;
+    setPreview: (value: number | null) => void;
+}): Promise<void> {
+    function restore(): void {
+        if (!isCurrent()) {
+            return;
+        }
+        const settled = captureToasterMasterGainEdit(deviceId);
+        if (settled) {
+            gesture.runtime?.setGain(settled.value);
+        }
+        setPreview(null);
+    }
+    try {
+        const result = await executeAppActionBatch([action], {
+            source: 'manual',
+            skipMacroRecording: true,
+            shouldExecute: () => gesture.edit.isCurrent() && (gesture.runtime?.isCurrent() ?? true),
+        });
+        if ('reason' in result) {
+            restore();
+            notifyUser(`Could not set Toaster Master gain. ${result.reason}`, 'warning');
+        }
+        if (isCurrent()) {
+            setPreview(null);
+        }
+    } catch {
+        restore();
+        notifyUser('Could not set Toaster Master gain.', 'error');
+    }
+}
+
+function scheduleMasterPreview(gesture: MasterGesture, isActive: () => boolean, cancel: () => void): void {
+    if (gesture.frame !== null) {
+        return;
+    }
+    gesture.frame = requestAnimationFrame(() => {
+        gesture.frame = null;
+        if (!isActive()) {
+            return;
+        }
+        if (!gesture.edit.isCurrent()) {
+            cancel();
+            return;
+        }
+        if (gesture.preview !== null) {
+            gesture.runtime?.setGain(gesture.preview);
+            gesture.applied = gesture.preview;
+        }
+    });
+}
+
+function useMasterGesture(deviceId: string) {
     const [preview, setPreview] = useState<number | null>(null);
-    const token = useRef(0);
-    const active = useRef<{
-        edit: NonNullable<ReturnType<typeof captureToasterMasterGainEdit>>;
-        runtime: ReturnType<typeof captureToasterMasterRuntime>;
-        preview: number | null;
-        frame: number | null;
-        applied: number | null;
-    } | null>(null);
+    const tokenRef = useRef(0);
+    const activeRef = useRef<MasterGesture | null>(null);
     const acquire = (): number => {
         const edit = captureToasterMasterGainEdit(deviceId);
         const runtime = captureToasterMasterRuntime(deviceId);
-        active.current = edit ? { edit, runtime, preview: null, frame: null, applied: null } : null;
-        if (!edit) notifyUser('Could not set Toaster Master gain while the project is changing.', 'warning');
-        return ++token.current;
+        activeRef.current = edit ? { edit, runtime, preview: null, frame: null, applied: null } : null;
+        if (!edit) {
+            notifyUser('Could not set Toaster Master gain while the project is changing.', 'warning');
+        }
+        return ++tokenRef.current;
     };
     const authority: GestureAuthority = {
         acquire,
         isCurrent: (candidate) =>
-            candidate === token.current && !!active.current && (active.current.runtime?.isCurrent() ?? true),
+            candidate === tokenRef.current && !!activeRef.current && (activeRef.current.runtime?.isCurrent() ?? true),
     };
     const cancel = (): void => {
-        const gesture = active.current;
-        active.current = null;
-        token.current++;
-        if (gesture?.frame !== null && gesture?.frame !== undefined) cancelAnimationFrame(gesture.frame);
+        const gesture = activeRef.current;
+        activeRef.current = null;
+        tokenRef.current++;
+        if (gesture?.frame !== null && gesture?.frame !== undefined) {
+            cancelAnimationFrame(gesture.frame);
+        }
         if (gesture?.applied !== null && gesture?.applied !== undefined) {
             const settled = captureToasterMasterGainEdit(deviceId);
-            if (settled) gesture.runtime?.setGain(settled.value);
+            if (settled) {
+                gesture.runtime?.setGain(settled.value);
+            }
         }
         setPreview(null);
     };
     const change = (next: number, transient?: boolean): void => {
-        if (!active.current) acquire();
-        const gesture = active.current;
+        if (!activeRef.current) {
+            acquire();
+        }
+        const gesture = activeRef.current;
         if (
             !gesture ||
             (gesture.runtime && !gesture.runtime.isCurrent()) ||
@@ -56,54 +130,35 @@ export const MasterKnob = ({ deviceId, value }: { deviceId: string; value: numbe
         gesture.preview = next;
         setPreview(next);
         if (transient) {
-            if (gesture.frame === null) {
-                gesture.frame = requestAnimationFrame(() => {
-                    gesture.frame = null;
-                    if (active.current !== gesture) return;
-                    if (!gesture.edit.isCurrent()) {
-                        cancel();
-                        return;
-                    }
-                    if (gesture.preview !== null) {
-                        gesture.runtime?.setGain(gesture.preview);
-                        gesture.applied = gesture.preview;
-                    }
-                });
-            }
+            scheduleMasterPreview(gesture, () => activeRef.current === gesture, cancel);
             return;
         }
-        if (gesture.frame !== null) cancelAnimationFrame(gesture.frame);
-        if (gesture.applied !== next) gesture.runtime?.setGain(next);
-        active.current = null;
-        const completionToken = token.current;
+        if (gesture.frame !== null) {
+            cancelAnimationFrame(gesture.frame);
+        }
+        if (gesture.applied !== next) {
+            gesture.runtime?.setGain(next);
+        }
+        activeRef.current = null;
+        const completionToken = tokenRef.current;
         const action = gesture.edit.createAction(next);
         if (!action) {
             setPreview(null);
             return;
         }
-        const restore = (): void => {
-            if (token.current !== completionToken) return;
-            const settled = captureToasterMasterGainEdit(deviceId);
-            if (settled) gesture.runtime?.setGain(settled.value);
-            setPreview(null);
-        };
-        void executeAppActionBatch([action], {
-            source: 'manual',
-            skipMacroRecording: true,
-            shouldExecute: () => gesture.edit.isCurrent() && (gesture.runtime?.isCurrent() ?? true),
-        })
-            .then((result) => {
-                if ('reason' in result) {
-                    restore();
-                    notifyUser(`Could not set Toaster Master gain. ${result.reason}`, 'warning');
-                }
-                if (token.current === completionToken) setPreview(null);
-            })
-            .catch(() => {
-                restore();
-                notifyUser('Could not set Toaster Master gain.', 'error');
-            });
+        void settleMasterEdit({
+            deviceId,
+            gesture,
+            action,
+            isCurrent: () => tokenRef.current === completionToken,
+            setPreview,
+        });
     };
+    return { preview, authority, cancel, change };
+}
+
+export const MasterKnob = ({ deviceId, value }: { deviceId: string; value: number }): ReactElement => {
+    const { preview, authority, cancel, change } = useMasterGesture(deviceId);
     const displayed = preview ?? value;
     return (
         <Stack align="center" gap={1}>

@@ -14,35 +14,42 @@ export function captureToasterMasterRuntime(deviceId: string): {
     setGain: (value: number) => void;
 } | null {
     const target = resolveEligibleDeviceWriteTarget(deviceId);
-    if (target.status !== 'eligible') return null;
+    if (target.status !== 'eligible') {
+        return null;
+    }
+    const { trackId } = target;
     const projectId = getSettledProjectIdentity()?.projectId;
     const projectIdentity = captureProjectIdentity();
     const lifetime = captureToasterDeviceLifetime(deviceId);
-    const strip = getTrackStrip(target.trackId);
+    const strip = getTrackStrip(trackId);
     const node = strip && findToasterNodeOnStrip({ strip, deviceId });
     const controls = node?.toasterControls;
-    if (!projectId || !lifetime || !strip || !node || !controls?.ready) return null;
-    const writeNative = captureNativeBuiltinParameterWriter(target.trackId, deviceId);
-    const isCurrent = (): boolean => {
+    if (!projectId || !lifetime || !strip || !node || !controls?.ready) {
+        return null;
+    }
+    const writeNative = captureNativeBuiltinParameterWriter(trackId, deviceId);
+    function isCurrent(): boolean {
         const currentTarget = resolveEligibleDeviceWriteTarget(deviceId);
         return (
             currentTarget.status === 'eligible' &&
-            currentTarget.trackId === target.trackId &&
+            currentTarget.trackId === trackId &&
             getSettledProjectIdentity()?.projectId === projectId &&
             captureProjectIdentity() === projectIdentity &&
             captureToasterDeviceLifetime(deviceId) === lifetime &&
-            getTrackStrip(target.trackId) === strip &&
+            getTrackStrip(trackId) === strip &&
             findToasterNodeOnStrip({ strip, deviceId }) === node &&
             node.toasterControls === controls &&
             controls.ready
         );
-    };
+    }
     return {
         isCurrent,
         setGain: (value) => {
-            if (!isCurrent()) return;
+            if (!isCurrent()) {
+                return;
+            }
             writeToasterKitScalar({
-                trackId: target.trackId,
+                trackId,
                 deviceId,
                 controls,
                 name: 'master_gain',

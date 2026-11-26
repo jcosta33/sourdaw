@@ -233,22 +233,19 @@ describe('RotaryKnob', () => {
             fireEvent.pointerMove(root, { pointerId: 4, clientY: 80 });
             const transientValue = onChange.mock.calls.at(-1)?.[0] as number;
             const previousVisibility = document.visibilityState;
-            if (source === 'window blur') fireEvent.blur(window);
-            else if (source === 'hidden document') {
+            if (source === 'window blur') {
+                fireEvent.blur(window);
+            } else if (source === 'hidden document') {
                 setDocumentVisibility('hidden');
                 document.dispatchEvent(new Event('visibilitychange'));
                 setDocumentVisibility(previousVisibility);
-            } else unmount();
-            if (enabled) {
-                expect(onGestureCancel).toHaveBeenCalledOnce();
-                expect(onChange.mock.calls).toEqual([[transientValue, true]]);
             } else {
-                expect(onGestureCancel).not.toHaveBeenCalled();
-                expect(onChange.mock.calls).toEqual([
-                    [transientValue, true],
-                    [transientValue, false],
-                ]);
+                unmount();
             }
+            expect(onGestureCancel).toHaveBeenCalledTimes(enabled ? 1 : 0);
+            expect(onChange).toHaveBeenCalledTimes(2 - Number(enabled));
+            expect(onChange).toHaveBeenNthCalledWith(1, transientValue, true);
+            expect(onChange.mock.calls.slice(1)).toEqual([[transientValue, false]].slice(Number(enabled)));
             unmount();
         }
     });
