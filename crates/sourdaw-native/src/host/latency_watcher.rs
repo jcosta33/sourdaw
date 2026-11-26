@@ -16,20 +16,24 @@
 //! visits every engine-owned instance and lets each answer whether it was the
 //! one that flagged.
 //!
-//! The watcher is a dedicated non-RT thread that claims the instance through the
-//! `SharedHostedPlugin` control seam and lends the deactivate / reactivate /
-//! re-query to the shell's UI thread, emits `plugin-latency-changed` to the
-//! webview and aims the graph's compensation at the new figure. The restart
-//! crosses because both formats bind it there: CLAP marks `activate` and
-//! `deactivate` `[main-thread]`, and VST3 binds `setActive` to the UI thread.
-//! The claim stays on the watcher, the rule `host/ui_thread.rs` keeps the carry
-//! acyclic by. With no UI thread registered the restart is refused and reported,
-//! never run here and never parked.
+//! The watcher is a dedicated non-RT thread that takes the instance's control
+//! gate and carries the deactivate / reactivate / re-query to the shell's UI
+//! thread, emits `plugin-latency-changed` to the webview and aims the graph's
+//! compensation at the new figure. The restart crosses because both formats
+//! bind it there: CLAP marks `activate` and `deactivate` `[main-thread]`, and
+//! VST3 binds `setActive` to the UI thread. The gate stays on the watcher, the
+//! rule `host/ui_thread.rs` keeps the carry acyclic by; the audio access seam,
+//! which the restart must hold to exclude `process`, is claimed only once the
+//! restart has landed, so the plugin's blocks are served while the hop waits.
+//! With no UI thread registered the restart is refused and reported, never run
+//! here and never parked.
 
 use crate::events::{EventSink, EventSinkExt};
-use crate::host::native_bridge::{LatencyChange, PluginControlError, SharedHostedPlugin};
+use crate::host::native_bridge::{
+    ControlVisit, LatencyChange, PluginControlError, SharedHostedPlugin,
+};
 use crate::host::plugin_host_requests::registered_ui_thread;
-use crate::host::ui_thread::{lend_on_ui_thread, UiThread, UiThreadError};
+use crate::host::ui_thread::{UiThread, UiThreadError};
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_engine::EngineHandle;
@@ -205,22 +209,61 @@ fn publish_compensation(engine: &Engine, instance_id: &str, compensation: Latenc
     }
 }
 
-/// Run the latency restart and re-query of `plugin` on `ui`, and report what it
-/// answered. The caller holds the instance's control claim on its own thread;
-/// only the plugin call crosses, so the UI thread never waits on a gate.
+/// Run the latency restart and re-query of the visited instance on `ui`, and
+/// report what it answered. The visit holds the instance's control gate on the
+/// watcher, so the UI thread never waits on a gate; the audio access seam is
+/// claimed only once the restart has landed there, for up to `timeout`, so the
+/// audio thread keeps serving the plugin's blocks while the hop waits.
 fn requery_on_ui_thread(
+    visit: &ControlVisit<'_, HostedRuntime>,
     ui: &dyn UiThread,
-    plugin: &mut HostedRuntime,
-) -> Result<Option<LatencyChange>, UiRequeryError> {
-    lend_on_ui_thread(ui, plugin, SharedHostedPlugin::refresh_latency_change)
-        .map_err(UiRequeryError::UiThread)?
-        .map_err(UiRequeryError::Plugin)
+    timeout: Duration,
+) -> Result<Option<LatencyChange>, PluginControlError<UiRequeryError>> {
+    match visit.on_ui_thread(ui, timeout, SharedHostedPlugin::refresh_latency_change) {
+        Ok(Ok(change)) => Ok(change),
+        Ok(Err(failed)) => Err(PluginControlError::Operation(UiRequeryError::Plugin(
+            failed,
+        ))),
+        Err(PluginControlError::Operation(unreached)) => Err(PluginControlError::Operation(
+            UiRequeryError::UiThread(unreached),
+        )),
+        Err(PluginControlError::Refused(refusal)) => Err(PluginControlError::Refused(refusal)),
+    }
+}
+
+/// Re-query the instance the channel woke, waiting for its control gate.
+fn requery_woken_instance(
+    runtime: &SharedHostedPlugin,
+    ui: &dyn UiThread,
+) -> Result<Option<LatencyChange>, PluginControlError<UiRequeryError>> {
+    let visit = runtime
+        .control_visit()
+        .map_err(PluginControlError::Refused)?;
+    requery_on_ui_thread(&visit, ui, CONTROL_TIMEOUT)
+}
+
+/// Re-query one swept instance if it is the one that flagged. The flag is read
+/// here, without a hop; only a flagged instance crosses to the UI thread.
+fn requery_if_flagged(
+    runtime: &SharedHostedPlugin,
+    ui: &dyn UiThread,
+) -> Result<Option<LatencyChange>, PluginControlError<UiRequeryError>> {
+    let visit = runtime
+        .try_control_visit()
+        .map_err(PluginControlError::Refused)?;
+    let flagged = visit.with_seam(SWEEP_CONTROL_TIMEOUT, |plugin| {
+        Ok::<_, UiRequeryError>(plugin.has_pending_latency_change())
+    })?;
+    if !flagged {
+        return Ok(None);
+    }
+    requery_on_ui_thread(&visit, ui, SWEEP_CONTROL_TIMEOUT)
 }
 
 /// Re-query one woken instance, and report what it answered.
 ///
 /// The channel wake's body: the poll deactivates and reactivates on the UI
-/// thread under the watcher's control claim, a real change becomes the `plugin-latency-changed` event, and
+/// thread under the watcher's control gate, a real change becomes the `plugin-latency-changed` event, and
 /// the graph's compensation is aimed at the fresh figure. The event precedes
 /// the compensation because the frontend's own latency read is what a user
 /// waits on, and the graph command is a push onto a ring the audio thread
@@ -238,9 +281,7 @@ fn serve_channel_wake(
     events: &dyn EventSink,
 ) {
     let refreshed = match ui {
-        Some(ui) => {
-            runtime.with_control(CONTROL_TIMEOUT, |plugin| requery_on_ui_thread(ui, plugin))
-        }
+        Some(ui) => requery_woken_instance(runtime, ui),
         None => Err(PluginControlError::Operation(UiRequeryError::NoUiThread)),
     };
     if let Some(payload) = latency_change_payload(instance_id, &refreshed) {
@@ -286,13 +327,8 @@ fn service_pending_restarts(
     };
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "latency requery") {
         // The hint names no instance, so most visits find nothing flagged; only
-        // a flagged one is worth holding its claim across a UI-thread hop.
-        let refreshed = runtime.try_with_control(SWEEP_CONTROL_TIMEOUT, |plugin| {
-            if !plugin.has_pending_latency_change() {
-                return Ok(None);
-            }
-            requery_on_ui_thread(ui, plugin)
-        });
+        // a flagged one is worth a UI-thread hop.
+        let refreshed = requery_if_flagged(&runtime, ui);
 
         match &refreshed {
             Ok(_) => {
@@ -929,6 +965,107 @@ mod tests {
             latency_events(&sink),
             1,
             "the refused sweep ran nothing and left the flag for the next one"
+        );
+    }
+
+    // ── The audio keeps the plugin while the restart waits (#7196) ─────────
+
+    /// A UI thread that announces each task it is handed and holds it until
+    /// the test lets it run: a shell busy with something else.
+    struct ParkingUiThread {
+        posted: Mutex<std::sync::mpsc::Sender<()>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl UiThread for ParkingUiThread {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(
+            &self,
+            task: &Arc<crate::host::ui_thread::UiThreadTask>,
+        ) -> Result<(), UiThreadError> {
+            let _ = self.posted.lock().expect("posted channel").send(());
+            let _ = self.release.lock().expect("release channel").recv();
+            task.run();
+            Ok(())
+        }
+    }
+
+    /// Whether the audio thread could claim `runtime` while `requery` sat
+    /// parked on a UI thread that had not yet taken its restart.
+    fn seam_free_while_the_restart_is_parked(
+        runtime: &SharedHostedPlugin,
+        requery: impl FnOnce(&dyn UiThread) + Send,
+    ) -> bool {
+        let (posted, was_posted) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let ui = ParkingUiThread {
+            posted: Mutex::new(posted),
+            release: Mutex::new(released),
+        };
+        std::thread::scope(|scope| {
+            let requerying = scope.spawn(|| requery(&ui));
+            was_posted
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the restart must be handed to the UI thread");
+            let free = runtime.try_claim_control().is_some();
+            release.send(()).expect("the UI thread is parked");
+            requerying.join().expect("the requery should not panic");
+            free
+        })
+    }
+
+    #[test]
+    fn a_channel_wake_waiting_for_the_ui_thread_leaves_the_audio_seam_free() {
+        let (engine_plugins, runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+
+        let free = seam_free_while_the_restart_is_parked(&runtime, |ui| {
+            serve_channel_wake(
+                "inst-1",
+                &runtime,
+                Some(ui),
+                &engine_plugins,
+                &engine,
+                &sink,
+            );
+        });
+
+        assert!(
+            free,
+            "the audio thread must be able to claim the plugin while its latency restart waits \
+             for the UI thread"
+        );
+        assert_eq!(
+            latency_events(&sink),
+            1,
+            "the restart ran once the UI thread took it"
+        );
+    }
+
+    #[test]
+    fn a_sweep_waiting_for_the_ui_thread_leaves_the_audio_seam_free() {
+        let _hint_guard = crate::host::hint_test_support::guard();
+        let (engine_plugins, runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+
+        let free = seam_free_while_the_restart_is_parked(&runtime, |ui| {
+            service_pending_restarts(Some(ui), &engine_plugins, &engine, &sink);
+        });
+
+        assert!(
+            free,
+            "the audio thread must be able to claim the plugin while its swept latency restart \
+             waits for the UI thread"
+        );
+        assert_eq!(
+            latency_events(&sink),
+            1,
+            "the restart ran once the UI thread took it"
         );
     }
 }
