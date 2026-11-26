@@ -617,15 +617,17 @@ impl HeldHostWrites {
         self.count += 1;
     }
 
-    /// Let go of every held write for a parameter `block_writes` writes: the
-    /// block's own value is the newer one.
+    /// Let go of every held write for a parameter `block_writes` writes at the
+    /// block's head: that newer value would replace it before any sample used
+    /// it. A block write later in the block leaves the held value standing for
+    /// the samples before it.
     fn discard_superseded(&mut self, block_writes: &[HostParameterUpdate]) {
         let mut kept = 0;
         for index in 0..self.count {
             let write = self.writes[index];
             if block_writes
                 .iter()
-                .any(|update| update.param_id == write.param_id)
+                .any(|update| update.param_id == write.param_id && update.sample_offset == 0)
             {
                 continue;
             }
@@ -2772,9 +2774,11 @@ impl ClapWrapper {
     /// This block's own writes keep the first `MAX_PARAMETER_EVENTS` slots
     /// they always had; any past that are ignored. Writes held from blocks the
     /// plugin refused to process take the room left over, at time 0 ahead of
-    /// the block's own. A held write for a parameter this block also writes is
-    /// dropped, because the block's value is newer, and a held write that does
-    /// not fit stays held for the next processed block.
+    /// the block's own. A held write for a parameter this block writes at
+    /// sample 0 is dropped, because the block's value replaces it before any
+    /// sample uses it; one the block writes only later still leads the list,
+    /// so the samples before that write run on it. A held write that does not
+    /// fit stays held for the next processed block.
     pub fn process_with_midi_and_parameters(
         &mut self,
         inputs: &[&[f32]],
@@ -8867,21 +8871,30 @@ mod tests {
         );
     }
 
-    /// A write made in the first processed block is newer than any held one
-    /// for the same parameter, so it replaces it: the parameter is delivered
-    /// once, with the block's value.
+    /// A held write is the parameter's value from the head of the first
+    /// processed block until that block writes the parameter itself. A block
+    /// write at the head replaces it outright; a later one leaves the held
+    /// value in force for the samples before it.
     #[test]
-    fn a_write_in_the_first_processed_block_replaces_the_held_write_for_its_parameter() {
+    fn a_held_write_stands_until_the_first_processed_block_writes_its_parameter() {
         let _guard = held_write_test_guard();
         stage_emitted_events(Vec::new());
-        let mut wrapper = start_refusing_recording_wrapper();
+        for (block_offset, expected) in
+            [(0, vec![(0, 5, 0.9)]), (4, vec![(0, 5, 0.2), (4, 5, 0.9)])]
+        {
+            let mut wrapper = start_refusing_recording_wrapper();
 
-        process_one_block_with_updates(&mut wrapper, &[write(5, 0, 0.2)]);
-        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
-        process_one_block_with_updates(&mut wrapper, &[write(5, 4, 0.9)]);
-        process_one_block(&mut wrapper);
+            process_one_block_with_updates(&mut wrapper, &[write(5, 0, 0.2)]);
+            HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+            process_one_block_with_updates(&mut wrapper, &[write(5, block_offset, 0.9)]);
+            process_one_block(&mut wrapper);
 
-        assert_eq!(received_parameter_values(), vec![(4, 5, 0.9)]);
+            assert_eq!(
+                received_parameter_values(),
+                expected,
+                "a block write at sample {block_offset}"
+            );
+        }
     }
 
     /// A processed block's own writes keep every slot they had before any
