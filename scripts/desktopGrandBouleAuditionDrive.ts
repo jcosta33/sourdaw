@@ -35,6 +35,7 @@ export function blackHoleCaptureAllowsHiddenDefault(
             isolated = run(['-a', '-t', 'input']) === DEVICE;
         } catch {
             // Without the input inventory, only a visible BlackHole ID can be used.
+            isolated = false;
         }
     }
     assertBlackHoleInput(run);

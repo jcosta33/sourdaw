@@ -125,6 +125,14 @@ export async function openBlackHoleMedia({
     };
     const findNamed = (inputs: MediaDeviceInfo[]) =>
         inputs.filter((entry) => entry.label === device && entry.deviceId && entry.deviceId !== 'default');
+    function selectDeviceId(inputs: MediaDeviceInfo[]): string {
+        const named = findNamed(inputs);
+        if (named.length > 1 || (named.length === 0 && (!allowHiddenDefault || inputs.some((entry) => entry.label)))) {
+            throw new Error('capture-named-input-unavailable');
+        }
+        // An isolated runner can use its verified default until Chromium reveals the labels.
+        return named[0]?.deviceId ?? 'default';
+    }
     async function verifyDefaultAlias(label: string, groupId: string | undefined): Promise<boolean> {
         if (!label || !groupId) {
             return false;
@@ -141,13 +149,7 @@ export async function openBlackHoleMedia({
             alias.label === label
         );
     }
-    const inputs = await listInputs();
-    const named = findNamed(inputs);
-    if (named.length > 1 || (named.length === 0 && (!allowHiddenDefault || inputs.some((entry) => entry.label)))) {
-        throw new Error('capture-named-input-unavailable');
-    }
-    // An isolated runner can use its verified default until Chromium reveals the labels.
-    const deviceId = named[0]?.deviceId ?? 'default';
+    const deviceId = selectDeviceId(await listInputs());
     const stream = await media.getUserMedia({
         audio: {
             deviceId: { exact: deviceId },
@@ -210,15 +212,20 @@ export async function captureBlackHole(page: Pick<Page, 'evaluateHandle'>, allow
         stage = 'graph';
         return await connectCapture(media);
     } catch (error) {
-        await media
-            .evaluate(async (receiver) => {
+        const failure = admissionError(stage, error);
+        try {
+            await media.evaluate(async (receiver) => {
                 for (const capturedTrack of receiver.stream.getTracks()) {
                     capturedTrack.stop();
                 }
                 await receiver.context.close();
-            })
-            .catch(() => undefined);
-        throw admissionError(stage, error);
+            });
+        } catch (cleanupError) {
+            throw new CaptureAdmissionError(failure.message, {
+                cause: new AggregateError([error, cleanupError], 'Capture admission and receiver cleanup failed'),
+            });
+        }
+        throw failure;
     } finally {
         await media.dispose();
     }

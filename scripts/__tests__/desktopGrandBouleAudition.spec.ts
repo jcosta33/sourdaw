@@ -309,7 +309,7 @@ describe('packaged audition capture admission', () => {
                         try {
                             return await evaluate(options);
                         } catch (error) {
-                            throw new Error(`page.evaluateHandle: ${String(error)}`);
+                            throw new Error(`page.evaluateHandle: ${String(error)}`, { cause: error });
                         }
                     }
                 ),
@@ -320,21 +320,19 @@ describe('packaged audition capture admission', () => {
 
             await driveDesktopGrandBouleAudition('packaged-binary', observations);
 
-            if (allowed) {
-                expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({
-                    audio: {
-                        deviceId: { exact: 'default' },
-                        echoCancellation: { exact: false },
-                        noiseSuppression: { exact: false },
-                        autoGainControl: { exact: false },
-                    },
-                    video: false,
-                });
-                expect(observations.unavailable).toBe('capture-input-NotReadableError');
-            } else {
-                expect(getUserMedia).not.toHaveBeenCalled();
-                expect(observations.unavailable).toBe('capture-named-input-unavailable');
-            }
+            const rawDefault: MediaStreamConstraints = {
+                audio: {
+                    deviceId: { exact: 'default' },
+                    echoCancellation: { exact: false },
+                    noiseSuppression: { exact: false },
+                    autoGainControl: { exact: false },
+                },
+                video: false,
+            };
+            expect(getUserMedia.mock.calls).toEqual(allowed ? [[rawDefault]] : []);
+            expect(observations.unavailable).toBe(
+                allowed ? 'capture-input-NotReadableError' : 'capture-named-input-unavailable'
+            );
             expect(page.evaluateHandle).toHaveBeenCalledExactlyOnceWith(openBlackHoleMedia, {
                 device,
                 allowHiddenDefault: allowed,
