@@ -8,7 +8,10 @@ import {
 } from '#/helpers/__tests__/nativePreparationWorker';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    countPendingAutomergeStorageWrites,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -760,6 +763,10 @@ describe('project directory save and cold Recent open', () => {
         expect(typeof previousNamed).toBe('string');
         const previousDirectory = await projectDirectory.read(runtime.directory, runtime.projectId);
 
+        // A pending store write is the only thing that re-projects the document into projectStore here, and
+        // the Save's own settle step would flush it. Settling first leaves the store holding the old identity
+        // for certain, whether or not an animation frame has already flushed it.
+        flushAutomergeStorageWrites();
         type NativeProjectRoot = { projectMeta?: { projectId?: string } };
         const rootId = runtime.crdt.DOC_PREFIX_ROOT;
         const differentProjectId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -774,14 +781,16 @@ describe('project directory save and cold Recent open', () => {
         });
         expect(runtime.crdt.getCrdtDoc<NativeProjectRoot>(rootId)?.projectMeta?.projectId).toBe(differentProjectId);
         expect(projectStore.value?.projectId).toBe(runtime.projectId);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
         const witness = runtime.crdt.captureDurableDocumentWitness();
         const warn = vi.spyOn(logger, 'warn');
 
         await expect(runtime.project.saveProject()).resolves.toBe(false);
 
+        expect(warn).toHaveBeenCalledTimes(1);
         expect(warn).toHaveBeenCalledWith(
             '[saveProject] Project persistence failed:',
-            expect.objectContaining({ message: 'Project identity changed during Save preparation' })
+            expect.objectContaining({ message: 'Project Save preparation requires matching native metadata' })
         );
         expect(runtime.crdt.captureDurableDocumentWitness()).toBe(witness);
         expect(await readNamedProjectJson(recentKey)).toBe(previousNamed);
