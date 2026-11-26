@@ -145,7 +145,7 @@ import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailing
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
-import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
+import { MASKED_REFERENCE_PATTERN, maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { namesOnlyNonTrackObject } from './groundingStrategies/namesOnlyNonTrackObject';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
@@ -1274,6 +1274,12 @@ function namesLevelOutsideActionFader(actionName: string, clause: PromptClause, 
     return actionName === 'setMasterGain' && !namesMaster(clause, context);
 }
 
+/** One masked reference and its decibel figure: "the Snare at -9 dB", or "Riff to -3 dB" for a four-character clip. */
+const LEVEL_CONTINUATION_PATTERN = new RegExp(
+    String.raw`^\s*(?:(?:the|a|an)\s+)?(?:${MASKED_REFERENCE_PATTERN.source})\s+(?:at|to|by|up|down)\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*d\s?b\s*$`,
+    'iu'
+);
+
 /**
  * A clause that only adds one more reference and its decibel figure to the level change before it:
  * "and the Snare at -9 dB". The figure's connector states its form, and the action must declare it.
@@ -1282,11 +1288,7 @@ function isLevelContinuationClause(
     maskedClause: string,
     decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[]
 ): boolean {
-    if (
-        !/^\s*(?:(?:the|a|an)\s+)?(?:clip)?□+\s+(?:at|to|by|up|down)\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*d\s?b\s*$/iu.test(
-            maskedClause
-        )
-    ) {
+    if (!LEVEL_CONTINUATION_PATTERN.test(maskedClause)) {
         return false;
     }
     const statedLevelForms = getStatedDecibelLevelForms(maskedClause);
@@ -1295,7 +1297,8 @@ function isLevelContinuationClause(
 
 /**
  * Whether a continuation adds an object other than a track to a track action's level: "set Drums to
- * -6 dB, Vocal Take to -3 dB" names the clip Vocal Take, which no fader is.
+ * -6 dB, Vocal Take to -3 dB" names the clip Vocal Take, which no fader is, and so does the word "clip"
+ * the masking leaves as written.
  */
 function continuesOntoNonTrackObject(
     groundingRules: GroundingRules,
@@ -1305,11 +1308,12 @@ function continuesOntoNonTrackObject(
     if (groundingRules.targetRules[0]?.capability !== 'track') {
         return false;
     }
-    const reference = /clip□+|□+/u.exec(clause.masked);
-    return (
-        reference !== null &&
-        namesOnlyNonTrackObject(clause.text.slice(reference.index, reference.index + reference[0].length), context)
-    );
+    const [reference] = clause.masked.matchAll(MASKED_REFERENCE_PATTERN);
+    if (reference === undefined) {
+        return false;
+    }
+    const text = clause.text.slice(reference.index, reference.index + reference[0].length);
+    return text === reference[0] || namesOnlyNonTrackObject(text, context);
 }
 
 /**

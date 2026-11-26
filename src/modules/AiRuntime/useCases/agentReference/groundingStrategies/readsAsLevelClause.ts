@@ -2,7 +2,14 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { OBJECTIVE_METRIC_LABELS } from '../../objectiveMetricProjection';
-import { KEEP_VERBS, SUBORDINATOR } from '../../perceptualConstraints/constraintClauseWords';
+import {
+    DETERMINER,
+    KEEP_VERBS,
+    MASK_GLYPH,
+    POSSESSIVE_DETERMINER,
+    SUBORDINATOR,
+    THE,
+} from '../../perceptualConstraints/constraintClauseWords';
 import { words } from '../../perceptualConstraints/words';
 import { METRIC_COMPARATORS, readRequestMetricNumbers } from '../../readRequestMetricNumbers';
 import { CONTROL_WORDS, LEVEL_CONTROL_WORDS, TRACK_KIND_NOUNS } from '../protectionObjectForms';
@@ -21,6 +28,11 @@ import {
     SOURCE_CONNECTORS,
 } from './classifyPromptDecibelFigures';
 import { CLOSING_PHRASES } from './closingPhrases';
+import {
+    CURRENT_LEVEL_COMPARISON_PHRASES,
+    CURRENT_LEVEL_PHRASES,
+    OBJECT_COMPARISON_PHRASES,
+} from './comparisonPhrases';
 import { findPromptNumbers } from './findPromptNumbers';
 import { BAR_WORD, BEAT_WORD, findRangePhrases } from './findRangePhrases';
 import { REFERENCE_PLACEHOLDER } from './findReferencedIntentPhrase';
@@ -32,36 +44,45 @@ import { isGenericDeviceIntent } from './isGenericDeviceIntent';
 import { MASKED_REFERENCE_PATTERN } from './maskProjectReferences';
 import { namesOnlyNonTrackObject } from './namesOnlyNonTrackObject';
 import { normalizePromptText } from './normalizePromptText';
-import { REASON_OPENER_WORDS } from './reasonOpenerWords';
+import { CAUSE_OPENER_WORDS, REASON_OPENER_WORDS, SUBJECT_PURPOSE_OPENER_WORDS } from './reasonOpenerWords';
 import { STRICT_COURTESY_CLAUSES } from './strictCourtesyClauses';
 
 type GroundingCatalogEntry = ReturnType<typeof getExecutableAppActionGroundingCatalog>[number];
 
-/** Verbs that open a level whose own phrase follows the target: "set Drums volume to", "make Drums 3 dB quieter". */
-const LEVEL_CARRIER_VERBS: readonly string[] = ['set', 'make'];
+/**
+ * Verbs that open a level whose own phrase follows the target: "make Drums 3 dB quieter". "Set" is one
+ * too, read with the verbs that set any value.
+ */
+const LEVEL_CARRIER_VERBS: readonly string[] = ['make'];
 
 /** The prepositions that join a level noun to the object it belongs to: "the volume on the Drums". */
 const LEVEL_NOUN_PREPOSITIONS: ReadonlySet<string> = new Set(['of', 'on', 'for']);
 
+const ARTICLE = words(Array.from(ARTICLES));
+
 /**
- * Where a stated reason or purpose opens after the figure: "... down 3 dB because Keys is too loud",
- * "... so it sits back", "... to make room for Keys". A reason says why, never where, when or on what,
- * so it is read only for what it names.
+ * Each word after the figure that may open a stated reason or purpose: "... down 3 dB because Keys is
+ * too loud", "... so it sits back", "... to make room for Keys". A reason says why, never where, when
+ * or on what, so it is read only for what it names.
  */
-const REASON_BOUNDARY_PATTERN = new RegExp(String.raw`\s+(?=${words(REASON_OPENER_WORDS)}\b)`, 'iu');
+const REASON_OPENER_PATTERN = new RegExp(String.raw`\s+(?<opener>${words(REASON_OPENER_WORDS)})\b`, 'giu');
+
+/** A word that opens a noun phrase rather than a clause: "to the send", "so the low band". */
+const DETERMINER_PATTERN = new RegExp(String.raw`^(?:${ARTICLE}|${DETERMINER}|${POSSESSIVE_DETERMINER})$`, 'iu');
 
 /**
  * Where a measured constraint opens after the figure: "... by 1 dB while keeping true peak below -1 dBTP".
  * Its figures are the metric reader's, never the level's.
  */
 const CONSTRAINT_BOUNDARY_PATTERN = new RegExp(String.raw`\s+(?=${SUBORDINATOR}\s+${KEEP_VERBS}\b)`, 'iu');
-
-const ARTICLE = words(Array.from(ARTICLES));
 const METRIC_COMPARATOR = words(METRIC_COMPARATORS);
 
 const CLOSING_PHRASE_WORDS: readonly string[][] = CLOSING_PHRASES.map((phrase) =>
     normalizePromptText(phrase).split(' ')
 );
+
+/** The words a clip, device or parameter name may share with the level clause it stands in. */
+const LEVEL_CLAUSE_OWN_WORDS: ReadonlySet<string> = new Set([...LEVEL_CONTROL_WORDS, ...CLOSING_PHRASE_WORDS.flat()]);
 
 /** A unit of musical time a reason may name: "because it only needs two bars". */
 const MUSICAL_TIME_PATTERN = new RegExp(String.raw`\b(?:${BAR_WORD}|${BEAT_WORD})\b`, 'iu');
@@ -70,7 +91,19 @@ const MUSICAL_TIME_PATTERN = new RegExp(String.raw`\b(?:${BAR_WORD}|${BEAT_WORD}
  * Where a comparison against another project object opens after the words it qualifies: "... down
  * 3 dB like Keys", "... relative to Keys". The object is the comparison's, never the level's.
  */
-const COMPARISON_BOUNDARY_PATTERN = /\s+(?=(?:like|relative\s+to|compared\s+(?:to|with))\s+(?:the\s+)?(?:clip)?□)/iu;
+const OBJECT_COMPARISON_PATTERN = new RegExp(
+    String.raw`\s+(?=${words(OBJECT_COMPARISON_PHRASES)}\s+(?:${THE}\s+)?(?:clip)?${MASK_GLYPH})`,
+    'iu'
+);
+
+/**
+ * Where a comparison against the level as it stands closes the clause: "... down 3 dB relative to the
+ * current level", "... 3 dB quieter than before".
+ */
+const CURRENT_LEVEL_COMPARISON_PATTERN = new RegExp(
+    String.raw`\s+(?=${words(CURRENT_LEVEL_COMPARISON_PHRASES)}\s+${words(CURRENT_LEVEL_PHRASES)}\s*$)`,
+    'iu'
+);
 
 type ClauseToken = { kind: 'reference'; start: number; end: number } | { kind: 'word'; word: string };
 
@@ -82,6 +115,9 @@ type LevelClause = {
 
 type ReadSpan = { start: number; end: number };
 
+/** A reason opener after the figure: where it starts, where its word ends, and that word normalized. */
+type ReasonOpener = ReadSpan & { word: string };
+
 function readWords(text: string): ClauseToken[] {
     return normalizePromptText(text)
         .split(' ')
@@ -89,30 +125,51 @@ function readWords(text: string): ClauseToken[] {
         .map((word) => ({ kind: 'word', word }));
 }
 
+/** The spans of `clause.masked[from, to)` the masking hid, in order. */
+function findMaskedSpans(clause: LevelClause, from: number, to: number): ReadSpan[] {
+    return Array.from(clause.masked.slice(0, to).matchAll(MASKED_REFERENCE_PATTERN), (span) => ({
+        start: span.index,
+        end: span.index + span[0].length,
+    })).filter((span) => span.end > from);
+}
+
 /**
- * The masked references of `clause.masked[from, to)`, in order. The mask writes a four-character clip
- * name as `clip` alone, so a match the masking left as the text wrote it is the word "clip", no reference.
+ * Whether a masked span is a reference. The mask writes a four-character clip name as `clip` alone, so
+ * a span the masking left as the text wrote it is the word "clip". A span whose text is one of a level
+ * clause's own words and names only a clip, device or parameter ("the volume of the Drums" beside a
+ * Volume parameter, "in the mix" beside a Mix parameter) is that word: the clause names no such object
+ * by it, and a request aimed at the object ("the Drums mix") still reads the word outside the level's.
  */
-function findReferences(clause: LevelClause, from: number, to: number): ReadSpan[] {
-    return Array.from(clause.masked.slice(0, to).matchAll(MASKED_REFERENCE_PATTERN), (reference) => ({
-        start: reference.index,
-        end: reference.index + reference[0].length,
-    })).filter(
-        (reference) =>
-            reference.end > from &&
-            clause.text.slice(reference.start, reference.end) !== clause.masked.slice(reference.start, reference.end)
-    );
+function isReference(clause: LevelClause, span: ReadSpan, context: ProjectContext): boolean {
+    const text = clause.text.slice(span.start, span.end);
+    if (text === clause.masked.slice(span.start, span.end)) {
+        return false;
+    }
+    return !(LEVEL_CLAUSE_OWN_WORDS.has(normalizePromptText(text)) && namesOnlyNonTrackObject(text, context));
+}
+
+/** The masked references of `clause.masked[from, to)`, in order. */
+function findReferences(clause: LevelClause, from: number, to: number, context: ProjectContext): ReadSpan[] {
+    return findMaskedSpans(clause, from, to).filter((span) => isReference(clause, span, context));
+}
+
+/** A masked span as one whole reference, or as the words it is written in when it is no reference. */
+function readSpan(clause: LevelClause, span: ReadSpan, context: ProjectContext): ClauseToken[] {
+    if (isReference(clause, span, context)) {
+        return [{ kind: 'reference', ...span }];
+    }
+    return readWords(clause.text.slice(span.start, span.end));
 }
 
 /** The words and whole references of `clause.masked[from, to)`, in order. */
-function readTokens(clause: LevelClause, from: number, to: number): ClauseToken[] {
+function readTokens(clause: LevelClause, from: number, to: number, context: ProjectContext): ClauseToken[] {
     const { masked } = clause;
     const tokens: ClauseToken[] = [];
     let cursor = from;
-    for (const reference of findReferences(clause, from, to)) {
-        tokens.push(...readWords(masked.slice(cursor, reference.start)));
-        tokens.push({ kind: 'reference', ...reference });
-        cursor = reference.end;
+    for (const span of findMaskedSpans(clause, from, to)) {
+        tokens.push(...readWords(masked.slice(cursor, span.start)));
+        tokens.push(...readSpan(clause, span, context));
+        cursor = span.end;
     }
     tokens.push(...readWords(masked.slice(cursor, to)));
     return tokens;
@@ -158,15 +215,19 @@ function isLevelNoun(token: ClauseToken | undefined): boolean {
     return token?.kind === 'word' && LEVEL_CONTROL_WORDS.includes(token.word);
 }
 
+/** Whether a word is the level's own: one of its words or a verb that sets any value ("increase", "change"). */
+function isLevelWord(word: string, levelWords: ReadonlySet<string>): boolean {
+    return levelWords.has(word) || isGenericDeviceIntent(word);
+}
+
 /**
- * Whether a word is the level's own: one of its words, a verb that sets any value ("increase",
- * "change"), a preposition joining a level noun to its object ("the volume on the Drums"), or a kind
- * noun after a reference ("the Strings track").
+ * Whether a word before the figure is the level's own: one of its words, a preposition joining a level
+ * noun to the target it belongs to ("the volume on the Drums"), or a kind noun after a reference ("the
+ * Strings track"). Both join the target slot, so neither is read after the figure, which names none.
  */
-function isLevelWord(word: string, previous: ClauseToken | undefined, levelWords: ReadonlySet<string>): boolean {
+function isHeadLevelWord(word: string, previous: ClauseToken | undefined, levelWords: ReadonlySet<string>): boolean {
     return (
-        levelWords.has(word) ||
-        isGenericDeviceIntent(word) ||
+        isLevelWord(word, levelWords) ||
         (LEVEL_NOUN_PREPOSITIONS.has(word) && isLevelNoun(previous)) ||
         (isTrackKindNoun(word) && previous?.kind === 'reference')
     );
@@ -183,7 +244,7 @@ function readsLevelHead(tokens: readonly ClauseToken[], levelWords: ReadonlySet<
     let slotRuns = 0;
     let previousIsSlot = false;
     for (const [index, token] of tokens.entries()) {
-        if (token.kind === 'reference' || isLevelWord(token.word, tokens[index - 1], levelWords)) {
+        if (token.kind === 'reference' || isHeadLevelWord(token.word, tokens[index - 1], levelWords)) {
             previousIsSlot = false;
             continue;
         }
@@ -213,7 +274,7 @@ function withoutClosingPhrase(tokens: readonly ClauseToken[]): readonly ClauseTo
 /** Whether the words after the figure are only the level's own words and a closing phrase, naming no object. */
 function readsLevelTail(tokens: readonly ClauseToken[], levelWords: ReadonlySet<string>): boolean {
     const read = withoutClosingPhrase(tokens);
-    return read.every((token, index) => token.kind === 'word' && isLevelWord(token.word, read[index - 1], levelWords));
+    return read.every((token) => token.kind === 'word' && isLevelWord(token.word, levelWords));
 }
 
 /** Where the figure's unit ends, or null for a number stated in no decibel unit. */
@@ -277,7 +338,7 @@ function namesNothingButTracks(clause: LevelClause, span: ReadSpan, context: Pro
         !namesOtherControl(masked) &&
         !MUSICAL_TIME_PATTERN.test(masked) &&
         findRangePhrases(clause.text.slice(span.start, span.end), context).length === 0 &&
-        findReferences(clause, span.start, span.end).every(
+        findReferences(clause, span.start, span.end, context).every(
             (reference) => !namesOnlyNonTrackObject(clause.text.slice(reference.start, reference.end), context)
         )
     );
@@ -285,14 +346,15 @@ function namesNothingButTracks(clause: LevelClause, span: ReadSpan, context: Pro
 
 /**
  * Whether a constraint reads, in order, as a subordinator, a keep verb, an optional article, the name of
- * the one metric it states a figure for, a comparator and that figure, with nothing after it: "while
+ * the first metric it states a figure for, a comparator and that figure, with nothing after it, so a
+ * second metric figure refuses it as any other word after the first does: "while
  * keeping true peak below -1 dBTP". Anything else ("... below -1 dBTP on the send", "while keeping the
  * low band tame") may name another object or control, so it is not a measured constraint.
  */
 function readsAsMetricConstraint(clause: LevelClause, span: ReadSpan): boolean {
     const text = clause.text.slice(span.start, span.end);
-    const [metric, ...others] = readRequestMetricNumbers(text);
-    if (metric === undefined || others.length > 0) {
+    const [metric] = readRequestMetricNumbers(text);
+    if (metric === undefined) {
         return false;
     }
     const metricName = words([OBJECTIVE_METRIC_LABELS[metric.metricId]]);
@@ -304,23 +366,70 @@ function readsAsMetricConstraint(clause: LevelClause, span: ReadSpan): boolean {
     return opening.test(text.slice(0, metric.start)) && normalizePromptText(closing).length === 0;
 }
 
+/** Whether the words up to `end` close on an amount qualifier the opener ends: the "so" of "or so". */
+function closesAmountQualifier(masked: string, end: number): boolean {
+    const read = ` ${normalizePromptText(masked.slice(0, end))}`;
+    return AMOUNT_QUALIFIER_PHRASES.some((phrase) => phrase.includes(' ') && read.endsWith(` ${phrase}`));
+}
+
+/**
+ * Whether what an opener opens reads as a reason. A cause always does. A purpose does only as a clause
+ * of its own: its first word a verb ("to make room") or a subject ("so it sits back", "so Drums sits
+ * back"), never a determiner or a bare reference ("to Reverb", "to the low band", "so the send"), which
+ * say where the level goes, never why.
+ */
+function opensReason(clause: LevelClause, opener: ReasonOpener, context: ProjectContext): boolean {
+    if (CAUSE_OPENER_WORDS.includes(opener.word)) {
+        return true;
+    }
+    const [first, ...rest] = readTokens(clause, opener.end, clause.masked.length, context);
+    if (first === undefined) {
+        return false;
+    }
+    if (first.kind === 'reference') {
+        return SUBJECT_PURPOSE_OPENER_WORDS.includes(opener.word) && rest.length > 0;
+    }
+    return !DETERMINER_PATTERN.test(first.word);
+}
+
+/**
+ * Where a stated reason opens after the figure, or null for none: the first reason opener that is no
+ * amount's word ("or so") and opens a reason, kept only when the reason names nothing but tracks.
+ */
+function findReasonStart(clause: LevelClause, tailStart: number, context: ProjectContext): number | null {
+    for (const match of clause.masked.slice(tailStart).matchAll(REASON_OPENER_PATTERN)) {
+        const opener = {
+            start: tailStart + match.index,
+            end: tailStart + match.index + match[0].length,
+            word: normalizePromptText(match.groups?.opener ?? ''),
+        };
+        if (closesAmountQualifier(clause.masked, opener.end)) {
+            continue;
+        }
+        const span = { start: opener.start, end: clause.masked.length };
+        return opensReason(clause, opener, context) && namesNothingButTracks(clause, span, context)
+            ? opener.start
+            : null;
+    }
+    return null;
+}
+
 /**
  * Where the words the level closes on end: at a stated reason that names nothing but tracks, at a
- * measured constraint on one metric figure, at a comparison against another
- * object ("like Keys"), at a protection the protection reader reads, or at the clause end. A reason or
- * constraint naming anything else is read as the clause itself, so its words refuse it.
+ * measured constraint on one metric figure, at a comparison against another object ("like Keys") or the
+ * level as it stands ("than before"), at a protection the protection reader reads, or at the clause end.
+ * A reason or constraint naming anything else is read as the clause itself, so its words refuse it.
  */
-function findClosingEnd(clause: LevelClause, masked: string, tailStart: number, context: ProjectContext): number {
-    const reason = findBoundary(REASON_BOUNDARY_PATTERN, masked, tailStart);
+function findClosingEnd(clause: LevelClause, tailStart: number, context: ProjectContext): number {
+    const { masked } = clause;
     const constraint = findBoundary(CONSTRAINT_BOUNDARY_PATTERN, masked, tailStart);
     const boundaries = [
-        reason !== null && namesNothingButTracks(clause, { start: reason, end: masked.length }, context)
-            ? reason
-            : null,
+        findReasonStart(clause, tailStart, context),
         constraint !== null && readsAsMetricConstraint(clause, { start: constraint, end: masked.length })
             ? constraint
             : null,
-        findBoundary(COMPARISON_BOUNDARY_PATTERN, masked, tailStart),
+        findBoundary(OBJECT_COMPARISON_PATTERN, masked, tailStart),
+        findBoundary(CURRENT_LEVEL_COMPARISON_PATTERN, masked, tailStart),
         findProtectionStart(masked, tailStart),
     ];
     return Math.min(masked.length, ...boundaries.filter((start) => start !== null));
@@ -393,13 +502,19 @@ export function readsAsLevelClause(input: {
         figureIndex: figure.index,
         headStart,
     });
-    const tailEnd = findClosingEnd(clause, masked, tailStart, context);
+    const readClause = { ...clause, masked };
+    const tailEnd = findClosingEnd(readClause, tailStart, context);
     const levelWords = getLevelClauseWords(entry, masked);
-    const headTokens = readTokens({ ...clause, masked: withoutSourceFigures(masked, sources) }, headStart, headEnd);
+    const headTokens = readTokens(
+        { ...clause, masked: withoutSourceFigures(masked, sources) },
+        headStart,
+        headEnd,
+        context
+    );
     return (
         sources.every((source) => source.index < figure.index) &&
         readsLevelHead(headTokens, levelWords) &&
-        readsLevelTail(readTokens({ ...clause, masked }, tailStart, tailEnd), levelWords) &&
+        readsLevelTail(readTokens(readClause, tailStart, tailEnd, context), levelWords) &&
         headTokens.every(
             (token) =>
                 token.kind === 'word' || !namesOnlyNonTrackObject(clause.text.slice(token.start, token.end), context)

@@ -1551,6 +1551,167 @@ describe('a track level clause reads its qualifiers, closings and tails from the
     });
 });
 
+describe('a track level clause reads purposes, comparisons and parameter-named words from the shared tables (#5551)', () => {
+    const drums = createTrack({
+        id: 'track-drums',
+        name: 'Drums',
+        sends: [{ busId: 'track-reverb', level: 0.5, preFader: false }],
+    });
+    const riffTake: NonNullable<ProjectTrack['clips']>[number] = {
+        ...vocalTake,
+        id: 'clip-riff-take',
+        name: 'Riff Take',
+    };
+    const bass = createTrack({ id: 'track-bass', name: 'Bass', clips: [riffTake] });
+    const purposeContext: ProjectContext = {
+        ...projectContext,
+        tracks: [drums, bass, vocals, reverb, master],
+        selectedTrackId: null,
+    };
+    const deviceDrums: ProjectTrack = {
+        ...drums,
+        deviceCount: 3,
+        devices: [
+            {
+                id: 'device-convolution',
+                name: 'Convolution Reverb',
+                type: 'builtin-convolution-reverb',
+                bypassed: false,
+                parameters: [
+                    { id: 'conv-mix', name: 'Mix', type: 'float', value: 0.4, minValue: 0, maxValue: 1, unit: '' },
+                ],
+            },
+            {
+                id: 'device-gain',
+                name: 'Gain',
+                type: 'builtin-gain',
+                bypassed: false,
+                parameters: [
+                    {
+                        id: 'gain-level',
+                        name: 'Gain',
+                        type: 'float',
+                        value: 0,
+                        minValue: -60,
+                        maxValue: 24,
+                        unit: 'dB',
+                    },
+                ],
+            },
+            {
+                id: 'device-sampler',
+                name: 'Sampler',
+                type: 'plugin',
+                bypassed: false,
+                parameters: [
+                    {
+                        id: 'volume',
+                        name: 'Volume',
+                        type: 'float',
+                        value: 0,
+                        minValue: -60,
+                        maxValue: 6,
+                        unit: 'dB',
+                    },
+                    { id: 'level', name: 'Level', type: 'float', value: 0, minValue: -60, maxValue: 6, unit: 'dB' },
+                ],
+            },
+        ],
+    };
+    const deviceContext: ProjectContext = { ...purposeContext, tracks: [deviceDrums, bass, vocals, reverb, master] };
+    const mixBusContext: ProjectContext = {
+        ...purposeContext,
+        tracks: [drums, createTrack({ id: 'track-mix', name: 'Mix', kind: 'bus' }), reverb, master],
+    };
+
+    function gain(trackId: string, value: Record<string, number>) {
+        return { name: 'setTrackGain', arguments: { trackId, ...value } };
+    }
+
+    it.each([
+        ['turn Drums up 2 dB or so', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so it sits better', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so that it sits better', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so Drums sits better', { deltaDb: 2 }],
+        ['turn Drums up 2 dB to make room for the vocal', { deltaDb: 2 }],
+        ['lower Drums by 3 dB relative to the current level', { deltaDb: -3 }],
+        ['make Drums 3 dB quieter than before', { deltaDb: -3 }],
+        ['make Drums 3 dB louder than it is', { deltaDb: 3 }],
+        ['turn Drums up an extra 2 dB', { deltaDb: 2 }],
+        ['turn Drums up a little by 2 dB', { deltaDb: 2 }],
+        ['turn Drums up a touch by 2 dB', { deltaDb: 2 }],
+        ['turn Drums up 2 dB now', { deltaDb: 2 }],
+        ['raise Drums by 1 dB while keeping the true peak below -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak under -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak above -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak over -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak at -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak at most -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak at least -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak no more than -1 dBTP', { deltaDb: 1 }],
+        ['raise Drums by 1 dB while keeping true peak no less than -1 dBTP', { deltaDb: 1 }],
+    ])('grounds "%s"', (prompt, value) => {
+        const result = bridge([gain(drums.id, value)], prompt, purposeContext);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
+    });
+
+    it.each([
+        ['turn Drums up 2 dB or so on Reverb', { deltaDb: 2 }],
+        ['turn Drums up 2 dB or so on the low band', { deltaDb: 2 }],
+        ['turn Drums up 2 dB to Reverb', { deltaDb: 2 }],
+        ['turn Drums up 2 dB to Reverb bus', { deltaDb: 2 }],
+        ['turn Drums up 2 dB to the low band', { deltaDb: 2 }],
+        ['turn Drums up 2 dB to the send', { deltaDb: 2 }],
+        ['turn Drums up 2 dB to its bus', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so Reverb', { deltaDb: 2 }],
+        ['turn Drums up 2 dB so the low band', { deltaDb: 2 }],
+        ['make Drums 3 dB louder than the snare', { deltaDb: 3 }],
+        ['lower Drums by 3 dB relative to the low band', { deltaDb: -3 }],
+        ['set Drums from 3 to -6 dB', { gainDb: -6 }],
+        ['raise Drums by 1 dB while keeping true peak near -1 dBTP', { deltaDb: 1 }],
+    ])('puts no fader level on Drums for "%s"', (prompt, value) => {
+        const result = bridge([gain(drums.id, value)], prompt, purposeContext);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        ['turn Riff Take down 3 dB', bass.id, { deltaDb: -3 }],
+        ['raise the vocal volume on the snare by 2 dB', vocals.id, { deltaDb: 2 }],
+    ])('puts no fader level on the track for "%s"', (prompt, trackId, value) => {
+        const result = bridge([gain(trackId, value)], prompt, purposeContext);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        'Lower the Drums by 3 dB in the mix',
+        'lower the volume of the Drums by 3 dB',
+        'lower the gain of the Drums by 3 dB',
+        'lower the level of the Drums by 3 dB',
+    ])('grounds "%s" beside devices whose parameters are called Mix, Gain, Volume and Level', (prompt) => {
+        const result = bridge([gain(drums.id, { deltaDb: -3 })], prompt, deviceContext);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, deltaDb: -3 } }]);
+    });
+
+    it.each(['lower the Drums mix by 3 dB', 'lower the reverb mix by 3 dB'])(
+        'puts no fader level on Drums for "%s", which names a Mix parameter',
+        (prompt) => {
+            const result = bridge([gain(drums.id, { deltaDb: -3 })], prompt, deviceContext);
+
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it('puts no fader level on Drums for "lower Drums by 3 dB in the Mix", which names a bus called Mix', () => {
+        const result = bridge([gain(drums.id, { deltaDb: -3 })], 'lower Drums by 3 dB in the Mix', mixBusContext);
+
+        expect(result.actions).toEqual([]);
+    });
+});
+
 describe('a referenced level continuation or courtesy names only a track (#5600)', () => {
     const drums = createTrack({ id: 'track-drums', name: 'Drums' });
     const okay = createTrack({ id: 'track-okay', name: 'Okay' });
@@ -1618,5 +1779,50 @@ describe('a referenced level continuation or courtesy names only a track (#5600)
         const result = bridge([gain(drums.id, value)], prompt, clipContext);
 
         expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
+    });
+});
+
+describe('a referenced level continuation reads its reference through the shared mask pattern (#5600)', () => {
+    const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+    const riff: NonNullable<ProjectTrack['clips']>[number] = { ...vocalTake, id: 'clip-riff', name: 'Riff' };
+    const bass = createTrack({ id: 'track-bass', name: 'Bass', clips: [riff] });
+    const continuationContext: ProjectContext = {
+        ...projectContext,
+        tracks: [drums, bass, reverb, master],
+        selectedTrackId: null,
+    };
+
+    function gain(trackId: string, value: Record<string, number>) {
+        return { name: 'setTrackGain', arguments: { trackId, ...value } };
+    }
+
+    it.each([
+        ['set Drums to -6 dB, Riff to -3 dB', { gainDb: -3 }],
+        ['Drums up 2 dB, Riff up 3 dB', { deltaDb: 3 }],
+        ['set Drums to -6 dB, the clip to -3 dB', { gainDb: -3 }],
+    ])('puts no fader level on Bass for "%s", whose continuation names a clip', (prompt, value) => {
+        const first = prompt.startsWith('set') ? { gainDb: -6 } : { deltaDb: 2 };
+
+        const result = bridge([gain(drums.id, first), gain(bass.id, value)], prompt, continuationContext);
+
+        expect(result.actions.filter((action) => action.type === 'setTrackGain')).toEqual([]);
+    });
+
+    it('still grounds a continuation onto a track', () => {
+        const calls = [gain(drums.id, { gainDb: -6 }), gain(bass.id, { gainDb: -3 })];
+
+        const result = bridge(calls, 'set Drums to -6 dB, Bass to -3 dB', continuationContext);
+
+        expect(result.actions).toEqual(calls.map((call) => ({ type: call.name, payload: call.arguments })));
+    });
+
+    it('puts no fader level on the master for a continuation naming it', () => {
+        const calls = [gain(drums.id, { gainDb: -6 }), gain(master.id, { gainDb: -3 })];
+
+        const result = bridge(calls, 'set Drums to -6 dB, the Master to -3 dB', continuationContext);
+
+        expect(
+            result.actions.filter((action) => action.type === 'setTrackGain' && action.payload.trackId === master.id)
+        ).toEqual([]);
     });
 });
