@@ -139,6 +139,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
     return {
         buildOfflineModulatorPlans: actual.buildOfflineModulatorPlans,
+        clearAppliedModulationValues: actual.clearAppliedModulationValues,
         getAutomationLaneCeiling: actual.getAutomationLaneCeiling,
         startAutomationRecording: vi.fn(),
         stopAutomationRecording: vi.fn(),
