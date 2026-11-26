@@ -382,6 +382,7 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     loadRaveModel: false,
     setRaveBlend: false,
     enableWarping: false,
+    setClipWarpState: false,
     setWarpAlgorithm: false,
     setWarpPitchShift: false,
     setYeastProcessorParam: false,

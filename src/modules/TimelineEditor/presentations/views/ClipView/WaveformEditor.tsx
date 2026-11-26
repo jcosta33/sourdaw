@@ -31,7 +31,6 @@ import {
     getStretchModeInfo,
     STRETCH_MODES,
     removeWarpMarker,
-    moveWarpMarker,
     commitWarpMarkerBeatDrag,
     addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
@@ -59,6 +58,23 @@ type WarpState = {
     stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
     originalTempo: number | null;
 };
+
+type MarkerPreview = { id: string; warpedBeat: number };
+
+function withMarkerPreview(state: WarpState, preview: MarkerPreview | null): WarpState {
+    if (preview === null) {
+        return state;
+    }
+    return {
+        ...state,
+        markers: state.markers.map((marker) => {
+            if (marker.id !== preview.id) {
+                return marker;
+            }
+            return { ...marker, warpedBeat: preview.warpedBeat };
+        }),
+    };
+}
 
 // Stretch modes selectable today: only those with a live executor.
 // `phase-vocoder` and `wsola` are reserved for the in-house streaming engine,
@@ -223,7 +239,10 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     const [zoom, setZoom] = useState(1);
     const [isDragging, setIsDragging] = useState(false);
     const [bufferVersion, setBufferVersion] = useState(0);
-    const warpState: WarpState = getWarpState(clipId);
+    const storedWarpState: WarpState = getWarpState(clipId);
+    // A marker drag previews here and writes the document once, on release.
+    const [markerPreview, setMarkerPreview] = useState<MarkerPreview | null>(null);
+    const warpState = withMarkerPreview(storedWarpState, markerPreview);
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
@@ -249,14 +268,14 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
 
     const handleToggleWarp = () => {
         if (warpState.enabled) {
-            disableWarp(clipId);
+            void disableWarp(clipId);
         } else {
-            enableWarp(clipId);
+            void enableWarp(clipId);
         }
     };
 
     const handleStretchMode = (mode: WarpState['stretchMode']) => {
-        setStretchMode(clipId, mode);
+        void setStretchMode(clipId, mode);
     };
 
     const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
@@ -400,8 +419,19 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         }
         if (didDragRef.current) {
             const newBeat = Math.max(0, x / beatWidth);
-            moveWarpMarker(clipId, draggingMarkerRef.current.id, newBeat);
+            setMarkerPreview({ id: draggingMarkerRef.current.id, warpedBeat: newBeat });
         }
+    };
+
+    const endMarkerDrag = (): void => {
+        draggingMarkerRef.current = null;
+        setIsDraggingMarker(false);
+    };
+
+    // The pointer's cancelled gesture leaves the document untouched.
+    const cancelMarkerDrag = (): void => {
+        setMarkerPreview(null);
+        endMarkerDrag();
     };
 
     const finishMarkerDrag = (): void => {
@@ -409,14 +439,17 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         if (!drag) {
             return;
         }
-        commitWarpMarkerBeatDrag({
+        const preview = markerPreview;
+        endMarkerDrag();
+        if (preview === null) {
+            return;
+        }
+        void commitWarpMarkerBeatDrag({
             clipId,
             markerId: drag.id,
-            beforeOriginalBeat: drag.startOriginalBeat,
-            beforeWarpedBeat: drag.startWarpedBeat,
-        });
-        draggingMarkerRef.current = null;
-        setIsDraggingMarker(false);
+            originalBeat: drag.startOriginalBeat,
+            warpedBeat: preview.warpedBeat,
+        }).finally(() => setMarkerPreview(null));
     };
 
     const handlePointerUp = () => {
@@ -435,9 +468,9 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         const beat = x / beatWidth;
         const hitMarker = hitTestMarker(x);
         if (hitMarker) {
-            removeWarpMarker(clipId, hitMarker.id);
+            void removeWarpMarker(clipId, hitMarker.id);
         } else {
-            addManualWarpMarker({ clipId, beat });
+            void addManualWarpMarker({ clipId, beat });
         }
     };
 
@@ -555,7 +588,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
-                    onPointerCancel={finishMarkerDrag}
+                    onPointerCancel={cancelMarkerDrag}
                     onLostPointerCapture={finishMarkerDrag}
                     onDoubleClick={handleDoubleClick}
                     onContextMenu={handleWaveContextMenu}
@@ -659,9 +692,9 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         role="menuitem"
                         onClick={waveAct(() => {
                             if (warpState.enabled) {
-                                disableWarp(clipId);
+                                void disableWarp(clipId);
                             } else {
-                                enableWarp(clipId);
+                                void enableWarp(clipId);
                             }
                         })}
                     >

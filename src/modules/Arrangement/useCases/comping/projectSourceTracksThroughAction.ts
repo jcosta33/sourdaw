@@ -417,6 +417,7 @@ const sourceTrackStepByActionType: {
     loadRaveModel: keepTracks,
     setRaveBlend: keepTracks,
     enableWarping: keepTracks,
+    setClipWarpState: keepTracks,
     setWarpAlgorithm: keepTracks,
     setWarpPitchShift: keepTracks,
     setYeastProcessorParam: keepTracks,

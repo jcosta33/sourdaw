@@ -510,6 +510,7 @@ export const plannedTrackByActionType: {
     loadRaveModel: noPlannedTrack,
     setRaveBlend: noPlannedTrack,
     enableWarping: noPlannedTrack,
+    setClipWarpState: noPlannedTrack,
     setWarpAlgorithm: noPlannedTrack,
     setWarpPitchShift: noPlannedTrack,
     setYeastProcessorParam: noPlannedTrack,

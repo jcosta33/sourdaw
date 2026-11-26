@@ -17,6 +17,7 @@ import {
     type ClipAutomationLaneSnapshot,
     type ClipSatelliteEntrySnapshot,
     type ClipSatelliteGainEnvelopeSnapshot,
+    type ClipSatelliteWarpStateSnapshot,
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
     type CompRegionSnapshot,
@@ -712,7 +713,17 @@ export type ArrangementClipAppAction =
               plan?: TransientQuantizePlanSnapshot;
           };
       }
-    | { type: 'enableWarping'; payload: { clipId: string } };
+    | { type: 'enableWarping'; payload: { clipId: string } }
+    | {
+          type: 'setClipWarpState';
+          payload: {
+              clipId: string;
+              /** The clip's whole warp state after the edit; a default state stores as absent. */
+              warpState: ClipSatelliteWarpStateSnapshot;
+              /** When present, the live warp state must equal this or the write conflicts. */
+              expectedWarpState?: ClipSatelliteWarpStateSnapshot;
+          };
+      };
 
 declare module '#/utils/handlerContract' {
     // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- declaration-merging target: a type alias cannot merge

@@ -453,6 +453,7 @@ export const macroReplayPayloadResetByActionType: {
     loadRaveModel: keepRecordedPayload,
     setRaveBlend: keepRecordedPayload,
     enableWarping: keepRecordedPayload,
+    setClipWarpState: keepRecordedPayload,
     setWarpAlgorithm: keepRecordedPayload,
     setWarpPitchShift: keepRecordedPayload,
     setYeastProcessorParam: keepRecordedPayload,

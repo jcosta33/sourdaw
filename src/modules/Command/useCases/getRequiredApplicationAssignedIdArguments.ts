@@ -424,6 +424,7 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     loadRaveModel: ruleDrivenArguments,
     setRaveBlend: ruleDrivenArguments,
     enableWarping: ruleDrivenArguments,
+    setClipWarpState: ruleDrivenArguments,
     setWarpAlgorithm: ruleDrivenArguments,
     setWarpPitchShift: ruleDrivenArguments,
     setYeastProcessorParam: ruleDrivenArguments,

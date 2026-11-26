@@ -395,6 +395,7 @@ export const rangeOverlapByActionType: {
     loadRaveModel: rangeOverlapRules.none,
     setRaveBlend: rangeOverlapRules.none,
     enableWarping: rangeOverlapRules.none,
+    setClipWarpState: rangeOverlapRules.none,
     setWarpAlgorithm: rangeOverlapRules.none,
     setWarpPitchShift: rangeOverlapRules.none,
     setYeastProcessorParam: rangeOverlapRules.none,

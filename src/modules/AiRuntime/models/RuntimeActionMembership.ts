@@ -218,6 +218,7 @@ const runtimeActionMembershipByActionType = {
     detectTransients: false,
     disconnectPush: true,
     enableWarping: false,
+    setClipWarpState: false,
     exportDawProject: true,
     generateAllTransitions: false,
     generateBassline: false,

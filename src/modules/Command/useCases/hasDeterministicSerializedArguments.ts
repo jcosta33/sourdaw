@@ -402,6 +402,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     loadRaveModel: anyArguments,
     setRaveBlend: anyArguments,
     enableWarping: anyArguments,
+    setClipWarpState: anyArguments,
     setWarpAlgorithm: anyArguments,
     setWarpPitchShift: anyArguments,
     setYeastProcessorParam: anyArguments,

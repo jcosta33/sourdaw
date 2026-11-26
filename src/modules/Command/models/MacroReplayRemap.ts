@@ -523,6 +523,7 @@ export const macroReplayRemapByActionType: {
     loadRaveModel: leaveReferencesUnmapped,
     setRaveBlend: leaveReferencesUnmapped,
     enableWarping: leaveReferencesUnmapped,
+    setClipWarpState: leaveReferencesUnmapped,
     setWarpAlgorithm: leaveReferencesUnmapped,
     setWarpPitchShift: leaveReferencesUnmapped,
     setYeastProcessorParam: leaveReferencesUnmapped,

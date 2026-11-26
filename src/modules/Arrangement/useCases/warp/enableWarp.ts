@@ -1,6 +1,7 @@
-import { getWarpState, setWarpState } from '../../stores/warpStates';
+import { getWarpState } from '../../stores/warpStates';
 
-export function enableWarp(clipId: string, originalTempo: number | null = null): void {
-    const current = getWarpState(clipId);
-    setWarpState(clipId, { ...current, enabled: true, originalTempo });
+import { commitClipWarpState } from './commitClipWarpState';
+
+export function enableWarp(clipId: string, originalTempo: number | null = null): Promise<void> {
+    return commitClipWarpState(clipId, { ...getWarpState(clipId), enabled: true, originalTempo });
 }

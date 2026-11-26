@@ -80,7 +80,8 @@ function normalizeWarpMarker(marker: ClipSatelliteWarpMarkerSnapshot): WarpMarke
     return normalized;
 }
 
-function normalizeWarpState(state: ClipSatelliteWarpStateSnapshot): WarpState {
+/** The live warp-state shape of a wire snapshot, decoded exactly as `writeClipSatelliteEntry` stores it. */
+export function normalizeWarpState(state: ClipSatelliteWarpStateSnapshot): WarpState {
     return {
         enabled: state.enabled,
         markers: state.markers.map(normalizeWarpMarker),

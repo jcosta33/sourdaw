@@ -382,6 +382,7 @@ export const undoEntryStoresCommandIdByActionType: { readonly [Type in AppAction
     loadRaveModel: false,
     setRaveBlend: false,
     enableWarping: false,
+    setClipWarpState: false,
     setWarpAlgorithm: false,
     setWarpPitchShift: false,
     setYeastProcessorParam: false,

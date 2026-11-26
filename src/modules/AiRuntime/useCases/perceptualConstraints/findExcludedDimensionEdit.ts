@@ -563,6 +563,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     loadRaveModel: readEffectDeclaredEdits,
     setRaveBlend: readEffectDeclaredEdits,
     enableWarping: readEffectDeclaredEdits,
+    setClipWarpState: readEffectDeclaredEdits,
     setWarpAlgorithm: readEffectDeclaredEdits,
     setWarpPitchShift: readEffectDeclaredEdits,
     setYeastProcessorParam: readEffectDeclaredEdits,

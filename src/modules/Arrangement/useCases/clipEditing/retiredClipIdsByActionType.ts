@@ -401,6 +401,7 @@ const retiredClipIdsByActionType: {
     loadRaveModel: retiresNoClip,
     setRaveBlend: retiresNoClip,
     enableWarping: retiresNoClip,
+    setClipWarpState: retiresNoClip,
     setWarpAlgorithm: retiresNoClip,
     setWarpPitchShift: retiresNoClip,
     setYeastProcessorParam: retiresNoClip,

@@ -409,6 +409,7 @@ export const legacyRangeRemovalByActionType: {
     loadRaveModel: notLegacyRangeWrite,
     setRaveBlend: notLegacyRangeWrite,
     enableWarping: notLegacyRangeWrite,
+    setClipWarpState: notLegacyRangeWrite,
     setWarpAlgorithm: notLegacyRangeWrite,
     setWarpPitchShift: notLegacyRangeWrite,
     setYeastProcessorParam: notLegacyRangeWrite,

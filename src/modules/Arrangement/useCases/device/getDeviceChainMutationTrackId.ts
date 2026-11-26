@@ -415,6 +415,7 @@ export const deviceChainMutationTrackIdByActionType: {
     loadRaveModel: noMutatedTrack,
     setRaveBlend: noMutatedTrack,
     enableWarping: noMutatedTrack,
+    setClipWarpState: noMutatedTrack,
     setWarpAlgorithm: noMutatedTrack,
     setWarpPitchShift: noMutatedTrack,
     setYeastProcessorParam: noMutatedTrack,

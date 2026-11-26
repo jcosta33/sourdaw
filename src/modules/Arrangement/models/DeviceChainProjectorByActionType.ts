@@ -415,6 +415,7 @@ export const deviceChainProjectorByActionType: {
     loadRaveModel: null,
     setRaveBlend: null,
     enableWarping: null,
+    setClipWarpState: null,
     setWarpAlgorithm: null,
     setWarpPitchShift: null,
     setYeastProcessorParam: null,

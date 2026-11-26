@@ -536,6 +536,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     loadRaveModel: unaffected,
     setRaveBlend: unaffected,
     enableWarping: unaffected,
+    setClipWarpState: unaffected,
     setWarpAlgorithm: unaffected,
     setWarpPitchShift: unaffected,
     setYeastProcessorParam: unaffected,

@@ -396,6 +396,7 @@ export const automationReferenceByActionType: {
     loadRaveModel: automationReferenceRules.namesLaneOrContent,
     setRaveBlend: automationReferenceRules.namesLaneOrContent,
     enableWarping: automationReferenceRules.namesLaneOrContent,
+    setClipWarpState: automationReferenceRules.namesLaneOrContent,
     setWarpAlgorithm: automationReferenceRules.namesLaneOrContent,
     setWarpPitchShift: automationReferenceRules.namesLaneOrContent,
     setYeastProcessorParam: automationReferenceRules.namesLaneOrContent,

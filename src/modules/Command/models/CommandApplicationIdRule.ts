@@ -389,6 +389,7 @@ export const COMMAND_APPLICATION_ID_RULES: { readonly [Type in AppActionType]: C
     loadRaveModel: noApplicationIdRule,
     setRaveBlend: noApplicationIdRule,
     enableWarping: noApplicationIdRule,
+    setClipWarpState: noApplicationIdRule,
     setWarpAlgorithm: noApplicationIdRule,
     setWarpPitchShift: noApplicationIdRule,
     setYeastProcessorParam: noApplicationIdRule,

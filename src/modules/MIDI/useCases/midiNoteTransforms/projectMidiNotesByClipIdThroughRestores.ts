@@ -445,6 +445,7 @@ const notesProjectionByActionType: {
     loadRaveModel: noNotesProjection,
     setRaveBlend: noNotesProjection,
     enableWarping: noNotesProjection,
+    setClipWarpState: noNotesProjection,
     setWarpAlgorithm: noNotesProjection,
     setWarpPitchShift: noNotesProjection,
     setYeastProcessorParam: noNotesProjection,

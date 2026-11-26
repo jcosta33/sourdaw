@@ -566,6 +566,7 @@ export const macroReplayCreateByActionType: {
     loadRaveModel: notAGeneratedCreate,
     setRaveBlend: notAGeneratedCreate,
     enableWarping: notAGeneratedCreate,
+    setClipWarpState: notAGeneratedCreate,
     setWarpAlgorithm: notAGeneratedCreate,
     setWarpPitchShift: notAGeneratedCreate,
     setYeastProcessorParam: notAGeneratedCreate,

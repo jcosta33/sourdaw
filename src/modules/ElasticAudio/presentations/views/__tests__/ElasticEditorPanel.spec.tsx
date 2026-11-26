@@ -59,7 +59,6 @@ const mocks = vi.hoisted(() => {
         removeMarker: vi.fn(),
         toggleMarkerLock: vi.fn(),
         setStretchMode: vi.fn(),
-        updateWarpMarkerBeat: vi.fn(),
         commitWarpMarkerBeatDrag: vi.fn(),
         setDefaultAlgorithm: vi.fn(),
         background: '#151515',
@@ -170,12 +169,23 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         ...actual,
         setStretchMode: (...args: unknown[]) => {
             mocks.setStretchMode(...args);
+            return Promise.resolve();
         },
-        updateWarpMarkerBeat: (...args: unknown[]) => {
-            mocks.updateWarpMarkerBeat(...args);
+        addManualWarpMarker: (...args: unknown[]) => {
+            mocks.addManualMarker(...args);
+            return Promise.resolve();
+        },
+        removeWarpMarker: (...args: unknown[]) => {
+            mocks.removeMarker(...args);
+            return Promise.resolve();
+        },
+        toggleWarpMarkerLock: (...args: unknown[]) => {
+            mocks.toggleMarkerLock(...args);
+            return Promise.resolve();
         },
         commitWarpMarkerBeatDrag: (...args: unknown[]) => {
             mocks.commitWarpMarkerBeatDrag(...args);
+            return Promise.resolve();
         },
     };
 });
@@ -224,10 +234,6 @@ vi.mock('../../../useCases/audioWarping/setDefaultAlgorithm', () => ({
     setDefaultAlgorithm: (...args: unknown[]) => mocks.setDefaultAlgorithm(...args),
 }));
 
-vi.mock('../../../useCases/elasticAudio/addManualMarker', () => ({
-    addManualMarker: (...args: unknown[]) => mocks.addManualMarker(...args),
-}));
-
 vi.mock('../../../useCases/elasticAudio/detectElasticEditorTransients', () => ({
     detectElasticEditorTransients: mocks.detect,
 }));
@@ -235,10 +241,6 @@ vi.mock('../../../useCases/elasticAudio/cancelTransientDetection', () => ({ canc
 
 vi.mock('../../../useCases/quantizeTransients', () => ({
     quantizeTransients: (...args: unknown[]) => mocks.quantizeTransients(...args),
-}));
-
-vi.mock('../../../useCases/elasticAudio/removeMarker', () => ({
-    removeMarker: (...args: unknown[]) => mocks.removeMarker(...args),
 }));
 
 vi.mock('../../../useCases/elasticAudio/setElasticSensitivity', () => ({
@@ -251,10 +253,6 @@ vi.mock('../../../useCases/elasticAudio/setElasticTool', () => ({
 
 vi.mock('../../../useCases/elasticAudio/selectElasticMarkers', () => ({
     selectElasticMarkers: (...args: unknown[]) => mocks.selectElasticMarkers(...args),
-}));
-
-vi.mock('../../../useCases/elasticAudio/toggleMarkerLock', () => ({
-    toggleMarkerLock: (...args: unknown[]) => mocks.toggleMarkerLock(...args),
 }));
 
 import { ElasticEditorPanel } from '../ElasticEditorPanel';
@@ -889,7 +887,7 @@ describe('ElasticEditorPanel', () => {
         expect(mocks.toggleMarkerLock).not.toHaveBeenCalled();
     });
 
-    it('should update warpedBeat through the Arrangement use case during snapped marker drag', () => {
+    it('commits the snapped warpedBeat once, on release, through the Arrangement use case', async () => {
         render(<ElasticEditorPanel />);
         const canvas = screen.getByTestId('elastic-waveform-canvas');
         canvas.setPointerCapture = vi.fn();
@@ -903,25 +901,23 @@ describe('ElasticEditorPanel', () => {
             pointerId: 4,
             ctrlKey: true,
         });
-        fireEvent.pointerUp(canvas, {
-            pointerId: 4,
+        expect(mocks.commitWarpMarkerBeatDrag).not.toHaveBeenCalled();
+        await act(async () => {
+            fireEvent.pointerUp(canvas, {
+                pointerId: 4,
+            });
         });
 
-        expect(mocks.updateWarpMarkerBeat).toHaveBeenCalledWith({
-            clipId: 'c1',
-            markerId: 'm1',
-            field: 'warpedBeat',
-            beat: 1.75,
-        });
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledTimes(1);
         expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
             clipId: 'c1',
             markerId: 'm1',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 1,
+            originalBeat: 1,
+            warpedBeat: 1.75,
         });
     });
 
-    it('should update originalBeat through the Arrangement use case during alt marker drag', () => {
+    it('commits the originalBeat on an alt marker drag', async () => {
         render(<ElasticEditorPanel />);
         const canvas = screen.getByTestId('elastic-waveform-canvas');
         canvas.setPointerCapture = vi.fn();
@@ -937,25 +933,21 @@ describe('ElasticEditorPanel', () => {
             pointerId: 4,
             altKey: true,
         });
-        fireEvent.pointerUp(canvas, {
-            pointerId: 4,
+        await act(async () => {
+            fireEvent.pointerUp(canvas, {
+                pointerId: 4,
+            });
         });
 
-        expect(mocks.updateWarpMarkerBeat).toHaveBeenCalledWith({
-            clipId: 'c1',
-            markerId: 'm1',
-            field: 'originalBeat',
-            beat: 1.8,
-        });
         expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
             clipId: 'c1',
             markerId: 'm1',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 1,
+            originalBeat: 1.8,
+            warpedBeat: 1,
         });
     });
 
-    it('should commit marker drag undo when pointer capture is canceled', () => {
+    it('writes nothing when the pointer gesture is canceled mid-drag', () => {
         render(<ElasticEditorPanel />);
         const canvas = screen.getByTestId('elastic-waveform-canvas');
         canvas.setPointerCapture = vi.fn();
@@ -971,13 +963,11 @@ describe('ElasticEditorPanel', () => {
         fireEvent.pointerCancel(canvas, {
             pointerId: 4,
         });
-
-        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
-            clipId: 'c1',
-            markerId: 'm1',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 1,
+        fireEvent.pointerUp(canvas, {
+            pointerId: 4,
         });
+
+        expect(mocks.commitWarpMarkerBeatDrag).not.toHaveBeenCalled();
     });
 
     it('quantizes to the snap grid at the saved sensitivity on Quantize when markers exist and detection ran', () => {

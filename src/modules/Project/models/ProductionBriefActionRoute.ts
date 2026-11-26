@@ -387,6 +387,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     loadRaveModel: 'content',
     setRaveBlend: 'content',
     enableWarping: 'content',
+    setClipWarpState: 'content',
     setWarpAlgorithm: 'content',
     setWarpPitchShift: 'content',
     setYeastProcessorParam: 'content',

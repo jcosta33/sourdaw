@@ -405,6 +405,7 @@ export const semanticDiffClassificationByActionType: {
     loadRaveModel: NONE,
     setRaveBlend: NONE,
     enableWarping: { sourceMutation: true },
+    setClipWarpState: { sourceMutation: true },
     setWarpAlgorithm: NONE,
     setWarpPitchShift: NONE,
     setYeastProcessorParam: NONE,

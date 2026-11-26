@@ -545,6 +545,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     loadRaveModel: describeFromRegistry,
     setRaveBlend: describeFromRegistry,
     enableWarping: describeFromRegistry,
+    setClipWarpState: describeFromRegistry,
     setWarpAlgorithm: describeFromRegistry,
     setWarpPitchShift: describeFromRegistry,
     setYeastProcessorParam: describeFromRegistry,

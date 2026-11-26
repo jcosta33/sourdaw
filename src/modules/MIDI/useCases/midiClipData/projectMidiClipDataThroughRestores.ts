@@ -428,6 +428,7 @@ const controllerRestoresByActionType: {
     loadRaveModel: noControllerRestores,
     setRaveBlend: noControllerRestores,
     enableWarping: noControllerRestores,
+    setClipWarpState: noControllerRestores,
     setWarpAlgorithm: noControllerRestores,
     setWarpPitchShift: noControllerRestores,
     setYeastProcessorParam: noControllerRestores,

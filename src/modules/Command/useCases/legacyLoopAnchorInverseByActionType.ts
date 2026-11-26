@@ -412,6 +412,7 @@ export const legacyLoopAnchorInverseByActionType: {
     loadRaveModel: keepAction,
     setRaveBlend: keepAction,
     enableWarping: keepAction,
+    setClipWarpState: keepAction,
     setWarpAlgorithm: keepAction,
     setWarpPitchShift: keepAction,
     setYeastProcessorParam: keepAction,

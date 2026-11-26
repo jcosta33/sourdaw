@@ -1,72 +1,30 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { getStoredWarpState } from '../../stores/warpStates';
 
-import { getStoredWarpState, setWarpState } from '../../stores/warpStates';
-
-type MarkerBeatValues = {
-    originalBeat: number;
-    warpedBeat: number;
-};
-
-type SetMarkerBeatValuesInput = {
-    clipId: string;
-    markerId: string;
-    values: MarkerBeatValues;
-};
-
-function setMarkerBeatValues(input: SetMarkerBeatValuesInput): void {
-    const current = getStoredWarpState(input.clipId);
-    if (!current) {
-        return;
-    }
-    setWarpState(input.clipId, {
-        ...current,
-        markers: current.markers.map((marker) =>
-            marker.id === input.markerId
-                ? {
-                      ...marker,
-                      originalBeat: input.values.originalBeat,
-                      warpedBeat: input.values.warpedBeat,
-                  }
-                : marker
-        ),
-    });
-}
+import { commitClipWarpState } from './commitClipWarpState';
 
 type CommitWarpMarkerBeatDragInput = {
     clipId: string;
     markerId: string;
-    beforeOriginalBeat: number;
-    beforeWarpedBeat: number;
+    /** Where the gesture ended; the stored marker still holds where it started. */
+    originalBeat: number;
+    warpedBeat: number;
 };
 
-export function commitWarpMarkerBeatDrag(input: CommitWarpMarkerBeatDragInput): void {
+/**
+ * Commits one marker drag as a single action and so a single undo step. The
+ * drag preview is ephemeral view state; a cancelled drag never calls this.
+ */
+export async function commitWarpMarkerBeatDrag(input: CommitWarpMarkerBeatDragInput): Promise<void> {
     const current = getStoredWarpState(input.clipId);
-    if (!current) {
+    if (!current?.markers.some((marker) => marker.id === input.markerId)) {
         return;
     }
-    const marker = current.markers.find((candidate) => candidate.id === input.markerId);
-    if (!marker) {
-        return;
-    }
-    const beforeValues = {
-        originalBeat: input.beforeOriginalBeat,
-        warpedBeat: input.beforeWarpedBeat,
-    };
-    const afterValues = {
-        originalBeat: marker.originalBeat,
-        warpedBeat: marker.warpedBeat,
-    };
-    if (beforeValues.originalBeat === afterValues.originalBeat && beforeValues.warpedBeat === afterValues.warpedBeat) {
-        return;
-    }
-
-    pushUndoEntry(
-        'Move elastic marker',
-        () => {
-            setMarkerBeatValues({ clipId: input.clipId, markerId: input.markerId, values: beforeValues });
-        },
-        () => {
-            setMarkerBeatValues({ clipId: input.clipId, markerId: input.markerId, values: afterValues });
-        }
-    );
+    await commitClipWarpState(input.clipId, {
+        ...current,
+        markers: current.markers.map((marker) =>
+            marker.id === input.markerId
+                ? { ...marker, originalBeat: input.originalBeat, warpedBeat: input.warpedBeat }
+                : marker
+        ),
+    });
 }

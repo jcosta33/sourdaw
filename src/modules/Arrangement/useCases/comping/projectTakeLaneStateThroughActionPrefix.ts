@@ -537,6 +537,7 @@ const projectTakeLaneActionByActionType: {
     loadRaveModel: keepLanes,
     setRaveBlend: keepLanes,
     enableWarping: keepLanes,
+    setClipWarpState: keepLanes,
     setWarpAlgorithm: keepLanes,
     setWarpPitchShift: keepLanes,
     setYeastProcessorParam: keepLanes,

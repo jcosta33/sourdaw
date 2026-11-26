@@ -387,6 +387,7 @@ export const clipLifecycleKindByActionType: { readonly [Type in AppActionType]: 
     loadRaveModel: 'none',
     setRaveBlend: 'none',
     enableWarping: 'none',
+    setClipWarpState: 'none',
     setWarpAlgorithm: 'none',
     setWarpPitchShift: 'none',
     setYeastProcessorParam: 'none',

@@ -9,7 +9,6 @@ import {
     commitWarpMarkerBeatDrag,
     disableWarp,
     enableWarp,
-    moveWarpMarker,
     normalizeClip,
     normalizeTrack,
     relinkClipAudioSource,
@@ -174,9 +173,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     relinkClipAudioSource: vi.fn(),
     normalizeClip: vi.fn(),
     reverseClip: vi.fn(),
-    moveWarpMarker: vi.fn(),
     addManualWarpMarker: vi.fn(),
-    commitWarpMarkerBeatDrag: vi.fn(),
+    commitWarpMarkerBeatDrag: vi.fn(() => Promise.resolve()),
     removeWarpMarker: vi.fn(),
     setStretchMode: vi.fn(),
     disableWarp: vi.fn(),
@@ -489,7 +487,12 @@ describe('WaveformEditor', () => {
             fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
             fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
             fireEvent.pointerUp(canvas, { pointerId: 7 });
-            expect(vi.mocked(moveWarpMarker)).toHaveBeenCalledWith('clip-a', 'marker-a1', 2.1);
+            expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
+                clipId: 'clip-a',
+                markerId: 'marker-a1',
+                originalBeat: 0.5,
+                warpedBeat: 2.1,
+            });
 
             rerender(<WaveformEditor clipId="clip-b" />);
             fireEvent.doubleClick(canvas, { clientX: 80 });
@@ -622,7 +625,12 @@ describe('WaveformEditor', () => {
             fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
             fireEvent.pointerUp(canvas, { pointerId: 7 });
 
-            expect(vi.mocked(moveWarpMarker)).toHaveBeenCalledWith('clip-1', 'm1', 2.1);
+            expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
+                clipId: 'clip-1',
+                markerId: 'm1',
+                originalBeat: 0.5,
+                warpedBeat: 2.1,
+            });
         });
 
         it('still adds a warp marker on double click', () => {
@@ -667,7 +675,7 @@ describe('WaveformEditor', () => {
         expect(screen.queryByRole('menuitem', { name: 'Normalize' })).not.toBeInTheDocument();
     });
 
-    it('should commit marker drag undo on pointer up', () => {
+    it('should commit the marker drag once, on pointer up', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
@@ -680,18 +688,19 @@ describe('WaveformEditor', () => {
 
         fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
         fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).not.toHaveBeenCalled();
         fireEvent.pointerUp(canvas, { pointerId: 7 });
 
-        expect(vi.mocked(moveWarpMarker)).toHaveBeenCalledWith('clip-1', 'm1', 2.1);
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledTimes(1);
         expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
             clipId: 'clip-1',
             markerId: 'm1',
-            beforeOriginalBeat: 0.5,
-            beforeWarpedBeat: 1,
+            originalBeat: 0.5,
+            warpedBeat: 2.1,
         });
     });
 
-    it('should commit marker drag undo on pointer cancel', () => {
+    it('should write nothing when the marker drag is canceled', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
@@ -705,13 +714,9 @@ describe('WaveformEditor', () => {
         fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
         fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
         fireEvent.pointerCancel(canvas, { pointerId: 7 });
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
 
-        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
-            clipId: 'clip-1',
-            markerId: 'm1',
-            beforeOriginalBeat: 0.5,
-            beforeWarpedBeat: 1,
-        });
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).not.toHaveBeenCalled();
     });
 
     it('should key waveform peaks on the clip audioBufferId, not the clip id', () => {

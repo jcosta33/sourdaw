@@ -452,6 +452,7 @@ export const trackNameProjectionByActionType: {
     loadRaveModel: keepTrackNames,
     setRaveBlend: keepTrackNames,
     enableWarping: keepTrackNames,
+    setClipWarpState: keepTrackNames,
     setWarpAlgorithm: keepTrackNames,
     setWarpPitchShift: keepTrackNames,
     setYeastProcessorParam: keepTrackNames,

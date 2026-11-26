@@ -566,6 +566,7 @@ export const grooveTemplateProjectorByActionType: {
     loadRaveModel: leaveGrooveTemplateStateUnchanged,
     setRaveBlend: leaveGrooveTemplateStateUnchanged,
     enableWarping: leaveGrooveTemplateStateUnchanged,
+    setClipWarpState: leaveGrooveTemplateStateUnchanged,
     setWarpAlgorithm: leaveGrooveTemplateStateUnchanged,
     setWarpPitchShift: leaveGrooveTemplateStateUnchanged,
     setYeastProcessorParam: leaveGrooveTemplateStateUnchanged,

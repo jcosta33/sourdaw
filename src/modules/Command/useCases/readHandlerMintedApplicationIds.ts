@@ -461,6 +461,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     loadRaveModel: noHandlerMintedIds,
     setRaveBlend: noHandlerMintedIds,
     enableWarping: noHandlerMintedIds,
+    setClipWarpState: noHandlerMintedIds,
     setWarpAlgorithm: noHandlerMintedIds,
     setWarpPitchShift: noHandlerMintedIds,
     setYeastProcessorParam: noHandlerMintedIds,

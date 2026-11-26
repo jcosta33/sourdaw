@@ -391,6 +391,7 @@ export const indirectMutationByActionType: {
     loadRaveModel: indirectMutationRules.none,
     setRaveBlend: indirectMutationRules.none,
     enableWarping: indirectMutationRules.none,
+    setClipWarpState: indirectMutationRules.none,
     setWarpAlgorithm: indirectMutationRules.none,
     setWarpPitchShift: indirectMutationRules.none,
     setYeastProcessorParam: indirectMutationRules.none,

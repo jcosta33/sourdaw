@@ -399,6 +399,7 @@ export const automationFallbackScopeByActionType: { readonly [Type in AppActionT
     loadRaveModel: noFallbackScope,
     setRaveBlend: noFallbackScope,
     enableWarping: noFallbackScope,
+    setClipWarpState: noFallbackScope,
     setWarpAlgorithm: noFallbackScope,
     setWarpPitchShift: noFallbackScope,
     setYeastProcessorParam: noFallbackScope,

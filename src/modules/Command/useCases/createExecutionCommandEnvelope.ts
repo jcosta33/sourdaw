@@ -424,6 +424,7 @@ const seedMaterializerByActionType: {
     loadRaveModel: leaveSeedUnminted,
     setRaveBlend: leaveSeedUnminted,
     enableWarping: leaveSeedUnminted,
+    setClipWarpState: leaveSeedUnminted,
     setWarpAlgorithm: leaveSeedUnminted,
     setWarpPitchShift: leaveSeedUnminted,
     setYeastProcessorParam: leaveSeedUnminted,

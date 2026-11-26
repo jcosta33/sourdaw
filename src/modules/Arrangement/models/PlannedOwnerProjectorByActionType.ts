@@ -401,6 +401,7 @@ export const plannedOwnerProjectorByActionType: {
     loadRaveModel: projectEveryOwner,
     setRaveBlend: projectEveryOwner,
     enableWarping: projectEveryOwner,
+    setClipWarpState: projectEveryOwner,
     setWarpAlgorithm: projectEveryOwner,
     setWarpPitchShift: projectEveryOwner,
     setYeastProcessorParam: projectEveryOwner,
