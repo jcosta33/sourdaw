@@ -1178,7 +1178,8 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     page,
 }, info) => {
     // Serial fixture commits have their own deadline so setup cannot consume the reopen checks' time.
-    test.setTimeout(330_000);
+    // Seeding is 2048 serial retained edits at a measured ~43 ms each (116 s locally) and exceeded 210 s on CI.
+    test.setTimeout(540_000);
     await setupWorkspace(page, { clearLocalStorage: false });
     await launch_new_project(page);
     const preference = await page.evaluate(async () => {
@@ -1217,7 +1218,7 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
                 },
                 { path: DENSE_ELASTIC_FIXTURE_PATH, clipId: before.clipId, audioBufferId: before.audioBufferId }
             ),
-        { timeout: 210_000 }
+        { timeout: 420_000 }
     );
     const readPreserved = (historyHeads?: typeof fixture.historyHeads) =>
         page.evaluate(
