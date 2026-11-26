@@ -2978,7 +2978,7 @@ describe('a figure-led word before the words of an indexed name replaces its ind
         expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
     });
 
-    it('grounds a 01 Kick pick for "set kick volume to 50%", whose figure carries a value unit', () => {
+    it('grounds a 01 Kick pick for "set kick volume to 50%", since "volume" beside the name is no position word', () => {
         const result = compileAndBridge(
             'set kick volume to 50%',
             [trackItem('setTrackGain', indexed.track('01 Kick'), { gain: 0.5 })],
@@ -2997,7 +2997,7 @@ describe('a figure-led word before the words of an indexed name replaces its ind
         expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
     });
 
-    it('grounds a 01 Kick pick for "set the kick volume to 75%", whose figure follows the words', () => {
+    it('grounds a 01 Kick pick for "set the kick volume to 75%", since neither word beside the name is a position word', () => {
         const result = compileAndBridge('set the kick volume to 75%', [setKick], [], indexed.context);
 
         expect(result.rejections).toEqual([]);
@@ -3005,7 +3005,7 @@ describe('a figure-led word before the words of an indexed name replaces its ind
     });
 });
 
-describe('a name a literal id reads over lists no selection reference beside it', () => {
+describe('the selected-track reference "it" beside a word read as a literal id never names the selected track', () => {
     it('refuses the selected track for "set it and keys volume to 50%" where keys is the id of the Lead track', () => {
         const lead = createTrack({ id: 'keys', name: 'Lead' });
         const keysTrack = createTrack({ id: 'track-keys-named', name: 'Keys' });
