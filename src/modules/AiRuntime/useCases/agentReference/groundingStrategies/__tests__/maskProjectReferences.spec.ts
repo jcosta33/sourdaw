@@ -60,6 +60,7 @@ describe('maskProjectReferences', () => {
         ['add a 4 bar track', '4 Bar', 'add a 4 bar track'],
         ['mute 8 Bars Drums', '8 Bars Drums', 'mute 8 Bars Drums'],
         ['mute "8 Bars loop', '8 Bars', 'mute "8 Bars loop'],
+        ['add an 8 bar clip', '8 Bar', 'add an 8 bar clip'],
     ])('keeps the counted duration in %s when a clip is named %s', (prompt, clipName, expected) => {
         expect(maskProjectReferences(prompt, contextWithClipNamed(clipName))).toBe(expected);
     });
@@ -74,7 +75,10 @@ describe('maskProjectReferences', () => {
         ['mute the 8 Bars', '8 Bars', 'mute the clip□□'],
         ['mute "8 Bars"', '8 Bars', 'mute "clip□□"'],
         ['mute the clips 8 Bars', '8 Bars', 'mute the clips clip□□'],
-        ['mute the 8 Bars section', '8 Bars', 'mute the □□□□□□ section'],
+        ['mute the 8 Bars section', '8 Bars', 'mute the clip□□ section'],
+        ['mute 8 Bars clip', '8 Bars', 'mute □□□□□□ clip'],
+        ['mute 8 Bars clips', '8 Bars', 'mute clip□□ clips'],
+        ['mute the Verse section', 'Verse', 'mute the clip□ section'],
         ['mute the Verse clips on Vocals and Keys', 'Verse', 'mute the clip□ clips on Vocals and Keys'],
         ['mute the Verse clips but leave Keys alone', 'Verse', 'mute the clip□ clips but leave Keys alone'],
         ['mute the Verse clip', 'Verse', 'mute the □□□□□ clip'],

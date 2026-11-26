@@ -80,8 +80,9 @@ type CountedDuration = PromptRange & {
 const countedDurationPattern = /(?<![\p{L}\p{N}])(\d+(?:\.\d+)?)[-\s]*(?:beats?|bars?|measures?)(?![\p{L}\p{N}])/giu;
 const entityVocabulary = '(?:clips?|tracks?|devices?|buses|bus|masters?|outputs?|sends?|parameters?|sections?)';
 // Singular only: a plural suffix ("the Verse clips") leaves the reference reading as a clip, as it always has.
-const explicitEntitySuffixPattern =
-    /^\s+(?:clip|track|device|bus|master|output|send|parameter|section)(?![\p{L}\p{N}])/iu;
+const explicitEntitySuffixPattern = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu;
+const followingEntityWordPattern = new RegExp(`^\\s+${entityVocabulary}(?![\\p{L}\\p{N}])`, 'iu');
+const indefiniteArticlePattern = /(?<![\p{L}\p{N}])(?:a|an|another)\s+$/iu;
 const precedingEntityWordPattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${entityVocabulary}|the)\\s+$`, 'iu');
 const openingQuotes = new Set(['"', "'", '\u201C', '\u2018']);
 const closingQuotes = new Set(['"', "'", '\u201D', '\u2019']);
@@ -135,8 +136,21 @@ function coversDurationNumber(match: PromptRange, duration: CountedDuration): bo
     return match.start <= duration.start && match.end >= duration.numberEnd;
 }
 
+function isIntroducedByIndefiniteArticle(prompt: string, match: PromptRange): boolean {
+    return indefiniteArticlePattern.test(prompt.slice(0, match.start));
+}
+
+function isClaimedByFollowingEntityWord(prompt: string, match: PromptRange): boolean {
+    return followingEntityWordPattern.test(prompt.slice(match.end)) && !isIntroducedByIndefiniteArticle(prompt, match);
+}
+
 function namesObject(prompt: string, match: PromptRange, duration: CountedDuration): boolean {
-    return startsBefore(match, duration) || isPrecededByEntityWord(prompt, match) || isQuoted(prompt, match);
+    return (
+        startsBefore(match, duration) ||
+        isPrecededByEntityWord(prompt, match) ||
+        isQuoted(prompt, match) ||
+        isClaimedByFollowingEntityWord(prompt, match)
+    );
 }
 
 /**
