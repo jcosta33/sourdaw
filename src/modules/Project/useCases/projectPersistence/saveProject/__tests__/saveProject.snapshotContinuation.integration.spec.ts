@@ -425,6 +425,7 @@ describe('saveProject snapshot continuation', () => {
 
                 preparation.release();
                 await awaitStorageLockRequest(save.lockRequested, save.saving);
+                expect(lockManager.requestedNames.slice(requestsWhileHeld)).toContain(STORAGE_LOCK_NAME);
                 save.release();
 
                 expect(await save.saving).toBe(true);
