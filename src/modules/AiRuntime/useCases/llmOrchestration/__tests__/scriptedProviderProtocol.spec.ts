@@ -191,6 +191,7 @@ type ScriptedLoopInput = {
     transport: 'anthropic' | 'openai-compatible';
     toolSchemas?: readonly ToolSchema[];
     loop?: Partial<Parameters<typeof runApplicationOwnedToolLoop>[0]>;
+    anthropicModel?: string;
 };
 
 async function runScriptedLoop(input: ScriptedLoopInput) {
@@ -212,7 +213,10 @@ async function runScriptedLoop(input: ScriptedLoopInput) {
             };
             let plan;
             if (input.transport === 'anthropic') {
-                plan = await generateAnthropicToolCalls({ ...common, runtime: ANTHROPIC_RUNTIME });
+                plan = await generateAnthropicToolCalls({
+                    ...common,
+                    runtime: { ...ANTHROPIC_RUNTIME, model: input.anthropicModel ?? ANTHROPIC_RUNTIME.model },
+                });
             } else {
                 plan = await generateOpenAiCompatibleToolCalls({ ...common, runtime: OPENAI_COMPATIBLE_RUNTIME });
             }
@@ -526,11 +530,12 @@ describe('scripted provider protocol through the application-owned planning loop
             }
         );
 
-        // Red when a run whose provider never proposes completes. The wire on the forced final turn offers only the
-        // terminal tool, so a provider that does not propose can only end its reply empty, which the adapters accept
-        // as a stop; the loop must end rejected with its own reason rather than accept a plan.
+        // Red when a run whose provider never proposes completes. The final turn offers only the terminal tool, so a
+        // provider that does not propose can only end its reply empty. Each row is a reply its wire permits: the
+        // Anthropic model refuses a forced choice, so its final turn is sent with automatic choice, and the
+        // OpenAI-compatible endpoint is one that ignores `tool_choice`. The loop must end rejected with its own reason.
         it.each(['anthropic', 'openai-compatible'] as const)(
-            '%s ends the loop rejected when the provider reads on every auto turn and sends no tool call on the forced final turn',
+            '%s ends the loop rejected when the provider reads on every auto turn and sends no tool call on the final turn',
             async (transport) => {
                 const lateRead: ProviderCall = {
                     id: 'scripted-late-read',
@@ -542,12 +547,17 @@ describe('scripted provider protocol through the application-owned planning loop
                     reply(transport, [PROVIDER_CALLS[0]!, lateRead, []])
                 );
 
-                const result = await runScriptedLoop({ transport, loop: { limits: { maxTurns: 3 } } });
+                const result = await runScriptedLoop({
+                    transport,
+                    anthropicModel: 'claude-sonnet-5-5',
+                    loop: { limits: { maxTurns: 3 } },
+                });
 
                 expect(requests).toHaveLength(3);
                 expect(toolNamesOf(transport, requests[1]!)).toContain('agent_command-index_search');
                 expect(toolNamesOf(transport, requests[2]!)).toEqual(['command_batch_propose']);
-                expectForcedChoice(transport, requests[2]!, false);
+                const finalTurnChoice = { anthropic: undefined, 'openai-compatible': 'required' }[transport];
+                expect(requests[2]!.tool_choice).toEqual(finalTurnChoice);
                 expect(result).toMatchObject({
                     status: 'rejected',
                     reason: 'Provider returned no tool call on the final application tool-loop turn.',
