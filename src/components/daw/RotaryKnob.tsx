@@ -168,6 +168,7 @@ export const RotaryKnob = ({
     const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
     const cancelDragRef = useRef<() => void>(() => {});
+    const settleGestureRef = useRef<() => void>(() => {});
 
     const releasePointerCapture = (pointerId: number | null): void => {
         if (pointerId === null || !rootRef.current) {
@@ -203,6 +204,21 @@ export const RotaryKnob = ({
         onGestureCancelRef.current = onGestureCancel;
         gestureAuthorityRef.current = gestureAuthority;
 
+        cancelDragRef.current = () => {
+            if (!draggingRef.current) {
+                return;
+            }
+            clearDragState();
+            onGestureCancelRef.current?.();
+        };
+        settleGestureRef.current = () => {
+            if (onGestureCancelRef.current) {
+                cancelDragRef.current();
+            } else {
+                finalizeDragRef.current();
+            }
+        };
+
         // A drag that is already in flight when `disabled` flips true has to be
         // dropped, not merely stopped from starting. `handlePointerDown` and
         // `handleKeyDown` guard the *entry* points, and `handlePointerMove`
@@ -213,28 +229,12 @@ export const RotaryKnob = ({
         // discarded, which is the same treatment an owner change already gets
         // below.
         if (disabled && draggingRef.current) {
-            if (onGestureCancelRef.current) {
-                cancelDragRef.current();
-            } else {
-                clearDragState();
-            }
+            cancelDragRef.current();
         }
 
         if (draggingRef.current && !gestureAuthority && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
-            if (onGestureCancelRef.current) {
-                cancelDragRef.current();
-            } else {
-                clearDragState();
-            }
+            cancelDragRef.current();
         }
-
-        cancelDragRef.current = () => {
-            if (!draggingRef.current) {
-                return;
-            }
-            clearDragState();
-            onGestureCancelRef.current?.();
-        };
 
         finalizeDragRef.current = (pointerId?: number): boolean => {
             if (!draggingRef.current) {
@@ -286,29 +286,17 @@ export const RotaryKnob = ({
 
     useEffect(() => {
         return () => {
-            if (onGestureCancelRef.current) {
-                cancelDragRef.current();
-            } else {
-                finalizeDragRef.current();
-            }
+            settleGestureRef.current();
         };
     }, []);
 
     useEffect(() => {
         const handleWindowBlur = (): void => {
-            if (onGestureCancelRef.current) {
-                cancelDragRef.current();
-            } else {
-                finalizeDragRef.current();
-            }
+            settleGestureRef.current();
         };
         const handleVisibilityChange = (): void => {
             if (document.visibilityState === 'hidden') {
-                if (onGestureCancelRef.current) {
-                    cancelDragRef.current();
-                } else {
-                    finalizeDragRef.current();
-                }
+                settleGestureRef.current();
             }
         };
 
@@ -381,11 +369,7 @@ export const RotaryKnob = ({
             return;
         }
         if (!ownsGesture()) {
-            if (onGestureCancelRef.current) {
-                cancelDragRef.current();
-            } else {
-                clearDragState();
-            }
+            cancelDragRef.current();
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -485,11 +469,7 @@ export const RotaryKnob = ({
     const accessibleName = ariaLabel ?? label ?? paramId ?? 'Parameter control';
     const ariaValue = Math.max(min, Math.min(max, value));
     const handleFocusLoss = (): void => {
-        if (onGestureCancelRef.current) {
-            cancelDragRef.current();
-        } else {
-            finalizeDragRef.current();
-        }
+        settleGestureRef.current();
     };
 
     return (
