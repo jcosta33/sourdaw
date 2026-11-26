@@ -157,8 +157,11 @@ describe('removeTrack', () => {
             const track = hostedTrack('t1', []);
             stageRemoval(track);
 
-            removeTrack('t1');
-            await Promise.resolve();
+            const result = removeTrack('t1');
+            if (!result.removed) {
+                throw new Error('Expected the track removal to be staged');
+            }
+            await result.finalizeRuntimeRemoval();
 
             expect(ownerUseCases.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
         });
@@ -173,10 +176,12 @@ describe('removeTrack', () => {
             }
             expect(ownerUseCases.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
 
-            await result.finalizeRuntimeRemoval();
-            await result.finalizeRuntimeRemoval();
-
+            await Promise.all([result.finalizeRuntimeRemoval(), result.finalizeRuntimeRemoval()]);
             expect(ownerUseCases.unloadPluginCarryingLiveState.mock.calls).toEqual([['inst-a']]);
+
+            await result.finalizeRuntimeRemoval();
+            expect(ownerUseCases.unloadPluginCarryingLiveState.mock.calls).toEqual([['inst-a']]);
+            expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledTimes(1);
         });
 
         it('keeps the instances loaded while committed truth still holds the track', async () => {
@@ -205,6 +210,46 @@ describe('removeTrack', () => {
 
             await expect(result.finalizeRuntimeRemoval()).rejects.toThrow('host gone');
             expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
+        });
+
+        it('runs every effect again after a failed unload, and settles once that succeeds', async () => {
+            const track = hostedTrack('t1', ['inst-a']);
+            stageRemoval(track);
+            ownerUseCases.unloadPluginCarryingLiveState.mockRejectedValueOnce(new Error('host gone'));
+
+            const result = removeTrack('t1', { deferRuntimeEffects: true, suppressRemovedEvent: true });
+            if (!result.removed) {
+                throw new Error('Expected the track removal to be staged');
+            }
+
+            await expect(result.finalizeRuntimeRemoval()).rejects.toThrow('host gone');
+            await expect(result.finalizeRuntimeRemoval()).resolves.toBeUndefined();
+
+            expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledTimes(2);
+            expect(ownerUseCases.unloadPluginCarryingLiveState.mock.calls).toEqual([['inst-a'], ['inst-a']]);
+
+            await result.finalizeRuntimeRemoval();
+            expect(ownerUseCases.unloadPluginCarryingLiveState).toHaveBeenCalledTimes(2);
+        });
+
+        it('runs every effect again after a failed strip teardown', async () => {
+            const track = hostedTrack('t1', ['inst-a']);
+            stageRemoval(track);
+            const failure = new Error('strip gone');
+            ownerUseCases.removeTrackStrip.mockImplementationOnce(() => {
+                throw failure;
+            });
+
+            const result = removeTrack('t1', { deferRuntimeEffects: true, suppressRemovedEvent: true });
+            if (!result.removed) {
+                throw new Error('Expected the track removal to be staged');
+            }
+
+            await expect(result.finalizeRuntimeRemoval()).rejects.toBe(failure);
+            await expect(result.finalizeRuntimeRemoval()).resolves.toBeUndefined();
+
+            expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledTimes(2);
+            expect(ownerUseCases.unloadPluginCarryingLiveState).toHaveBeenCalledTimes(2);
         });
     });
 

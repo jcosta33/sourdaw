@@ -38,6 +38,27 @@ type RemoveTrackResult =
           finalizeRuntimeRemoval: () => Promise<void>;
       };
 
+// One run at a time and one success only, so the hosted plugins are never released twice. A failed
+// run is forgotten so the post-commit reconcile runs every effect again; each one converges when its
+// target is already gone.
+function settleOnce(run: () => Promise<void>, isCurrent: () => boolean): () => Promise<void> {
+    let pending: Promise<void> | null = null;
+    return function settled(): Promise<void> {
+        if (!isCurrent()) {
+            return Promise.resolve();
+        }
+        if (pending) {
+            return pending;
+        }
+        const attempt = run().catch((error: unknown) => {
+            pending = null;
+            throw error;
+        });
+        pending = attempt;
+        return attempt;
+    };
+}
+
 export const removeTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
         function removeTrack(trackId: string, options: RemoveTrackOptions = {}): RemoveTrackResult {
@@ -116,13 +137,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             // routing keyed on this id as the source — then dispose the BusNode,
             // which sweeps sends targeting the bus. Both engine methods no-op
             // when the node is absent.
-            let runtimeRemovalFinalized = false;
-            async function finalizeRuntimeRemoval(): Promise<void> {
-                if (runtimeRemovalFinalized || !runtimeAuthority.isCurrent()) {
-                    return;
-                }
-                // Latched before the first await so a second call cannot release the same instances again.
-                runtimeRemovalFinalized = true;
+            async function runRuntimeRemoval(): Promise<void> {
                 const effects: Array<() => void> = [...deferredSidechainRuntimeEffects];
                 effects.push(() => stopTrackInputMonitoring(trackId));
                 if (shouldCreateLiveTrackStrip(removedTrack)) {
@@ -153,6 +168,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                     runtimeAuthority.guardAbsent(trackId, () => unloadDiscardedHostedPlugins(hostedInstances)),
                 ]);
             }
+            const finalizeRuntimeRemoval = settleOnce(runRuntimeRemoval, runtimeAuthority.isCurrent);
             if (!options.deferRuntimeEffects) {
                 finalizeCommittedTrackRuntimeRemoval(trackId, finalizeRuntimeRemoval, runtimeAuthority.isCurrent);
             }
