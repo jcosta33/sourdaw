@@ -5,6 +5,7 @@ import {
     settleNativePreparationWorkers,
 } from '#/helpers/__tests__/nativePreparationWorker';
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
 
@@ -126,6 +127,7 @@ async function openProjectWithCachedStereoClip() {
     return {
         audioBufferCache,
         bufferId,
+        clip,
         cacheAudioBuffer,
         persistenceFailures,
         project,
@@ -215,78 +217,24 @@ async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequ
     return { signals, attempts: () => attempts, materializedAttempts: () => materializedAttempts };
 }
 
-const WATCHED_STORES = [
-    'track',
-    'automation',
-    'midi',
-    'tempoMap',
-    'timeSignatureMap',
-    'marker',
-    'takeLane',
-    'arrangement',
-    'project',
-] as const;
-type WatchedStore = (typeof WATCHED_STORES)[number];
-
-/** Counts the live subscriptions on each store the save's preparation captures. */
-async function countStoreSubscriptions() {
-    const [
-        { trackStore, markerStore, takeLaneStore },
-        { automationStore },
-        { midiStore },
-        transport,
-        arrangement,
-        projectStores,
-    ] = await Promise.all([
-        import('#/modules/Arrangement/stores'),
-        import('#/modules/Automation/stores'),
-        import('#/modules/MIDI/stores'),
-        import('#/modules/Transport/stores'),
-        import('../../../../stores/arrangementStore'),
-        import('../../../../stores/projectStore'),
-    ]);
-    const live: Record<WatchedStore, number> = {
-        track: 0,
-        automation: 0,
-        midi: 0,
-        tempoMap: 0,
-        timeSignatureMap: 0,
-        marker: 0,
-        takeLane: 0,
-        arrangement: 0,
-        project: 0,
-    };
-    function countSubscriptions(
-        name: WatchedStore,
-        store: { subscribe(callback: (value: unknown) => void): () => void }
-    ): void {
-        const subscribe = store.subscribe.bind(store);
-        vi.spyOn(store, 'subscribe').mockImplementation((callback) => {
-            live[name] += 1;
-            const unsubscribe = subscribe(callback);
-            let released = false;
-            return () => {
-                if (!released) {
-                    released = true;
-                    live[name] -= 1;
-                }
-                unsubscribe();
-            };
-        });
-    }
-    countSubscriptions('track', trackStore);
-    countSubscriptions('automation', automationStore);
-    countSubscriptions('midi', midiStore);
-    countSubscriptions('tempoMap', transport.tempoMapStore);
-    countSubscriptions('timeSignatureMap', transport.timeSignatureMapStore);
-    countSubscriptions('marker', markerStore);
-    countSubscriptions('takeLane', takeLaneStore);
-    countSubscriptions('arrangement', arrangement.arrangementStore);
-    countSubscriptions('project', projectStores.projectStore);
-    return {
-        of: (name: WatchedStore): number => live[name],
-        active: (): number => WATCHED_STORES.reduce((total, name) => total + live[name], 0),
-    };
+/** Counts the live CRDT change subscriptions, which is how a save's preparation watches for edits. */
+async function countCrdtChangeSubscriptions() {
+    const crdtModule = await import('#/modules/CrdtDocument/useCases');
+    const subscribe = crdtModule.subscribeToCrdtChanges;
+    let live = 0;
+    vi.spyOn(crdtModule, 'subscribeToCrdtChanges').mockImplementation((listener) => {
+        live += 1;
+        const unsubscribe = subscribe(listener);
+        let released = false;
+        return () => {
+            if (!released) {
+                released = true;
+                live -= 1;
+            }
+            unsubscribe();
+        };
+    });
+    return { active: (): number => live };
 }
 
 const SERIAL_SNAPSHOT_WORK = ['capture', 'build', 'first save settled', 'capture', 'build'];
@@ -342,6 +290,20 @@ function savedTrackNames(indexedDb: IndexedDbFixture, opened: OpenedProject): st
         throw new TypeError('expected a saved project snapshot');
     }
     return (JSON.parse(json) as ProjectData).arrangement.tracks.map((track) => track.name);
+}
+
+function savedWarpEnabled(indexedDb: IndexedDbFixture, opened: OpenedProject): boolean | undefined {
+    const json = indexedDb.get('sourdaw-projects', 'projects', opened.project.getProjectSnapshotKey(CREATED_AT));
+    if (typeof json !== 'string') {
+        throw new TypeError('expected a saved project snapshot');
+    }
+    const snapshot: unknown = JSON.parse(json);
+    if (!isRecord(snapshot) || !Array.isArray(snapshot.warpStates)) {
+        throw new TypeError('expected warp states in the saved project snapshot');
+    }
+    const states: unknown[] = snapshot.warpStates;
+    const state = states.find((value) => isRecord(value) && value.clipId === opened.clip.id);
+    return isRecord(state) && typeof state.enabled === 'boolean' ? state.enabled : undefined;
 }
 
 describe('saveProject snapshot continuation', () => {
@@ -666,23 +628,52 @@ describe('saveProject snapshot continuation', () => {
         CASE_TIMEOUT_MS
     );
 
-    it.each(WATCHED_STORES)(
-        'holds a subscription on the %s store while the Worker request is open, and releases it after',
-        async (name) => {
+    it(
+        'holds one CRDT change subscription while the Worker request is open, and releases it after',
+        async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
-            const subscriptions = await countStoreSubscriptions();
+            const subscriptions = await countCrdtChangeSubscriptions();
+            const before = subscriptions.active();
             let heldDuringRequest = 0;
-            const before = subscriptions.of(name);
             await stubSlowMaterializationWorker(() => {
-                heldDuringRequest = subscriptions.of(name);
+                heldDuringRequest = subscriptions.active();
                 return Promise.reject(new Error('Worker failed'));
             });
 
             expect(await opened.project.saveProject()).toBe(false);
 
             expect(heldDuringRequest).toBe(before + 1);
-            expect(subscriptions.of(name)).toBe(before);
+            expect(subscriptions.active()).toBe(before);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'abandons the Worker request when a warp state is written, then saves the latest state (#7500)',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const { getWarpState, setWarpState } = await import('#/modules/Arrangement/stores');
+            const enabled = !getWarpState(opened.clip.id).enabled;
+            const workerFinished = Promise.withResolvers<void>();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    // Elastic Detect commits its markers through the warp state store.
+                    setWarpState(opened.clip.id, { ...getWarpState(opened.clip.id), enabled });
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await vi.waitFor(() => expect(worker.signals[0]?.aborted).toBe(true));
+            workerFinished.resolve();
+
+            expect(await saving).toBe(true);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(savedWarpEnabled(indexedDb, opened)).toBe(enabled);
         },
         CASE_TIMEOUT_MS
     );
@@ -704,7 +695,7 @@ describe('saveProject snapshot continuation', () => {
         async ({ behaviour, failure }) => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
-            const subscriptions = await countStoreSubscriptions();
+            const subscriptions = await countCrdtChangeSubscriptions();
             const worker = await stubSlowMaterializationWorker(behaviour);
             const before = subscriptions.active();
 
@@ -724,7 +715,7 @@ describe('saveProject snapshot continuation', () => {
         async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
-            const subscriptions = await countStoreSubscriptions();
+            const subscriptions = await countCrdtChangeSubscriptions();
             const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
                 afterTask(() => {
                     opened.renameTrack(opened.track.id, 'Edited while the Worker materialized');

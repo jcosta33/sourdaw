@@ -9,6 +9,7 @@ import {
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     settlePendingProjectWritesAndCaptureRevision,
+    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
@@ -132,10 +133,15 @@ function planArrangement(
 }
 
 /**
- * Abort the returned signal once a store this Save captured has made its inputs stale. A Worker round trip
+ * Abort the returned signal once a project change has made this Save's inputs stale. A Worker round trip
  * over a dense project takes seconds, and the Save only discovers a concurrent edit when it returns, so the
- * retry would otherwise start that much later (#7500). A store notifies even for a value it already holds,
- * so each notification is judged by the Save's own currency check rather than treated as an edit.
+ * retry would otherwise start that much later (#7500).
+ *
+ * Every input the currency check reads (the project, arrangements and snapshot stores, and the document
+ * revision) is CRDT-backed, and the repository notifies its listeners in the turn that publishes a commit,
+ * so one CRDT subscription sees every edit, including those of stores this module does not know about,
+ * such as Detect's warp states. A notification fires for any document change, so each is judged by the
+ * Save's own currency check rather than treated as an edit.
  */
 function abortWhenSaveInputsGoStale(
     signal: AbortSignal,
@@ -152,16 +158,9 @@ function abortWhenSaveInputsGoStale(
             controller.abort(new ProjectSavePreparationStaleError());
         }
     }
-    const unsubscribers = [...snapshotStores(), arrangementStore, projectStore].map((store) =>
-        store.subscribe(abortIfStale)
-    );
     return {
         signal: AbortSignal.any([signal, controller.signal]),
-        stop: () => {
-            for (const unsubscribe of unsubscribers) {
-                unsubscribe();
-            }
-        },
+        stop: subscribeToCrdtChanges(abortIfStale),
     };
 }
 
