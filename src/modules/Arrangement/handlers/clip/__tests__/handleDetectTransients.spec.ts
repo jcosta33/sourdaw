@@ -20,6 +20,7 @@ import {
 import { type detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -214,6 +215,7 @@ describe('Arrangement Detect admits private Worker preparations against current 
         });
         setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: 120, markers: [lockedMarker] });
         flushAutomergeStorageWrites();
+        hydrateTempoProjections();
     });
 
     afterEach(() => {
@@ -256,6 +258,12 @@ describe('Arrangement Detect admits private Worker preparations against current 
         } finally {
             transaction.abort();
         }
+    }
+
+    // Playback reads the stores, which project the document slots: refresh them after a raw document edit.
+    function hydrateTempoProjections(): void {
+        tempoMapStore.hydrate();
+        transportStore.hydrate();
     }
 
     function storedWarpState() {
@@ -354,6 +362,7 @@ describe('Arrangement Detect admits private Worker preparations against current 
                 }
             },
         });
+        hydrateTempoProjections();
         setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
         await detectAndCommit({ tempo: 120, hits: [{ sampleOffset: 24000, confidence: 0.875 }] });
         expect(storedWarpState()).toMatchObject({
@@ -386,7 +395,95 @@ describe('Arrangement Detect admits private Worker preparations against current 
         }
     });
 
-    describe('refuses without writing when the clip-start tempo cannot be read', () => {
+    it('does not refuse the commit when the clip-start tempo changes after planning but a reference tempo is stored', async () => {
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: 120, markers: [] });
+        installProspectiveWorker();
+        const { transaction } = startDetection();
+        try {
+            const result = await transaction.value;
+            expect(result?.status).toBe('written');
+            const validation = result?.commitValidation;
+            if (!validation) {
+                throw new Error('Expected the Detect document validator');
+            }
+            mutateCrdtDoc<{ tempoMap: { changes: unknown[] } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tempoMap = { changes: [{ id: 'slow', beat: 0, tempo: 90, curve: 'instant' }] };
+                },
+            });
+            transaction.validateDocument(validation.documentId, validation.validateDocument);
+            transaction.commit();
+        } finally {
+            transaction.abort();
+        }
+        expect(storedWarpState()).toMatchObject({ originalTempo: 120 });
+    });
+
+    describe('reads the clip-start tempo through the sanitized projections playback uses', () => {
+        const expectedBeat = (referenceTempo: number): number => ((24000 / 48000) * referenceTempo) / 60;
+
+        function corruptDocument(corrupt: (document: Record<string, any>) => void): void {
+            mutateCrdtDoc<Record<string, any>>({ id: 'root', changeFn: corrupt });
+            hydrateTempoProjections();
+        }
+
+        it('ignores an out-of-range tempo-map row before the clip', async () => {
+            corruptDocument((document) => {
+                document.tempoMap = {
+                    changes: [
+                        { id: 'base', beat: 0, tempo: 90, curve: 'instant' },
+                        { id: 'wild', beat: 4, tempo: 5000, curve: 'instant' },
+                    ],
+                };
+                document.tracks.tracks[0].clips[0].startBeat = 8;
+            });
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            await detectAndCommit({ tempo: 120, hits: defaultHits });
+            expect(storedWarpState()).toMatchObject({
+                originalTempo: 90,
+                markers: [{ originalBeat: 0.75, warpedBeat: 0.75 }],
+            });
+        });
+
+        it('drops a malformed tempo-map row and keeps the transport tempo', async () => {
+            corruptDocument((document) => {
+                document.transport.tempo = 100;
+                document.tempoMap = { changes: [{ id: 'bad', beat: 'zero', tempo: 90, curve: 'instant' }] };
+            });
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            await detectAndCommit({ tempo: 120, hits: defaultHits });
+            expect(storedWarpState()).toMatchObject({
+                originalTempo: 100,
+                markers: [{ originalBeat: expectedBeat(100) }],
+            });
+        });
+
+        it.each([
+            [
+                'the transport tempo is not a number',
+                (document: Record<string, any>) => {
+                    document.transport.tempo = 'fast';
+                },
+            ],
+            [
+                'the transport is missing',
+                (document: Record<string, any>) => {
+                    delete document.transport;
+                },
+            ],
+        ])('stamps the default tempo when %s', async (_name, corrupt) => {
+            corruptDocument(corrupt);
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            await detectAndCommit({ tempo: 120, hits: defaultHits });
+            expect(storedWarpState()).toMatchObject({
+                originalTempo: DEFAULT_TEMPO_BPM,
+                markers: [{ originalBeat: expectedBeat(DEFAULT_TEMPO_BPM) }],
+            });
+        });
+    });
+
+    describe('refuses without writing when the clip cannot be found for the clip-start tempo', () => {
         const refusal = {
             status: 'conflict',
             reason: 'Transient detection was cancelled or its source changed',
@@ -404,32 +501,34 @@ describe('Arrangement Detect admits private Worker preparations against current 
                     delete document.tracks.tracks[0].clips[0].startBeat;
                 },
             ],
-            [
-                'the transport tempo is not a number',
-                (document) => {
-                    document.transport.tempo = 'fast';
-                },
-            ],
-            [
-                'a tempo-map row is malformed',
-                (document) => {
-                    document.tempoMap = { changes: [{ id: 'bad', beat: 'zero', tempo: 90, curve: 'instant' }] };
-                },
-            ],
         ];
 
         function corruptDocument(corrupt: (document: Record<string, any>) => void): void {
             mutateCrdtDoc<Record<string, any>>({ id: 'root', changeFn: corrupt });
         }
 
+        function refuseIfWorkerPosts(
+            firstReply: ReturnType<typeof installProspectiveWorker>['firstReply'],
+            completion: ReturnType<typeof startDetection>['transaction']['value']
+        ) {
+            return Promise.race([
+                completion,
+                firstReply.then(() => {
+                    throw new Error('Detect posted a Worker request instead of refusing');
+                }),
+            ]);
+        }
+
         it.each(unreadableDocuments)('at planning time when %s', async (_name, corrupt) => {
-            const { requests } = installProspectiveWorker();
+            const { firstReply, requests } = installProspectiveWorker();
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            flushAutomergeStorageWrites();
             corruptDocument(corrupt);
             const stored = storedWarpState();
             const saved = getCrdtDoc('root');
             const { transaction } = startDetection();
             try {
-                expect(await transaction.value).toEqual(refusal);
+                expect(await refuseIfWorkerPosts(firstReply, transaction.value)).toEqual(refusal);
                 expect(requests).toHaveLength(0);
                 expect(getCrdtDoc('root')).toBe(saved);
                 expect(storedWarpState()).toEqual(stored);
@@ -441,16 +540,16 @@ describe('Arrangement Detect admits private Worker preparations against current 
         it.each(unreadableDocuments)(
             'at commit time on the ordinary write route when %s after planning',
             async (_name, corrupt) => {
-                const { requests } = installProspectiveWorker();
-                const stored = { enabled: false, stretchMode: 'repitch' as const, originalTempo: 120, markers: [] };
+                const { firstReply, requests } = installProspectiveWorker();
+                const stored = { enabled: true, stretchMode: 'repitch' as const, originalTempo: null, markers: [] };
                 setWarpState('clip-1', stored);
                 flushAutomergeStorageWrites();
                 // Planning sees an identical markerless state, so it prepares nothing; the stored state then gains
                 // an auto marker, so the commit replan differs and takes the ordinary write route.
                 const withAutoMarker = {
-                    enabled: false,
+                    enabled: true,
                     stretchMode: 'repitch' as const,
-                    originalTempo: 120,
+                    originalTempo: null,
                     markers: [
                         {
                             id: 'auto',
@@ -466,7 +565,7 @@ describe('Arrangement Detect admits private Worker preparations against current 
                     corruptDocument(corrupt);
                 });
                 try {
-                    expect(await transaction.value).toEqual(refusal);
+                    expect(await refuseIfWorkerPosts(firstReply, transaction.value)).toEqual(refusal);
                     expect(requests).toHaveLength(0);
                 } finally {
                     transaction.abort();

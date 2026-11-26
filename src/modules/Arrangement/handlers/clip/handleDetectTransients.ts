@@ -6,12 +6,11 @@ import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { readTempoAtBeat, sanitize_tempo_map_state, sanitize_transport_snapshot } from '#/modules/Transport/stores';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { createHandler } from '#/utils/createHandler';
 import { type HandlerExecutionResult } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { type TempoMapRow } from '#/utils/tempoMapRowPlan';
 
 import { type TrackClipStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { createWarpMarker } from '../../models/WarpMarker';
@@ -97,23 +96,12 @@ type DetectedSource = Parameters<DetectConsumer>[0];
 type DetectionLifetime = Parameters<DetectConsumer>[1];
 type StorageScope = ReturnType<typeof captureAutomergeStorageTransactionScope>;
 type PreparationScope = ReturnType<typeof captureAutomergeStoragePreparationScope>;
-type TransientRows = ReturnType<typeof planTransientRows>;
+type TransientRows = NonNullable<ReturnType<typeof planDetectRows>>;
 type TransientPlan = ReturnType<typeof prepareTransientWarpState>;
 type MaterializationOutcome = 'ready' | 'stale' | 'cancelled';
 
 function transientConflict(): HandlerExecutionResult {
     return { status: 'conflict', reason: 'Transient detection was cancelled or its source changed' };
-}
-
-function isTempoMapRow(value: unknown): value is TempoMapRow {
-    const row = record(value);
-    return (
-        row !== undefined &&
-        typeof row.id === 'string' &&
-        typeof row.beat === 'number' &&
-        typeof row.tempo === 'number' &&
-        (row.curve === 'instant' || row.curve === 'linear')
-    );
 }
 
 function findDocumentClip(document: Record<string, unknown>, trackId: string, clipId: string): unknown {
@@ -125,27 +113,41 @@ function findDocumentClip(document: Record<string, unknown>, trackId: string, cl
     return Array.isArray(clips) ? clips.find((entry: unknown) => record(entry)?.id === clipId) : undefined;
 }
 
-/**
- * The tempo the tempo map gives at the clip's start, read from the document so
- * planning and the commit validator observe one source. Undefined when the clip
- * or the clock cannot be read: no fallback tempo is invented.
- */
-function readClipStartTempo(document: Record<string, unknown>, trackId: string, clipId: string): number | undefined {
+function findDocumentClipStartBeat(
+    document: Record<string, unknown>,
+    trackId: string,
+    clipId: string
+): number | undefined {
     const startBeat = record(findDocumentClip(document, trackId, clipId))?.startBeat;
-    const tempo = record(document.transport)?.tempo;
-    if (typeof startBeat !== 'number' || typeof tempo !== 'number') {
-        return undefined;
-    }
-    const changes: unknown = record(document.tempoMap)?.changes ?? [];
-    if (!Array.isArray(changes) || !changes.every(isTempoMapRow)) {
-        return undefined;
-    }
-    return readTempoAtBeat({ beat: startBeat, clock: { tempo, changes } });
+    return typeof startBeat === 'number' ? startBeat : undefined;
 }
 
-function readDocumentClipStartTempo(trackId: string, clipId: string): number | undefined {
+/**
+ * The tempo playback reads at the clip's start: the tempo-map and transport
+ * stores, which sanitize the document slots. Undefined when the clip cannot be
+ * found: no fallback tempo is invented.
+ */
+function readPlaybackClipStartTempo(trackId: string, clipId: string): number | undefined {
     const document = getCrdtDoc<Record<string, unknown>>('root');
-    return document ? readClipStartTempo(document, trackId, clipId) : undefined;
+    const beat = document ? findDocumentClipStartBeat(document, trackId, clipId) : undefined;
+    return beat === undefined ? undefined : readTempoAtBeat({ beat });
+}
+
+/** The same tempo, derived from a raw document through the stores' own sanitizers. */
+function readDocumentClipStartTempo(
+    document: Record<string, unknown>,
+    trackId: string,
+    clipId: string
+): number | undefined {
+    const beat = findDocumentClipStartBeat(document, trackId, clipId);
+    if (beat === undefined) {
+        return undefined;
+    }
+    const clock = {
+        tempo: sanitize_transport_snapshot(document.transport).tempo,
+        changes: sanitize_tempo_map_state(document.tempoMap).changes,
+    };
+    return readTempoAtBeat({ beat, clock });
 }
 
 /**
@@ -157,15 +159,15 @@ function replacementIsStored(clipId: string, replacement: TransientRows['replace
     return replacement.markers.length === 0 && transientStateMatches(getWarpState(clipId), replacement);
 }
 
-function planTransientRows(clipId: string, result: DetectedSource, clipStartTempo: number) {
-    const existing = getWarpState(clipId);
+function planTransientRows(
+    result: DetectedSource,
+    existing: ReturnType<typeof getWarpState>,
+    referenceTempo: number,
+    clipStartTempo: number | null
+) {
     const preserved = existing.markers.filter(
         (marker) => marker.locked === true || (marker.origin ?? 'user') !== 'transient-auto'
     );
-    // A marker's originalBeat counts source beats at this reference tempo, so it
-    // stays the source position when the project tempo changes later. A first
-    // stamp takes the tempo playback reads at the clip's start.
-    const referenceTempo = existing.originalTempo ?? clipStartTempo;
     const added = result.hits.flatMap((hit) => {
         const beat = ((hit.sampleOffset / result.identity.sampleRate) * referenceTempo) / 60;
         if (preserved.some((marker) => Math.abs(marker.originalBeat - beat) < 1e-3)) {
@@ -174,9 +176,28 @@ function planTransientRows(clipId: string, result: DetectedSource, clipStartTemp
         return [createWarpMarker(beat, beat, { origin: 'transient-auto', confidence: hit.confidence })];
     });
     const markers = [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat);
-    // A markerless result has no beats to anchor, so it keeps the stored tempo and stays a default state.
+    // A markerless result has no beats to anchor, so it stamps no tempo: the stored
+    // one stays, and a clip with none stays a default state.
     const originalTempo = markers.length > 0 ? referenceTempo : existing.originalTempo;
     return { preserved, added, clipStartTempo, replacement: { ...existing, originalTempo, markers } };
+}
+
+/**
+ * A marker's originalBeat counts source beats at the reference tempo, so it stays
+ * the source position when the project tempo changes later. A stored tempo is
+ * kept and the clip-start tempo is not read; a first stamp takes the tempo
+ * playback reads at the clip's start. Undefined when that tempo cannot be read.
+ */
+function planDetectRows(trackId: string, clipId: string, result: DetectedSource) {
+    const existing = getWarpState(clipId);
+    if (typeof existing.originalTempo === 'number') {
+        return planTransientRows(result, existing, existing.originalTempo, null);
+    }
+    const clipStartTempo = readPlaybackClipStartTempo(trackId, clipId);
+    if (clipStartTempo === undefined) {
+        return undefined;
+    }
+    return planTransientRows(result, existing, clipStartTempo, clipStartTempo);
 }
 
 /** Keep committed history rendering ahead of success feedback without waiting for a visible frame. */
@@ -233,7 +254,7 @@ function createTransientWriteResult(
     preserved: TransientRows['preserved'],
     added: TransientRows['added'],
     replacement: TransientRows['replacement'],
-    clipStartTempo: number,
+    clipStartTempo: number | null,
     commitStarted: number
 ): HandlerExecutionResult {
     let storageCommitStarted: number | undefined;
@@ -288,7 +309,8 @@ function createTransientWriteResult(
                     record(clip)?.type === 'audio' &&
                     typeof bufferId === 'string' &&
                     digest(bufferId) === result.identity.bufferId &&
-                    readClipStartTempo(document, trackId, clipId) === clipStartTempo &&
+                    (clipStartTempo === null ||
+                        readDocumentClipStartTempo(document, trackId, clipId) === clipStartTempo) &&
                     transientStateMatches(states?.[clipId], expectedState)
                         ? null
                         : 'Transient detection authority changed inside commit');
@@ -349,11 +371,11 @@ function commitTransientRows(
     let rows = plannedRows;
     if (!plan) {
         // Ineligible ordinary writes are still planned from the latest rows at their final frame.
-        const clipStartTempo = readDocumentClipStartTempo(trackId, clipId);
-        if (clipStartTempo === undefined) {
+        const replanned = planDetectRows(trackId, clipId, result);
+        if (!replanned) {
             return transientConflict();
         }
-        rows = planTransientRows(clipId, result, clipStartTempo);
+        rows = replanned;
     }
     if (!result.isCurrent() || context?.signal?.aborted) {
         return transientConflict();
@@ -434,7 +456,7 @@ async function waitForTransientMaterialization(
 }
 
 /**
- * One planning attempt: the rows at the clip-start tempo read from the document
+ * One planning attempt: the rows at the tempo playback reads at the clip start
  * and, unless the replacement is already stored, its private preparation.
  * Undefined when the clip-start tempo cannot be read.
  */
@@ -444,15 +466,14 @@ function planDetectAttempt(
     trackId: string,
     clipId: string
 ): { rows: TransientRows; plan: TransientPlan } | undefined {
-    const clipStartTempo = readDocumentClipStartTempo(trackId, clipId);
-    if (clipStartTempo === undefined) {
-        return undefined;
-    }
     return measurePreparationTask('elastic-transient-plan-task', () => {
-        const rows = planTransientRows(clipId, result, clipStartTempo);
+        const rows = planDetectRows(trackId, clipId, result);
+        if (!rows) {
+            return undefined;
+        }
         // An identical replacement needs no private preparation: it completes without a write.
         if (replacementIsStored(clipId, rows.replacement)) {
-            return { rows, plan: null };
+            return { rows, plan: undefined };
         }
         return { rows, plan: prepareTransientWarpState(preparationScope, clipId, rows.replacement) };
     });
