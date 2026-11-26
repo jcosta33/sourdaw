@@ -89,6 +89,7 @@ fn gain_update(value: f64) -> HostParameterUpdate {
     HostParameterUpdate {
         param_id: GAIN_PARAM_ID,
         value,
+        sample_offset: 0,
     }
 }
 

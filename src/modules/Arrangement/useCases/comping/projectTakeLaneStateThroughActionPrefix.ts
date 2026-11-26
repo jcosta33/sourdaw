@@ -239,6 +239,7 @@ const projectTakeLaneActionByActionType: {
     setGrandBouleDeviceState: keepLanes,
     setToasterFactoryKit: keepLanes,
     setBacteriaFactoryPatch: keepLanes,
+    setCrustFactoryPreset: keepLanes,
     setGlutenFactoryPreset: keepLanes,
     setProofPatchSelection: keepLanes,
     createBus: keepLanes,
