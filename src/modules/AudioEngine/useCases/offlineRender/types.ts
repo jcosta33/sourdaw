@@ -3,6 +3,7 @@ import {
     type DeviceNoteExpressionRequest,
 } from '../../repositories/deviceStrategy/AudioDeviceStrategy';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
+import { type LatencyCompensationInput } from '../latencyCompensation/compensation/LatencyCompensationInput';
 
 import { type RenderLockHolder } from './exportCancellationState';
 
@@ -119,6 +120,11 @@ export type OfflineScheduleTally = {
      * guard cannot model.
      */
     withheldDeviceTypes: string[];
+    /**
+     * The device latencies a render from a supplied document aligned its strips by, so a caller
+     * that pins compensation for its print reads the same figures; absent when it read them live.
+     */
+    compensationInput?: LatencyCompensationInput;
 };
 
 export type OfflineTrackStrip = {

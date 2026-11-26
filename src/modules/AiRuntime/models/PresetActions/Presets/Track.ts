@@ -40,7 +40,10 @@ export const trackPresets: readonly PresetAction[] = [
         label: 'Create Folder Track',
         keywords: ['add folder', 'new folder', 'create folder', 'group folder'],
         category: 'Track',
-        buildAction: () => ({ type: 'createFolder', payload: { name: `Folder ${String(Date.now() % 1000)}` } }),
+        buildAction: () => ({
+            type: 'addTrack',
+            payload: { kind: 'folder', name: `Folder ${String(Date.now() % 1000)}` },
+        }),
     },
 
     // ─── Manipulation ───────────────────────────────────────────────────

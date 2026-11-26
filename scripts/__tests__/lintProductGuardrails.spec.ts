@@ -4,7 +4,7 @@ import { join, relative, resolve } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { parseQualityReport, reconcileQualityBudget } from '../lintQualityBudget';
+import { parseQualityReport, readQualityBudget, reconcileQualityBudget } from '../lintQualityBudget';
 import { buildQualityLintArgv } from '../runLint';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -125,5 +125,84 @@ export function localConstructor() {
     } finally {
         rmSync(productDirectory, { recursive: true, force: true });
         rmSync(scriptDirectory, { recursive: true, force: true });
+    }
+}, 45_000);
+
+it('reports a lone if in an else block across shared handwritten product layers', () => {
+    const source = `export function selectTrack(flags: { primary: boolean; fallback: boolean }, update: (id: string) => void) {
+    if (flags.primary) {
+        update('primary');
+    } else {
+        // Only use the fallback when it is ready.
+        if (flags.fallback) update('fallback')
+    }
+    ['done'].forEach(update);
+}
+
+export function keepMeaningfulBranches(flags: { primary: boolean; fallback: boolean }, update: (id: string) => void) {
+    if (flags.primary) {
+        update('primary');
+    } else if (flags.fallback) {
+        update('fallback');
+    }
+    if (flags.primary) {
+        if (flags.fallback) update('nested');
+    } else {
+        const id = 'secondary';
+        if (flags.fallback) update(id);
+    }
+}
+
+export function keepNestedIf(flags: { primary: boolean; fallback: boolean }, update: (id: string) => void) {
+    if (flags.primary) {
+        if (flags.fallback) update('nested');
+    }
+}
+
+export function unavailable(): number | undefined {
+    return;
+}
+`;
+    const directories: string[] = [];
+    try {
+        const layers = ['src/app', 'src/helpers', 'src/infra', 'src/routes', 'src/utils'];
+        const productTargets = layers.flatMap((layer) => {
+            const directory = mkdtempSync(join(root, layer, 'lint-product-guardrails-'));
+            directories.push(directory);
+            const file = layer === 'src/routes' ? 'product.tsx' : 'product.ts';
+            return writeFixtureProject(directory, [file], source);
+        });
+        const testDirectory = mkdtempSync(join(root, 'src/utils/lint-product-guardrails-'));
+        directories.push(testDirectory);
+        const otherProductDirectory = mkdtempSync(join(root, 'src/lint-product-guardrails-'));
+        directories.push(otherProductDirectory);
+        const targets = [
+            ...productTargets,
+            ...writeFixtureProject(testDirectory, ['product.spec.ts'], source),
+            ...writeFixtureProject(otherProductDirectory, ['product.ts'], source),
+        ];
+        const result = spawnSync(resolve(root, 'node_modules/.bin/oxlint'), buildQualityLintArgv(targets).slice(2), {
+            cwd: root,
+            encoding: 'utf8',
+            timeout: 30_000,
+        });
+        expect(result.error).toBeUndefined();
+        const report = parseQualityReport(result.stdout, root);
+        expect(report.fileCount).toBe(targets.length);
+        const rule = 'eslint/no-lonely-if';
+        expect(
+            report.diagnostics
+                .toSorted((a, b) => a.file.localeCompare(b.file))
+                .map(({ file, rule, line, column, severity }) => [file, rule, line, column, severity])
+        ).toEqual(productTargets.map((target) => [target, rule, 6, 9, 'error']));
+        expect(result.status, result.stdout + result.stderr).toBe(1);
+        const budget = readQualityBudget(root);
+        expect([...budget.values()].some((rules) => rules.has(rule))).toBe(false);
+        expect(reconcileQualityBudget(report, budget, targets, root).failed).toBe(true);
+        expect(targets.map((target) => readFileSync(resolve(root, target), 'utf8'))).toEqual(targets.map(() => source));
+    } finally {
+        for (const directory of directories) {
+            rmSync(directory, { recursive: true, force: true });
+        }
     }
 }, 45_000);
