@@ -401,59 +401,49 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
-        'saves the latest revision after concurrent writes keep moving it through several preparation attempts (#7500)',
+        'abandons a Worker materialization as soon as an edit lands, then saves the latest revision (#7500)',
         async () => {
             const indexedDb = installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
-            const buildModule = await import('../../fileIO/buildProjectData');
-            const buildProjectData = buildModule.buildProjectData;
-            const concurrentWrites = 4;
-            let builds = 0;
-            vi.spyOn(buildModule, 'buildProjectData').mockImplementation((...args) => {
-                builds += 1;
-                if (builds <= concurrentWrites) {
-                    // Detect publishes its markers outside the save's own action, after the save captured its inputs.
-                    opened.renameTrack(opened.track.id, `Edited during preparation ${builds}`);
+            const arrangementStoreModule = await import('../../../../stores/arrangementStore');
+            const prepare = arrangementStoreModule.prepareArrangementStoreState;
+            const workerFinished = Promise.withResolvers<void>();
+            let materializationAborted = false;
+            let slowRequests = 0;
+            vi.spyOn(arrangementStoreModule, 'prepareArrangementStoreState').mockImplementation((...args) => {
+                const plan = prepare(...args);
+                if (!plan || slowRequests > 0) {
+                    return plan;
                 }
-                return buildProjectData(...args);
+                slowRequests += 1;
+                // A slow Worker: it answers only when released, or fails when the save abandons it.
+                const slowRequest = async (signal: AbortSignal): Promise<void> => {
+                    setTimeout(() => {
+                        // Detect publishes its markers while the Worker still materializes the save's rows.
+                        opened.renameTrack(opened.track.id, 'Edited while the Worker materialized');
+                    }, 0);
+                    signal.addEventListener('abort', () => (materializationAborted = true), { once: true });
+                    await Promise.race([
+                        workerFinished.promise,
+                        new Promise<never>((_resolve, reject) => {
+                            signal.addEventListener('abort', () => reject(new Error('Worker request abandoned')), {
+                                once: true,
+                            });
+                        }),
+                    ]);
+                };
+                return { ...plan, requestMaterialization: slowRequest };
             });
 
-            const saved = await opened.project.saveProject();
+            const saving = opened.project.saveProject();
+            // The Worker has not answered, so only the edit itself can have told the save to stop waiting for it.
+            await vi.waitFor(() => expect(materializationAborted).toBe(true));
+            workerFinished.resolve();
 
+            expect(await saving).toBe(true);
+            expect(slowRequests).toBe(1);
             expect(opened.persistenceFailures()).toEqual([]);
-            expect(saved).toBe(true);
-            expect(builds).toBe(concurrentWrites + 1);
-            expect(savedTrackNames(indexedDb, opened)).toEqual([`Edited during preparation ${concurrentWrites}`]);
-            expect(opened.projectStore.value?.dirty).toBe(false);
-        },
-        CASE_TIMEOUT_MS
-    );
-
-    it(
-        'reports a save that the project keeps outrunning once the preparation deadline passes (#7500)',
-        async () => {
-            installMultiDatabaseIndexedDb();
-            const opened = await openProjectWithCachedStereoClip();
-            const buildModule = await import('../../fileIO/buildProjectData');
-            const buildProjectData = buildModule.buildProjectData;
-            const deadline = new AbortController();
-            vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
-            let builds = 0;
-            vi.spyOn(buildModule, 'buildProjectData').mockImplementation((...args) => {
-                builds += 1;
-                opened.renameTrack(opened.track.id, `Never settles ${builds}`);
-                if (builds === 6) {
-                    deadline.abort(new Error('Save preparation deadline passed'));
-                }
-                return buildProjectData(...args);
-            });
-
-            const saved = await opened.project.saveProject();
-
-            expect(saved).toBe(false);
-            expect(builds).toBe(6);
-            expect(opened.persistenceFailures()).toEqual(['Save preparation deadline passed']);
-            expect(opened.projectStore.value?.dirty).toBe(true);
+            expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited while the Worker materialized']);
         },
         CASE_TIMEOUT_MS
     );

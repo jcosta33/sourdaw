@@ -29,16 +29,12 @@ import {
     type SavePreparationIntent,
 } from './savePreparationAuthority';
 
+function snapshotStores() {
+    return [trackStore, automationStore, midiStore, tempoMapStore, timeSignatureMapStore, markerStore, takeLaneStore];
+}
+
 function snapshotSources(): readonly unknown[] {
-    return [
-        trackStore.value,
-        automationStore.value,
-        midiStore.value,
-        tempoMapStore.value,
-        timeSignatureMapStore.value,
-        markerStore.value,
-        takeLaneStore.value,
-    ];
+    return snapshotStores().map((store) => store.value);
 }
 
 function canonicalValue(value: unknown): unknown {
@@ -135,6 +131,27 @@ function planArrangement(
     return plan;
 }
 
+/**
+ * Abort the returned signal the moment any store this Save captured changes. A Worker round trip over a
+ * dense project takes seconds, and the Save only discovers a concurrent edit when it returns, so the
+ * retry would otherwise start that much later (#7500).
+ */
+function abortWhenSaveInputsChange(signal: AbortSignal): { signal: AbortSignal; stop: () => void } {
+    const controller = new AbortController();
+    function abort(): void {
+        controller.abort(new ProjectSavePreparationStaleError());
+    }
+    const unsubscribers = [...snapshotStores(), arrangementStore, projectStore].map((store) => store.subscribe(abort));
+    return {
+        signal: AbortSignal.any([signal, controller.signal]),
+        stop: () => {
+            for (const unsubscribe of unsubscribers) {
+                unsubscribe();
+            }
+        },
+    };
+}
+
 async function materializeArrangement(
     plan: ArrangementPlan,
     signal: AbortSignal,
@@ -143,12 +160,15 @@ async function materializeArrangement(
     plan.clone();
     const request = plan.requestMaterialization;
     if (request) {
+        const watched = abortWhenSaveInputsChange(signal);
         try {
-            await request(signal);
+            await request(watched.signal);
         } catch (error) {
             // Reclassify a superseded plan even when Worker admission refuses it first.
             assertPreparationCurrent();
             throw error;
+        } finally {
+            watched.stop();
         }
     }
     // Roots with explicit native authors intentionally materialize locally to preserve authorship.
