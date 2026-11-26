@@ -9,9 +9,11 @@ import {
 
 import type { RuntimeGraphOutputDelta } from '../../../models/RuntimeGraphDelta';
 
-function createFakeTrackNode(trackId: string) {
+type FakeDeviceNode = { deviceId: string; type: string };
+
+function createFakeTrackNode(trackId: string, deviceNodes: readonly FakeDeviceNode[] = []) {
     return {
-        strip: { trackId, deviceNodes: [] },
+        strip: { trackId, deviceNodes },
         setOutput: vi.fn((_targetId: string) => true),
     };
 }
@@ -103,6 +105,21 @@ describe('createRuntimeOutputDeltaApplication', () => {
         });
         expect(mutateRuntimeGraph).not.toHaveBeenCalled();
         expect(source.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a destination strip whose live chain differs from the compiled one', () => {
+        const source = createFakeTrackNode('track-1');
+        const destination = createFakeTrackNode('bus-1', [{ deviceId: 'eq-1', type: 'eq' }]);
+        const { apply, mutateRuntimeGraph, revision } = createFixture([source, destination]);
+
+        expect(apply(createDelta('bus-1'))).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Live destination strip does not match the compiled graph delta',
+        });
+        expect(source.setOutput).not.toHaveBeenCalled();
+        expect(mutateRuntimeGraph).not.toHaveBeenCalled();
+        expect(revision.current()).toBe(0);
     });
 
     it('rejects a missing source strip without touching the graph', () => {

@@ -265,6 +265,8 @@ async function installOutputProbe(page: Page, confirmationId: string) {
     await page.evaluate(async (id) => {
         const audio: typeof import('../../src/modules/AudioEngine/useCases') =
             await import('/src/modules/AudioEngine/useCases/index.ts');
+        const engineRepository: typeof import('../../src/modules/AudioEngine/repositories/createWebAudioEngine') =
+            await import('/src/modules/AudioEngine/repositories/createWebAudioEngine.ts');
         const runtime: typeof import('../../src/modules/AiRuntime/stores') =
             await import('/src/modules/AiRuntime/stores/index.ts');
         const rendering: typeof import('../../src/modules/AudioRendering/useCases') =
@@ -392,9 +394,7 @@ async function installOutputProbe(page: Page, confirmationId: string) {
         const originalResume = context.resume;
         const holdResume = async () => {
             await context.suspend();
-            const master: unknown = Reflect.get(audio.audioEngine, 'master');
-            const gate: unknown =
-                typeof master === 'object' && master !== null ? Reflect.get(master, 'previewProgrammeGate') : undefined;
+            const gate = engineRepository.audioEngineInternals.previewProgrammeGate;
             if (!(gate instanceof GainNode)) {
                 throw new TypeError('Missing actual programme gate.');
             }

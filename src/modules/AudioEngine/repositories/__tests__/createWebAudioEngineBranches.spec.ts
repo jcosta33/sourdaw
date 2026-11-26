@@ -13,7 +13,7 @@ import type { BuiltinDeviceNode, SendNode } from '../../models/AudioEngineState'
 
 /**
  * Node double shared across the TrackNode / BusNode mocks below. The strip
- * exposes the nodes AudioEngineImpl reads directly (the two carrier gates for
+ * exposes the nodes the engine reads directly (the two carrier gates for
  * sends and the destination edge, analyserNode for the ungated sidechain key,
  * deviceNodes for note-off fan-out, meterNode for the dispose shutdown sweep).
  */
@@ -21,7 +21,7 @@ function makeNode() {
     return { connect: vi.fn(), disconnect: vi.fn(), port: { postMessage: vi.fn(), close: vi.fn() } };
 }
 
-// TrackNode mock exposing the full surface AudioEngineImpl reads, including the
+// TrackNode mock exposing the full surface the engine reads, including the
 // default-destination / route-output hooks the adjustment-layer runtime calls.
 vi.mock('../../engine/TrackNode', () => ({
     TrackNode: class {
@@ -149,7 +149,7 @@ function getMockTrackNode(engine: AudioEngineTopologyTestHarness, trackId: strin
     return node as unknown as MockTrackNode;
 }
 
-describe('AudioEngineImpl — residual branch coverage', () => {
+describe('createWebAudioEngine — residual branch coverage', () => {
     let mockCtx: MockAudioContext;
     let engine: AudioEngineTopologyTestHarness;
 

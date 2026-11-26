@@ -8568,20 +8568,11 @@
         }
     },
     "src/modules/AudioEngine/repositories/createWebAudioEngine.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
-            "count": 3
+            "count": 1
         },
         "eslint/max-params": {
             "count": 5
-        },
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 1
-        },
-        "sourdaw-craft/no-positional-boolean-flags": {
-            "count": 1
         }
     },
     "src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts": {

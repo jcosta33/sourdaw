@@ -167,6 +167,19 @@ describe('createRuntimeTrackStripInitialization', () => {
         });
     });
 
+    it('rejects an existing strip routed to another output than the snapshot, building nothing', () => {
+        const existing = createFakeTrackNode('track-1', [EQ], 'bus-1');
+        const { initialization, revision, ports } = createFixture([existing]);
+
+        expect(initialization.apply(createDelta([EQ]))).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Live source strip does not match the compiled initialization snapshot',
+        });
+        expect(ports.createTrackNode).not.toHaveBeenCalled();
+        expect(revision.current()).toBe(0);
+    });
+
     it('refuses a stale project revision before any strip is read or built', () => {
         const { initialization, revision, ports } = createFixture();
         revision.setProjectRevisionValidator(() => false);
