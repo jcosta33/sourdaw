@@ -815,9 +815,13 @@ pub struct DeviceParamEvent {
     /// is `f64` on the CLAP and VST3 wire, so an `f32` round trip here would
     /// move the value the plugin displays. A built-in narrows it at apply.
     pub value: f64,
-    /// Absolute timeline frame at which the change takes effect. A device owns
-    /// its own parameter smoothing, so the change lands on the first block
-    /// whose span reaches the stamp rather than at a sample offset inside it.
+    /// Absolute timeline frame at which the change takes effect. It is taken
+    /// by the first span that reaches the stamp. A hosted plugin is handed it
+    /// at the sample inside that span that renders the frame — both formats
+    /// carry a per-event offset for exactly this — so several stamps for one
+    /// parameter inside one span reach the plugin as the points of one ramp,
+    /// in stamp order. A built-in owns its own parameter smoothing and holds
+    /// no per-sample event list, so it applies the change at the span's head.
     pub at_frame: u64,
 }
 

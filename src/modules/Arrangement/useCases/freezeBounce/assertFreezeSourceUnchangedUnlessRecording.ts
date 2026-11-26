@@ -6,13 +6,13 @@ import { isFreezeRefusedWhileRecording } from './isFreezeRefusedWhileRecording';
  * a recording start the freeze must yield to is engaged, the change is left for the caller's
  * recording refusal to report, instead of ending the freeze in the changed-while-freezing error.
  */
-export async function assertFreezeSourceUnchangedUnlessRecording(
+export function assertFreezeSourceUnchangedUnlessRecording(
     trackId: string,
-    renderedSourceHash: string,
+    renderedSignature: string,
     isCurrentTask: () => boolean
-): Promise<void> {
+): void {
     try {
-        await assertFreezeSourceUnchanged(trackId, renderedSourceHash);
+        assertFreezeSourceUnchanged(trackId, renderedSignature);
     } catch (error) {
         if (!isCurrentTask()) {
             throw error;

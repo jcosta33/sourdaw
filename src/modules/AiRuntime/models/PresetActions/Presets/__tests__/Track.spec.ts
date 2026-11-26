@@ -39,13 +39,14 @@ describe('trackPresets — creation presets', () => {
         }
     });
 
-    it('builds createFolder action for add-folder', () => {
+    it('builds a named folder addTrack for add-folder', () => {
         const preset = trackPresets.find((p) => p.id === 'add-folder')!;
         const action = preset.buildAction(ctxWithTrack);
         if (action === null || Array.isArray(action)) {
             throw new Error('Expected action');
         }
-        expect(action.type).toBe('createFolder');
+        expect(action.type).toBe('addTrack');
+        expect(action.payload).toMatchObject({ kind: 'folder', name: expect.stringMatching(/^Folder \d+$/u) });
     });
 });
 
@@ -117,6 +118,25 @@ describe('trackPresets — trackAction-based presets forward selectedTrackId', (
             expect(onAction.payload).toEqual({ trackId: 'track-1', ...onPayload });
             expect(offAction.payload).toEqual({ trackId: 'track-1', ...offPayload });
         }
+    });
+
+    it('solo-safe emits setSoloSafe with the negation of the selected track state', () => {
+        const preset = trackPresets.find((p) => p.id === 'solo-safe')!;
+
+        expect(preset.buildAction({ ...ctxWithTrack, selectedTrackSoloSafe: false })).toEqual({
+            type: 'setSoloSafe',
+            payload: { trackId: 'track-1', soloSafe: true },
+        });
+        expect(preset.buildAction({ ...ctxWithTrack, selectedTrackSoloSafe: true })).toEqual({
+            type: 'setSoloSafe',
+            payload: { trackId: 'track-1', soloSafe: false },
+        });
+    });
+
+    it('solo-safe emits nothing when the selected track state is unknown', () => {
+        const preset = trackPresets.find((p) => p.id === 'solo-safe')!;
+
+        expect(preset.buildAction(ctxWithTrack)).toBeNull();
     });
 
     it('returns null for selection-required presets when no track is selected', () => {

@@ -259,7 +259,7 @@ describe('scheduleFrozenTrack', () => {
 
     // FX-4 residual — the buffer bakes the chain as it stood at freeze time. A
     // plugin latency change moves the live lookup but never marks the track
-    // stale (computeTrackHash sees no clip/device change), so playback must
+    // stale (digestFreezePrintInput sees no clip/device change), so playback must
     // follow the freeze-time snapshot or drift permanently.
     it('compensates frozen playback against the freeze-time snapshot, not the current chain', () => {
         const start = vi.fn();

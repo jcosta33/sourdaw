@@ -8,8 +8,6 @@ import type { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useC
 import type { ProjectStoreState } from '../../../../stores/projectStore';
 import type { ExternalPluginCaptureOutcome } from '../captureExternalPluginStates';
 
-type AudioDurabilityResult = Awaited<ReturnType<typeof ensureCachedAudioBuffersDurable>>;
-
 const RECENT_KEY = 'sourdaw:project:1700000000000';
 
 // 60 s of 48 kHz stereo float32 = 23,040,000 bytes, which the serializer
@@ -40,8 +38,8 @@ const mocks = vi.hoisted(() => ({
     captureExternalPluginStates: vi.fn<() => Promise<ExternalPluginCaptureOutcome>>(),
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
-    ensureCachedAudioBuffersDurable: vi.fn<(ids: readonly string[], scope?: unknown) => Promise<AudioDurabilityResult>>(
-        () => Promise.resolve({ status: 'durable', isCurrent: () => true, release: vi.fn() })
+    ensureCachedAudioBuffersDurable: vi.fn<typeof ensureCachedAudioBuffersDurable>(() =>
+        Promise.resolve({ status: 'durable', isCurrent: () => true, release: vi.fn() })
     ),
 }));
 
@@ -251,7 +249,11 @@ describe('saveProject durability', () => {
         const saveProject = await importSaveProject();
 
         const saving = saveProject();
-        await vi.waitFor(() => expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith(['required-buffer']));
+        await vi.waitFor(() =>
+            expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith(['required-buffer'], undefined, {
+                preferWorkerRead: true,
+            })
+        );
         expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
 
@@ -260,6 +262,7 @@ describe('saveProject durability', () => {
         expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledTimes(2);
         expect(mocks.ensureCachedAudioBuffersDurable.mock.calls[1]?.[0]).toEqual(['required-buffer']);
         expect(mocks.ensureCachedAudioBuffersDurable.mock.calls[1]?.[1]).toBeDefined();
+        expect(mocks.ensureCachedAudioBuffersDurable.mock.calls[1]?.[2]).toEqual({ preferWorkerRead: true });
         expect(release).toHaveBeenCalledOnce();
     });
 
@@ -281,7 +284,9 @@ describe('saveProject durability', () => {
 
         await expect(saveProject()).resolves.toBe(false);
 
-        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith(requiredIds);
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith(requiredIds, undefined, {
+            preferWorkerRead: true,
+        });
         expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
