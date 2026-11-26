@@ -36,6 +36,7 @@ import {
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Track } from '../../../models/Track';
+import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { captureFreezeStateSnapshot } from '../../../useCases/freezeBounce/freezeStateSnapshot';
 import { activeFreezeTasks } from '../../../useCases/freezeBounce/freezeTrack';
@@ -282,6 +283,55 @@ describe('freezeTrack started over a running freeze', () => {
             expect(track.frozenBufferId).toBeUndefined();
         }
         expect(render.mock.calls[0]?.[3]?.abortSignal?.aborted).toBe(true);
+    });
+
+    // A synced write runs no local action, so no cancel reaches the task: the track simply changes under it.
+    const unfrozenByCollaborator: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+    };
+    const refrozenByCollaborator: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+        frozen: true,
+        frozenBufferId: 'remote-take',
+        freezeState: { status: 'frozen', freezeId: 'remote-freeze', frozenBufferId: 'remote-take' },
+    };
+    const failedByCollaborator: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+        frozen: false,
+        freezeState: { status: 'error', errorMessage: 'remote failure' },
+    };
+    it.each([
+        { name: 'an unfreeze', written: unfrozenByCollaborator },
+        { name: 'a different freeze take', written: refrozenByCollaborator },
+        { name: 'a failure', written: failedByCollaborator },
+    ])('keeps a collaborator write of $name when the local render finishes after it', async ({ written }) => {
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        expect(projectedTrack().freezeState.status).toBe('freezing');
+        updateTrack('freeze-track', (time) => ({ ...time, ...written }));
+        flushAutomergeStorageWrites();
+        expect(activeFreezeTasks.has('freeze-track')).toBe(true);
+        first.release();
+        await running;
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState).toEqual(written.freezeState);
+            expect(track.frozen).toBe(written.frozen);
+            expect(track.frozenBufferId).toBe(written.frozenBufferId);
+        }
+        expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+        expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
+    });
+
+    it('still commits a render whose progress ticked while the track stayed freezing', async () => {
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        render.mock.calls[0]?.[3]?.onProgress?.(0.5);
+        expect(projectedTrack().freezeState.renderProgress).toBe(0.5);
+        first.release();
+        await running;
+        expect(projectedTrack().freezeState.status).toBe('frozen');
+        expect(projectedTrack().frozenBufferId).toBeDefined();
     });
 
     it('unfreezes a committed frozen track as before, with nothing running', async () => {

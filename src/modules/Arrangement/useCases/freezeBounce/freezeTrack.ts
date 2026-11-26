@@ -20,6 +20,7 @@ import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type FreezeStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
@@ -46,13 +47,15 @@ type FreezeTaskIdentity = {
     projectId: number;
     rootIdentity: string;
     trackId: string;
+    /** The freezing state this task wrote; null when the track vanished before it could be read. */
+    pendingFreeze: FreezeStateSnapshot | null;
 };
 
 function isEligibleActiveProjectTrack({
     projectId,
     rootIdentity,
     trackId,
-}: Omit<FreezeTaskIdentity, 'abortController'>): boolean {
+}: Pick<FreezeTaskIdentity, 'projectId' | 'rootIdentity' | 'trackId'>): boolean {
     const activeProject = projectStore.value;
     const activeState = trackStore.value;
     if (
@@ -71,8 +74,22 @@ function isEligibleActiveProjectTrack({
     );
 }
 
-function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
+function isRegisteredFreezeTask(task: FreezeTaskIdentity): boolean {
     return activeFreezeTasks.get(task.trackId) === task.abortController && isEligibleActiveProjectTrack(task);
+}
+
+/**
+ * Gates every write that lands after an await. A synced write from a collaborator runs no local
+ * action, so it never cancels this task: the live track must still show the freezing state this task
+ * wrote, and any departure, local or remote, stops the write. The source-edit refusal and the failure
+ * path use `isRegisteredFreezeTask` instead, so a local edit that reset the track still reports why.
+ */
+function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
+    if (!isRegisteredFreezeTask(task) || !task.pendingFreeze) {
+        return false;
+    }
+    const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === task.trackId);
+    return liveTrack !== undefined && freezeStateSnapshotMatches(liveTrack, task.pendingFreeze);
 }
 
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
@@ -93,7 +110,7 @@ function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortControl
  */
 async function readFreezeTailSeconds(freezeRender: FreezeRender, task: FreezeTaskIdentity): Promise<number | null> {
     await refreshExternalPluginTails();
-    if (!isCurrentFreezeTask(task)) {
+    if (!isRegisteredFreezeTask(task)) {
         return null;
     }
     const { target, source } = freezeRender;
@@ -140,12 +157,8 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     }
     const abortController = new AbortController();
     activeFreezeTasks.set(trackId, abortController);
-    const taskIdentity = {
-        abortController,
-        projectId: project.createdAt,
-        rootIdentity: captureProjectRootIdentity(),
-        trackId,
-    };
+    const projectId = project.createdAt;
+    const rootIdentity = captureProjectRootIdentity();
     const sourceRevision = captureProjectRevision();
 
     updateTrack(trackId, (time) => ({
@@ -153,6 +166,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
     }));
     const pendingFreeze = captureLiveFreezeState(trackId);
+    const taskIdentity: FreezeTaskIdentity = { abortController, projectId, rootIdentity, trackId, pendingFreeze };
 
     try {
         // One synchronous read of everything the render reads, signed as it is read. The render
@@ -194,7 +208,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             },
         });
 
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        if (!isRegisteredFreezeTask(taskIdentity)) {
             return false;
         }
 
@@ -229,9 +243,14 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
         // Synchronous from here to the commit write: no await can let a note or a recording start land in between.
         assertFreezeSourceUnchangedUnlessRecording(trackId, freezeRender.signature, () =>
-            isCurrentFreezeTask(taskIdentity)
+            isRegisteredFreezeTask(taskIdentity)
         );
-        if (refuseFreezeCommit(trackId, () => isCurrentFreezeTask(taskIdentity))) {
+        if (refuseFreezeCommit(trackId, () => isRegisteredFreezeTask(taskIdentity))) {
+            return false;
+        }
+        // After the recording refusal, which reports why a recording start reset the track. Any other
+        // departure from the freezing state, a collaborator's unfreeze included, ends the task silently.
+        if (!isCurrentFreezeTask(taskIdentity)) {
             return false;
         }
 
@@ -312,7 +331,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             const current = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
             return (
                 !abortController.signal.aborted &&
-                isCurrentFreezeTask(taskIdentity) &&
+                isRegisteredFreezeTask(taskIdentity) &&
                 projectRevisionMatchesLiveIgnoringSaveWrites(sourceRevision) &&
                 current !== undefined &&
                 valuesEqual(captureFreezeStateSnapshot(current), snapshot)
