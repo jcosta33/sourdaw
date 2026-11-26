@@ -14,8 +14,6 @@ import {
     type AgentReferenceNameForms,
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
-import { findNamedRoleFamilies } from './findNamedRoleFamilies';
-import { findNarrowerRoleSpans } from './findNarrowerRoleSpans';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -28,6 +26,7 @@ import { holdsFragmentAtWordStart } from './holdsFragmentAtWordStart';
 import { namesTrackSelectorForm } from './namesTrackSelectorForm';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
+import { readFamilyStatement, type FamilyStatement } from './readFamilyStatement';
 import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 import { scopeToInstruction } from './scopeToInstruction';
@@ -499,18 +498,22 @@ function findBackReference(instruction: string, context: ProjectContext): number
     return positions.length === 0 ? undefined : Math.min(...positions);
 }
 
-/**
- * The text the targets are read from: the whole request with its restrictions, the values the batch
- * writes and every other instruction naming its own tracks blanked, so a name stated only by another
- * instruction, to protect an object or as a new name is never read as picking a target.
- */
-function getEvidenceText(
+/** The whole request with its restrictions and the values the batch writes blanked. */
+function getRequestText(
     input: RequestReadingInput,
     request: MaskedRequest,
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): string {
     const unrestricted = restrictionRanges.reduce(blankRange, request.prompt);
-    const unwritten = maskWrittenValues(unrestricted, input.valueTexts, input.context);
+    return maskWrittenValues(unrestricted, input.valueTexts, input.context);
+}
+
+/**
+ * The text the targets are read from: the whole request with its restrictions, the values the batch
+ * writes and every other instruction naming its own tracks blanked, so a name stated only by another
+ * instruction, to protect an object or as a new name is never read as picking a target.
+ */
+function getEvidenceText(input: RequestReadingInput, request: MaskedRequest, unwritten: string): string {
     if (input.instruction === undefined) {
         return unwritten;
     }
@@ -723,8 +726,8 @@ type RequestReading = {
     picks: NamePicks;
     /** Read only for a call that must prove its selector's picks. */
     evidence: () => EvidenceReading;
-    /** Per role family the selector picks by, the roles the instruction states it through, when narrower. */
-    statedFamilyRoles: () => ReadonlyArray<ReadonlySet<string>>;
+    /** Per role family the selector picks by, how the instruction states it. */
+    familyStatements: () => readonly FamilyStatement[];
 };
 
 function readOnce<Reading>(read: () => Reading): () => Reading {
@@ -764,26 +767,6 @@ function getFamilyPicks(input: RequestReadingInput): SemanticCommandListRoleFami
     return predicates.flatMap((predicate) => ('roleFamily' in predicate ? [predicate.roleFamily] : []));
 }
 
-/**
- * The narrower roles the text names a family through, when it names the family only that way: "turn
- * down the lead vocal" names the lead vocal, never every vocal. Empty when the text names the family
- * itself outside every such phrase ("the vocals") or names no narrower role of it, which leaves the
- * family as the compiler resolved it.
- */
-function readStatedNarrowerRoles(
-    text: string,
-    family: SemanticCommandListRoleFamily,
-    context: ProjectContext
-): ReadonlySet<string> {
-    const masked = maskObjectNames(text, context);
-    const roleSpans = findNarrowerRoleSpans(masked, [family]);
-    const outsideRoles = roleSpans.reduce(blankRange, masked);
-    if (roleSpans.length === 0 || findNamedRoleFamilies(outsideRoles, [family]).named.includes(family)) {
-        return new Set();
-    }
-    return new Set(roleSpans.map((span) => span.role));
-}
-
 /** The canonical role of a track, or of the track that owns the object. */
 function getOwnerRole(id: string, context: ProjectContext): string | undefined {
     const owner = context.tracks.find(
@@ -801,25 +784,40 @@ function readRequest(input: RequestReadingInput): RequestReading {
     const request = maskRequest(input.prompt, input.context);
     const restrictionRanges = getRestrictionRanges(request, input.catalog);
     const picks = getNamePicks(input);
-    const text = readOnce(() => getEvidenceText(input, request, restrictionRanges));
+    const requestText = readOnce(() => getRequestText(input, request, restrictionRanges));
+    const text = readOnce(() => getEvidenceText(input, request, requestText()));
     return {
         ...getProtectedIds(input, request, restrictionRanges),
         picks,
         evidence: readOnce(() => readEvidence(input, picks, text())),
-        statedFamilyRoles: readOnce(() =>
-            getFamilyPicks(input).map((family) => readStatedNarrowerRoles(text(), family, input.context))
+        familyStatements: readOnce(() =>
+            getFamilyPicks(input).map((family) =>
+                readFamilyStatement(
+                    {
+                        scoped: maskObjectNames(text(), input.context),
+                        whole: maskObjectNames(requestText(), input.context),
+                    },
+                    family
+                )
+            )
         ),
     };
 }
 
-/** Whether every target holds a role the instruction states for each family it names only by narrower roles. */
-function staysWithinStatedRoles(input: CompiledTargetAuthorityInput, reading: RequestReading): boolean {
-    return reading
-        .statedFamilyRoles()
-        .every(
-            (roles) =>
-                roles.size === 0 || input.targetIds.every((targetId) => holdsStatedRole(targetId, roles, input.context))
+/**
+ * Whether the instruction states every family the selector picks by, and every target holds a role
+ * it states for a family it names only through narrower roles.
+ */
+function staysWithinStatedFamilies(input: CompiledTargetAuthorityInput, reading: RequestReading): boolean {
+    return reading.familyStatements().every((statement) => {
+        if (statement.kind === 'elsewhere') {
+            return false;
+        }
+        return (
+            statement.kind !== 'roles' ||
+            input.targetIds.every((targetId) => holdsStatedRole(targetId, statement.roles, input.context))
         );
+    });
 }
 
 function admitTargets(input: CompiledTargetAuthorityInput, reading: RequestReading): CompiledTargetAuthority {
@@ -832,7 +830,7 @@ function admitTargets(input: CompiledTargetAuthorityInput, reading: RequestReadi
     if (input.referenceResolved) {
         return ADMITTED;
     }
-    if (!staysWithinStatedRoles(input, reading)) {
+    if (!staysWithinStatedFamilies(input, reading)) {
         return UNAUTHORIZED;
     }
     const { picks } = reading;

@@ -389,3 +389,40 @@ describe('a role-family pick admits only the roles the request narrows the famil
         expect(admission(eqTerms('device-bv-eq'))).toEqual(UNAUTHORIZED);
     });
 });
+
+describe('a role-family pick needs its family stated in its own instruction', () => {
+    const kick = roleTrack('track-kick', 'Kick', 'kick');
+    const kit = createProjectContext([keys, kick]);
+    const drumFamily = (match: 'all' | 'any', targetArgument = 'trackId'): CompiledSelectorTerms => ({
+        targetArgument,
+        match: { [match]: [{ roleFamily: 'drums' }] },
+    });
+
+    it.each([['all' as const], ['any' as const]])(
+        'refuses the kick for "set Keys volume to 75% and mute the drums" through match.%s',
+        (match) => {
+            expect(
+                admitPick('set Keys volume to 75% and mute the drums', 'set Keys volume to 75%', (instruction) =>
+                    pickTerms(drumFamily(match), ['track-kick'], instruction, kit)
+                )
+            ).toEqual(UNAUTHORIZED);
+        }
+    );
+
+    it('refuses the kick as a member of "create VCA group for Keys and mute the drums"', () => {
+        expect(
+            admitPick('create VCA group for Keys and mute the drums', 'create VCA group for Keys', (instruction) => ({
+                ...pickTerms(drumFamily('any', 'trackIds'), ['track-kick'], instruction, kit),
+                argument: 'trackIds',
+            }))
+        ).toEqual(UNAUTHORIZED);
+    });
+
+    it('admits the kick for "turn the drums down 3 dB"', () => {
+        expect(
+            admitPick('turn the drums down 3 dB', 'turn the drums down 3 dB', (instruction) =>
+                pickTerms(drumFamily('all'), ['track-kick'], instruction, kit)
+            )
+        ).toEqual(ADMITTED);
+    });
+});
