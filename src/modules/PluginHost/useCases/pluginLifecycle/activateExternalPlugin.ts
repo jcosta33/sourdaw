@@ -68,6 +68,35 @@ const SUPERSEDED_RESTORE: ExternalPluginActivationResult = {
     reason: 'External plugin activation was superseded by a runtime teardown',
 };
 
+const SUPERSEDED_LOAD: ExternalPluginActivationResult = {
+    status: 'failed',
+    stage: 'attach',
+    reason: 'External plugin activation was superseded by a runtime teardown',
+};
+
+/**
+ * Whether a settled activation records its outcome and drops its task. A superseded answer does not
+ * describe the instance: its plugin may hold defaults with no marker, and its registered task is what
+ * makes a rebuild's read and a save preserve the stored chunk, so it settles only within its own
+ * generation. Any other answer describes the instance a rebuild waited on, so it settles after the
+ * epoch moved on too; otherwise a rebuild whose unload rejects would leave the stale task answering
+ * every later activation.
+ */
+function settlesTask(
+    instanceId: string,
+    activationEpoch: number,
+    outcome: ExternalPluginActivationResult,
+    task: Promise<ExternalPluginActivationResult>
+): boolean {
+    if (externalPluginActivationTasks.get(instanceId) !== task) {
+        return false;
+    }
+    if (outcome === SUPERSEDED_RESTORE || outcome === SUPERSEDED_LOAD) {
+        return activationEpoch === externalPluginActivationEpoch.current;
+    }
+    return true;
+}
+
 function activationSlot(instanceId: string): ExternalPluginActivationStatus | undefined {
     return externalPluginActivationStore.value?.byInstanceId[instanceId];
 }
@@ -306,10 +335,7 @@ export function activateExternalPlugin({
                     return { status: 'failed', stage: 'restore', reason };
                 })
                 .then((outcome) => {
-                    if (
-                        activationEpoch === externalPluginActivationEpoch.current &&
-                        externalPluginActivationTasks.get(instanceId) === restoreTask
-                    ) {
+                    if (settlesTask(instanceId, activationEpoch, outcome, restoreTask)) {
                         externalPluginActivationOutcomes.set(instanceId, outcome);
                         externalPluginActivationTasks.delete(instanceId);
                     }
@@ -368,11 +394,7 @@ export function activateExternalPlugin({
         try {
             const instance = await loadPlugin(pluginId, instanceId);
             if (!isCurrentActivation()) {
-                return {
-                    status: 'failed',
-                    stage: 'attach',
-                    reason: 'External plugin activation was superseded by a runtime teardown',
-                };
+                return SUPERSEDED_LOAD;
             }
             // Publish what this instance reports about itself before anything
             // else reads it. The metadata is in hand here, so the automation
@@ -426,6 +448,12 @@ export function activateExternalPlugin({
                 setActivationStatus(instanceId, 'error', reason);
             }
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${reason}`);
+            // A load a rebuild overtook still holds its task and leaves its instance loaded, so it answers
+            // like an overtaken success and keeps the task for the rebuild's read. A load whose task a
+            // teardown or successor took over reports its own failure.
+            if (activationHoldsInstance() && activationEpoch !== externalPluginActivationEpoch.current) {
+                return SUPERSEDED_LOAD;
+            }
             return { status: 'failed', stage: 'load', reason };
         }
 
@@ -447,6 +475,11 @@ export function activateExternalPlugin({
 
         if (!stateChunk) {
             return attachment ?? { status: 'active' };
+        }
+        // A rebuild that began before this restore was issued: it could only run after the generation
+        // ends, queued behind the fence that is waiting on this activation.
+        if (!isCurrentActivation()) {
+            return SUPERSEDED_RESTORE;
         }
         try {
             await restorePluginState(instanceId, stateChunk);
@@ -475,10 +508,7 @@ export function activateExternalPlugin({
             return { status: 'failed', stage: 'restore', reason: String(error) };
         }
     })().then((outcome) => {
-        if (
-            activationEpoch === externalPluginActivationEpoch.current &&
-            externalPluginActivationTasks.get(instanceId) === activationTask
-        ) {
+        if (settlesTask(instanceId, activationEpoch, outcome, activationTask)) {
             externalPluginActivationOutcomes.set(instanceId, outcome);
             externalPluginActivationTasks.delete(instanceId);
         }
