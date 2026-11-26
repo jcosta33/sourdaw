@@ -18,6 +18,7 @@ use crate::vst3_wrapper::Vst3Error;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Why a loaded plugin refused a seam operation: its state, its editor, or a
 /// latency re-query.
@@ -154,6 +155,18 @@ pub trait EditorWindowHost: Send + Sync {
     /// Run `work` on the thread that owns this window, and return once it has
     /// run. `Err` means it did not run and never will.
     fn run_on_window_thread(&self, work: Box<dyn FnOnce() + Send>) -> Result<(), String>;
+
+    /// [`Self::run_on_window_thread`], giving up with `Err` once `deadline` has
+    /// passed with `work` not yet started. Work already started is waited out.
+    /// For a caller on a timer, whose next tick retries work withdrawn unrun.
+    /// The default waits as long as [`Self::run_on_window_thread`] does.
+    fn run_on_window_thread_within(
+        &self,
+        work: Box<dyn FnOnce() + Send>,
+        _deadline: Duration,
+    ) -> Result<(), String> {
+        self.run_on_window_thread(work)
+    }
 }
 
 /// Shared because the backend keeps it for the editor's life and hands a clone
@@ -516,6 +529,16 @@ pub trait AudioPlugin: Send + Sync {
     /// synchronously — VST3 does, on the frame the plugin calls into — has
     /// nothing left to apply here.
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+
+    /// The window a pending editor resize is applied in, without taking it.
+    /// **Control path only**; it makes no plugin call.
+    ///
+    /// `None` when nothing is pending or no window is installed. Lets a caller
+    /// carry the apply to that window's thread rather than wait for the window
+    /// server's answer where it stands.
+    fn editor_window_with_pending_resize(&self) -> Option<SharedEditorWindow> {
         None
     }
 
