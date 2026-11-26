@@ -7522,13 +7522,14 @@ function readClipProtection(
         return { ...clipProtection, read: prompt };
     }
     // MIDI may blank an otherwise unresolved tone clause only after validating its standing receipt.
-    const inertClauses =
-        midiNoteEditClipId === undefined
-            ? inertProtectionClauses
-                  .read(prompt, context)
-                  .filter(({ start, end }) => !clipProtectionReading.namesClip(prompt.slice(start, end), context))
-            : [];
-    const clipPrompt = [...trackProtections.resolvedTrackClauses, ...inertClauses].reduce(
+    let blankedClauses = trackProtections.resolvedTrackClauses;
+    if (midiNoteEditClipId === undefined) {
+        const inertClauses = inertProtectionClauses
+            .read(prompt, context)
+            .filter(({ start, end }) => !clipProtectionReading.namesClip(prompt.slice(start, end), context));
+        blankedClauses = [...blankedClauses, ...inertClauses];
+    }
+    const clipPrompt = blankedClauses.reduce(
         (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
         prompt
     );
