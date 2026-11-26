@@ -46,7 +46,7 @@ describe('readPlannedClip', () => {
     it('ignores an earlier action that names neither the clip nor its track', () => {
         const planned = readPlannedClip(
             'c1',
-            context([{ type: 'setTrackGain', payload: { trackId: 'track-2', gain: 0.5 } }])
+            context([{ type: 'muteTrack', payload: { trackId: 'track-2', muted: true, expectedMuted: false } }])
         );
 
         expect(planned?.name).toBe('Old');
@@ -55,7 +55,12 @@ describe('readPlannedClip', () => {
     it('reads the clip as absent after an earlier action that names it among a list but is not projected', () => {
         const planned = readPlannedClip(
             'c1',
-            context([{ type: 'moveClips', payload: { moves: [{ clipId: 'c1', trackId: 'track-2', startBeat: 8 }] } }])
+            context([
+                {
+                    type: 'moveClips',
+                    payload: { moves: [{ clipId: 'c1', trackId: 'track-2', startBeat: 8 }], ripple: false },
+                },
+            ])
         );
 
         expect(planned).toBeUndefined();
