@@ -8,6 +8,7 @@ import {
     assertBlackHoleInput,
     blackHoleCaptureAllowsHiddenDefault,
     cardDeviceId,
+    driveDesktopGrandBouleAudition,
 } from '../desktopGrandBouleAuditionDrive.ts';
 import {
     auditionFailure,
@@ -23,6 +24,19 @@ import {
     openBlackHoleMedia,
     RECEIVE_WORKLET,
 } from '../desktopGrandBouleCapture.ts';
+
+const appBoundary = vi.hoisted(() => ({
+    launchEditorSession: vi.fn(),
+    readyWorkspace: vi.fn(),
+    quitEditorSession: vi.fn(),
+}));
+const execFileSync = vi.hoisted(() => vi.fn());
+
+vi.mock('node:child_process', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('node:child_process')>()),
+    execFileSync,
+}));
+vi.mock('../desktopFermenterDrive.ts', () => appBoundary);
 
 function signal(firstFrame = 0, frames = 32768, preview = 0.01, sentinel = 0.02): SignalWindow {
     return measureSignalWindow({
@@ -244,6 +258,91 @@ describe('read-only BlackHole input admission', () => {
     it('narrows the exact generated inspector identity', () => {
         expect(cardDeviceId('device-card-owned-123')).toBe('owned-123');
     });
+});
+
+describe('packaged audition capture admission', () => {
+    const device = 'BlackHole 2ch';
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
+        vi.resetAllMocks();
+    });
+
+    it.each([
+        ['local host', undefined, device, false],
+        ['self-hosted runner', 'self-hosted', device, false],
+        ['hosted runner with a competing input', 'github-hosted', device + '\nBuilt-in Microphone', false],
+        ['hosted runner with only BlackHole', 'github-hosted', device, true],
+    ] as const)(
+        'routes concealed capture through host admission on a %s',
+        async (_host, environment, inputs, allowed) => {
+            vi.stubEnv('RUNNER_ENVIRONMENT', environment);
+            execFileSync.mockImplementation((command: string, args: string[]) => {
+                expect(command).toBe('SwitchAudioSource');
+                switch (args.join(' ')) {
+                    case '-c -t output':
+                    case '-c -t input':
+                        return device + '\n';
+                    case '-a -t input':
+                        return inputs + '\n';
+                    default:
+                        throw new Error('unexpected audio command');
+                }
+            });
+            const getUserMedia = vi
+                .fn()
+                .mockRejectedValue(new DOMException('controlled capture boundary', 'NotReadableError'));
+            vi.stubGlobal('navigator', {
+                mediaDevices: {
+                    enumerateDevices: vi
+                        .fn()
+                        .mockResolvedValue([{ kind: 'audioinput', deviceId: '', label: '', groupId: '' }]),
+                    getUserMedia,
+                },
+            });
+            const page = {
+                setDefaultTimeout: vi.fn(),
+                getByRole: vi.fn(),
+                evaluateHandle: vi.fn(
+                    async (evaluate: typeof openBlackHoleMedia, options: Parameters<typeof openBlackHoleMedia>[0]) => {
+                        try {
+                            return await evaluate(options);
+                        } catch (error) {
+                            throw new Error('page.evaluateHandle: ' + String(error));
+                        }
+                    }
+                ),
+            };
+            const app = { page };
+            appBoundary.launchEditorSession.mockResolvedValue(app);
+            const observations = freshAuditionObservations();
+
+            await driveDesktopGrandBouleAudition('packaged-binary', observations);
+
+            if (allowed) {
+                expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({
+                    audio: {
+                        deviceId: { exact: 'default' },
+                        echoCancellation: { exact: false },
+                        noiseSuppression: { exact: false },
+                        autoGainControl: { exact: false },
+                    },
+                    video: false,
+                });
+                expect(observations.unavailable).toBe('capture-input-NotReadableError');
+            } else {
+                expect(getUserMedia).not.toHaveBeenCalled();
+                expect(observations.unavailable).toBe('capture-named-input-unavailable');
+            }
+            expect(page.evaluateHandle).toHaveBeenCalledExactlyOnceWith(openBlackHoleMedia, {
+                device,
+                allowHiddenDefault: allowed,
+            });
+            expect(appBoundary.quitEditorSession).toHaveBeenCalledExactlyOnceWith(app);
+            expect(observations.appQuit).toBe(true);
+        }
+    );
 });
 
 describe('BlackHole renderer capture admission', () => {
