@@ -8,8 +8,11 @@ vi.mock('../../getWritableMidiClipReplayGuard', () => ({
     })),
 }));
 
+import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
+
 import { midiStore } from '../../../stores/midiStore';
 import { handleHumanizeNotes } from '../handleHumanizeNotes';
+import { handleRestoreMidiClipNotes } from '../handleRestoreMidiClipNotes';
 
 type HumanizeNotesAction = Parameters<typeof handleHumanizeNotes.execute>[0];
 
@@ -98,5 +101,43 @@ describe('handleHumanizeNotes — deterministic undo/redo (item #2)', () => {
 
         expect(actionA.payload.seed).not.toBe(actionB.payload.seed);
         expect(resultB).not.toEqual(resultA);
+    });
+});
+
+describe('handleHumanizeNotes — notes at the clip start', () => {
+    function findSeedDrawingNegativeTimingOffset(): number {
+        for (let seed = 1; seed < 1000; seed += 1) {
+            const rng = createSeededRandom(seed);
+            const timingDraw = rng();
+            const velocityStep = Math.round((rng() - 0.5) * 10);
+            if (timingDraw < 0.5 && velocityStep !== 0) {
+                return seed;
+            }
+        }
+        throw new Error('No seed draws a negative timing offset');
+    }
+
+    it('keeps a note at beat 0 at beat 0 and restores it exactly on undo', () => {
+        midiStore.set({
+            notesByClipId: { clip1: [{ ...note('a'), startBeat: 0 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const action: HumanizeNotesAction = {
+            type: 'humanizeNotes',
+            payload: { clipId: 'clip1', amount: 1, seed: findSeedDrawingNegativeTimingOffset() },
+        };
+        const inverse = handleHumanizeNotes.describe(action).inverseAction;
+
+        void handleHumanizeNotes.execute(action);
+
+        expect(midiStore.value?.notesByClipId.clip1?.[0]?.startBeat).toBe(0);
+        if (inverse?.type !== 'restoreMidiClipNotes') {
+            throw new Error('Expected a restoreMidiClipNotes inverse');
+        }
+        // The undo guard names exactly the notes the write left, and its restore target is the original note.
+        expect(inverse.payload.expectedNotes).toEqual(midiStore.value?.notesByClipId.clip1);
+        expect(inverse.payload.notes).toEqual([{ ...note('a'), startBeat: 0 }]);
+        expect(handleRestoreMidiClipNotes.validateSessionActionArguments?.(inverse.payload)).toBe(true);
     });
 });

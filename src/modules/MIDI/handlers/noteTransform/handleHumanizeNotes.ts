@@ -1,9 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
-import { clampVelocity } from '#/utils/midiData';
-import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
+import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
-import { type MidiNote } from '../../models/MidiNote';
+import { humanizeMidiNotes } from '../../transformers/humanizeMidiNotes';
 import { humanizeNotes } from '../../useCases/midiNoteTransforms/humanizeNotes';
 import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
@@ -11,28 +10,6 @@ import { isMidiNoteTransformSessionEntry } from './isMidiNoteTransformSessionEnt
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
 type HumanizeNotesAction = Extract<AppAction, { type: 'humanizeNotes' }>;
-
-/**
- * The exact map the `humanizeNotes` use case applies, evaluated read-only so
- * `describe` can preview the transformed notes for the undo guard. It must
- * draw the same rng values in the same order as the use case's updater, or the
- * captured `expectedNotes` would not match what the write produced and undo
- * would refuse. The two live apart because the use case owns the write path
- * and this handler owns the dispatch contract (#4615).
- */
-function previewHumanizedNotes(
-    notes: readonly MidiNote[],
-    amount: number,
-    velocityAmount: number,
-    seed: number
-): MidiNote[] {
-    const rng = createSeededRandom(seed);
-    return notes.map((note) => ({
-        ...note,
-        startBeat: note.startBeat + (rng() - 0.5) * amount * 0.25,
-        velocity: clampVelocity(note.velocity + Math.round((rng() - 0.5) * velocityAmount * 10)),
-    }));
-}
 
 function prepareHumanizeNotes(action: HumanizeNotesAction) {
     // describe runs before execute, so the seed is minted here when absent and
@@ -47,7 +24,7 @@ function prepareHumanizeNotes(action: HumanizeNotesAction) {
         label: 'Humanize notes',
         transform: (notes) => {
             const velocityAmount = action.payload.velocityAmount ?? action.payload.amount;
-            return previewHumanizedNotes(notes, action.payload.amount, velocityAmount, seed);
+            return humanizeMidiNotes(notes, action.payload.amount, velocityAmount, seed);
         },
     });
 }
@@ -84,7 +61,7 @@ export const handleHumanizeNotes = createHandler<'humanizeNotes'>({
         return isMidiNoteTransformSessionEntry({
             entry,
             clipId,
-            transform: (notes) => previewHumanizedNotes(notes, amount, velocityAmount, seed),
+            transform: (notes) => humanizeMidiNotes(notes, amount, velocityAmount, seed),
         });
     },
     undoable: true,
