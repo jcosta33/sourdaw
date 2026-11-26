@@ -1,10 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { handleDisableTrack } from '../disableTrack';
 import { isDisableTrackSessionEntry } from '../isDisableTrackSessionEntry';
 
-const forward: AppAction = { type: 'disableTrack', payload: { trackId: 't1', disabled: true } };
+type DisableAction = Extract<AppAction, { type: 'disableTrack' }>;
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: () => null,
+}));
+
+const forward: DisableAction = { type: 'disableTrack', payload: { trackId: 't1', disabled: true } };
 const inverse: AppAction = {
     type: 'restoreTrackDisabled',
     payload: { trackId: 't1', expected: true, replacement: false },
@@ -50,6 +57,24 @@ describe('isDisableTrackSessionEntry', () => {
                 redoAction: badRedo,
             })
         ).toBe(false);
+    });
+
+    it('accepts the entry the handler describes for a track it cannot find outside a batch', () => {
+        const description = handleDisableTrack.describe(forward);
+
+        expect(description.inverseAction).toBeNull();
+        expect(description.redoAction).toBeUndefined();
+        expect(
+            isDisableTrackSessionEntry({
+                action: forward,
+                inverseAction: description.inverseAction ?? null,
+                redoAction: description.redoAction,
+            })
+        ).toBe(true);
+    });
+
+    it('refuses an entry with no inverse that still carries a redo', () => {
+        expect(isDisableTrackSessionEntry({ action: forward, inverseAction: null, redoAction: redo })).toBe(false);
     });
 
     it('refuses an entry whose forward action is not a disable', () => {

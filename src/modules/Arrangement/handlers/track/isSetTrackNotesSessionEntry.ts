@@ -28,7 +28,9 @@ function areLegsGuardedReversals(forward: NotesPayload, inverse: NotesPayload, r
  */
 export function isSetTrackNotesSessionEntry(entry: HandlerSessionActionEntry): boolean {
     const forward = readNotesPayload(entry.action);
-    if (forward === null || forward.notes.length > MAX_TRACK_NOTES_LENGTH) {
+    // Only a fresh write is bounded, as the handler bounds it: a restore puts back notes a saved project
+    // already held, and the inverse of an edit restores whatever the track held, however long.
+    if (forward === null || (forward.expectedNotes === undefined && forward.notes.length > MAX_TRACK_NOTES_LENGTH)) {
         return false;
     }
     if (entry.inverseAction === null) {
@@ -36,7 +38,7 @@ export function isSetTrackNotesSessionEntry(entry: HandlerSessionActionEntry): b
     }
     const inverse = readNotesPayload(entry.inverseAction);
     const redo = readNotesPayload(entry.redoAction);
-    if (inverse === null || redo === null || inverse.notes.length > MAX_TRACK_NOTES_LENGTH) {
+    if (inverse === null || redo === null) {
         return false;
     }
     return areLegsGuardedReversals(forward, inverse, redo);

@@ -42,7 +42,7 @@ export const handleDisableTrack = createHandler<'disableTrack'>({
         }
         const label = alpha.payload.disabled ? 'Disable track' : 'Enable track';
         if (!track) {
-            return { label, inverseAction: null, redoAction: alpha };
+            return { label, inverseAction: null };
         }
         return {
             label,
