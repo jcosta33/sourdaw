@@ -4,10 +4,12 @@ import { affectsTrack } from './affectsTrack';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { listPrintedFieldRefs } from './listPrintedFieldRefs';
 import { listPrintedTakeLaneRefs } from './listPrintedTakeLaneRefs';
+import { listToasterPadOrderRefs } from './listToasterPadOrderRefs';
 import { type OfflineRenderProjectSource, type OfflineRenderSessionSource } from './OfflineRenderSource';
 import { readPrintedAdjustmentLayer } from './readPrintedAdjustmentLayer';
 import { readPrintedModulator } from './readPrintedModulator';
 import { readPrintedTrack } from './readPrintedTrack';
+import { readToasterPadOrder, type ToasterPadOrder } from './readToasterPadOrder';
 import { resolveMuteHonoringTrackIds } from './resolveMuteHonoringTrackIds';
 import { selectPrintedAutomationLanes } from './selectPrintedAutomationLanes';
 
@@ -36,11 +38,13 @@ export type SubgraphPrintInput = {
     targetTrackId: string;
     /** The target and every track its render builds, ordered by id. */
     tracks: readonly Track[];
+    /** The pad each child of a Toaster among `tracks` prints on, by position in the caller's track order. */
+    toasterPadOrders: readonly ToasterPadOrder[];
     /** The sidechain routes joining two of `tracks`, the only ones the render wires. */
     routes: readonly OfflineRenderProjectSource['sidechainRoutes'][number][];
     /** The tracks whose mute the render honours: the keys of the detectors `routes` wires. */
     muteHonoringTrackIds: ReadonlySet<string>;
-    /** The lanes on `tracks`, except the target's own fader and pan lanes, which stay live, and any leader a follower among them reads. */
+    /** The lanes on `tracks`, except the target's own fader and pan lanes, which stay live, and any leader a follower reads, the target's own fader and pan lanes included when a follower on another track does. */
     automationLanes: readonly OfflineRenderProjectSource['automationLanes'][number][];
     midiRows: readonly MidiClipRows[];
     probabilitySeed: number | null;
@@ -78,6 +82,8 @@ export function selectSubgraphPrintInput({
         refs.push(...printedRefs);
         return row;
     }
+    const toasterPadOrders = readToasterPadOrder(renderTracks);
+    refs.push(...listToasterPadOrderRefs(toasterPadOrders));
     const tracks = renderTracks.toSorted((left, right) => left.id.localeCompare(right.id));
     const memberIds = new Set(tracks.map((track) => track.id));
     const routes = source.sidechainRoutes
@@ -105,6 +111,7 @@ export function selectSubgraphPrintInput({
     return {
         targetTrackId,
         tracks,
+        toasterPadOrders,
         routes,
         muteHonoringTrackIds,
         automationLanes: selectPrintedAutomationLanes({

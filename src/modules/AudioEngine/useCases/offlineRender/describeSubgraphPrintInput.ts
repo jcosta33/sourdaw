@@ -56,6 +56,7 @@ function describeTrack({ track, input, describeTrackContent }: DescribeTrackInpu
 export function describeSubgraphPrintInput(input: SubgraphPrintInput, describeTrackContent: DescribeTrackContent) {
     return {
         tracks: input.tracks.map((track) => describeTrack({ track, input, describeTrackContent })),
+        toasterPadOrders: input.toasterPadOrders,
         routes: input.routes,
         automationLanes: input.automationLanes.map(readPrintedAutomationLane),
         midiRows: input.midiRows.map((rows) => ({
