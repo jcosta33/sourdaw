@@ -272,7 +272,7 @@ describe('readsAsLevelClause', () => {
         expect(reads('lower Drums at the finale by 3 dB', 'setTrackGain', project)).toBe(false);
     });
 
-    it('reads a level word a section name holds as the level own', () => {
+    it("reads a level word a section name holds as the level's own", () => {
         const project = { ...contextWithoutPlaces, sections: [buildUp] };
 
         expect(reads('turn Drums up 2 dB', 'setTrackGain', project)).toBe(true);
