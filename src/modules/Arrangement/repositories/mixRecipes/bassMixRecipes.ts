@@ -55,10 +55,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when fret and string noise is already intrusive.',
             'Skip when guitars already occupy the region between 700 Hz and 1.2 kHz.',
         ],
-        metrics: [
-            { metric: 'spectralCentroid', direction: 'increase' },
-            { metric: 'frequencyBandEnergy', band: 'mid', direction: 'increase' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'mid', direction: 'increase' }],
         source: 'A bass reads as bright through its second and third harmonics rather than through its fundamental, which is why the work happens near 1 kHz and again at the attack region above 3 kHz. This also keeps the part audible on playback systems that cannot reproduce the fundamental at all.',
     },
     {
@@ -160,11 +157,8 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip on a mono bass part, where widening produces phase differences rather than image.',
             'Skip when the release target includes vinyl cutting or other mono-summed low-end delivery.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'hold' },
-        ],
-        source: 'Only the harmonic content above the mono crossover can be widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. A crossover at 120 Hz to 200 Hz keeps every fundamental centred while the upper harmonics carry the image.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Only the harmonic content above the mono crossover is widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. The crossover sits at 120 Hz to 200 Hz so the upper harmonics carry the image.',
     },
     {
         id: 'bass-intimate',
@@ -227,10 +221,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when the part must carry the harmony on playback systems with no low-frequency reproduction.',
             'Skip when a low-pass filter is already applied earlier in the chain.',
         ],
-        metrics: [
-            { metric: 'spectralCentroid', direction: 'decrease' },
-            { metric: 'frequencyBandEnergy', band: 'high-mid', direction: 'decrease' },
-        ],
+        metrics: [{ metric: 'frequencyBandEnergy', band: 'high-mid', direction: 'decrease' }],
         source: 'A dark bass is defined by the absence of pick and fret detail above 3 kHz plus a reduced second-harmonic region near 1 kHz, and removing only one of the two leaves the part still reading forward. The cuts stop short of removing the harmonics small speakers need to imply the note at all.',
     },
     {
@@ -243,9 +234,9 @@ export const bassMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-eq',
                 parameters: [
-                    { paramId: 'eq-high-freq', minimum: 6000, maximum: 10000 },
+                    { paramId: 'eq-high-freq', minimum: 10000, maximum: 14000 },
                     { paramId: 'eq-high-gain', minimum: 1.5, maximum: 3 },
-                    { paramId: 'eq-high-q', minimum: 0.5, maximum: 1 },
+                    { paramId: 'eq-high-q', minimum: 0.5, maximum: 0.8 },
                 ],
             },
         ],

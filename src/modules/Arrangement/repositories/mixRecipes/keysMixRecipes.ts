@@ -108,7 +108,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
                     { paramId: 'comp-ratio', minimum: 2, maximum: 4 },
                     { paramId: 'comp-attack', minimum: 20, maximum: 30 },
                     { paramId: 'comp-release', minimum: 80, maximum: 150 },
-                    { paramId: 'comp-makeup', minimum: 2, maximum: 5 },
+                    { paramId: 'comp-makeup', minimum: 3.5, maximum: 5 },
                 ],
             },
         ],
@@ -118,7 +118,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
             'Skip when a limiter earlier in the chain has already flattened the attacks.',
         ],
         metrics: [{ metric: 'rms', direction: 'increase' }],
-        source: 'An attack time longer than the key strike lets the strike pass and clamps the ring behind it, so makeup gain raises the strike relative to the sustain. The result is a wider peak-to-average ratio at a higher average level, which is what punch measures as.',
+        source: 'An attack time longer than the key strike lets the strike pass before the compressor reacts and clamps the ring behind it, and makeup gain then lifts the average level.',
     },
     {
         id: 'keys-wide',

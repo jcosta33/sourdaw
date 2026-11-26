@@ -91,8 +91,6 @@ const OTHER_CONTRADICTIONS: readonly string[] = [
     'drums-thin|drums-tight-transient',
     'drums-vintage|drums-tight-transient',
     'drums-vintage|drums-punchy-transient',
-    'bass-warm|bass-bright',
-    'bass-bright|bass-dark',
     'bass-airy|bass-lo-fi',
     'bass-airy|bass-vintage',
     'guitar-warm|guitar-bright',

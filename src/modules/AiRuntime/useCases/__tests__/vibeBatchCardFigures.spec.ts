@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
@@ -23,6 +23,12 @@ import { configureMetricGoalProject, resetMetricGoalProject } from './metricGoal
 
 registerDeviceEnginePorts();
 
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    const { withLowFrequencyStereoHold } = await import('./recipeHoldCatalogFixture');
+    return { ...actual, getMixRecipeCatalog: () => withLowFrequencyStereoHold(actual.getMixRecipeCatalog()) };
+});
+
 const RUN_ID = 'batch-card-run';
 const TARGET_ID = 'track-kick';
 const RANGE = { startBeat: 0, endBeat: 4, sectionId: null };
@@ -46,7 +52,11 @@ function batchOf(recipeIds: string[]): ScheduledVibeRunBatch {
 }
 
 function readGoals(batch: ScheduledVibeRunBatch, kept: Kept[]): MetricGoal[] {
-    const read = readVibeBatchRecipeGoals({ batch, catalog: getMixRecipeCatalog(), range: RANGE });
+    const read = readVibeBatchRecipeGoals({
+        batch,
+        catalog: getMixRecipeCatalog(),
+        range: RANGE,
+    });
     if (read.status !== 'read') {
         throw new Error(read.reason);
     }

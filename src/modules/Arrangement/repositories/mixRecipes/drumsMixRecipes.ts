@@ -44,7 +44,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-eq',
                 parameters: [
-                    { paramId: 'eq-mid-freq', minimum: 3000, maximum: 5000 },
+                    { paramId: 'eq-mid-freq', minimum: 4500, maximum: 5500 },
                     { paramId: 'eq-mid-gain', minimum: 1, maximum: 3 },
                     { paramId: 'eq-mid-q', minimum: 0.7, maximum: 1.5 },
                     { paramId: 'eq-high-freq', minimum: 8000, maximum: 12000 },
@@ -124,7 +124,7 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip on brushed or very soft playing, where the body is all there is.',
         ],
         metrics: [{ metric: 'transientDensity', direction: 'hold' }],
-        source: 'An attack of 20 ms or longer lets the initial strike through untouched and clamps only the decay behind it, so makeup gain raises the strike relative to the body. Peak-to-average therefore widens.',
+        source: 'An attack of 20 ms or longer lets the initial strike through before the compressor reacts and clamps only the decay behind it.',
     },
     {
         id: 'drums-wide',
@@ -148,11 +148,8 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
             'Skip on a mono kit render, where widening only produces phase artefacts.',
             'Skip when the mix is checked primarily on mono playback systems.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'hold' },
-        ],
-        source: 'Width on a kit belongs to the overheads and room, not the kick, so the mono crossover sits above the kick fundamental and keeps the low end summed. Stopping at 1.5 keeps the snare from pulling away from the centre image.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Width on a kit belongs to the overheads and room, not the kick, so the mono crossover sits above the kick fundamental and passes only the side signal above it. Stopping at 1.5 keeps the snare from pulling away from the centre image.',
     },
     {
         id: 'drums-intimate',

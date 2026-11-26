@@ -9,7 +9,7 @@ import { createTrack } from '../useCases/__tests__/trackFixture';
 import { readRecipeExpectationTolerance } from '../useCases/metricHoldTolerances';
 import { objectiveMetricProjection } from '../useCases/objectiveMetricProjection';
 
-import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
+import { createAcceptanceRenderLaw, type SourceProfile } from './acceptanceRenderLaw';
 
 registerDeviceEnginePorts();
 
@@ -24,13 +24,22 @@ type LawSource = {
     position: number;
     /** Gain ahead of the recipe's devices, raising the source level without changing its shape. */
     trimDb: number;
+    /** What the source overrides of its position's shape. */
+    profile?: SourceProfile;
 };
+
+/** Every partial at equal weight: a spectrum that has energy in every band for a band or spectral move to show on. */
+const FLAT_SPECTRUM = [1, 1, 1, 1, 1, 1] as const;
 
 /**
  * Positions 0 to 3 peak at about -8 dBFS or lower, where a compressor's makeup alone lifts a level. A bus
- * or a hot take peaks near 0 dBFS, where the same compressor lowers it, so the last source is the same
+ * or a hot take peaks near 0 dBFS, where the same compressor lowers it, so the hot source is the same
  * shape as position 3 trimmed up to about -1 dBFS: a level claim whose direction depends on input level
- * fails on it.
+ * fails on it. The hot struck source is a take with a wide strike (position 1) at the same level, which is
+ * where a bus compressor's dynamics claims are meant to show. The sustained source is that hot take held steady (no strike), the organ or pad whose level
+ * a compressor only lowers. The wide source has every band at equal weight and a large inter-channel
+ * phase lag, so a stereo or spectral claim has a source that carries the figure it moves. Positions 0 and
+ * 3 are mono, so a stereo claim is meant for the others.
  */
 const SOURCES: readonly LawSource[] = [
     { name: 'source 0', position: 0, trimDb: 0 },
@@ -38,6 +47,9 @@ const SOURCES: readonly LawSource[] = [
     { name: 'source 2', position: 2, trimDb: 0 },
     { name: 'source 3', position: 3, trimDb: 0 },
     { name: 'hot source', position: 3, trimDb: 9.3 },
+    { name: 'hot struck source', position: 1, trimDb: 12 },
+    { name: 'sustained source', position: 3, trimDb: 9.3, profile: { sustain: 1 } },
+    { name: 'wide flat source', position: 1, trimDb: 0, profile: { weights: FLAT_SPECTRUM, lag: Math.PI / 4 } },
 ];
 
 /** The devices the acceptance render law has a rule for; any other step makes a recipe unrenderable. */
@@ -48,9 +60,9 @@ type Figures = ReturnType<typeof measureAgentScopeRender>;
 type Stage = 'before' | 'after';
 
 /**
- * The level, dynamics and transient claims, the ones a compressor decides. The law's sources are six
- * partials, one per band, two of the four positions mono, so its spectral, band and stereo figures cannot
- * discriminate a recipe's claim and are not checked here.
+ * Every metric an authored recipe claims: level, dynamics and transient (a compressor decides them), band
+ * and spectral (an equaliser decides them) and stereo (a widener decides them). A claim on a metric outside
+ * this set is checked against nothing, so the catalog spec asserts none exists.
  */
 const CHECKED_METRICS = [
     'rms',
@@ -60,7 +72,15 @@ const CHECKED_METRICS = [
     'integratedLoudness',
     'shortTermLoudnessMax',
     'transientDensity',
+    'frequencyBandEnergy',
+    'spectralCentroid',
+    'spectralRolloff',
+    'sideEnergyFraction',
+    'lowFrequencyStereoContent',
+    'stereoCorrelation',
 ] as const;
+
+const STEREO_METRICS: readonly string[] = ['sideEnergyFraction', 'lowFrequencyStereoContent', 'stereoCorrelation'];
 
 /**
  * Every recipe the law cannot render, by the first step it has no rule for. Asserted equal
@@ -143,18 +163,88 @@ const UNRENDERABLE_RECIPES: Readonly<Record<string, string>> = {
     'preset:fx-trem-vintage:vintage': 'builtin-tremolo',
 };
 
+/** One point in a recipe's parameter windows: the value each `step:parameter` takes. */
+type WindowSetting = { name: string; values: ReadonlyMap<string, number> };
+
+const MAX_FULL_CORNER_PARAMETERS = 3;
+
+function parameterKey(stepIndex: number, paramId: string): string {
+    return `${stepIndex}:${paramId}`;
+}
+
+type WindowParameter = { key: string; minimum: number; maximum: number };
+
+function windowParameters(recipe: MixRecipe): readonly WindowParameter[] {
+    return recipe.steps.flatMap((step, stepIndex) =>
+        step.parameters.map((parameter) => ({
+            key: parameterKey(stepIndex, parameter.paramId),
+            minimum: parameter.minimum,
+            maximum: parameter.maximum,
+        }))
+    );
+}
+
+function settingAt(name: string, parameters: readonly WindowParameter[], pick: (index: number) => number) {
+    const values = new Map(
+        parameters.map((parameter, index) => [
+            parameter.key,
+            parameter.minimum + pick(index) * (parameter.maximum - parameter.minimum),
+        ])
+    );
+    return { name, values } satisfies WindowSetting;
+}
+
 /**
- * The recipe's devices at their parameter midpoints, or before it runs: an edit step's device at the
- * values it starts with, an insert step's not yet there.
+ * The points the planner may pick that a claim has to hold at: the window midpoint (the catalogue default),
+ * and the window's extremes. A recipe with few free parameters is rendered at every corner of its window,
+ * since the worst corner mixes ends (a low threshold with a high makeup). A recipe with more renders both
+ * all-low and all-high corners and each parameter flipped alone from either, so every parameter is seen
+ * at both ends against both ends of the rest.
  */
-function recipeTrack(recipe: MixRecipe | null, source: LawSource, stage: Stage = 'after'): Track {
-    const steps = (recipe?.steps ?? []).filter((step) => stage === 'after' || step.kind === 'edit');
-    const devices = steps.map((step, index) => ({
-        id: `device-${index}`,
+function windowSettings(recipe: MixRecipe): readonly WindowSetting[] {
+    const parameters = windowParameters(recipe);
+    const free = parameters.flatMap((parameter, index) => (parameter.minimum < parameter.maximum ? [index] : []));
+    const midpoint = settingAt('midpoint', parameters, () => 0.5);
+    if (free.length <= MAX_FULL_CORNER_PARAMETERS) {
+        const corners = Array.from({ length: 2 ** free.length }, (_, mask) =>
+            settingAt(
+                `corner ${mask.toString(2).padStart(free.length, '0')}`,
+                parameters,
+                (index) => (mask >> free.indexOf(index)) & 1
+            )
+        );
+        return [midpoint, ...corners];
+    }
+    const edge = (base: 0 | 1, flipped: number | null) =>
+        settingAt(
+            flipped === null
+                ? `all ${base === 0 ? 'minimum' : 'maximum'}`
+                : `${base === 0 ? 'minimum' : 'maximum'} with ${parameters[flipped]!.key} flipped`,
+            parameters,
+            (index) => (index === flipped ? 1 - base : base)
+        );
+    return [
+        midpoint,
+        ...([0, 1] as const).flatMap((base) => [edge(base, null), ...free.map((index) => edge(base, index))]),
+    ];
+}
+
+/** The recipe's devices at a point in their windows, or before it runs: an edit step's device at the values it starts with, an insert step's not yet there. */
+function recipeTrack(
+    recipe: MixRecipe | null,
+    source: LawSource,
+    stage: Stage = 'after',
+    setting: WindowSetting | null = null
+): Track {
+    const steps = (recipe?.steps ?? []).flatMap((step, stepIndex) =>
+        stage === 'after' || step.kind === 'edit' ? [{ step, stepIndex }] : []
+    );
+    const devices = steps.map(({ step, stepIndex }) => ({
+        id: `device-${stepIndex}`,
         name: step.deviceType,
         type: step.deviceType,
         bypassed: false,
-        parameterValues: stagedParameterValues(step, stage),
+        parameterValues: stagedParameterValues(step, stepIndex, stage, setting),
     }));
     const trim = {
         id: 'source-trim',
@@ -166,39 +256,56 @@ function recipeTrack(recipe: MixRecipe | null, source: LawSource, stage: Stage =
     return createTrack({ id: `track-${source.position}`, devices: source.trimDb === 0 ? devices : [trim, ...devices] });
 }
 
-/** A step's parameter midpoints once the recipe has run; before it, the device's own starting values. */
-function stagedParameterValues(step: MixRecipe['steps'][number], stage: Stage): Record<string, number> {
+/** A step's parameter values at the setting once the recipe has run; before it, the device's own starting values. */
+function stagedParameterValues(
+    step: MixRecipe['steps'][number],
+    stepIndex: number,
+    stage: Stage,
+    setting: WindowSetting | null
+): Record<string, number> {
     if (stage === 'before') {
         return {};
     }
+    if (setting === null) {
+        throw new Error('A recipe renders at a point in its windows.');
+    }
     return Object.fromEntries(
-        step.parameters.map((parameter) => [parameter.paramId, (parameter.minimum + parameter.maximum) / 2])
+        step.parameters.map((parameter) => {
+            const value = setting.values.get(parameterKey(stepIndex, parameter.paramId));
+            if (value === undefined) {
+                throw new Error(`${parameter.paramId} has no value at ${setting.name}.`);
+            }
+            return [parameter.paramId, value];
+        })
     );
 }
 
-function measure(recipe: MixRecipe | null, source: LawSource, stage: Stage = 'after') {
+function measure(
+    recipe: MixRecipe | null,
+    source: LawSource,
+    metrics: readonly Claim['metric'][],
+    stage: Stage = 'after',
+    setting: WindowSetting | null = null
+) {
     const law = createAcceptanceRenderLaw({
         trackPosition: () => source.position,
         tempo: () => TEMPO,
         liveTracks: () => [],
         masterGain: () => 1,
+        sourceProfile: () => source.profile ?? {},
     });
-    const target = recipeTrack(recipe, source, stage);
+    const target = recipeTrack(recipe, source, stage, setting);
     const buffer = law.renderTrack({
         targetTrackId: target.id,
         renderTracks: [target],
         startBeat: 0,
         endBeat: BEATS,
     });
-    return measureAgentScopeRender(buffer, CHECKED_METRICS);
+    return measureAgentScopeRender(buffer, metrics);
 }
 
 function isCheckedMetric(metric: string): boolean {
     return (CHECKED_METRICS as readonly string[]).includes(metric);
-}
-
-function checkedClaims(recipe: MixRecipe): readonly Claim[] {
-    return recipe.metrics.filter((claim) => isCheckedMetric(claim.metric));
 }
 
 /** The figure a claim states, the frozen band's energy for a band claim. */
@@ -232,96 +339,100 @@ function firstUnrenderableDevice(recipe: MixRecipe): string | null {
     return recipe.steps.find((step) => !LAW_DEVICES.has(step.deviceType))?.deviceType ?? null;
 }
 
-/** The threshold midpoint of the recipe's compressor, or `null` when no compressor decides its dynamics. */
-function compressorThresholdDb(recipe: MixRecipe): number | null {
+/** The highest threshold in the recipe's compressor window, or `null` when no compressor decides its dynamics. */
+function compressorThresholdCeilingDb(recipe: MixRecipe): number | null {
     const threshold = recipe.steps
         .find((step) => step.deviceType === 'builtin-compressor')
         ?.parameters.find((parameter) => parameter.paramId === 'comp-threshold');
     if (threshold === undefined) {
         return null;
     }
-    return (threshold.minimum + threshold.maximum) / 2;
+    return threshold.maximum;
 }
+
+/** The side energy a source needs before a stereo claim can show on it; the mono positions measure zero. */
+const MIN_SOURCE_SIDE_ENERGY_FRACTION = 0.01;
+
+const FREQUENCY_BANDS = ['sub', 'bass', 'low-mid', 'mid', 'high-mid', 'presence', 'air'] as const;
+
+/**
+ * The share of a source's energy one band may hold before a band-share claim on that band or its neighbour
+ * cannot show: a band's share is its energy over the total, so a source whose energy sits mostly in one band
+ * moves that band's share by that band's own gain, however the recipe's other bands are set.
+ */
+const DOMINANT_BAND_SHARE = 0.5;
+
+/** Whether one band holds more than half the source's energy within a band of the claimed one. */
+function isDominatedNear(band: (typeof FREQUENCY_BANDS)[number], dry: Figures): boolean {
+    const index = FREQUENCY_BANDS.indexOf(band);
+    return FREQUENCY_BANDS.slice(Math.max(0, index - 1), index + 2).some(
+        (near) => figure(dry, { metric: 'frequencyBandEnergy', band: near, direction: 'hold' }) > DOMINANT_BAND_SHARE
+    );
+}
+
+/** The span above a compressor's threshold over which its soft knee ramps reduction in (the device's default knee). */
+const COMPRESSOR_KNEE_DB = 6;
+
+const STRIKE_SHAPED_METRICS: readonly string[] = ['crestFactor', 'dynamicRangeEstimate', 'transientDensity'];
+
+/**
+ * The crest factor a source needs before a compressor or transient claim can show on it: a source whose
+ * strike barely clears its body (a steady tone, a part that sustains near its peak) leaves a compressor
+ * nothing to reshape, and the claim moves either way on rounding and attack timing.
+ */
+const MIN_DYNAMIC_SOURCE_CREST_DB = 10;
+
+/**
+ * Where the air band starts. A spectral-rolloff claim is the frequency below which 85% of the energy sits,
+ * and the recipes that claim it move air-band energy, which can only shift the rolloff of a source whose
+ * rolloff already lies in that band.
+ */
+const AIR_BAND_FLOOR_HZ = 8000;
 
 /**
  * Whether a claim is meant for a source. A compressor's crest and dynamic-range claims are meant for a
- * source whose peak reaches its threshold: a compressor reduces nothing below it, so a quieter source
- * cannot show the claim either way. Every other claim is meant for every source.
+ * source whose peak clears every threshold in the window by the knee: a compressor reduces nothing below its
+ * threshold and ramps in across the knee above it, so a quieter source cannot show the claim either way. Crest, dynamic-range and transient
+ * claims are not meant for a source whose own crest factor is too low to reshape. A band-share claim is meant for a source with no dominant band near the claimed one. A stereo claim is meant for a
+ * source with a side signal, since a mono source has nothing to widen or narrow. A spectral-rolloff claim
+ * is meant for a source whose own rolloff lies in the air band. Every other claim
+ * is meant for every source.
  */
-function isMeantFor(recipe: MixRecipe, metric: Claim['metric'], dryTruePeakDb: number): boolean {
-    const thresholdDb = compressorThresholdDb(recipe);
+function isMeantFor(recipe: MixRecipe, claim: Claim, dry: Figures): boolean {
+    const metric = claim.metric;
+    if (STEREO_METRICS.includes(metric)) {
+        return figure(dry, { metric: 'sideEnergyFraction', direction: 'hold' }) >= MIN_SOURCE_SIDE_ENERGY_FRACTION;
+    }
+    if (
+        STRIKE_SHAPED_METRICS.includes(metric) &&
+        figure(dry, { metric: 'crestFactor', direction: 'hold' }) < MIN_DYNAMIC_SOURCE_CREST_DB
+    ) {
+        return false;
+    }
+    if (metric === 'frequencyBandEnergy' && claim.band !== undefined && isDominatedNear(claim.band, dry)) {
+        return false;
+    }
+    if (metric === 'spectralRolloff') {
+        return figure(dry, { metric, direction: 'hold' }) >= AIR_BAND_FLOOR_HZ;
+    }
+    const thresholdDb = compressorThresholdCeilingDb(recipe);
     if (thresholdDb === null || (metric !== 'crestFactor' && metric !== 'dynamicRangeEstimate')) {
         return true;
     }
-    return dryTruePeakDb > thresholdDb;
+    return figure(dry, { metric: 'truePeak', direction: 'hold' }) > thresholdDb + COMPRESSOR_KNEE_DB;
 }
 
 /**
- * Claims no law source is meant for: every source's peak sits below the compressor threshold, so the
- * law cannot check them. Asserted equal to what the catalog holds, so no claim leaves the checked set
- * unnoticed.
+ * Claims no law source is meant for: every source sits below the compressor threshold or lacks the side
+ * signal, so the law cannot check them. Asserted equal to what the catalog holds, so no claim leaves the
+ * checked set unnoticed.
  */
 const CLAIMS_NO_LAW_SOURCE_DRIVES: readonly string[] = [];
-
-/**
- * Renderable recipes whose every stated move is a band, spectral or stereo one. The law's sources cannot
- * discriminate those, so the render spec checks none of them; asserted equal to what the catalog holds.
- * A recipe whose rationale makes a level or dynamics move the law renders states it and leaves this table.
- */
-const RECIPES_WITH_NO_CHECKABLE_CLAIM: Readonly<Record<string, string>> = Object.fromEntries(
-    [
-        'vocal-warm',
-        'vocal-tight',
-        'vocal-wide',
-        'vocal-dark',
-        'vocal-muddy',
-        'vocal-thin',
-        'drums-warm',
-        'drums-bright',
-        'drums-tight',
-        'drums-wide',
-        'drums-dark',
-        'drums-airy',
-        'drums-muddy',
-        'bass-warm',
-        'bass-bright',
-        'bass-wide',
-        'bass-dark',
-        'bass-airy',
-        'bass-muddy',
-        'guitar-warm',
-        'guitar-bright',
-        'guitar-tight',
-        'guitar-dark',
-        'guitar-airy',
-        'guitar-muddy',
-        'guitar-thin',
-        'keys-warm',
-        'keys-bright',
-        'keys-tight',
-        'keys-dark',
-        'keys-airy',
-        'keys-muddy',
-        'keys-thin',
-        'bus-warm',
-        'bus-bright',
-        'bus-wide',
-        'bus-dark',
-        'bus-airy',
-        'bus-muddy',
-        'master-warm',
-        'master-bright',
-        'master-wide',
-        'master-dark',
-        'master-airy',
-        'master-muddy',
-    ].map((id) => [id, 'states only band, spectral or stereo moves'])
-);
 
 describe('mix recipe metric claims against the acceptance render law', () => {
     const recipes = getMixRecipeCatalog().recipes;
     const claimed = recipes.filter((recipe) => firstUnrenderableDevice(recipe) === null);
-    const dry = new Map(SOURCES.map((source) => [source.name, measure(null, source, 'before')]));
+    const dry = new Map(SOURCES.map((source) => [source.name, measure(null, source, CHECKED_METRICS, 'before')]));
     const dryFigures = (source: LawSource) => {
         const figures = dry.get(source.name);
         if (figures === undefined) {
@@ -329,21 +440,22 @@ describe('mix recipe metric claims against the acceptance render law', () => {
         }
         return figures;
     };
-    const dryPeak = (source: LawSource): number =>
-        figure(dryFigures(source), { metric: 'truePeak', direction: 'hold' });
+    const claimMetrics = (recipe: MixRecipe) => [...new Set(recipe.metrics.map((claim) => claim.metric))];
     /** The figures before the recipe runs: the devices its edit steps change, or the dry source when it only inserts. */
     const beforeFigures = (recipe: MixRecipe, source: LawSource) => {
         if (recipe.steps.some((step) => step.kind === 'edit')) {
-            return measure(recipe, source, 'before');
+            return measure(recipe, source, claimMetrics(recipe), 'before');
         }
         return dryFigures(source);
     };
 
-    it('names every authored renderable recipe with no level, dynamics or transient claim, and only those', () => {
-        const unchecked = claimed
-            .filter((recipe) => recipe.origin === undefined && checkedClaims(recipe).length === 0)
-            .map((recipe) => [recipe.id, 'states only band, spectral or stereo moves']);
-        expect(Object.fromEntries(unchecked)).toEqual(RECIPES_WITH_NO_CHECKABLE_CLAIM);
+    it('states no claim on a metric the law does not check', () => {
+        const unchecked = recipes.flatMap((recipe) =>
+            recipe.metrics
+                .filter((claim) => !isCheckedMetric(claim.metric))
+                .map((claim) => `${recipe.id}:${claim.metric}`)
+        );
+        expect(unchecked).toEqual([]);
     });
 
     it('states no metric for a factory preset recipe, so none is left unchecked', () => {
@@ -361,43 +473,57 @@ describe('mix recipe metric claims against the acceptance render law', () => {
         expect(unrenderable).toEqual(UNRENDERABLE_RECIPES);
     });
 
-    it('names every claim no law source drives the compressor for, and only those', () => {
+    it('names every claim no law source is meant for, and only those', () => {
         const undriven = claimed.flatMap((recipe) =>
-            checkedClaims(recipe)
-                .filter((claim) => SOURCES.every((source) => !isMeantFor(recipe, claim.metric, dryPeak(source))))
+            recipe.metrics
+                .filter((claim) => SOURCES.every((source) => !isMeantFor(recipe, claim, dryFigures(source))))
                 .map((claim) => `${recipe.id}:${claim.metric}`)
         );
         expect(undriven).toEqual(CLAIMS_NO_LAW_SOURCE_DRIVES);
     });
 
-    describe.each(SOURCES)('on $name at the parameter midpoints', (source) => {
+    describe.each(SOURCES)('on $name across the parameter windows', (source) => {
         const rows = claimed
             .map((recipe) => ({
                 recipe,
-                claims: checkedClaims(recipe).filter((claim) => isMeantFor(recipe, claim.metric, dryPeak(source))),
+                claims: recipe.metrics.filter((claim) => isMeantFor(recipe, claim, dryFigures(source))),
             }))
             .filter((row) => row.claims.length > 0);
 
         it.each(rows.map((row) => [row.recipe.id, row] as const))(
-            '%s moves every metric it claims the way it claims',
+            '%s moves every metric it claims the way it claims at every point in its windows',
             (_id, { recipe, claims }) => {
                 const before = beforeFigures(recipe, source);
-                const after = measure(recipe, source);
-                const observed = claims.map((claim) => {
-                    const from = figure(before, claim);
-                    const to = figure(after, claim);
-                    return {
-                        metric: claim.metric,
-                        moved: movedDirection(claim.metric, from, to, claim.direction),
-                        before: from,
-                        after: to,
-                    };
+                const observed = windowSettings(recipe).flatMap((setting) => {
+                    const after = measure(recipe, source, claimMetrics(recipe), 'after', setting);
+                    return claims.map((claim) => {
+                        const from = figure(before, claim);
+                        const to = figure(after, claim);
+                        return {
+                            setting: setting.name,
+                            metric: claim.metric,
+                            band: claim.band ?? null,
+                            moved: movedDirection(claim.metric, from, to, claim.direction),
+                            before: from,
+                            after: to,
+                        };
+                    });
                 });
-                expect(observed).toEqual(
-                    observed.map((entry, index) => ({ ...entry, moved: claims[index]!.direction }))
-                );
+                const broken = observed
+                    .filter(
+                        (entry) =>
+                            entry.moved !==
+                            claims.find(
+                                (claim) => claim.metric === entry.metric && (claim.band ?? null) === entry.band
+                            )!.direction
+                    )
+                    .map(
+                        (entry) =>
+                            `${recipe.id} on ${source.name} at ${entry.setting}: ${entry.metric}${entry.band === null ? '' : ` ${entry.band}`} ${entry.before.toFixed(4)} -> ${entry.after.toFixed(4)} (${entry.moved})`
+                    );
+                expect(broken).toEqual([]);
             },
-            120_000
+            600_000
         );
     });
 });

@@ -3554,7 +3554,7 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "The catalog recipe “Pick attack and top shelf raised together” describes “bright” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The guitar is not already fighting the vocal between 2 kHz and 4 kHz.”. Contraindications: “Skip when a lead vocal needs that same presence region to stay intelligible.”; “Skip on a distorted rhythm part where the region is already dense with harmonics.”. Authored parameter windows: “Mid Freq” 2500–4000 “Hz”; “Mid Gain” 2–4 “dB”; “Mid Q” 0.8–1.5; “High Freq” 8000–12000 “Hz”; “High Gain” 2–3.5 “dB”. Choose Propose this to prepare it for “Guitar” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "text": "The catalog recipe “Pick attack and top shelf raised together” describes “bright” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The guitar is not already fighting the vocal between 2 kHz and 4 kHz.”. Contraindications: “Skip when a lead vocal needs that same presence region to stay intelligible.”; “Skip on a distorted rhythm part where the region is already dense with harmonics.”. Authored parameter windows: “Mid Freq” 2500–4000 “Hz”; “Mid Gain” 2–4 “dB”; “Mid Q” 0.8–1.5; “High Freq” 8000–12000 “Hz”; “High Gain” 2–3 “dB”. Choose Propose this to prepare it for “Guitar” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
                 "recipe": {
                     "recipeId": "guitar-bright",
                     "targetName": "Guitar"
@@ -4827,7 +4827,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-mid-gain",
-                            "value": 1.75
+                            "value": 1.5
                         }
                     },
                     {
@@ -5067,7 +5067,7 @@
                                     "payload": {
                                         "expectedTrackId": "track-lead-vocal",
                                         "paramId": "eq-mid-gain",
-                                        "value": 1.75
+                                        "value": 1.5
                                     }
                                 },
                                 {
@@ -5114,7 +5114,7 @@
                                     "payload": {
                                         "expectedTrackId": "track-backing-vocal-left",
                                         "paramId": "eq-mid-gain",
-                                        "value": 1.75
+                                        "value": 1.5
                                     }
                                 },
                                 {
@@ -5161,7 +5161,7 @@
                                     "payload": {
                                         "expectedTrackId": "track-backing-vocal-right",
                                         "paramId": "eq-mid-gain",
-                                        "value": 1.75
+                                        "value": 1.5
                                     }
                                 },
                                 {
@@ -6224,7 +6224,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-mid-freq",
-                            "value": 4000
+                            "value": 5000
                         }
                     },
                     {
@@ -6266,7 +6266,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-mid-freq",
-                            "value": 4000
+                            "value": 5000
                         }
                     },
                     {
@@ -6415,7 +6415,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-mid-gain",
-                            "value": 1.75
+                            "value": 1.5
                         }
                     },
                     {
@@ -6457,7 +6457,7 @@
                         "type": "setDeviceParameter",
                         "payload": {
                             "paramId": "eq-mid-gain",
-                            "value": 1.75
+                            "value": 1.5
                         }
                     },
                     {

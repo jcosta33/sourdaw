@@ -53,10 +53,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when only one source in the group needs the lift.',
             'Skip when a downstream bus already applies a top-end boost.',
         ],
-        metrics: [
-            { metric: 'spectralCentroid', direction: 'increase' },
-            { metric: 'frequencyBandEnergy', band: 'presence', direction: 'increase' },
-        ],
+        metrics: [{ metric: 'spectralCentroid', direction: 'increase' }],
         source: 'Boosting a shared presence region on a group raises whichever source is loudest there, which is why the bell is wide and shallow rather than targeted. Anything steeper belongs on the individual track that needs it.',
     },
     {
@@ -144,11 +141,8 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the group contains the only centred anchor of the mix.',
             'Skip when a downstream bus already widens this material.',
         ],
-        metrics: [
-            { metric: 'sideEnergyFraction', direction: 'increase' },
-            { metric: 'lowFrequencyStereoContent', direction: 'hold' },
-        ],
-        source: 'Widening compounds down the bus chain, so a group stays under about 1.4 to leave the parent bus somewhere to go. The mono crossover keeps the summed low end of several sources from decorrelating, which is where width damage shows first.',
+        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
+        source: 'Widening compounds down the bus chain, so a group stays under about 1.4 to leave the parent bus somewhere to go. The mono crossover passes only the side signal above it, which is where width damage on the summed low end of several sources shows first.',
     },
     {
         id: 'bus-intimate',

@@ -44,7 +44,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
                     { paramId: 'eq-mid-gain', minimum: 2, maximum: 4 },
                     { paramId: 'eq-mid-q', minimum: 0.8, maximum: 1.5 },
                     { paramId: 'eq-high-freq', minimum: 8000, maximum: 12000 },
-                    { paramId: 'eq-high-gain', minimum: 2, maximum: 3.5 },
+                    { paramId: 'eq-high-gain', minimum: 2, maximum: 3 },
                 ],
             },
         ],
@@ -120,7 +120,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
             'Skip when a fast limiter sits earlier in the chain.',
         ],
         metrics: [{ metric: 'transientDensity', direction: 'hold' }],
-        source: 'An attack longer than the pick transient lets that transient through and clamps the ringing behind it, and makeup gain then raises the strike relative to the sustain. Peak-to-average widens as a result even though the part gets louder overall.',
+        source: 'An attack longer than the pick transient lets that transient through before the compressor reacts and clamps the ringing behind it, and makeup gain then lifts the part.',
     },
     {
         id: 'guitar-wide',

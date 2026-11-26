@@ -12,6 +12,7 @@ import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretati
 import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
 
 import { createPlanningProject } from './planningProjectFixture';
+import { withLowFrequencyStereoHold } from './recipeHoldCatalogFixture';
 
 registerDeviceEnginePorts();
 
@@ -122,6 +123,9 @@ describe('the metric intent catalog compiles recipe holds', () => {
     }
 
     it('gives a provider-selected hold its metric tolerance and a movement zero', () => {
+        vi.mocked(arrangement.getMixRecipeCatalog).mockImplementation(() =>
+            withLowFrequencyStereoHold(authoredCatalog())
+        );
         const goals = new Map(
             recipeGoals('Make the bass punchy and wide').map(
                 ({ recipeId, goal }) => [`${recipeId}:${goal.metricName}`, goal] as const

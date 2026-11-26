@@ -10,6 +10,16 @@ import { compress } from './acceptanceRenderLawCompressor';
 type TrackRenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
 type MixdownRenderInput = Parameters<typeof renderOffline>[0];
 type Stereo = { left: Float64Array; right: Float64Array };
+
+/** What a render law source reads from its position unless a spec overrides it. */
+export type SourceProfile = {
+    /** The fraction of the strike the source holds between strikes; 1 is a steady tone. */
+    sustain?: number;
+    /** The weight of each partial in `PARTIAL_HZ`, before normalisation to unit energy. */
+    weights?: readonly number[];
+    /** The right channel's phase lag of partial `k`, in radians, times `k + 1`. */
+    lag?: number;
+};
 type Biquad = { b0: number; b1: number; b2: number; a1: number; a2: number };
 
 const SAMPLE_RATE = 48_000;
@@ -68,6 +78,11 @@ export function createAcceptanceRenderLaw(input: {
     /** The live tracks and master gain a mixdown of the live project sums. */
     liveTracks: () => readonly Track[];
     masterGain: () => number;
+    /**
+     * Overrides of what a track's position fixes, for a spec that needs a source shape no position gives (a
+     * steady sustained part, a flat spectrum, a wide stereo image). A field left out keeps the position's.
+     */
+    sourceProfile?: (trackId: string) => SourceProfile;
 }) {
     const sourceCache = new Map<string, Stereo>();
     let sourceCacheBytes = 0;
@@ -80,7 +95,8 @@ export function createAcceptanceRenderLaw(input: {
         const position = input.trackPosition(track.id);
         const beatSeconds = seconds(1);
         const start = seconds(startBeat);
-        const key = JSON.stringify([position, beatSeconds, start, frames]);
+        const profile = input.sourceProfile?.(track.id) ?? {};
+        const key = JSON.stringify([position, beatSeconds, start, frames, profile]);
         const cached = sourceCache.get(key);
         if (cached !== undefined) {
             sourceCache.delete(key);
@@ -88,11 +104,11 @@ export function createAcceptanceRenderLaw(input: {
             return cached;
         }
         const centre = position % PARTIAL_HZ.length;
-        const weights = PARTIAL_HZ.map((_, index) => 2 ** -Math.abs(index - centre));
+        const weights = profile.weights ?? PARTIAL_HZ.map((_, index) => 2 ** -Math.abs(index - centre));
         const norm = Math.sqrt(weights.reduce((total, weight) => total + weight * weight, 0));
         const level = 0.12 + 0.03 * (position % 4);
-        const sustain = 0.2 + 0.2 * (position % 4);
-        const lag = ((position % 3) * Math.PI) / 18;
+        const sustain = profile.sustain ?? 0.2 + 0.2 * (position % 4);
+        const lag = profile.lag ?? ((position % 3) * Math.PI) / 18;
         const left = new Float64Array(frames);
         const right = new Float64Array(frames);
         // All partials are multiples of 10 Hz, so their weighted sum repeats every 4,800 frames.
