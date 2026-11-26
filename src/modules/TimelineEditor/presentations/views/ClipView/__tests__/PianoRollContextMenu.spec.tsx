@@ -9,12 +9,16 @@ import {
     pasteNotes,
 } from '#/modules/Arrangement/useCases';
 import { executeAppActionBatch, executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import {
+    createGrooveTemplate,
     getNotesForClip,
     humanizeNotes,
     moveMidiNote,
+    prepareGrooveExtraction,
     removeMidiNote,
     restoreStrumOriginals,
+    setMidiStoreState,
     setNoteVelocity,
     setNotesForClip,
     snapClipToScale,
@@ -644,6 +648,57 @@ describe('PianoRollContextMenu', () => {
                 payload: { clipId: 'clip-9', grooveId: 'groove-straight', amount: 0.5 },
             })
         );
+    });
+
+    it('selects the template a re-extraction created, not the first version of the clip', async () => {
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        setMidiStoreState({
+            notesByClipId: {
+                'clip-7': [{ id: 'late', pitch: 60, startBeat: 0.02, duration: 0.25, velocity: 96 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const earlier = {
+            id: 'groove-clip-7-v1',
+            name: 'Earlier groove',
+            subdivision: '1/16' as const,
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user' as const, sourceId: 'earlier' },
+        };
+        createGrooveTemplate(earlier);
+        const earlierStored = structuredClone(grooveTemplateStore.value?.templates);
+        // Stands in for the extractGroove handler, which this spec does not register.
+        vi.mocked(executeUserAppAction).mockImplementationOnce(async (action) => {
+            if (action.type !== 'extractGroove') {
+                return;
+            }
+            const result = prepareGrooveExtraction({
+                clipId: action.payload.clipId,
+                sourceName: action.payload.clipId,
+                subdivision: '1/16',
+                templateId: 'groove-clip-7-v2',
+            });
+            if (result.status === 'extracted') {
+                createGrooveTemplate(result.template);
+            }
+        });
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} clipId="clip-7" />);
+
+        fireEvent.click(screen.getByText('Extract Groove'));
+        await waitFor(() => expect(screen.getByText('Apply Groove (50%)')).not.toBeDisabled());
+        fireEvent.click(screen.getByText('Apply Groove (50%)'));
+
+        await waitFor(() =>
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'applyGroove',
+                payload: { clipId: 'clip-7', grooveId: 'groove-clip-7-v2', amount: 0.5 },
+            })
+        );
+        expect(grooveTemplateStore.value?.templates.find((template) => template.id === 'groove-clip-7-v1')).toEqual(
+            earlierStored?.find((template) => template.id === 'groove-clip-7-v1')
+        );
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
     it('should delete the selected notes and restore them on undo', () => {
