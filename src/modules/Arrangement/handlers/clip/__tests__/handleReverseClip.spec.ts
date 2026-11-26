@@ -797,4 +797,74 @@ describe('handleReverseClip', () => {
             expect(description.redoAction?.payload).not.toHaveProperty('audioSource');
         });
     });
+
+    describe('validation', () => {
+        const action = {
+            type: 'reverseClip' as const,
+            payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+        };
+        const context = { actions: [action], actionIndex: 0 };
+        const baseClip = {
+            id: 'c1',
+            type: 'audio',
+            name: 'Verse',
+            audioBufferId: 'buffer-1',
+            startBeat: 0,
+            endBeat: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+
+        function seed(clip: Record<string, unknown> | null, track: Record<string, unknown> = {}): void {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: clip ? [{ ...baseClip, ...clip }] : [], ...track }],
+            });
+        }
+
+        it('admits an unlocked audio clip whose audio is loaded', () => {
+            seed({});
+
+            expect(handleReverseClip.validate?.(action, context)).toBe(true);
+            expect(handleReverseClip.validationRefusalReason?.(action, context)).toBeNull();
+        });
+
+        it.each([
+            ['a clip that does not exist', null, {}, 'Clip "c1" does not exist'],
+            ['a MIDI clip', { type: 'midi' }, {}, 'Clip "c1" is not an audio clip with audio to reverse'],
+            [
+                'an audio clip with no audio',
+                { audioBufferId: undefined },
+                {},
+                'Clip "c1" is not an audio clip with audio to reverse',
+            ],
+            ['a locked clip', { locked: true }, {}, 'Clip "c1" is locked'],
+            ['a clip on a frozen track', {}, { frozen: true }, 'Track "t1" is frozen'],
+            [
+                'a looping clip the source clock cannot mirror',
+                { loopEnabled: true, endBeat: 4, loopLength: 2, audioOffsetSeconds: 0.5 },
+                {},
+                'Clip "c1" cannot be mirrored while it loops; bounce it to audio first',
+            ],
+        ])('refuses %s', (_name, clip, track, reason) => {
+            seed(clip, track);
+
+            expect(handleReverseClip.validate?.(action, context)).toBe(false);
+            expect(handleReverseClip.validationRefusalReason?.(action, context)).toBe(reason);
+        });
+
+        it('refuses a clip whose audio is not loaded', () => {
+            seed({});
+            mocks.getCachedAudioBuffer.mockReturnValue(undefined);
+
+            expect(handleReverseClip.validationRefusalReason?.(action, context)).toBe(
+                'The audio of clip "c1" is not loaded'
+            );
+        });
+
+        it('describes no inverse and no redo for a clip that does not exist', () => {
+            seed(null);
+
+            expect(handleReverseClip.describe(action, context)).toEqual({ label: 'Reverse clip', inverseAction: null });
+        });
+    });
 });

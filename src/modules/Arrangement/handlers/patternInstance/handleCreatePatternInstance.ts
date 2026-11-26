@@ -3,9 +3,12 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type GeneratedMidiStateGuard } from '../../events/arrangementClipSnapshots';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { createPatternInstance } from '../../useCases/patternInstance/createPatternInstance';
 import { prepareCreatedClipRedoGuard } from '../clip/prepareCreatedClipRedoGuard';
 import { stampCreatedClipStateGuard } from '../clip/stampCreatedClipStateGuard';
+
+import { isCreatePatternInstanceSessionEntry } from './isCreatePatternInstanceSessionEntry';
 
 type CreateAction = Extract<AppAction, { type: 'createPatternInstance' }>;
 type CreationState = {
@@ -27,8 +30,58 @@ function getState(action: CreateAction): CreationState {
     return state;
 }
 
+function findSourceClip(sourceClipId: string) {
+    return getTrackStoreState()
+        ?.tracks.flatMap((track) => track.clips)
+        .find((clip) => clip.id === sourceClipId);
+}
+
+function clipExists(clipId: string): boolean {
+    const state = getTrackStoreState();
+    return (
+        state?.ghostClips?.some((clip) => clip.id === clipId) === true ||
+        state?.tracks.some(
+            (track) =>
+                track.clips.some((clip) => clip.id === clipId) ||
+                track.alternatives.some((alternative) => alternative.clips.some((clip) => clip.id === clipId))
+        ) === true
+    );
+}
+
+/** The batch is a singleton, so the live stores are the state this action plans against. */
+function findRefusal(action: CreateAction): string | null {
+    const { sourceClipId, targetTrackId, startBeat, targetClipId } = action.payload;
+    if (!Number.isFinite(startBeat) || startBeat < 0) {
+        return 'The start beat must be a finite, non-negative beat';
+    }
+    const source = findSourceClip(sourceClipId);
+    if (!source) {
+        return `Clip "${sourceClipId}" does not exist`;
+    }
+    if (source.type !== 'midi') {
+        return `Clip "${sourceClipId}" is not a MIDI clip, so it has no pattern to instance`;
+    }
+    const destination = getTrackStoreState()?.tracks.find((track) => track.id === targetTrackId);
+    if (!destination) {
+        return `Track "${targetTrackId}" does not exist`;
+    }
+    if (destination.kind !== 'midi') {
+        return `Track "${targetTrackId}" is not a MIDI track, so it cannot host a pattern instance`;
+    }
+    if (destination.frozen === true) {
+        return `Track "${targetTrackId}" is frozen`;
+    }
+    if (targetClipId !== undefined && clipExists(targetClipId)) {
+        return `Clip "${targetClipId}" already exists`;
+    }
+    return null;
+}
+
 export const handleCreatePatternInstance = createHandler<'createPatternInstance'>({
     batchExecution: 'singleton',
+    validate: (action) => findRefusal(action) === null,
+    validationRefusalReason: findRefusal,
+    validateSessionEntry: isCreatePatternInstanceSessionEntry,
     materializeCommandArguments: (action) => {
         getState(action);
     },
@@ -61,6 +114,9 @@ export const handleCreatePatternInstance = createHandler<'createPatternInstance'
     undoable: true,
     describe: (action, context) => {
         const state = getState(action);
+        if (!findSourceClip(action.payload.sourceClipId)) {
+            return { label: 'Create Pattern Instance', inverseAction: null };
+        }
         state.stageRedoGuard = prepareCreatedClipRedoGuard({
             recordedRedo: context?.recordedRedo,
             clipId: state.targetClipId,

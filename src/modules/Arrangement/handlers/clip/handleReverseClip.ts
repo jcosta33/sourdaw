@@ -2,6 +2,7 @@ import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { captureClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
 import { captureClipAudioSource } from '../../useCases/clipEditing/clipAudioSourceFields';
@@ -11,6 +12,8 @@ import { reversedClipAudioSource } from '../../useCases/clipEditing/reversedClip
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { liveTempoTimeline } from '../../useCases/liveTempoTimeline';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+import { isReverseClipSessionEntry } from './isReverseClipSessionEntry';
 
 function findAudioClip(clipId: string) {
     for (const track of getTrackStoreState()?.tracks ?? []) {
@@ -55,7 +58,39 @@ function captureBeatAlias(value: number | undefined): { present: false } | { pre
     return { present: true, value };
 }
 
+/** The batch is a singleton, so the live stores are the state this action plans against. */
+function findRefusal(action: Extract<AppAction, { type: 'reverseClip' }>): string | null {
+    const { clipId } = action.payload;
+    const owner = getTrackStoreState()?.tracks.find((track) =>
+        track.clips.some((candidate) => candidate.id === clipId)
+    );
+    const clip = owner?.clips.find((candidate) => candidate.id === clipId);
+    if (!owner || !clip) {
+        return `Clip "${clipId}" does not exist`;
+    }
+    if (clip.type !== 'audio' || !clip.audioBufferId) {
+        return `Clip "${clipId}" is not an audio clip with audio to reverse`;
+    }
+    if (clip.locked) {
+        return `Clip "${clipId}" is locked`;
+    }
+    if (owner.frozen === true) {
+        return `Track "${owner.id}" is frozen`;
+    }
+    if (!getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
+        return `The audio of clip "${clipId}" is not loaded`;
+    }
+    if (resolveReversedSource(clip).audioSource === null) {
+        return `Clip "${clipId}" cannot be mirrored while it loops; bounce it to audio first`;
+    }
+    return null;
+}
+
 export const handleReverseClip = createHandler<'reverseClip'>({
+    batchExecution: 'singleton',
+    validate: (action) => findRefusal(action) === null,
+    validationRefusalReason: findRefusal,
+    validateSessionEntry: isReverseClipSessionEntry,
     execute: (alpha) => {
         const didWrite = reverseClip(alpha.payload.clipId, alpha.payload.reversedBufferId);
         return toHandlerExecutionResult(didWrite);

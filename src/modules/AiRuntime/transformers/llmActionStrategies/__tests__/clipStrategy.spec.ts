@@ -193,6 +193,80 @@ describe('clipStrategy', () => {
         });
     });
 
+    describe('pattern instance and reverse commands', () => {
+        const lockedContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-b' ? { ...clip, locked: true } : clip)),
+            })),
+        };
+        const frozenContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({ ...track, frozen: true })),
+        };
+        const bridge = (name: string, args: Record<string, unknown>, context = projectContext) =>
+            bridgeClipToolCall({ call: { name, arguments: args }, context, index: 0 });
+
+        it('bridges each command to its exact payload', () => {
+            expect(
+                bridge('createPatternInstance', {
+                    sourceClipId: 'clip-midi-a',
+                    targetTrackId: 'track-midi',
+                    startBeat: 16,
+                })
+            ).toEqual({
+                type: 'createPatternInstance',
+                payload: { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 16 },
+            });
+            expect(bridge('detachPatternInstance', { clipId: 'clip-midi-a' })).toEqual({
+                type: 'detachPatternInstance',
+                payload: { clipId: 'clip-midi-a' },
+            });
+            expect(bridge('reverseClip', { clipId: 'clip-audio-a' })).toEqual({
+                type: 'reverseClip',
+                payload: { clipId: 'clip-audio-a' },
+            });
+        });
+
+        it.each([
+            ['an audio source clip', { sourceClipId: 'clip-audio-a', targetTrackId: 'track-midi', startBeat: 0 }],
+            ['an audio destination track', { sourceClipId: 'clip-midi-a', targetTrackId: 'track-audio', startBeat: 0 }],
+            ['a missing source clip', { sourceClipId: 'ghost', targetTrackId: 'track-midi', startBeat: 0 }],
+            ['a missing destination track', { sourceClipId: 'clip-midi-a', targetTrackId: 'ghost', startBeat: 0 }],
+            ['a negative start beat', { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: -1 }],
+            ['a string start beat', { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: '4' }],
+            [
+                'an unexpected key',
+                { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 0, targetClipId: 'forced' },
+            ],
+        ])('createPatternInstance refuses %s', (_name, args) => {
+            expect(bridge('createPatternInstance', args)).toHaveProperty('reason', expect.any(String));
+        });
+
+        it('createPatternInstance refuses a frozen destination track', () => {
+            expect(
+                bridge(
+                    'createPatternInstance',
+                    { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 0 },
+                    frozenContext
+                )
+            ).toHaveProperty('reason', expect.any(String));
+        });
+
+        it.each([
+            ['detachPatternInstance', { clipId: 'ghost' }, projectContext],
+            ['detachPatternInstance', { clipId: 'clip-midi-b' }, lockedContext],
+            ['detachPatternInstance', { clipId: 'clip-midi-a', extra: true }, projectContext],
+            ['reverseClip', { clipId: 'ghost' }, projectContext],
+            ['reverseClip', { clipId: 'clip-midi-a' }, projectContext],
+            ['reverseClip', { clipId: 'clip-audio-a' }, frozenContext],
+            ['reverseClip', { clipId: 'clip-audio-a', reversedBufferId: 'forced' }, projectContext],
+        ])('%s refuses %j', (name, args, context) => {
+            expect(bridge(name, args, context)).toHaveProperty('reason', expect.any(String));
+        });
+    });
+
     it('drawClip draws a new clip matching the destination track kind', () => {
         expect(
             bridgeClipToolCall({

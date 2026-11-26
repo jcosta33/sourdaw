@@ -15,6 +15,8 @@ function payloadClipId(
         | 'moveClip'
         | 'splitClip'
         | 'removeClip'
+        | 'reverseClip'
+        | 'detachPatternInstance'
         | 'renameClip'
         | 'trimClipStart'
         | 'trimClipEnd'
@@ -129,7 +131,7 @@ const clipTargetIdsByActionType: ClipTargetLookup = {
     scaleAllVelocities: payloadClipId,
     setAllVelocities: payloadClipId,
     normalizeClip: payloadClipId,
-    reverseClip: noClipTargets,
+    reverseClip: payloadClipId,
     glueClips: (action) => [...action.payload.clipIds],
     nudgeClip: payloadClipId,
     slipClipContent: payloadClipId,
@@ -215,11 +217,11 @@ const clipTargetIdsByActionType: ClipTargetLookup = {
     createAdjustmentLayer: noClipTargets,
     addAdjustmentRegion: noClipTargets,
     createCompGroup: noClipTargets,
-    createPatternInstance: noClipTargets,
+    createPatternInstance: (action) => [action.payload.sourceClipId],
     createVcaGroup: noClipTargets,
     deleteMacro: noClipTargets,
     deleteTrackTemplate: noClipTargets,
-    detachPatternInstance: noClipTargets,
+    detachPatternInstance: payloadClipId,
     disconnectPush: noClipTargets,
     exportDawProject: noClipTargets,
     labelUndoBranch: noClipTargets,

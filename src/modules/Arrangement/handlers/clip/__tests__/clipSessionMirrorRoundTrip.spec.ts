@@ -2235,6 +2235,200 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
     });
 
+    describe('clip structure and reverse edit replay', () => {
+        const MIDI_TRACK = 'track-pattern';
+        const AUDIO_TRACK = 'track-audio';
+        const FRAMES = 4_800;
+
+        function fakeBuffer(): AudioBuffer {
+            const channel = Float32Array.from({ length: FRAMES }, (_, index) => index);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the reverse reads only these members
+            return {
+                length: FRAMES,
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                duration: FRAMES / 48_000,
+                getChannelData: () => channel,
+            } as unknown as AudioBuffer;
+        }
+
+        function clipNamed(id: string) {
+            return trackStore.value?.tracks.flatMap((track) => track.clips).find((clip) => clip.id === id);
+        }
+
+        function seedStructureProject(): void {
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: MIDI_TRACK,
+                        kind: 'midi',
+                        clips: [
+                            ClipDummy.create({
+                                id: 'pattern',
+                                trackId: MIDI_TRACK,
+                                type: 'midi',
+                                audioBufferId: undefined,
+                            }),
+                            ClipDummy.create({
+                                id: 'instance',
+                                trackId: MIDI_TRACK,
+                                type: 'midi',
+                                audioBufferId: undefined,
+                                startBeat: 8,
+                                endBeat: 12,
+                                parentClipId: 'pattern',
+                                overrides: { notes: true },
+                            }),
+                        ],
+                    }),
+                    TrackDummy.create({
+                        id: AUDIO_TRACK,
+                        kind: 'audio',
+                        clips: [
+                            ClipDummy.create({
+                                id: 'verse',
+                                trackId: AUDIO_TRACK,
+                                name: 'Verse',
+                                audioBufferId: 'verse-source',
+                                fadeInBeats: 1,
+                                fadeOutBeats: 0.25,
+                            }),
+                        ],
+                    }),
+                ],
+                selectedTrackId: MIDI_TRACK,
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+        }
+
+        function runAsAgent(actions: AppAction[]) {
+            return executeAppActionBatch(actions, { groupId: 'agent-structure', requireCompensation: true });
+        }
+
+        beforeEach(() => {
+            setArrangementEventBus({ emit: () => Promise.resolve() });
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                class {
+                    createBuffer(): AudioBuffer {
+                        return fakeBuffer();
+                    }
+                }
+            );
+            audioBufferCache.set('verse-source', fakeBuffer());
+            seedStructureProject();
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        it('detachPatternInstance is one undo step whose undo and redo survive a page reload', async () => {
+            expect(
+                await runAsAgent([{ type: 'detachPatternInstance', payload: { clipId: 'instance' } }])
+            ).toMatchObject({ status: 'committed' });
+            expect(clipNamed('instance')?.parentClipId).toBeUndefined();
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipNamed('instance')).toMatchObject({ parentClipId: 'pattern', overrides: { notes: true } });
+
+            reloadSavedProject();
+            await redo();
+            expect(clipNamed('instance')?.parentClipId).toBeUndefined();
+            expect(clipNamed('instance')?.overrides).toBeUndefined();
+        });
+
+        it('createPatternInstance is one undo step that removes and recreates the same instance across reloads', async () => {
+            setNotesForClip('pattern', [
+                { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+            ] as Parameters<typeof setNotesForClip>[1]);
+            flushAutomergeStorageWrites();
+            const action: AppAction = {
+                type: 'createPatternInstance',
+                payload: { sourceClipId: 'pattern', targetTrackId: MIDI_TRACK, startBeat: 16 },
+            };
+
+            expect(await runAsAgent([action])).toMatchObject({ status: 'committed' });
+            const createdId = trackStore.value?.tracks
+                .flatMap((track) => track.clips)
+                .find((clip) => clip.parentClipId === 'pattern' && clip.startBeat === 16)?.id;
+            expect(createdId).toMatch(/^clip-inst-/);
+            expect(clipNamed(createdId ?? '')).toMatchObject({ parentClipId: 'pattern', startBeat: 16 });
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipNamed(createdId ?? '')).toBeUndefined();
+
+            reloadSavedProject();
+            await redo();
+            expect(clipNamed(createdId ?? '')).toMatchObject({ parentClipId: 'pattern', startBeat: 16 });
+        });
+
+        it('reverseClip is one undo step whose undo and redo restore the exact buffer, name and fades across reloads', async () => {
+            expect(await runAsAgent([{ type: 'reverseClip', payload: { clipId: 'verse' } }])).toMatchObject({
+                status: 'committed',
+            });
+            const reversed = clipNamed('verse');
+            expect(reversed).toMatchObject({ name: 'Verse (reversed)', fadeInBeats: 0.25, fadeOutBeats: 1 });
+            const reversedBufferId = reversed?.audioBufferId;
+            expect(reversedBufferId).toMatch(/^reversed-command-/);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipNamed('verse')).toMatchObject({
+                name: 'Verse',
+                audioBufferId: 'verse-source',
+                fadeInBeats: 1,
+                fadeOutBeats: 0.25,
+            });
+
+            reloadSavedProject();
+            await redo();
+            expect(clipNamed('verse')).toMatchObject({
+                name: 'Verse (reversed)',
+                audioBufferId: reversedBufferId,
+                fadeInBeats: 0.25,
+                fadeOutBeats: 1,
+            });
+        });
+
+        it('refuses to undo a reverse onto a clip a later edit moved to another buffer', async () => {
+            expect(await runAsAgent([{ type: 'reverseClip', payload: { clipId: 'verse' } }])).toMatchObject({
+                status: 'committed',
+            });
+            const current = trackStore.value;
+            if (!current) {
+                throw new Error('Expected a project');
+            }
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) =>
+                        clip.id === 'verse' ? { ...clip, audioBufferId: 'later-edit' } : clip
+                    ),
+                })),
+            });
+            flushAutomergeStorageWrites();
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(false);
+            expect(clipNamed('verse')?.audioBufferId).toBe('later-edit');
+        });
+    });
+
     describe('track display edit replay', () => {
         const FOLDER_ID = 'track-folder';
         const SHORT_ID = 'track-short';

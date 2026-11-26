@@ -183,7 +183,7 @@ export const clipDestinationTrackIdsByActionType: ClipDestinationLookup = {
     createAdjustmentLayer: noDestinationTracks,
     addAdjustmentRegion: noDestinationTracks,
     createCompGroup: noDestinationTracks,
-    createPatternInstance: noDestinationTracks,
+    createPatternInstance: (action) => [action.payload.targetTrackId],
     createVcaGroup: noDestinationTracks,
     deleteMacro: noDestinationTracks,
     deleteTrackTemplate: noDestinationTracks,

@@ -991,7 +991,7 @@ const validators = {
         }
         return !hasTargetDb || isInRange(param.targetDb, -60, 0);
     },
-    reverseClip: 'unchecked',
+    reverseClip: hasClipId,
     glueClips: (param): param is PayloadOf<'glueClips'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipIds']) &&
@@ -1264,8 +1264,13 @@ const validators = {
         isOptionalOwn(param, 'amount', (value): value is number => isInRange(value, 0, 1)),
 
     // Pattern instance
-    createPatternInstance: 'unchecked',
-    detachPatternInstance: 'unchecked',
+    createPatternInstance: (param): param is PayloadOf<'createPatternInstance'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['sourceClipId', 'targetTrackId', 'startBeat']) &&
+        isNonEmptyString(param.sourceClipId) &&
+        isNonEmptyString(param.targetTrackId) &&
+        isNonNegativeNumber(param.startBeat),
+    detachPatternInstance: hasClipId,
 
     // Warp
     // A provider names the edit; the plan is application-materialized and never accepted from it.

@@ -390,7 +390,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     renameScratchPadSection: noHandlerMintedIds,
     reorderScratchPadSection: noHandlerMintedIds,
     setScratchPadSectionColor: noHandlerMintedIds,
-    createPatternInstance: noHandlerMintedIds,
+    createPatternInstance: (argumentsValue) => readStringId(argumentsValue, 'targetClipId', 'targetClipId'),
     detachPatternInstance: noHandlerMintedIds,
     restorePatternInstanceLink: noHandlerMintedIds,
     startMacroRecording: noHandlerMintedIds,

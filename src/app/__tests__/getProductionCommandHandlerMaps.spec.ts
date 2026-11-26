@@ -124,11 +124,18 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(120);
+        expect(registrations).toHaveLength(123);
         expect(registrations.map(({ actionType }) => actionType)).toContain('stripSilence');
         expect(registrations.map(({ actionType }) => actionType)).toContain('extractGroove');
         expect(registrations.map(({ actionType }) => actionType)).toContain('applyGroove');
-        for (const actionType of ['hideTrack', 'foldTrack', 'setTrackHeight']) {
+        for (const actionType of [
+            'hideTrack',
+            'foldTrack',
+            'setTrackHeight',
+            'createPatternInstance',
+            'detachPatternInstance',
+            'reverseClip',
+        ]) {
             expect(registrations.map((registration) => registration.actionType)).toContain(actionType);
         }
         expect(registrations.map(({ actionType }) => actionType)).toContain('setCompRegion');

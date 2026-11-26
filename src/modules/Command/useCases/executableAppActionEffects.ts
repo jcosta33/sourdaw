@@ -90,6 +90,21 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
         creates: ['clip', 'notes', 'automation-lane'],
     },
+    createPatternInstance: {
+        dimensions: ['arrangement', 'midi-content'],
+        scope: 'target',
+        creates: ['clip', 'notes'],
+    },
+    // Detaching drops the parent link and override flags; the clip's notes and placement are untouched.
+    detachPatternInstance: {
+        dimensions: ['arrangement'],
+        scope: 'target',
+    },
+    // The mirrored audio replaces the clip's buffer, swaps its fades, remaps its offset and drops its pitch analysis.
+    reverseClip: {
+        dimensions: ['clip-audio'],
+        scope: 'target',
+    },
     moveClips: {
         dimensions: ['arrangement', 'automation'],
         scope: 'siblings',
