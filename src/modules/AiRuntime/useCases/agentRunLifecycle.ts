@@ -34,7 +34,6 @@ import {
     hasRemainingScheduledBatches,
     trackActiveSince,
 } from '../models/AgentRun';
-import { MAX_COLLECTION_LENGTH } from '../models/AgentRunPlanBounds';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
@@ -65,6 +64,7 @@ import { NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
 import { derivePredictedAudibleImpact } from './derivePredictedAudibleImpact';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
+import { readBudgetReservationRefusal } from './readBudgetReservationRefusal';
 import { requireAdmittedAgentRun } from './requireAdmittedAgentRun';
 
 /** Batches a cancellation leaves as they settled: what committed, changed nothing, or was skipped stays so. */
@@ -720,22 +720,6 @@ type AgentRunBudgetReservationInput = AgentRunBudgetReservation & {
 };
 
 type AgentRunBudgetReservationResult = { status: 'reserved' | 'hard-limit-reached'; reason?: string };
-
-/** The category a reservation overspends, or `budgetAttempts` when the run could not read its attempts back. */
-function readBudgetReservationRefusal(
-    run: AgentRun,
-    newAttemptCount: number,
-    additionalByCategory: ReadonlyMap<string, number>
-): string | null {
-    for (const [category, additional] of additionalByCategory) {
-        const limit = run.budgets.limits[category];
-        const consumed = run.budgets.consumed[category] ?? 0;
-        if (limit !== undefined && consumed + additional > limit) {
-            return category;
-        }
-    }
-    return run.budgetAttempts.length + newAttemptCount > MAX_COLLECTION_LENGTH ? 'budgetAttempts' : null;
-}
 
 function reserveAgentRunBudgetBatch(input: {
     runId: string;
