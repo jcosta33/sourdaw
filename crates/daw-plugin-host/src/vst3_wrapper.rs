@@ -2622,6 +2622,10 @@ impl AudioPlugin for Vst3Wrapper {
     /// tell the project it reloaded when it did not. The controller's two
     /// entry points stay tolerant, because `kNotImplemented` is the ordinary
     /// answer from a combined class that already took the same bytes.
+    ///
+    /// Once the processor has taken the state, every parameter write still
+    /// waiting for a block predates it and is dropped; a refused load keeps
+    /// them, because the processor is still running on what they were for.
     fn set_state(&mut self, state: &[u8]) -> Result<(), PluginError> {
         let (component, controller_chunk) = decode_state(state)?;
 
@@ -2635,6 +2639,7 @@ impl AudioPlugin for Vst3Wrapper {
             }
             .into());
         }
+        self.instance.host.state.discard_parameter_edits();
 
         let Some(controller) = self.instance.controller() else {
             return Ok(());
