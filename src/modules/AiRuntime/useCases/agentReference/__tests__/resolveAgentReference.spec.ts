@@ -1918,6 +1918,15 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         expect(resolveTrack(prompt, trackIdNamed(project, refused), project)).toMatchObject({ status: 'rejected' });
     });
 
+    it('finds no candidate for "mute lead" among Synth2 Lead and Vocals, since "Synth2" holds a figure but is no index word', () => {
+        const project = tracksNamed(['Synth2 Lead', 'Vocals']);
+
+        expect(resolveTrack('mute lead', trackIdNamed(project, 'Synth2 Lead'), project)).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+    });
+
     it.each([
         'mute the 2nd kick',
         'mute 02: kick',

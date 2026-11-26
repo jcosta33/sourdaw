@@ -5011,6 +5011,12 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(refine(P0_CARD, 'make it so', [vocalsBy(-3)]).status).toBe('rejected');
         });
 
+        it('never reads a bare "s" as seconds after a word that only holds a figure', () => {
+            // "v２" holds a full-width figure the value reading does not bind but is no figure itself, so the
+            // "s" after it states no unit and the clause stands as an unanswered addition, as "make it so" does.
+            expect(refine(P0_CARD, 'make it v２ s', [vocalsBy(-3)]).status).toBe('rejected');
+        });
+
         it('"preserving" opens a protection like "keeping", so it protects the object off the card it names', () => {
             const refinement = 'make the vocals 1.5 dB, preserving the Bass unchanged';
             const calls = [vocalsBy(-1.5), snareBy(-2)];
