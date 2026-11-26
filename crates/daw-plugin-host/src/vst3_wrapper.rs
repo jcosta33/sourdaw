@@ -107,11 +107,12 @@ const STATE_HEADER_BYTES: usize = 14;
 // RT-side host objects
 // ---------------------------------------------------------------------------
 
-/// The most points one parameter's queue holds in one block: every host write
-/// one block can carry — `sourdaw-native`'s pending queue is
-/// `PENDING_PARAMETER_CAPACITY` (64) deep, and all of it may be one
-/// parameter's ramp — plus the one editor gesture staged ahead of them. Sized
-/// so no point of one parameter the engine admitted is cut here.
+/// The most points one parameter's queue holds in one block. The value is
+/// `MAX_PARAMETER_QUEUES + 1`: 64, one point per slot of the queue table, plus
+/// one. It must stay at least `sourdaw-native`'s `PENDING_PARAMETER_CAPACITY`
+/// (64) plus one editor gesture, so no point of one parameter's ramp the engine
+/// admitted is cut here. No cross-crate check ties the two; they are kept equal
+/// by hand.
 ///
 /// The bound on distinct parameters is different: gestures and host writes
 /// share the `MAX_PARAMETER_QUEUES` queue table, so parameters past it are
@@ -161,18 +162,18 @@ impl HostParamValueQueue {
     /// RT-safe.
     fn push(&self, sample_offset: int32, value: ParamValue) -> usize {
         let count = self.count.get();
+        if count == MAX_QUEUE_POINTS {
+            let last = MAX_QUEUE_POINTS - 1;
+            let held_offset = self.points[last].get().0;
+            self.points[last].set((sample_offset.max(held_offset), value));
+            return last;
+        }
         let position = (0..count)
             .find(|&index| self.points[index].get().0 >= sample_offset)
             .unwrap_or(count);
         if position < count && self.points[position].get().0 == sample_offset {
             self.points[position].set((sample_offset, value));
             return position;
-        }
-        if count == MAX_QUEUE_POINTS {
-            let last = MAX_QUEUE_POINTS - 1;
-            let held_offset = self.points[last].get().0;
-            self.points[last].set((sample_offset.max(held_offset), value));
-            return last;
         }
         for index in (position..count).rev() {
             self.points[index + 1].set(self.points[index].get());

@@ -4504,6 +4504,26 @@ fn a_full_queue_keeps_its_count_and_ends_on_the_newest_value() {
     assert!(points.windows(2).all(|pair| pair[0].0 <= pair[1].0));
 }
 
+/// A full queue ends on the newest value whatever offset the new point names,
+/// including one an earlier middle point already holds.
+/// Mutation: test the equal-offset replacement before the full-queue law — the
+/// middle point takes 99.0 and the queue ends on 64.0.
+#[test]
+fn a_full_queue_given_a_point_at_a_middle_offset_still_ends_on_it() {
+    let changes = HostParameterChanges::new();
+    for point in 0..MAX_QUEUE_POINTS {
+        changes.stage(3, point as u32 * 2, point as f64);
+    }
+    assert_eq!(changes.queues[0].last_value(), Some(64.0));
+
+    changes.stage(3, 4, 99.0);
+
+    let points = read_queue_points(&changes.queues[0]);
+    assert_eq!(points.len(), MAX_QUEUE_POINTS);
+    assert_eq!(changes.queues[0].last_value(), Some(99.0));
+    assert!(points.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+}
+
 /// A plugin may add its points out of offset order; the queue keeps them
 /// sorted, as Steinberg's own does, so the value the block settles on is the
 /// one at the highest offset, not the last one added.

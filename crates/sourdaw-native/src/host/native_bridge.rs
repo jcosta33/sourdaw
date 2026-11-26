@@ -205,8 +205,11 @@ struct PendingParameterQueue {
     slots: [PendingParameterSlot; PENDING_PARAMETER_CAPACITY],
     next_sequence: AtomicU64,
     /// Every write whose sequence is at or below this was issued before the
-    /// last block the plugin was not handed ended, so the sample it names is
-    /// one of a block that no longer exists: it is delivered at sample 0.
+    /// last block the plugin was not handed ended, or before the last served
+    /// drain, so the sample it names is one of a block that no longer exists:
+    /// it is delivered at sample 0. An unserved block raises it
+    /// (`mark_pending_late`); every served drain raises it past the writes it
+    /// did not take (the `fetch_max` after the drain).
     /// Lateness is carried by the sequence rather than by rewriting a slot's
     /// offset, because a slot another thread holds mid-claim cannot be
     /// rewritten and must not be waited for. Only grows.
@@ -277,8 +280,11 @@ impl PendingParameterQueue {
     /// it. The point keeps the later of the two samples, so the parameter's
     /// points stay in non-decreasing order, the same law a full plugin-side
     /// value queue follows. A slot another thread holds, or one that no longer
-    /// holds the parameter once claimed, is not waited for: the write is
-    /// refused only when the queue holds no point of the parameter.
+    /// holds the parameter once claimed, is not waited for. The write is
+    /// refused (`false`) when the queue holds no point of the parameter, when
+    /// the parameter's newest slot is held by another thread, or when that
+    /// slot was republished for another parameter by the time it is claimed.
+    /// The audio-thread caller counts every refusal as an unmapped write.
     fn fold_into_newest_point(
         &self,
         param_id: u32,
@@ -2947,6 +2953,46 @@ mod tests {
                 .all(|pair| pair[0].sample_offset <= pair[1].sample_offset),
             "the drain stays ordered by sample offset"
         );
+    }
+
+    /// A write folded into a full queue below the newest point's offset takes
+    /// that point's value and keeps its higher offset; no other point of the
+    /// parameter moves.
+    /// Mutation: `max_by_key` -> `min_by_key` folds into the oldest point.
+    /// Mutation: store `new_offset` instead of the later of the two offsets.
+    #[test]
+    fn a_full_queue_fold_below_the_newest_offset_keeps_the_newest_offset() {
+        let queue = PendingParameterQueue::new();
+        let original: Vec<PendingParameterUpdate> = (0..PENDING_PARAMETER_CAPACITY)
+            .map(|index| PendingParameterUpdate {
+                param_id: 1,
+                value: index as f64 / 100.0,
+                sample_offset: index as u32 * 2,
+            })
+            .collect();
+        for update in &original {
+            assert!(queue
+                .enqueue(update.param_id, update.value, update.sample_offset)
+                .is_ok());
+        }
+
+        // Offset 11 is held by no point, so the write reaches the fold rather
+        // than coalescing into an existing point.
+        assert!(queue.enqueue(1, 0.77, 11).is_ok());
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+        assert_eq!(count, PENDING_PARAMETER_CAPACITY);
+        let newest = PENDING_PARAMETER_CAPACITY - 1;
+        assert_eq!(
+            drained[newest],
+            PendingParameterUpdate {
+                param_id: 1,
+                value: 0.77,
+                sample_offset: newest as u32 * 2,
+            }
+        );
+        assert_eq!(&drained[..newest], &original[..newest]);
     }
 
     #[test]
