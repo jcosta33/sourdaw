@@ -6,6 +6,7 @@ import {
     applyCanonicalStorageSlotMutation,
     type CanonicalStorageSlotMutation,
 } from './applyCanonicalStorageSlotMutation';
+import { projectPendingFlush } from './projectPendingFlush';
 import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
 import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
@@ -2044,48 +2045,6 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         return { ...pendingValue, ...authorityValue, ...Object.fromEntries(keptFromWrite) };
     };
 
-    /**
-     * Whether a hydrate can show a pending write as its own flush will leave
-     * the document (issue 7454). The flush reconciles three ways against the
-     * base the write was computed from, so the projection replays exactly
-     * that reconcile. It needs that base to describe the document, the
-     * ordinary reconciler to be the one that flushes (a custom mutation hook
-     * owns its own encoding), and a single slot value, because a slot-level
-     * conflict resolves after the flush, across values this write never sees.
-     */
-    const canProjectPendingFlush = (pending: AdapterPendingWrite, rawValues: readonly unknown[]): boolean =>
-        pending.baseValue !== null &&
-        !pending.flushBaseUnknown &&
-        !mutateCrdt &&
-        !mutateCrdtWithMetadata &&
-        rawValues.length === 1;
-
-    /**
-     * The value the pending write leaves in the document if it flushes over
-     * `rawSlot` now: its flush's own reconcile, run on a detached copy of the
-     * slot. Whatever the write did not change keeps the peer's value, a peer's
-     * add and its removal included. A node both sides changed takes the
-     * pending write's value, the rule the flush itself applies: the pending
-     * write is this replica's newest intent, made after the peer change it had
-     * not yet seen, and the store must show what the document will hold
-     * rather than a value the flush then contradicts.
-     */
-    const projectPendingFlush = (pending: AdapterPendingWrite, rawSlot: unknown): TData | undefined => {
-        if (pending.value === null) {
-            return undefined;
-        }
-        const slotCopy: AutomergeStorageMutableDoc = { [key]: toDocSafe(rawSlot) };
-        reconcileCrdtSlot({
-            doc: slotCopy,
-            key,
-            baseValue: pending.baseValue !== null && toCrdt ? toCrdt(pending.baseValue) : pending.baseValue,
-            value: toDocSafe(toCrdt ? toCrdt(pending.value) : pending.value),
-            identityByField: crdtEntityIdentity,
-            documentPresence: pending.baseDocumentPresence,
-        });
-        return decodeClonedValues([slotCopy[key]]);
-    };
-
     const keepLocalRuntimeState = (
         authorityValue: TData | null,
         localValue: TData | null,
@@ -3318,12 +3277,23 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                             pendingValue: visiblePending.value,
                             authorityValue: crdtData,
                         };
-                        let flushedValue: TData | undefined;
-                        if (canProjectPendingFlush(visiblePending, rawValues)) {
-                            flushedValue = projectPendingFlush(visiblePending, rawValues[0]);
-                        }
-                        if (flushedValue !== undefined) {
-                            rebasedValue = mergePartialAuthority(visiblePending.value, flushedValue);
+                        // The flush's own reconcile needs a known base, the ordinary
+                        // reconciler (a mutation hook owns its encoding) and one slot
+                        // value (a slot-level conflict resolves across values it never sees).
+                        if (
+                            trustedBaseValue !== null &&
+                            typeof trustedBaseValue === 'object' &&
+                            !mutateCrdt &&
+                            !mutateCrdtWithMetadata &&
+                            rawValues.length === 1
+                        ) {
+                            rebasedValue = projectPendingFlush({
+                                ...fieldRebase,
+                                key,
+                                baseValue: trustedBaseValue,
+                                identityByField: crdtEntityIdentity,
+                                documentPresence: visiblePending.baseDocumentPresence,
+                            });
                         } else if (toCrdt) {
                             rebasedValue = rebasePendingOverAuthority({ ...fieldRebase, trustedBaseValue });
                         } else {

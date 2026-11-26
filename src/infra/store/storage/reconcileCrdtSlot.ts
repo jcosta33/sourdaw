@@ -89,12 +89,6 @@ function readPresenceNode(presence: unknown, field: string): unknown {
  * operation". Scalars settle on identity alone; only two composite values fall
  * back to serializing, because a local write must not pay a `JSON.stringify`
  * per scalar field it touches.
- *
- * Key order is not part of a value: Automerge reads a map's keys back sorted,
- * while a store builds its records in declaration order, so a row the writer
- * left untouched can serialize differently from its base. Unequal strings
- * therefore fall back to an order-blind walk, and the row is not mistaken for
- * the writer's edit, which would resurrect it over a peer's deletion.
  */
 function isSameValue(left: unknown, right: unknown): boolean {
     if (Object.is(left, right)) {
@@ -105,32 +99,7 @@ function isSameValue(left: unknown, right: unknown): boolean {
     if (!leftIsComposite || !rightIsComposite) {
         return false;
     }
-    return JSON.stringify(left) === JSON.stringify(right) || isSameJsonValue(left, right);
-}
-
-/** JSON equality blind to record key order; an `undefined` field is absent, as `JSON.stringify` writes it. */
-function isSameJsonValue(left: unknown, right: unknown): boolean {
-    if (Object.is(left, right)) {
-        return true;
-    }
-    if (Array.isArray(left) && Array.isArray(right)) {
-        return left.length === right.length && left.every((item, index) => isSameJsonValue(item, right[index]));
-    }
-    if (!isUnknownRecord(left) || !isUnknownRecord(right)) {
-        return false;
-    }
-    const leftKeys = definedKeys(left);
-    const rightKeys = definedKeys(right);
-    return (
-        leftKeys.length === rightKeys.length &&
-        leftKeys.every((field, index) => field === rightKeys[index] && isSameJsonValue(left[field], right[field]))
-    );
-}
-
-function definedKeys(record: UnknownRecord): readonly string[] {
-    return Object.keys(record)
-        .filter((field) => record[field] !== undefined)
-        .sort();
+    return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function identifyById(row: UnknownRecord): string | null {

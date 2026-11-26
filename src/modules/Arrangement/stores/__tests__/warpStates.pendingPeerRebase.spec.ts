@@ -14,7 +14,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { type WarpState } from '../../models/WarpMarker';
-import { warpStateStore } from '../warpStates';
+import { setWarpState, warpStateStore } from '../warpStates';
 
 type RawWarpRoot = { warpStates: { states: Record<string, WarpState> } };
 
@@ -48,11 +48,11 @@ function applyPeerChange(changeStates: (states: Record<string, WarpState>) => vo
     mutateCrdtDoc<RawWarpRoot>({ id: 'root', changeFn: (document) => changeStates(document.warpStates.states) });
 }
 
-/** `committed` lands in the document, then a local write of `pending` stays unflushed. */
-function openPendingWrite(committed: Record<string, WarpState>, pending: Record<string, WarpState>): void {
+/** `committed` lands in the document, then the ordinary one-clip write of `clipId` stays unflushed. */
+function openPendingWrite(committed: Record<string, WarpState>, clipId: string, state: WarpState): void {
     warpStateStore.set({ states: committed });
     flushAutomergeStorageWrites();
-    warpStateStore.set({ states: pending });
+    setWarpState(clipId, state);
     expect(countPendingAutomergeStorageWrites()).toBe(1);
 }
 
@@ -72,7 +72,7 @@ afterEach(() => {
 
 describe('warpStateStore rebasing a pending write over a peer change', () => {
     it('shows and keeps a clip a peer adds while a local write adding another clip is pending', () => {
-        openPendingWrite({ A: STATE_A }, { A: STATE_A, B: STATE_B });
+        openPendingWrite({ A: STATE_A }, 'B', STATE_B);
 
         applyPeerChange((states) => {
             states.C = structuredClone(STATE_C);
@@ -86,7 +86,7 @@ describe('warpStateStore rebasing a pending write over a peer change', () => {
     });
 
     it('keeps removed a clip a peer removes that the pending write left untouched', () => {
-        openPendingWrite({ A: STATE_A }, { A: STATE_A, B: STATE_B });
+        openPendingWrite({ A: STATE_A }, 'B', STATE_B);
 
         applyPeerChange((states) => {
             delete states.A;
@@ -100,7 +100,7 @@ describe('warpStateStore rebasing a pending write over a peer change', () => {
     });
 
     it('lets the pending write win a field both sides changed and keeps the peer`s other edits', () => {
-        openPendingWrite({ A: STATE_A, B: STATE_B }, { A: { ...STATE_A, originalTempo: 90 }, B: STATE_B });
+        openPendingWrite({ A: STATE_A, B: STATE_B }, 'A', { ...STATE_A, originalTempo: 90 });
 
         applyPeerChange((states) => {
             const peerA = states.A;
@@ -121,7 +121,7 @@ describe('warpStateStore rebasing a pending write over a peer change', () => {
     });
 
     it('keeps both a local and a peer marker added to the same clip', () => {
-        openPendingWrite({ A: STATE_A }, { A: warpState(100, ['base', 'local']) });
+        openPendingWrite({ A: STATE_A }, 'A', warpState(100, ['base', 'local']));
 
         applyPeerChange((states) => {
             states.A?.markers.push({ id: 'peer', originalBeat: 7, warpedBeat: 8, origin: 'user' });

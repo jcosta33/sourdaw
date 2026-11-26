@@ -59,13 +59,16 @@ function peerEntries(draft: RootDocument): Record<string, Entry> {
     return (draft.slot as EntrySlot).entries;
 }
 
-/** Entry A committed, then a local write adding B that has not flushed yet. */
-function openPendingWrite(initialEntries: Record<string, Entry>, pendingEntries: Record<string, Entry>) {
+/**
+ * `initialEntries` in the document, then a local write that has not flushed,
+ * made as a use case makes one: the store's current entries with `edits` applied.
+ */
+function openPendingWrite(initialEntries: Record<string, Entry>, edits: Record<string, Entry>) {
     const document = createDocumentPort({ slot: { entries: initialEntries } });
     configureAutomergeStoragePort(document.port);
     const storage = createEntryStorage();
     storage.hydrate?.();
-    storage.set({ entries: pendingEntries });
+    storage.set({ entries: { ...readEntries(storage), ...edits } });
     expect(countPendingAutomergeStorageWrites()).toBe(1);
     return { document, storage };
 }
@@ -77,7 +80,7 @@ afterEach(() => {
 
 describe('createAutomergeStorage rebasing a pending write over a peer change', () => {
     it('shows and keeps an entry a peer adds while a local write adding another entry is pending', () => {
-        const { document, storage } = openPendingWrite({ A: entry(1) }, { A: entry(1), B: entry(2) });
+        const { document, storage } = openPendingWrite({ A: entry(1) }, { B: entry(2) });
 
         document.applyPeerChange((draft) => {
             peerEntries(draft).C = entry(3);
@@ -92,7 +95,7 @@ describe('createAutomergeStorage rebasing a pending write over a peer change', (
     });
 
     it('keeps removed an entry a peer removes that the pending write left untouched', () => {
-        const { document, storage } = openPendingWrite({ A: entry(1) }, { A: entry(1), B: entry(2) });
+        const { document, storage } = openPendingWrite({ A: entry(1) }, { B: entry(2) });
 
         document.applyPeerChange((draft) => {
             delete peerEntries(draft).A;
@@ -106,10 +109,7 @@ describe('createAutomergeStorage rebasing a pending write over a peer change', (
     });
 
     it('lets the pending write win a field both sides changed and keeps every field only the peer changed', () => {
-        const { document, storage } = openPendingWrite(
-            { A: entry(1), B: entry(2) },
-            { A: { ...entry(1), tempo: 10 }, B: entry(2) }
-        );
+        const { document, storage } = openPendingWrite({ A: entry(1), B: entry(2) }, { A: { ...entry(1), tempo: 10 } });
 
         document.applyPeerChange((draft) => {
             const entries = peerEntries(draft);
