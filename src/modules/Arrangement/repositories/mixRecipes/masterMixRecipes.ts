@@ -34,7 +34,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
         id: 'master-bright',
         descriptor: 'bright',
         roles: ['master'],
-        title: 'Shallow presence and top lift',
+        title: 'Shallow upper-mid and top lift',
         steps: [
             {
                 kind: 'insert',
@@ -56,7 +56,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when the dullness traces to one source that could be fixed at its track.',
         ],
         metrics: [{ metric: 'spectralCentroid', direction: 'increase' }],
-        source: 'A broad lift in the presence region raises whatever is loudest there across the whole mix, so it stays under a decibel and the shelf above it carries most of the perceived change. Wide, shallow curves are what keep a master move from re-voicing individual sources.',
+        source: 'A broad lift between 3 kHz and 4 kHz raises whatever is loudest there across the whole mix, so it stays under a decibel and the shelf above it carries most of the perceived change. Wide, shallow curves are what keep a master move from re-voicing individual sources.',
     },
     {
         id: 'master-tight',
@@ -114,8 +114,11 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when a limiter earlier in the master chain has already removed the peaks.',
             'Skip when the release cannot recover between beats at this tempo, which produces pumping across the whole mix.',
         ],
-        metrics: [{ metric: 'transientDensity', direction: 'hold' }],
-        source: 'An attack past the transient leaves the drum strike untouched and clamps the body behind it, so the peak structure survives. Two or three decibels of reduction is the working range on a master; more starts to move the balance between sources.',
+        metrics: [
+            { metric: 'shortTermLoudnessMax', direction: 'increase' },
+            { metric: 'transientDensity', direction: 'hold' },
+        ],
+        source: 'An attack past the transient leaves the drum strike untouched and clamps the body behind it, so the peak structure survives, and on material that stays under the threshold the automatic makeup lifts short-term loudness. Two or three decibels of reduction is the working range on a master; more starts to move the balance between sources.',
     },
     {
         id: 'master-wide',
@@ -128,7 +131,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 deviceType: 'builtin-stereo-widener',
                 parameters: [
                     { paramId: 'width-amount', minimum: 1.05, maximum: 1.25 },
-                    { paramId: 'width-mono-bass', minimum: 100, maximum: 150 },
+                    { paramId: 'width-mono-bass', minimum: 200, maximum: 300 },
                     { paramId: 'width-mid', minimum: -1, maximum: 0 },
                 ],
             },
@@ -140,8 +143,11 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when individual sources or group buses have already been widened.',
             'Skip when the delivery target sums to mono, such as a club system or a vinyl cut.',
         ],
-        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
-        source: 'Width applied at the master compounds with every widening move already made below it, so the amount stops near 1.25. The mono crossover below 150 Hz passes only the side signal above it, which is the part that costs level on mono fold-down and destabilises a vinyl cut.',
+        metrics: [
+            { metric: 'sideEnergyFraction', direction: 'increase' },
+            { metric: 'lowFrequencyStereoContent', direction: 'decrease' },
+        ],
+        source: 'Width applied at the master compounds with every widening move already made below it, so the amount stops near 1.25. A crossover at 200 Hz to 300 Hz removes the side signal below it, which is the low-frequency side content that costs level on mono fold-down and destabilises a vinyl cut.',
     },
     {
         id: 'master-intimate',
@@ -153,7 +159,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
                 kind: 'insert',
                 deviceType: 'builtin-stereo-widener',
                 parameters: [
-                    { paramId: 'width-amount', minimum: 0.7, maximum: 0.95 },
+                    { paramId: 'width-amount', minimum: 0.7, maximum: 0.85 },
                     { paramId: 'width-mono-bass', minimum: 100, maximum: 160 },
                 ],
             },
@@ -321,8 +327,11 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             'Skip when a mix-bus compressor already applies the same slow envelope.',
             'Skip when one loud element, usually the kick, would drive the detector on its own.',
         ],
-        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
-        source: 'A single slow envelope across the mix narrows the gap between the peaks and the average level, which is what cohesion sounds like. Keeping reduction to two or three decibels stops the envelope becoming audible as pumping on the whole programme.',
+        metrics: [
+            { metric: 'integratedLoudness', direction: 'increase' },
+            { metric: 'dynamicRangeEstimate', direction: 'decrease' },
+        ],
+        source: 'A single slow envelope across the mix narrows the gap between the peaks and the average level, which is what cohesion sounds like, and on material that stays under the threshold the automatic makeup lifts the average level, which is what integrated loudness measures. Keeping reduction to two or three decibels stops the envelope becoming audible as pumping on the whole programme.',
     },
     {
         id: 'master-lo-fi',

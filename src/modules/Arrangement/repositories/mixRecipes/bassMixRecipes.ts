@@ -55,8 +55,11 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when fret and string noise is already intrusive.',
             'Skip when guitars already occupy the region between 700 Hz and 1.2 kHz.',
         ],
-        metrics: [{ metric: 'frequencyBandEnergy', band: 'mid', direction: 'increase' }],
-        source: 'A bass reads as bright through its second and third harmonics rather than through its fundamental, which is why the work happens near 1 kHz and again at the attack region above 3 kHz. This also keeps the part audible on playback systems that cannot reproduce the fundamental at all.',
+        metrics: [
+            { metric: 'frequencyBandEnergy', band: 'mid', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'decrease' },
+        ],
+        source: 'A bass reads as bright through its second and third harmonics rather than through its fundamental, which is why the work happens near 1 kHz and again at the attack region above 3 kHz. The boosts above the fundamental also lower the share of the energy the bass band holds, and they keep the part audible on playback systems that cannot reproduce the fundamental at all.',
     },
     {
         id: 'bass-tight',
@@ -147,7 +150,7 @@ export const bassMixRecipes: readonly MixRecipe[] = [
                 deviceType: 'builtin-stereo-widener',
                 parameters: [
                     { paramId: 'width-amount', minimum: 1.1, maximum: 1.35 },
-                    { paramId: 'width-mono-bass', minimum: 120, maximum: 200 },
+                    { paramId: 'width-mono-bass', minimum: 200, maximum: 300 },
                     { paramId: 'width-side', minimum: 0, maximum: 2 },
                 ],
             },
@@ -157,8 +160,11 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip on a mono bass part, where widening produces phase differences rather than image.',
             'Skip when the release target includes vinyl cutting or other mono-summed low-end delivery.',
         ],
-        metrics: [{ metric: 'sideEnergyFraction', direction: 'increase' }],
-        source: 'Only the harmonic content above the mono crossover is widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. The crossover sits at 120 Hz to 200 Hz so the upper harmonics carry the image.',
+        metrics: [
+            { metric: 'sideEnergyFraction', direction: 'increase' },
+            { metric: 'lowFrequencyStereoContent', direction: 'decrease' },
+        ],
+        source: 'Only the harmonic content above the mono crossover is widened safely, because decorrelating the fundamental costs level on mono fold-down and destabilises the low end. The crossover sits at 200 Hz to 300 Hz, high enough that the side signal below 120 Hz falls while the upper harmonics carry the image.',
     },
     {
         id: 'bass-intimate',
@@ -221,8 +227,11 @@ export const bassMixRecipes: readonly MixRecipe[] = [
             'Skip when the part must carry the harmony on playback systems with no low-frequency reproduction.',
             'Skip when a low-pass filter is already applied earlier in the chain.',
         ],
-        metrics: [{ metric: 'frequencyBandEnergy', band: 'high-mid', direction: 'decrease' }],
-        source: 'A dark bass is defined by the absence of pick and fret detail above 3 kHz plus a reduced second-harmonic region near 1 kHz, and removing only one of the two leaves the part still reading forward. The cuts stop short of removing the harmonics small speakers need to imply the note at all.',
+        metrics: [
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'high-mid', direction: 'decrease' },
+        ],
+        source: 'A dark bass is defined by the absence of pick and fret detail above 3 kHz, so the cut there lowers the high-mid share and leaves the bass band a larger share of the energy. The smaller cut near 1 kHz brings the second harmonic down with it, though it only moves energy between neighbouring bands on some sources, so no mid-band claim is made. The cuts stop short of removing the harmonics small speakers need to imply the note at all.',
     },
     {
         id: 'bass-airy',

@@ -339,15 +339,15 @@ function firstUnrenderableDevice(recipe: MixRecipe): string | null {
     return recipe.steps.find((step) => !LAW_DEVICES.has(step.deviceType))?.deviceType ?? null;
 }
 
-/** The highest threshold in the recipe's compressor window, or `null` when no compressor decides its dynamics. */
-function compressorThresholdCeilingDb(recipe: MixRecipe): number | null {
+/** The recipe compressor's threshold window, or `null` when no compressor decides its dynamics. */
+function compressorThresholdWindowDb(recipe: MixRecipe): { floor: number; ceiling: number } | null {
     const threshold = recipe.steps
         .find((step) => step.deviceType === 'builtin-compressor')
         ?.parameters.find((parameter) => parameter.paramId === 'comp-threshold');
     if (threshold === undefined) {
         return null;
     }
-    return threshold.maximum;
+    return { floor: threshold.minimum, ceiling: threshold.maximum };
 }
 
 /** The side energy a source needs before a stereo claim can show on it; the mono positions measure zero. */
@@ -389,17 +389,27 @@ const MIN_DYNAMIC_SOURCE_CREST_DB = 10;
  */
 const AIR_BAND_FLOOR_HZ = 8000;
 
+const LOUDNESS_METRICS: readonly string[] = ['integratedLoudness', 'shortTermLoudnessMax'];
+
 /**
- * Whether a claim is meant for a source. A compressor's crest and dynamic-range claims are meant for a
- * source whose peak clears every threshold in the window by the knee: a compressor reduces nothing below its
- * threshold and ramps in across the knee above it, so a quieter source cannot show the claim either way. Crest, dynamic-range and transient
- * claims are not meant for a source whose own crest factor is too low to reshape. A band-share claim is meant for a source with no dominant band near the claimed one. A stereo claim is meant for a
- * source with a side signal, since a mono source has nothing to widen or narrow. A spectral-rolloff claim
- * is meant for a source whose own rolloff lies in the air band. Every other claim
- * is meant for every source.
+ * Whether a claim is meant for a source.
+ * - A compressor's crest and dynamic-range claims are meant for a source whose peak clears every threshold
+ *   in the window by the knee: a compressor reduces nothing below its threshold and ramps in across the
+ *   knee above it, so a quieter source cannot show the claim either way.
+ * - A compressor's loudness rise is meant for a source whose peak sits below every threshold in the
+ *   window: the automatic makeup lifts material the compressor does not reduce, and lowers material it does.
+ * - Crest, dynamic-range and transient claims are not meant for a source whose own crest factor is too low
+ *   to reshape.
+ * - A band-share claim is meant for a source with no dominant band near the claimed one.
+ * - A stereo claim is meant for a source with a side signal, since a mono source has nothing to widen or
+ *   narrow.
+ * - A spectral-rolloff claim is meant for a source whose own rolloff lies in the air band.
+ * Every other claim is meant for every source.
  */
 function isMeantFor(recipe: MixRecipe, claim: Claim, dry: Figures): boolean {
     const metric = claim.metric;
+    const peakDb = figure(dry, { metric: 'truePeak', direction: 'hold' });
+    const thresholds = compressorThresholdWindowDb(recipe);
     if (STEREO_METRICS.includes(metric)) {
         return figure(dry, { metric: 'sideEnergyFraction', direction: 'hold' }) >= MIN_SOURCE_SIDE_ENERGY_FRACTION;
     }
@@ -415,11 +425,16 @@ function isMeantFor(recipe: MixRecipe, claim: Claim, dry: Figures): boolean {
     if (metric === 'spectralRolloff') {
         return figure(dry, { metric, direction: 'hold' }) >= AIR_BAND_FLOOR_HZ;
     }
-    const thresholdDb = compressorThresholdCeilingDb(recipe);
-    if (thresholdDb === null || (metric !== 'crestFactor' && metric !== 'dynamicRangeEstimate')) {
+    if (thresholds === null) {
         return true;
     }
-    return figure(dry, { metric: 'truePeak', direction: 'hold' }) > thresholdDb + COMPRESSOR_KNEE_DB;
+    if (LOUDNESS_METRICS.includes(metric) && claim.direction === 'increase') {
+        return peakDb < thresholds.floor;
+    }
+    if (metric === 'crestFactor' || metric === 'dynamicRangeEstimate') {
+        return peakDb > thresholds.ceiling + COMPRESSOR_KNEE_DB;
+    }
+    return true;
 }
 
 /**

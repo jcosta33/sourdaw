@@ -29,6 +29,9 @@ const SOURCE_CACHE_BYTES = 64 * 1024 * 1024;
 const PARTIAL_HZ = [110, 330, 1000, 3000, 6000, 12_000] as const;
 
 /** Every source strikes once a beat and decays to its sustain floor this fast. */
+/** A Web Audio filter node's default Q, which `highpass` reads in decibels. */
+const HIGH_PASS_RESONANCE_DB = 1;
+
 const STRIKE_DECAY_SECONDS = 0.03;
 
 /**
@@ -62,8 +65,8 @@ const STRIKE_RISE_SECONDS = 0.005;
  *   node's automatic makeup while its Auto Makeup switch is on (off cancels it, an absent switch reads
  *   on, `isCompressorAutoMakeupEngaged`), then the device's own makeup gain.
  * - `builtin-gain`: its level in decibels.
- * - `builtin-stereo-widener`: the mid scaled by its mid level, the side by its width and side level,
- *   with the side below its mono-bass frequency removed.
+ * - `builtin-stereo-widener`: the mid scaled by its mid level, the side through the Web Audio high-pass its
+ *   mono-bass frequency sets (one biquad), then by its width and side level.
  * A device no rule covers throws, so no case can lean on a sound the law does not make.
  *
  * Mixer: the fader's linear gain, then a constant-power pan. A bus sums the post-fader (or pre-fader)
@@ -302,12 +305,15 @@ function peaking(frequency: number, gainDb: number, q: number): Biquad {
     return normalise(1 + alpha * a, -2 * cos, 1 - alpha * a, 1 + alpha / a, -2 * cos, 1 - alpha / a);
 }
 
-/** The Audio EQ Cookbook low-pass at Butterworth Q, which the widener's mono-bass split reads. */
-function lowPass(frequency: number): Biquad {
+/**
+ * The Web Audio `highpass` response the widener's mono-bass filter is (`createStereoWidener`): the Audio EQ
+ * Cookbook high-pass, with the node's Q read as a resonance in decibels, and the node's default of 1 dB.
+ */
+function highPass(frequency: number): Biquad {
     const omega = (2 * Math.PI * frequency) / SAMPLE_RATE;
-    const alpha = Math.sin(omega) / Math.SQRT2;
+    const alpha = Math.sin(omega) / (2 * 10 ** (HIGH_PASS_RESONANCE_DB / 20));
     const cos = Math.cos(omega);
-    return normalise((1 - cos) / 2, 1 - cos, (1 - cos) / 2, 1 + alpha, -2 * cos, 1 - alpha);
+    return normalise((1 + cos) / 2, -(1 + cos), (1 + cos) / 2, 1 + alpha, -2 * cos, 1 - alpha);
 }
 
 function filter(samples: Float64Array, filters: readonly Biquad[]): Float64Array {
@@ -340,14 +346,14 @@ function widen(signal: Stereo, settings: { width: number; midDb: number; sideDb:
     for (let frame = 0; frame < frames; frame++) {
         side[frame] = (signal.left[frame]! - signal.right[frame]!) / 2;
     }
-    const sideLow = filter(side, [lowPass(settings.monoBassHz), lowPass(settings.monoBassHz)]);
+    const sideHigh = filter(side, [highPass(settings.monoBassHz)]);
     const midGain = 10 ** (settings.midDb / 20);
     const sideGain = settings.width * 10 ** (settings.sideDb / 20);
     const left = new Float64Array(frames);
     const right = new Float64Array(frames);
     for (let frame = 0; frame < frames; frame++) {
         const mid = ((signal.left[frame]! + signal.right[frame]!) / 2) * midGain;
-        const wide = (side[frame]! - sideLow[frame]!) * sideGain;
+        const wide = sideHigh[frame]! * sideGain;
         left[frame] = mid + wide;
         right[frame] = mid - wide;
     }
