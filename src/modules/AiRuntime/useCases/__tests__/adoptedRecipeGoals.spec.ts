@@ -394,6 +394,28 @@ describe("an adopted recipe proposal is verified against the recipe's own expect
         expect(run?.batches.map((batch) => batch.status)).toEqual(['failed']);
     });
 
+    it('cancels the request, persisting no card, when the run is stopped while the adopted proposal is measured', async () => {
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
+            const runId = chatStore.value?.messages.find(
+                (message) => message.stoppableRunId !== undefined
+            )?.stoppableRunId;
+            if (runId === undefined) {
+                throw new Error('Expected the measuring run to be stoppable.');
+            }
+            agentRunLifecycle.cancel({ runId, reason: 'Stopped by the user.' });
+            return renderTrack(input);
+        });
+
+        await expect(suggest('vocal-warm')).resolves.toBe('requested');
+
+        expect(proposedCards()).toEqual([]);
+        const messages = chatStore.value?.messages ?? [];
+        expect(messages.find((message) => message.content === 'Cancelled preparation of the proposal.')).toMatchObject({
+            pendingActionConfirmationStatus: 'cancelled',
+        });
+        expect(messages.filter((message) => message.stoppableRunId !== undefined)).toEqual([]);
+    });
+
     it("freezes the same goals when the last commit's recipe is repeated on another track", async () => {
         addBackingVocals();
         await suggest('vocal-warm');
