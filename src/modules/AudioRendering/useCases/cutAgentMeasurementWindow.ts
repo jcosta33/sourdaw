@@ -38,9 +38,6 @@ function readWindowFrames(window: AgentMeasurementWindow, timeline: AgentMeasure
  * one range keeps are the same frames inside a render of a wider range ending later. The window is
  * copied into a buffer of its own, so whatever reduces it — integrated-loudness gating, a true-peak
  * filter — starts on the window's first sample exactly as it would on a render of that range.
- * A render holds more than its range when latency compensation widens it, and how much more
- * follows from the deepest window sharing it, so the cut is made even when the window is the whole
- * span: a window then holds the same frames whichever windows were rendered beside it.
  * `null` when the span render does not hold the window.
  */
 export function cutAgentMeasurementWindow(input: {
@@ -50,19 +47,15 @@ export function cutAgentMeasurementWindow(input: {
     timeline: AgentMeasurementTimeline;
 }): AudioBuffer | null {
     const { buffer, span, window } = input;
+    if (window.startBeat === span.startBeat && window.endBeat === span.endBeat) {
+        return buffer;
+    }
     const spanFrames = readWindowFrames(span, input.timeline, buffer.sampleRate);
     const windowFrames = readWindowFrames(window, input.timeline, buffer.sampleRate);
     const start = windowFrames.first - spanFrames.first;
-    const wholeSpan = window.startBeat === span.startBeat && window.endBeat === span.endBeat;
-    // The span's own window keeps whatever a shorter render holds, as it did before the cut was made
-    // for it too; a window inside a wider span must lie within the render.
-    const wanted = windowFrames.end - spanFrames.first;
-    const end = Math.min(wanted, wholeSpan ? buffer.length : Number.POSITIVE_INFINITY);
+    const end = windowFrames.end - spanFrames.first;
     if (start < 0 || end <= start || end > buffer.length) {
         return null;
-    }
-    if (start === 0 && end === buffer.length) {
-        return buffer;
     }
     const output = new AudioBuffer({
         length: end - start,

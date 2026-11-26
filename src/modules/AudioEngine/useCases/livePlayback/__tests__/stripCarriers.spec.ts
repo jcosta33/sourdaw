@@ -115,6 +115,7 @@ function programmeFor(
         bakedStripIds: new Set(bakedStripIds),
         webVoicedStripIds: new Set(webVoicedStripIds),
         exclusions: [],
+        compensationDelaysByStripId: new Map(),
     };
 }
 

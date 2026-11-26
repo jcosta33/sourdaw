@@ -55,9 +55,8 @@ function framesKept(range: AgentMeasurementWindow): { first: number; length: num
 }
 
 /** A render of `span` whose every sample holds the timeline frame it was rendered at. */
-function renderOfFrames(span: AgentMeasurementWindow, latencyFrames = 0): AudioBuffer {
-    const { first } = framesKept(span);
-    const length = framesKept(span).length + latencyFrames;
+function renderOfFrames(span: AgentMeasurementWindow): AudioBuffer {
+    const { first, length } = framesKept(span);
     const buffer = new AudioBuffer({ length, numberOfChannels: 1, sampleRate: SAMPLE_RATE });
     buffer.copyToChannel(
         Float32Array.from({ length }, (_, frame) => first + frame),
@@ -126,48 +125,5 @@ describe('a measurement window cut out of a wider render', () => {
             tempoMap: { changes: [{ id: 'slower', beat: 6.3, tempo: 71, curve: 'instant' }] },
         });
         expectEveryCutMatchesItsOwnRender({ startBeat: 0, endBeat: 14.1 });
-    });
-
-    // Latency compensation widens a render past its range by the session's depth, so a window
-    // that is the whole span of its own render once held that widened buffer while the same window
-    // beside a longer one was cut to its frames.
-    it('holds the same frames whether it is rendered alone or beside a longer window, with latency', () => {
-        const latencyFrames = Math.round(0.25 * SAMPLE_RATE);
-        const window = { startBeat: 0, endBeat: 4 };
-        const timeline = readAgentMeasurementTimeline();
-        const alone = cutAgentMeasurementWindow({
-            buffer: renderOfFrames(window, latencyFrames),
-            span: window,
-            window,
-            timeline,
-        });
-        const wider = { startBeat: 0, endBeat: 8 };
-        const beside = cutAgentMeasurementWindow({
-            buffer: renderOfFrames(wider, latencyFrames),
-            span: wider,
-            window,
-            timeline,
-        });
-
-        expect(alone === null ? null : framesOf(alone)).toEqual(beside === null ? null : framesOf(beside));
-        expect(alone?.length).toBe(framesKept(window).length);
-    });
-
-    // A render that stopped short of its range still answers for the window that is its whole span,
-    // with the frames it holds; only a window inside a wider span must lie within the render.
-    it('keeps the frames a render holds when it is shorter than the window that is its whole span', () => {
-        const window = { startBeat: 0, endBeat: 4 };
-        const full = renderOfFrames(window);
-        const short = new AudioBuffer({ length: full.length - 1000, numberOfChannels: 1, sampleRate: SAMPLE_RATE });
-        short.copyToChannel(full.getChannelData(0).subarray(0, short.length), 0);
-
-        const cut = cutAgentMeasurementWindow({
-            buffer: short,
-            span: window,
-            window,
-            timeline: readAgentMeasurementTimeline(),
-        });
-
-        expect(cut === null ? null : framesOf(cut)).toEqual({ first: 0, length: short.length, last: short.length - 1 });
     });
 });

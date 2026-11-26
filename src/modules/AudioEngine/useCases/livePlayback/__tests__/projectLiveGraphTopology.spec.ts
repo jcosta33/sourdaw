@@ -57,6 +57,7 @@ function programmeFor(
         bakedStripIds: new Set(bakedStripIds),
         webVoicedStripIds: new Set(webVoicedStripIds),
         exclusions: [],
+        compensationDelaysByStripId: new Map(),
     };
 }
 
@@ -65,6 +66,7 @@ const NO_PROGRAMME: LiveGraphProgramme = {
     bakedStripIds: new Set(),
     webVoicedStripIds: new Set(),
     exclusions: [],
+    compensationDelaysByStripId: new Map(),
 };
 
 function createTrack(overrides?: Partial<Track>): Track {

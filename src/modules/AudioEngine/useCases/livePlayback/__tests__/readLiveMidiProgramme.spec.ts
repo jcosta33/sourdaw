@@ -83,7 +83,7 @@ beforeEach(() => {
         endSeconds: endPpq,
         durationSeconds: endPpq - startPpq,
     });
-    offlineMidiEventProjectorState.createProjector = () => (events) => events;
+    offlineMidiEventProjectorState.createProjector = () => (input) => input.events;
     offlineMidiEventProjectorState.selectProbability = () => true;
     vi.mocked(getCompensationDelay).mockClear();
 });
