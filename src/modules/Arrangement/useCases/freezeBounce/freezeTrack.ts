@@ -92,6 +92,15 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
     return liveTrack !== undefined && freezeStateSnapshotMatches(liveTrack, task.pendingFreeze);
 }
 
+/**
+ * Whether the finished render must not commit. The recording refusal runs first because it reports
+ * why a recording start reset the track; any other departure from the freezing state, a
+ * collaborator's unfreeze included, ends the task silently.
+ */
+function refuseLateFreezeCommit(task: FreezeTaskIdentity): boolean {
+    return refuseFreezeCommit(task.trackId, () => isRegisteredFreezeTask(task)) || !isCurrentFreezeTask(task);
+}
+
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
     if (activeFreezeTasks.get(trackId) === abortController) {
         activeFreezeTasks.delete(trackId);
@@ -245,12 +254,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         assertFreezeSourceUnchangedUnlessRecording(trackId, freezeRender.signature, () =>
             isRegisteredFreezeTask(taskIdentity)
         );
-        if (refuseFreezeCommit(trackId, () => isRegisteredFreezeTask(taskIdentity))) {
-            return false;
-        }
-        // After the recording refusal, which reports why a recording start reset the track. Any other
-        // departure from the freezing state, a collaborator's unfreeze included, ends the task silently.
-        if (!isCurrentFreezeTask(taskIdentity)) {
+        if (refuseLateFreezeCommit(taskIdentity)) {
             return false;
         }
 
