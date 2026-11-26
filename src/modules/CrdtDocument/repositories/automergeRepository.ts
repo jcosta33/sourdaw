@@ -2,6 +2,7 @@ import {
     type Doc,
     type ChangeFn,
     type Heads,
+    type Prop,
     init,
     load,
     save,
@@ -14,6 +15,7 @@ import {
     getMissingDeps,
     view,
     getHeads,
+    diff,
     clone,
     getActorId,
     getAuthor,
@@ -1787,6 +1789,18 @@ class AutomergeRepository {
             return [];
         }
         return getChanges(view(doc, heads), doc);
+    }
+
+    /**
+     * The document paths written between `heads` and the live heads, each resolved against the live
+     * document. Undefined when no document is registered under `id`.
+     */
+    getPatchPathsSince(id: DocId, heads: Heads): Prop[][] | undefined {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return undefined;
+        }
+        return diff(doc, heads, getHeads(doc)).map((patch) => patch.path);
     }
 
     /** Get the current heads of a document (for sync protocol). */

@@ -10,6 +10,7 @@ import {
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
+    captureRootDocumentHeads,
     captureProjectRootIdentity,
     projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
@@ -31,6 +32,7 @@ import { captureFreezeRender, type FreezeRender } from './captureFreezeRender';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
+import { freezeFieldsWrittenSince } from './freezeFieldsWrittenSince';
 import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
 import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { getFreezeRenderSpan } from './getFreezeRenderSpan';
@@ -52,6 +54,8 @@ type FreezeTaskIdentity = {
     pendingFreeze: FreezeStateSnapshot | null;
     /** The settled state the document still holds when a rebase drops the freezing write. */
     previousFreeze: FreezeStateSnapshot;
+    /** The root document's heads as of this task's last own write; anything later is someone else's. */
+    documentHeads: string[];
 };
 
 function isEligibleActiveProjectTrack({
@@ -85,7 +89,9 @@ function isRegisteredFreezeTask(task: FreezeTaskIdentity): boolean {
  * Gates every write that lands after an await. A synced write from a collaborator runs no local
  * action, so it never cancels this task: the live track must still show the freezing state this task
  * wrote (or, once an inbound change rebased that write away, the settled state it started from), and
- * any other freeze state, local or remote, stops the write. The source-edit refusal and the failure
+ * any other freeze state, local or remote, stops the write. So does any write to the track's freeze
+ * fields found in the document since the task's last own write, even one whose value equals the
+ * settled state: the document records who wrote, a value cannot. The source-edit refusal and the failure
  * path use `isRegisteredFreezeTask` instead, so a local edit that reset the track still reports why.
  */
 function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
@@ -95,6 +101,7 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
     const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === task.trackId);
     return (
         liveTrack !== undefined &&
+        !freezeFieldsWrittenSince(task.documentHeads, task.trackId) &&
         showsFreezeTaskState(liveTrack, { pendingFreeze: task.pendingFreeze, previousFreeze: task.previousFreeze })
     );
 }
@@ -189,6 +196,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         trackId,
         pendingFreeze,
         previousFreeze,
+        documentHeads: captureRootDocumentHeads(),
     };
 
     try {
@@ -228,6 +236,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
                         freezeState: { ...time.freezeState, renderProgress: param },
                     }));
                 });
+                taskIdentity.documentHeads = captureRootDocumentHeads();
             },
         });
 

@@ -31,6 +31,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { defaultTransportState, recordingStartStore, transportStore } from '#/modules/Transport/stores';
 import {
     setNotificationEventBus,
     type ConfirmPayload,
@@ -44,6 +45,7 @@ import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { captureFreezeStateSnapshot } from '../../../useCases/freezeBounce/freezeStateSnapshot';
 import { activeFreezeTasks } from '../../../useCases/freezeBounce/freezeTrack';
+import { FREEZE_REFUSED_WHILE_RECORDING_MESSAGE } from '../../../useCases/freezeBounce/isFreezeRefusedWhileRecording';
 import { type renderTrackOffline } from '../../../useCases/freezeBounce/renderOffline';
 import { settledBeforeFreeze } from '../../../useCases/freezeBounce/settledBeforeFreeze';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -166,12 +168,18 @@ async function freezeOverRunningFreeze(): Promise<void> {
 }
 
 describe('freezeTrack started over a running freeze', () => {
+    let notices: NotifyPayload[] = [];
+
     beforeEach(() => {
         const bus = createEventBus<{
             'ui.notify': NotifyPayload;
             'ui.confirm': ConfirmPayload;
             'ui.prompt': PromptPayload;
         }>();
+        notices = [];
+        bus.on('ui.notify', (payload) => {
+            notices.push(payload);
+        });
         setNotificationEventBus(bus);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Freeze over running freeze');
@@ -209,6 +217,8 @@ describe('freezeTrack started over a running freeze', () => {
         clearHandlerRegistry();
         activeFreezeTasks.clear();
         settledBeforeFreeze.clear();
+        transportStore.set(defaultTransportState);
+        recordingStartStore.set(false);
     });
 
     it('undoes a plain freeze to unfrozen and redoes it to the rendered take', async () => {
@@ -376,6 +386,24 @@ describe('freezeTrack started over a running freeze', () => {
         expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
     });
 
+    it('reports the recording refusal, not a silent exit, when a recording starts as the freezing state is overwritten', async () => {
+        seedTrack(TrackDummy.create({ id: 'freeze-track', armed: true, ...STALE_TAKE }));
+        const first = holdFirstRender();
+        const running = freeze();
+        await first.entered;
+        updateTrack('freeze-track', ({ frozenBufferId: _carried, ...time }) => ({ ...time, ...unfrozenInStore }));
+        flushAutomergeStorageWrites();
+        recordingStartStore.set(true);
+        first.release();
+        await running;
+        expect(notices).toEqual([{ message: FREEZE_REFUSED_WHILE_RECORDING_MESSAGE, level: 'warning' }]);
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.freezeState).toEqual({ status: 'unfrozen' });
+            expect(track.frozen).toBe(false);
+            expect(track.frozenBufferId).toBeUndefined();
+        }
+    });
+
     it('still commits a render whose progress ticked while the track stayed freezing', async () => {
         const first = holdFirstRender();
         const running = freeze();
@@ -467,6 +495,47 @@ describe('freezeTrack started over a running freeze', () => {
             }
             expect(activeFreezeTasks.has('freeze-track')).toBe(false);
             expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
+        });
+
+        it('keeps the collaborator unfreeze of a track that was unfrozen before the freeze, committing no take', async () => {
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+                expect(track.frozen).toBe(false);
+                expect(track.frozenBufferId).toBeUndefined();
+            }
+            expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+        });
+
+        it("writes no render progress over a collaborator's unfreeze of a track that was unfrozen before the freeze", async () => {
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.7);
+            // The store still holds the freeze's own uncommitted freezing write, which the rebase keeps
+            // because the collaborator's value equals the one that write started from; the tick must not land.
+            expect(projectedTrack().freezeState.renderProgress).toBe(0);
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState).toEqual({ status: 'unfrozen' });
+            }
         });
 
         it("writes no render progress over the collaborator's state after it departs from freezing", async () => {
