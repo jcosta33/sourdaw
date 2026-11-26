@@ -1257,6 +1257,17 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     expect(await readNamedSnapshot()).toBeNull();
 
     const panel = await openElasticPanel(page);
+    // A toast disappears on its own, so record every one that mounts instead of looking at the end.
+    await page.evaluate(() => {
+        const shown: string[] = [];
+        Reflect.set(window, 'notificationToastTexts', shown);
+        const record = (): void => {
+            for (const toast of document.querySelectorAll('[data-testid="notification-toast"]')) {
+                shown.push(toast.textContent);
+            }
+        };
+        new MutationObserver(record).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
     const overlap = await panel.getByTestId('elastic-detect-button').evaluate(
         async (button, { path, preference }) => {
             const status = button.closest('[data-testid="elastic-editor-panel"]')?.querySelector('[role="status"]');
@@ -1282,15 +1293,16 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     expect(detected.raw).toHaveLength(ATTACKS.length);
     expect(detected.projected).toEqual(detected.raw);
     expect(detected.pcm).toEqual(before.pcm);
-    // The autosave may retry its preparation after Detect's write, for up to the preparation deadline
-    // (SAVE_PREPARATION_TIMEOUT_MS in buildPreparedProjectSaveData.ts), and then still performs its durable writes.
-    const savePreparationDeadlineMs = 30_000;
-    const saveDurableWritesMs = 25_000;
-    await expect.poll(readNamedSnapshot, { timeout: savePreparationDeadlineMs + saveDurableWritesMs }).toEqual({
+    await expect.poll(readNamedSnapshot, { timeout: 25_000 }).toEqual({
         markers: detected.raw,
         trackName: 'History edit 2047',
     });
     expect(await page.evaluate(() => performance.getEntriesByName('dense-elastic-named-autosave').length)).toBe(1);
+    const failedSaveNotices = await page.evaluate(() => {
+        const shown: unknown = Reflect.get(window, 'notificationToastTexts');
+        return Array.isArray(shown) ? shown.filter((text) => String(text).includes('Save failed')) : ['no recorder'];
+    });
+    expect(failedSaveNotices).toEqual([]);
 
     await page.reload();
     await wait_for_workspace_ready(page);

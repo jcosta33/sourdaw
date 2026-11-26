@@ -140,9 +140,12 @@ function planArrangement(
 function abortWhenSaveInputsGoStale(
     signal: AbortSignal,
     assertPreparationCurrent: () => void
-): { signal: AbortSignal; wentStale: () => boolean; stop: () => void } {
+): { signal: AbortSignal; stop: () => void } {
     const controller = new AbortController();
     function abortIfStale(): void {
+        if (controller.signal.aborted) {
+            return;
+        }
         try {
             assertPreparationCurrent();
         } catch {
@@ -154,7 +157,6 @@ function abortWhenSaveInputsGoStale(
     );
     return {
         signal: AbortSignal.any([signal, controller.signal]),
-        wentStale: () => controller.signal.aborted,
         stop: () => {
             for (const unsubscribe of unsubscribers) {
                 unsubscribe();
@@ -180,10 +182,6 @@ async function materializeArrangement(
             throw error;
         } finally {
             watched.stop();
-        }
-        // An abort after admission frees the prospective clone, so materializing it would not be a retry.
-        if (watched.wentStale()) {
-            throw new ProjectSavePreparationStaleError();
         }
     }
     // Roots with explicit native authors intentionally materialize locally to preserve authorship.
