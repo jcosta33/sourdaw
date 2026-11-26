@@ -10,7 +10,7 @@ import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
 import { validateActions } from '../validateActions';
 
 type PayloadOf<ActionType extends RuntimeActionType> =
-    Extract<RuntimeAction, { type: ActionType }> extends { payload: infer Payload } ? Payload : undefined;
+    Extract<RuntimeAction, { type: ActionType }> extends { payload?: infer Payload } ? Payload : undefined;
 
 type GuardedPayloadCase<ActionType extends RuntimeActionType> = {
     actionType: ActionType;
