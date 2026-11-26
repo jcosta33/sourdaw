@@ -10,6 +10,7 @@ import { beginProjectSessionPluginRetirement } from '../beginProjectSessionPlugi
 import { carriedExternalPluginStateFence, carriedExternalPluginStates } from '../carriedExternalPluginStates';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures';
+import { externalPluginServiceMessages } from '../externalPluginServiceMessages';
 import { failUnresponsiveExternalPlugins } from '../failUnresponsiveExternalPlugins';
 import { forgetRetiredPluginInstances } from '../forgetRetiredPluginInstances';
 import { loadedExternalInstances } from '../loadedExternalInstances';
@@ -1324,6 +1325,17 @@ describe('live plugin state across an app-initiated teardown', () => {
                 await timeOutThenRejectUnload(() => markExternalPluginEngineAttached({ instanceId: INSTANCE_ID }));
 
                 expect(slot()).toEqual({ status: 'active' });
+            });
+
+            it('shows the out-of-service message the host raised for the instance', async () => {
+                await activateAndEdit(SAVED_CHUNK);
+                const message = 'Out of service: it refused to start processing.';
+                externalPluginServiceMessages.set(INSTANCE_ID, message);
+                onTestFinished(() => externalPluginServiceMessages.delete(INSTANCE_ID));
+
+                await timeOutThenRejectUnload();
+
+                expect(slot()).toEqual({ status: 'active', message });
             });
 
             it('shows the restore failure of an instance that rejected its project chunk', async () => {
