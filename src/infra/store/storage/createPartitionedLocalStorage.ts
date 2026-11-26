@@ -29,32 +29,37 @@ type CreatePartitionedLocalStorageOptions<TData, TIndex, TPart extends object> =
 
 type StoredIndex<TIndex> = { index: TIndex; ids: string[] };
 
-/** The index text in storage and the part ids it names, in order. */
-type IndexSnapshot = { text: string | null; ids: string[] };
+/** A part as this adapter last read or committed it: the object, and the text its key held then. */
+type CommittedPart<TPart> = { part: TPart; text: string };
+
+type CommittedParts<TPart> = ReadonlyMap<string, CommittedPart<TPart>>;
 
 /**
- * What one read found. A read is consistent only when the index parses, every part it names is
- * present and parses, and the index still reads the same after the parts: anything else is a
- * read taken while another writer (another tab, or a write a crash cut short) was changing it.
+ * What one read found. A read is consistent when the index parses and reads the same after its
+ * parts; a part it names that is missing or does not parse is left out and listed in `droppedIds`.
+ * An index that changed while its parts were read is a read taken while another writer was
+ * committing, and is not consistent.
  */
-type StoredRead<TData> = { consistent: true; value: TData | null } | { consistent: false };
+type StoredRead<TData, TPart> =
+    | { consistent: true; value: TData | null; parts: CommittedParts<TPart>; droppedIds: string[] }
+    | { consistent: false };
+
+/** The parts a value holds by id, and the index text that names them in order. */
+type CommitPlan<TPart> = { parts: ReadonlyMap<string, TPart>; indexText: string };
+
+type StorageKeys = {
+    legacyKey: string;
+    indexKey: string;
+    partKeyPrefix: string;
+    partKey: (id: string) => string;
+};
 
 /** A key a write changed and the text it held before, so a refused write can put it back. */
 type ReplacedItem = { key: string; previousText: string | null };
 
-function readIds(value: unknown): string[] {
-    return Array.isArray(value) ? value.filter((id: unknown) => typeof id === 'string') : [];
-}
-
-function readIndexSnapshot(text: string | null): IndexSnapshot {
-    if (text === null) {
-        return { text, ids: [] };
-    }
-    try {
-        return { text, ids: readIds(parse<{ ids?: unknown } | null>(text)?.ids) };
-    } catch {
-        return { text, ids: [] };
-    }
+function readStorageKeys(options: { legacyKey: string; indexKey: string; partKeyPrefix: string }): StorageKeys {
+    const { legacyKey, indexKey, partKeyPrefix } = options;
+    return { legacyKey, indexKey, partKeyPrefix, partKey: (id) => `${partKeyPrefix}${id}` };
 }
 
 function readStoredIds(stored: unknown): string[] | null {
@@ -66,13 +71,12 @@ function readStoredIds(stored: unknown): string[] | null {
 }
 
 function readIndexedValue<TData, TIndex, TPart extends object>(
-    indexKey: string,
+    keys: StorageKeys,
     indexText: string | null,
-    partition: LocalStoragePartition<TData, TIndex, TPart>,
-    partKey: (id: string) => string
-): StoredRead<TData> {
+    partition: LocalStoragePartition<TData, TIndex, TPart>
+): StoredRead<TData, TPart> {
     if (indexText === null) {
-        return { consistent: true, value: null };
+        return { consistent: true, value: null, parts: new Map(), droppedIds: [] };
     }
     let stored: StoredIndex<TIndex>;
     try {
@@ -84,40 +88,46 @@ function readIndexedValue<TData, TIndex, TPart extends object>(
     if (ids === null) {
         return { consistent: false };
     }
-    const parts: TPart[] = [];
+    const parts = new Map<string, CommittedPart<TPart>>();
+    const droppedIds: string[] = [];
     for (const id of ids) {
-        const text = window.localStorage.getItem(partKey(id));
+        const text = window.localStorage.getItem(keys.partKey(id));
         if (text === null) {
-            return { consistent: false };
+            droppedIds.push(id);
+            continue;
         }
         try {
-            parts.push(parse<TPart>(text));
+            parts.set(id, { part: parse<TPart>(text), text });
         } catch {
-            return { consistent: false };
+            droppedIds.push(id);
         }
     }
-    if (window.localStorage.getItem(indexKey) !== indexText) {
+    if (window.localStorage.getItem(keys.indexKey) !== indexText) {
         return { consistent: false };
     }
-    return { consistent: true, value: partition.join(stored.index, parts) };
+    const value = partition.join(
+        stored.index,
+        Array.from(parts.values(), (entry) => entry.part)
+    );
+    return { consistent: true, value, parts, droppedIds };
 }
 
-/** The value older builds stored whole under `legacyKey` when present, since only they write it; otherwise the indexed one. */
+/** The value older builds stored whole under the legacy key when present, since only they write it; otherwise the indexed one. */
 function readLegacyOrIndexedValue<TData, TIndex, TPart extends object>(
-    keys: { legacyKey: string; indexKey: string },
-    indexText: string | null,
-    partition: LocalStoragePartition<TData, TIndex, TPart>,
-    partKey: (id: string) => string
-): StoredRead<TData> {
+    keys: StorageKeys,
+    partition: LocalStoragePartition<TData, TIndex, TPart>
+): StoredRead<TData, TPart> {
     const legacyText = window.localStorage.getItem(keys.legacyKey);
     if (legacyText === null) {
-        return readIndexedValue(keys.indexKey, indexText, partition, partKey);
+        return readIndexedValue(keys, window.localStorage.getItem(keys.indexKey), partition);
     }
+    let value: TData | null;
     try {
-        return { consistent: true, value: parse<TData>(legacyText) };
+        value = parse<TData>(legacyText);
     } catch {
-        return { consistent: true, value: null };
+        value = null;
     }
+    return { consistent: true, value, parts: new Map(), droppedIds: [] };
 }
 
 function readKeysWithPrefix(prefix: string): string[] {
@@ -145,12 +155,42 @@ function reportDroppedWrite(key: string, error: unknown): void {
     reportStorageFullOnce();
 }
 
+function reportReadWhileChanging(key: string): void {
+    logger.warn(
+        `[localStorage] "${key}" was read while another writer was changing it; ` +
+            'writes are refused until a reload reads it whole, so the stored value is kept.'
+    );
+}
+
+function reportDroppedParts(key: string, droppedIds: readonly string[]): void {
+    logger.warn(
+        `[localStorage] "${key}" names ${String(droppedIds.length)} part(s) that are missing or do not parse; ` +
+            'the other parts are read, and the next write leaves these out.'
+    );
+}
+
 function isLocalStorageSupported(): boolean {
     try {
         return Boolean(window.localStorage);
     } catch {
         return false;
     }
+}
+
+function isQuotaError(error: unknown): boolean {
+    return error instanceof DOMException && error.name === 'QuotaExceededError';
+}
+
+function planCommit<TData, TIndex, TPart extends object>(
+    value: TData,
+    partition: LocalStoragePartition<TData, TIndex, TPart>
+): CommitPlan<TPart> {
+    const { index, parts } = partition.split(value);
+    const nextParts = new Map(parts.map((part) => [partition.identify(part), part]));
+    return {
+        parts: nextParts,
+        indexText: stringify({ index, ids: [...nextParts.keys()] } satisfies StoredIndex<TIndex>),
+    };
 }
 
 /** Writes `text` under `key` unless it already holds it, recording what it replaced once it has. */
@@ -195,50 +235,68 @@ function restoreReplacedItems(replaced: readonly ReplacedItem[]): void {
 }
 
 /**
- * Removes the legacy value, then writes every changed part and then the index, or puts back what it
- * removed and wrote and rethrows. The legacy value goes first so a migration never holds the value
- * twice: near the quota, writing every part beside it would be refused on every save.
+ * Writes every part not stored as committed and then the index, recording what it replaced, and
+ * returns the parts it committed. A committed part is trusted only while its key still holds the
+ * text this adapter committed: another writer may have rewritten it since.
  */
 function writePartsThenIndex<TPart extends object>(
-    write: {
-        parts: ReadonlyMap<string, TPart>;
-        trustedParts: ReadonlyMap<string, TPart>;
-        legacyKey: string;
-        indexKey: string;
-        indexText: string;
-    },
-    partKey: (id: string) => string
-): void {
+    plan: CommitPlan<TPart>,
+    committed: CommittedParts<TPart>,
+    keys: StorageKeys,
+    replaced: ReplacedItem[]
+): Map<string, CommittedPart<TPart>> {
+    const written = new Map<string, CommittedPart<TPart>>();
+    for (const [id, part] of plan.parts) {
+        const key = keys.partKey(id);
+        const entry = committed.get(id);
+        if (entry?.part === part && window.localStorage.getItem(key) === entry.text) {
+            written.set(id, entry);
+            continue;
+        }
+        const text = stringify(part);
+        replaceItem(key, text, replaced);
+        written.set(id, { part, text });
+    }
+    replaceItem(keys.indexKey, plan.indexText, replaced);
+    return written;
+}
+
+/**
+ * Commits a plan through the index, keeping the legacy value until the index is written, so a stop
+ * anywhere before that still reads the legacy value. Only when storage has no room for the parts
+ * beside the legacy value is it set aside for a second attempt; when that is refused too, every key
+ * either attempt changed is put back, the legacy value byte for byte.
+ */
+function commitPlan<TPart extends object>(
+    plan: CommitPlan<TPart>,
+    committed: CommittedParts<TPart>,
+    keys: StorageKeys
+): Map<string, CommittedPart<TPart>> {
     const replaced: ReplacedItem[] = [];
     try {
-        removeRecordedItem(write.legacyKey, replaced);
-        for (const [id, part] of write.parts) {
-            if (write.trustedParts.get(id) !== part) {
-                replaceItem(partKey(id), stringify(part), replaced);
-            }
-        }
-        replaceItem(write.indexKey, write.indexText, replaced);
+        return writePartsThenIndex(plan, committed, keys, replaced);
     } catch (error) {
         restoreReplacedItems(replaced);
+        if (!isQuotaError(error) || window.localStorage.getItem(keys.legacyKey) === null) {
+            throw error;
+        }
+    }
+    const retried: ReplacedItem[] = [];
+    try {
+        removeRecordedItem(keys.legacyKey, retried);
+        return writePartsThenIndex(plan, committed, keys, retried);
+    } catch (error) {
+        restoreReplacedItems(retried);
         throw error;
     }
 }
 
-function reportReadWhileChanging(key: string): void {
-    logger.warn(
-        `[localStorage] "${key}" was read while another writer was changing it; ` +
-            'writes are refused until a reload reads it whole, so the stored value is kept.'
+/** After a commit: the legacy value, then every part key the committed index does not name. */
+function removeSupersededKeys<TPart>(plan: CommitPlan<TPart>, keys: StorageKeys): void {
+    window.localStorage.removeItem(keys.legacyKey);
+    removeItems(
+        readKeysWithPrefix(keys.partKeyPrefix).filter((key) => !plan.parts.has(key.slice(keys.partKeyPrefix.length)))
     );
-}
-
-/** The parts `value` holds by id, and the index text that names them in order. */
-function planCommit<TData, TIndex, TPart extends object>(
-    value: TData,
-    partition: LocalStoragePartition<TData, TIndex, TPart>
-): { nextParts: Map<string, TPart>; indexText: string } {
-    const { index, parts } = partition.split(value);
-    const nextParts = new Map(parts.map((part) => [partition.identify(part), part]));
-    return { nextParts, indexText: stringify({ index, ids: [...nextParts.keys()] } satisfies StoredIndex<TIndex>) };
 }
 
 /**
@@ -247,47 +305,50 @@ function planCommit<TData, TIndex, TPart extends object>(
  *
  * A write replaces the changed parts' keys and then the index, the commit point. If any of those
  * writes is refused, every key the write had already replaced is put back as it was, so storage
- * again holds exactly the previously committed value and a reload restores it. Keys the new index
- * no longer names are removed only after it is written. A part's key is rewritten in place, as
- * `createLocalStorage` rewrites its one key, so a write needs no more room than the value it stores.
+ * again holds exactly the previously committed value and a reload restores it. Only after the
+ * index is written are the legacy value and every part key the index no longer names removed, so
+ * a part left by a write that stopped never outlives the next commit. A part's key is rewritten in
+ * place, as `createLocalStorage` rewrites its one key, so a write needs no more room than the
+ * value it stores; a migration sets the legacy value aside only when the parts do not fit beside it.
  *
- * A read taken while another writer was changing storage (an index naming a part that is missing
- * or does not parse, or an index that changed while the parts were read) reads as empty and makes
- * this adapter refuse every write, so a value built from that read never replaces or removes the
- * stored parts; the next adapter, after a reload, reads them again.
+ * A read leaves out a part its index names that is missing or does not parse, and the next write
+ * drops it from the index. A read whose index changed while its parts were read was taken while
+ * another writer committed: it reads as empty and this adapter refuses every write until `clear`
+ * or a reload, so a value built from it never replaces or removes the stored parts. `clear`
+ * removes the index first, so a clear that stops partway reads as empty.
  *
- * A part is taken as unchanged when it is the very object this adapter last committed for its id,
- * so callers must replace a part rather than mutate it. Any other part is serialized and compared
- * with its stored text. Objects are trusted only while the stored index is the one this adapter
- * committed: once another writer replaced it, every part is compared with its stored text.
+ * A part is taken as unchanged when it is the very object this adapter last committed for its id
+ * and its key still holds the text committed with it, so callers must replace a part rather than
+ * mutate it. Any other part is serialized and compared with its stored text.
  */
 export const createPartitionedLocalStorage = <TData, TIndex, TPart extends object>(
     options: CreatePartitionedLocalStorageOptions<TData, TIndex, TPart>
 ): LocalStorageAdapter<TData> => {
-    const { legacyKey, indexKey, partKeyPrefix, partition } = options;
+    const { indexKey, partition } = options;
+    const keys = readStorageKeys(options);
     let cachedValue: TData | null | undefined = undefined;
-    /** The index this adapter last read or committed, and the part object it holds for each id. */
-    let committed: { index: IndexSnapshot; parts: ReadonlyMap<string, TPart> } | null = null;
+    let committed: CommittedParts<TPart> = new Map();
     /** Why this adapter refuses every write, while it holds a value it must not write back. */
     let writeRefusal: string | null = null;
 
-    const partKey = (id: string): string => `${partKeyPrefix}${id}`;
-
     function readStoredValue(): TData | null {
-        const indexText = window.localStorage.getItem(indexKey);
-        committed = { index: readIndexSnapshot(indexText), parts: new Map() };
-        const read = readLegacyOrIndexedValue({ legacyKey, indexKey }, indexText, partition, partKey);
+        const read = readLegacyOrIndexedValue(keys, partition);
         if (!read.consistent) {
             writeRefusal = 'was read while another writer was changing it';
             reportReadWhileChanging(indexKey);
             return null;
         }
+        if (read.droppedIds.length > 0) {
+            reportDroppedParts(indexKey, read.droppedIds);
+        }
+        committed = read.parts;
         return read.value;
     }
 
     function removeEverything(): void {
-        removeItems([...readKeysWithPrefix(partKeyPrefix), indexKey, legacyKey]);
-        committed = { index: { text: null, ids: [] }, parts: new Map() };
+        // The index goes first: a clear that stops partway then reads as empty, never as a part list.
+        removeItems([indexKey, keys.legacyKey, ...readKeysWithPrefix(keys.partKeyPrefix)]);
+        committed = new Map();
     }
 
     /** Commits `value` durably, or throws leaving the previously committed value in storage. */
@@ -300,16 +361,9 @@ export const createPartitionedLocalStorage = <TData, TIndex, TPart extends objec
             cachedValue = null;
             return;
         }
-
-        const storedIndex = readIndexSnapshot(window.localStorage.getItem(indexKey));
-        const trustedParts = committed?.index.text === storedIndex.text ? committed.parts : new Map<string, TPart>();
-        const { nextParts, indexText } = planCommit(value, partition);
-
-        writePartsThenIndex({ parts: nextParts, trustedParts, legacyKey, indexKey, indexText }, partKey);
-
-        const unnamedPartKeys = storedIndex.ids.filter((id) => !nextParts.has(id)).map(partKey);
-        removeItems(unnamedPartKeys);
-        committed = { index: { text: indexText, ids: [...nextParts.keys()] }, parts: nextParts };
+        const plan = planCommit(value, partition);
+        committed = commitPlan(plan, committed, keys);
+        removeSupersededKeys(plan, keys);
         cachedValue = value;
     }
 

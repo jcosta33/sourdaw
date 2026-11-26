@@ -120,10 +120,6 @@ function storedAgentRunKeys(): string[] {
     return keys.toSorted();
 }
 
-function storedAgentRunEntries(): Record<string, string | null> {
-    return Object.fromEntries(storedAgentRunKeys().map((key) => [key, window.localStorage.getItem(key)]));
-}
-
 async function hydrateFreshStore(): Promise<typeof agentRunStore> {
     vi.resetModules();
     const fresh = await import('../agentRunStore');
@@ -209,30 +205,47 @@ describe('agent run persistence', () => {
         expect(rehydrated.value?.runs.find((run) => run.runId === 'target-run')).toEqual(returned);
     });
 
-    it('boots empty and never rewrites run storage when the index names a run whose key is missing', async () => {
+    it('boots with the other runs when the index names a run whose key is missing, and keeps saving', async () => {
         seedCompletedRuns(3);
-        const runIds = (agentRunStore.value?.runs ?? []).map((run) => run.runId);
-        const missingKey = `${STORAGE_PREFIX}:run:seed-run-1`;
-        const missingText = window.localStorage.getItem(missingKey);
-        window.localStorage.removeItem(missingKey);
-        const torn = storedAgentRunEntries();
+        window.localStorage.removeItem(`${STORAGE_PREFIX}:run:seed-run-1`);
 
         const freshStore = await hydrateFreshStore();
+        expect(freshStore.value?.runs.map((run) => run.runId)).toEqual(['seed-run-0', 'seed-run-2']);
+        const { agentRunLifecycle: freshLifecycle } = await import('../../useCases/agentRunLifecycle');
+        freshLifecycle.create({ runId: 'after-missing-run', request: 'Saved.', mode: 'plan', createdRevision: 'r1' });
+
+        const rehydrated = await hydrateFreshStore();
+        expect(rehydrated.value?.runs.map((run) => run.runId)).toEqual([
+            'seed-run-0',
+            'seed-run-2',
+            'after-missing-run',
+        ]);
+    });
+
+    it('clears run history even after a read another writer interrupted', async () => {
+        seedCompletedRuns(2);
+        const indexKey = `${STORAGE_PREFIX}:index`;
+        const getItem = Storage.prototype.getItem;
+        const setItem = Storage.prototype.setItem;
+        let interrupted = false;
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
+            if (!interrupted && key.startsWith(`${STORAGE_PREFIX}:run:`)) {
+                interrupted = true;
+                setItem.call(this, indexKey, `${getItem.call(this, indexKey) ?? ''} `);
+            }
+            return getItem.call(this, key);
+        });
+        const freshStore = await hydrateFreshStore();
+        vi.restoreAllMocks();
         expect(freshStore.value?.runs ?? []).toEqual([]);
         const { agentRunLifecycle: freshLifecycle } = await import('../../useCases/agentRunLifecycle');
-        expect(() =>
-            freshLifecycle.create({
-                runId: 'torn-session-run',
-                request: 'Refused.',
-                mode: 'plan',
-                createdRevision: 'r1',
-            })
-        ).toThrow('Agent run state could not be persisted locally');
-        expect(storedAgentRunEntries()).toEqual(torn);
 
-        window.localStorage.setItem(missingKey, missingText ?? '');
+        freshLifecycle.clear();
+
+        expect(storedAgentRunKeys()).toEqual([indexKey]);
+        freshLifecycle.create({ runId: 'after-clear', request: 'Saved.', mode: 'plan', createdRevision: 'r1' });
         const rehydrated = await hydrateFreshStore();
-        expect(rehydrated.value?.runs.map((run) => run.runId)).toEqual(runIds);
+        expect(rehydrated.value?.runs.map((run) => run.runId)).toEqual(['after-clear']);
     });
 
     it('evicts the oldest uncommitted terminal run at the count bound and leaves no stored copy of it', async () => {

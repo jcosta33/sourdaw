@@ -1,6 +1,8 @@
 import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { createPartitionedLocalStorage, type LocalStoragePartition } from '../createPartitionedLocalStorage';
 
 type Item = { id: string; label: string };
@@ -71,6 +73,42 @@ function spyOnWrites() {
         setItem: vi.spyOn(Storage.prototype, 'setItem'),
         removeItem: vi.spyOn(Storage.prototype, 'removeItem'),
     };
+}
+
+type StoredState = Record<string, string>;
+
+function readStoredState(): StoredState {
+    const state: StoredState = {};
+    for (let index = 0; index < localStorage.length; index++) {
+        const key = localStorage.key(index) ?? '';
+        state[key] = localStorage.getItem(key) ?? '';
+    }
+    return state;
+}
+
+function restoreStoredState(state: StoredState): void {
+    localStorage.clear();
+    for (const [key, text] of Object.entries(state)) {
+        localStorage.setItem(key, text);
+    }
+}
+
+/** What storage holds after each write or removal `run` makes: where a crash could leave it. */
+function recordStatesAfterEachWrite(run: () => void): StoredState[] {
+    const states: StoredState[] = [];
+    const setItem = Storage.prototype.setItem;
+    const removeItem = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, text) {
+        setItem.call(this, key, text);
+        states.push(readStoredState());
+    });
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key) {
+        removeItem.call(this, key);
+        states.push(readStoredState());
+    });
+    run();
+    vi.restoreAllMocks();
+    return states;
 }
 
 function items(count: number): Item[] {
@@ -205,28 +243,20 @@ describe('createPartitionedLocalStorage', () => {
     it.each([
         ['missing', (key: string) => localStorage.removeItem(key)],
         ['unparsable', (key: string) => localStorage.setItem(key, '{"json": not superjson')],
-    ])('never writes over storage whose index names a %s part', (_, tear) => {
+    ])('reads the other parts when the index names a %s part, and drops it on the next write', (_, tear) => {
         const value = { version: 1, items: items(3) };
         createStorage().trySet(value);
-        const partText = localStorage.getItem(`${PART_PREFIX}item-1`);
         tear(`${PART_PREFIX}item-1`);
-        const torn = snapshotStorage();
+        const warn = vi.spyOn(logger, 'warn');
 
         const storage = createStorage();
-        expect(storage.get()).toBeNull();
-        const writes = spyOnWrites();
-        expect(storage.trySet({ version: 1, items: [] })).toBe(false);
-        expect(() => storage.set({ version: 1, items: items(1) })).toThrow();
+        const kept = { version: 1, items: [value.items[0]!, value.items[2]!] };
+        expect(storage.get()).toEqual(kept);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(storage.trySet({ ...kept, version: 2 })).toBe(true);
 
-        expect(writes.setItem).not.toHaveBeenCalled();
-        expect(writes.removeItem).not.toHaveBeenCalled();
-        expect(snapshotStorage()).toEqual(torn);
-
-        vi.restoreAllMocks();
-        localStorage.setItem(`${PART_PREFIX}item-1`, partText ?? '');
-        const consistent = createStorage();
-        expect(consistent.get()).toEqual(value);
-        expect(consistent.trySet({ ...value, version: 2 })).toBe(true);
+        expect(storedPartKeys()).toEqual([`${PART_PREFIX}item-0`, `${PART_PREFIX}item-2`]);
+        expect(createStorage().get()).toEqual({ ...kept, version: 2 });
     });
 
     it('never writes over storage whose index another writer replaced while it was read', () => {
@@ -259,6 +289,10 @@ describe('createPartitionedLocalStorage', () => {
         expect(snapshotStorage()).toEqual(afterRead);
         vi.restoreAllMocks();
         expect(createStorage().get()).toEqual(theirs);
+
+        storage.clear();
+        expect(storage.trySet(first)).toBe(true);
+        expect(createStorage().get()).toEqual(first);
     });
 
     it('migrates a legacy value that fits once but not twice within the quota', () => {
@@ -289,7 +323,8 @@ describe('createPartitionedLocalStorage', () => {
         const setItem = Storage.prototype.setItem;
         let partWrites = 0;
         vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, text) {
-            if (key.startsWith(PART_PREFIX) && ++partWrites === 2) {
+            if (key === `${PART_PREFIX}item-1`) {
+                partWrites++;
                 throw new DOMException('Quota exceeded', 'QuotaExceededError');
             }
             setItem.call(this, key, text);
@@ -300,10 +335,76 @@ describe('createPartitionedLocalStorage', () => {
         expect(() => storage.set(legacy)).toThrow('Quota exceeded');
 
         vi.restoreAllMocks();
+        // Refused beside the legacy value, then again once that value was set aside to make room.
+        expect(partWrites).toBe(2);
         expect(localStorage.getItem(LEGACY_KEY)).toBe(legacyText);
         expect(storedPartKeys()).toEqual([]);
         expect(localStorage.getItem(INDEX_KEY)).toBeNull();
         expect(createStorage().get()).toEqual(legacy);
+    });
+
+    it('leaves a readable value wherever a migration stops', () => {
+        const legacy = { version: 1, items: items(3) };
+        localStorage.setItem(LEGACY_KEY, stringify(legacy));
+        const next = { version: 2, items: legacy.items.with(1, { id: 'item-1', label: 'Changed' }) };
+
+        const states = recordStatesAfterEachWrite(() => {
+            const storage = createStorage();
+            storage.get();
+            expect(storage.trySet(next)).toBe(true);
+        });
+
+        expect(states.length).toBeGreaterThan(3);
+        for (const state of states) {
+            restoreStoredState(state);
+            expect([legacy, next]).toContainEqual(createStorage().get());
+        }
+        expect(createStorage().get()).toEqual(next);
+    });
+
+    it('reads empty and writes again when a clear stops after its first removal', () => {
+        const storage = createStorage();
+        storage.trySet({ version: 1, items: items(3) });
+        const removeItem = Storage.prototype.removeItem;
+        let removals = 0;
+        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key) {
+            if (++removals === 2) {
+                throw new Error('stopped');
+            }
+            removeItem.call(this, key);
+        });
+
+        expect(() => storage.clear()).toThrow('stopped');
+        vi.restoreAllMocks();
+
+        const fresh = createStorage();
+        expect(fresh.get()).toBeNull();
+        const next = { version: 1, items: [{ id: 'item-7', label: 'After' }] };
+        expect(fresh.trySet(next)).toBe(true);
+        expect(storedPartKeys()).toEqual([`${PART_PREFIX}item-7`]);
+        expect(createStorage().get()).toEqual(next);
+    });
+
+    it('rewrites a committed part whose key another writer changed since', () => {
+        const storage = createStorage();
+        const value = { version: 1, items: items(3) };
+        storage.trySet(value);
+        localStorage.setItem(`${PART_PREFIX}item-1`, stringify({ id: 'item-1', label: 'Theirs' }));
+
+        expect(storage.trySet({ ...value, version: 2 })).toBe(true);
+
+        expect(createStorage().get()).toEqual({ ...value, version: 2 });
+    });
+
+    it('removes every part key the committed index does not name', () => {
+        const storage = createStorage();
+        const value = { version: 1, items: items(2) };
+        storage.trySet(value);
+        localStorage.setItem(`${PART_PREFIX}orphan`, stringify({ id: 'orphan', label: 'Left by a stopped write' }));
+
+        expect(storage.trySet({ ...value, version: 2 })).toBe(true);
+
+        expect(storedPartKeys()).toEqual([`${PART_PREFIX}item-0`, `${PART_PREFIX}item-1`]);
     });
 
     it('removes every key it owns on clear', () => {

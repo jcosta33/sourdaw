@@ -2385,5 +2385,8 @@ export function persistAgentRunState(state: AgentRunState, now: number = Date.no
 }
 
 export function resetAgentRunState(): void {
+    // Clearing first lifts any write refusal the adapter holds (a read another tab interrupted,
+    // a quarantined schema), so clearing history always succeeds.
+    agentRunStore.clear();
     persistAgentRunState(createEmptyAgentRunState());
 }
