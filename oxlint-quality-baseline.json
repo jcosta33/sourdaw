@@ -3407,7 +3407,7 @@
             "count": 3
         },
         "typescript/no-non-null-assertion": {
-            "count": 29
+            "count": 28
         }
     },
     "src/modules/AiRuntime/useCases/agentReference/bridgeSharedVocalFxBusesPlan.ts": {

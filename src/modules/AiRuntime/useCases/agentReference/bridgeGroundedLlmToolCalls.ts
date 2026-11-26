@@ -2933,22 +2933,26 @@ function getNamedReferenceSpans(
 }
 
 /**
- * The name of the one section the scope text names in whole; null when it names none, several, or a
- * name several sections share. Names are read longest first, so "Chorus Two" names that section
- * alone and never the "Chorus" inside it, while "Chorus or Chorus Two" names both.
+ * The name of the one existing section a section request states, whole, between its section intent
+ * and its beat range ("remove the section Chorus Two from beat 16 to beat 32"); null when that text is
+ * no section's whole name or a name several sections share. The text and each name are normalized
+ * alike and compared whole, never searched for a name inside it, so a request naming a section the
+ * project lacks never names a shorter one its name contains.
  */
 function getWholeSectionReferenceName(
-    scopeText: string,
+    promptText: string,
     sections: readonly { id: string; name: string }[]
 ): string | null {
-    const namedIds = new Set(getNamedReferenceSpans(scopeText, sections).map((span) => span.id));
-    const named = sections.filter((section) => namedIds.has(section.id));
-    if (named.length !== 1) {
+    const slot = getSectionNameSlot(promptText);
+    if (slot === null) {
         return null;
     }
-    const name = normalizePromptText(named[0]!.name);
-    const sharingName = sections.filter((section) => normalizePromptText(section.name) === name);
-    return sharingName.length === 1 ? named[0]!.name : null;
+    const name = normalizePromptText(getLabeledSectionName(slot) ?? slot);
+    if (name.length === 0) {
+        return null;
+    }
+    const named = sections.filter((section) => normalizePromptText(section.name) === name);
+    return named.length === 1 ? named[0]!.name : null;
 }
 
 /**
@@ -3278,18 +3282,33 @@ function parseExplicitSectionName(value: string): string | null {
     return trimmed.replace(/[,:;.?!]+$/u, '').trim() || null;
 }
 
-function getSectionNameFromPrompt(promptText: string): string | null {
+/**
+ * The text after the first section intent in the clause, up to the beat range; null when the range
+ * comes before that intent.
+ */
+function getSectionNameSlot(promptText: string): string | null {
     const intent = /\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/iu.exec(promptText);
     const range = getSectionRangeFromPrompt(promptText);
     if (!intent || !range || range.startIndex <= intent.index + intent[0].length) {
         return null;
     }
-    const assertedName = promptText.slice(intent.index + intent[0].length, range.startIndex).trim();
-    const explicitLabel = /^(?:named|called)\s+(.+)$/iu.exec(assertedName);
-    if (!explicitLabel) {
+    return promptText.slice(intent.index + intent[0].length, range.startIndex).trim();
+}
+
+/** The text after a leading "named" or "called" label in a section name slot, or null without one. */
+function getLabeledSectionName(slot: string): string | null {
+    return /^(?:named|called)\s+(.+)$/iu.exec(slot)?.[1] ?? null;
+}
+
+function getSectionNameFromPrompt(promptText: string): string | null {
+    const assertedName = getSectionNameSlot(promptText);
+    if (assertedName === null) {
         return null;
     }
-    const rawName = explicitLabel[1] ?? '';
+    const rawName = getLabeledSectionName(assertedName);
+    if (rawName === null) {
+        return null;
+    }
     if (/^(?:"|'|“|‘)/u.test(rawName.trim())) {
         return parseExplicitSectionName(rawName);
     }

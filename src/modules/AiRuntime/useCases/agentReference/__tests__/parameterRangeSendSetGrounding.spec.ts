@@ -38,7 +38,14 @@ function track(id: string, name: string, kind: ProjectTrack['kind'], sends: Proj
 
 type Ride = { trackId: string; busId?: string; deltaDb?: number; range?: Record<string, unknown> };
 
-function bridge(prompt: string, rides: readonly Ride[]) {
+type Section = NonNullable<ProjectContext['sections']>[number];
+
+const VERSES: readonly Section[] = [
+    { id: 'section-verse-one', name: 'Verse One', startBeat: 0, endBeat: 32 },
+    { id: 'section-verse-two', name: 'Verse Two', startBeat: 32, endBeat: 64 },
+];
+
+function bridge(prompt: string, rides: readonly Ride[], sections: readonly Section[] = VERSES) {
     return bridgeGroundedLlmToolCalls({
         calls: rides.map(({ trackId, busId = 'bus-hall', deltaDb = -3, range = { section: 'Verse Two' } }) => ({
             name: 'automateParameterRange',
@@ -59,10 +66,7 @@ function bridge(prompt: string, rides: readonly Ride[]) {
             metronomeEnabled: false,
             metronomeVolume: 0.5,
             masterGain: 0.8,
-            sections: [
-                { id: 'section-verse-one', name: 'Verse One', startBeat: 0, endBeat: 32 },
-                { id: 'section-verse-two', name: 'Verse Two', startBeat: 32, endBeat: 64 },
-            ],
+            sections: [...sections],
             tracks: [
                 track('track-lead-vocal', 'Lead Vocal', 'audio', BOTH_SENDS),
                 track('track-backing-vocal', 'Backing Vocal', 'audio', BOTH_SENDS),
@@ -137,6 +141,22 @@ describe('a clause riding a set of sends to one bus', () => {
         },
     ])('refuses $case', ({ prompt = EVERY_VOCAL, rides }) => {
         const result = bridge(prompt, rides);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.length).toBeGreaterThan(0);
+    });
+
+    // #6261: without a "Chorus Two" the request still names that section in whole, never the
+    // "Chorus" it contains.
+    it('refuses the shorter section a request naming a section the project lacks contains', () => {
+        const result = bridge(
+            'Lower every vocal send to the Hall by 3 dB in Chorus Two',
+            VOCALS.map((trackId) => ({ trackId, range: { section: 'Chorus' } })),
+            [
+                { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 32 },
+                { id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 },
+            ]
+        );
 
         expect(result.actions).toEqual([]);
         expect(result.rejections.length).toBeGreaterThan(0);
