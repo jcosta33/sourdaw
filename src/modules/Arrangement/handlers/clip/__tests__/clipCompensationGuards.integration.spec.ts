@@ -855,7 +855,10 @@ describe('clip edit compensation guards', () => {
         it('consumes the entry on undo so the earlier edit is reachable', async () => {
             registerHandlers();
             seedClip({ name: 'First', ...seed });
-            await executeAppAction({ type: 'renameClip', payload: { clipId: 'clip-1', name: 'Second' } }, { source: 'prompt' });
+            await executeAppAction(
+                { type: 'renameClip', payload: { clipId: 'clip-1', name: 'Second' } },
+                { source: 'prompt' }
+            );
             await executeAppAction(action, { source: 'prompt' });
             peerRevert();
             expect(prior(currentClip())).toEqual(before);
