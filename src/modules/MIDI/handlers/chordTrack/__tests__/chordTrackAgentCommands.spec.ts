@@ -203,6 +203,81 @@ describe('chord track session entries', () => {
     });
 });
 
+describe('chord track session entry refusals', () => {
+    const emptyTrack: ChordTrackState = { enabled: true, events: [] };
+
+    function pair(overrides: {
+        expected?: unknown;
+        replacement?: unknown;
+    }): Pick<
+        Parameters<NonNullable<typeof handleClearChordTrack.validateSessionEntry>>[0],
+        'inverseAction' | 'redoAction'
+    > {
+        const expected = overrides.expected ?? THREE_CHORDS;
+        const replacement = overrides.replacement ?? emptyTrack;
+        const inverse = { type: 'restoreChordTrackState', payload: { expected: replacement, replacement: expected } };
+        const redo = { type: 'restoreChordTrackState', payload: { expected, replacement } };
+        return { inverseAction: inverse as AppAction, redoAction: redo as AppAction };
+    }
+
+    it('admits a clear entry whose pair is well formed, as the control for the refusals below', () => {
+        expect(handleClearChordTrack.validateSessionEntry?.({ action: { type: 'clearChordTrack' }, ...pair({}) })).toBe(
+            true
+        );
+    });
+
+    it('refuses an entry whose stored action is not a chord-track edit', () => {
+        expect(handleClearChordTrack.validateSessionEntry?.({ action: { type: 'togglePlayback' }, ...pair({}) })).toBe(
+            false
+        );
+    });
+
+    it('refuses an entry whose restore payload is not a well-formed chord-track snapshot pair', () => {
+        const malformed = { enabled: 'yes', events: [] };
+        expect(
+            handleClearChordTrack.validateSessionEntry?.({
+                action: { type: 'clearChordTrack' },
+                ...pair({ replacement: malformed }),
+            })
+        ).toBe(false);
+    });
+
+    it('refuses an addChordEvent entry that never pinned its event id', () => {
+        const withEvent: ChordTrackState = {
+            enabled: true,
+            events: [{ id: 'c-9', beat: 1, root: 0, quality: 'major', duration: 4 }],
+        };
+        const pinned: AppAction = {
+            type: 'addChordEvent',
+            payload: { beat: 1, root: 0, quality: 'major', duration: 4, eventId: 'c-9' },
+        };
+        const unpinned: AppAction = {
+            type: 'addChordEvent',
+            payload: { beat: 1, root: 0, quality: 'major', duration: 4 },
+        };
+        // before = empty track, after = track holding the added event
+        const entryPair = pair({ expected: emptyTrack, replacement: withEvent });
+
+        expect(handleAddChordEvent.validateSessionEntry?.({ action: pinned, ...entryPair })).toBe(true);
+        expect(handleAddChordEvent.validateSessionEntry?.({ action: unpinned, ...entryPair })).toBe(false);
+    });
+});
+
+describe('removeChordEvent admission', () => {
+    it('admits a removal while a chord track exists and refuses it with the reason when none does', () => {
+        const action: AppAction = { type: 'removeChordEvent', payload: { eventId: 'c-2' } };
+        const context = { actions: [action], actionIndex: 0 };
+
+        expect(handleRemoveChordEvent.validate?.(action, context)).toBe(true);
+
+        mockValue = null;
+        expect(handleRemoveChordEvent.validate?.(action, context)).toBe(false);
+        expect(handleRemoveChordEvent.validationRefusalReason?.(action, context)).toBe(
+            'The project has no chord track'
+        );
+    });
+});
+
 describe('chord track restores', () => {
     it('refuses to overwrite a chord edit made after the command it undoes', () => {
         const inverse = requireRestore(

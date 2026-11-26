@@ -2,8 +2,6 @@ import { clampVelocity } from '#/utils/midiData';
 
 import { type MidiNote } from '../models/MidiNote';
 
-type VelocityCurve = 'linear' | 'exponential' | 'logarithmic' | 's-curve' | 'compress' | 'expand';
-
 type MapMidiVelocitiesByCurveInput = {
     notes: readonly MidiNote[];
     curve: string;
@@ -11,21 +9,7 @@ type MapMidiVelocitiesByCurveInput = {
     maxVelocity: number;
 };
 
-function isVelocityCurve(curve: string): curve is VelocityCurve {
-    return (
-        curve === 'linear' ||
-        curve === 'exponential' ||
-        curve === 'logarithmic' ||
-        curve === 's-curve' ||
-        curve === 'compress' ||
-        curve === 'expand'
-    );
-}
-
 function applyMidiVelocityCurve(normalized: number, curve: string): number {
-    if (!isVelocityCurve(curve)) {
-        return normalized;
-    }
     switch (curve) {
         case 'linear': {
             return normalized;
@@ -52,6 +36,7 @@ function applyMidiVelocityCurve(normalized: number, curve: string): number {
             return 0.7 + (normalized - 0.5) * 1.4;
         }
         default: {
+            // An unrecognised curve name leaves the span linear.
             return normalized;
         }
     }

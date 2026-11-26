@@ -31,4 +31,14 @@ describe('mapMidiVelocitiesByCurve', () => {
             expect(Math.min(...velocities), curve).toBeGreaterThanOrEqual(30);
         }
     });
+
+    it('maps an unknown curve name as linear', () => {
+        const notes = [note('a', 20), note('b', 60), note('c', 100)];
+        const linear = mapMidiVelocitiesByCurve({ notes, curve: 'linear', minVelocity: 10, maxVelocity: 110 });
+
+        const unknown = mapMidiVelocitiesByCurve({ notes, curve: 'not-a-curve', minVelocity: 10, maxVelocity: 110 });
+
+        expect(unknown.map((n) => n.velocity)).toEqual([10, 60, 110]);
+        expect(unknown).toEqual(linear);
+    });
 });

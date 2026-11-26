@@ -8,6 +8,7 @@ vi.mock('../../getWritableMidiClipReplayGuard', () => ({
     })),
 }));
 
+import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 
 import { midiStore } from '../../../stores/midiStore';
@@ -139,5 +140,32 @@ describe('handleHumanizeNotes — notes at the clip start', () => {
         expect(inverse.payload.expectedNotes).toEqual(midiStore.value?.notesByClipId.clip1);
         expect(inverse.payload.notes).toEqual([{ ...note('a'), startBeat: 0 }]);
         expect(handleRestoreMidiClipNotes.validateSessionActionArguments?.(inverse.payload)).toBe(true);
+    });
+});
+
+describe('handleHumanizeNotes — saved session entries', () => {
+    beforeEach(seedStore);
+
+    function describedEntry(): HandlerSessionActionEntry {
+        const action: HumanizeNotesAction = {
+            type: 'humanizeNotes',
+            payload: { clipId: 'clip1', amount: 1, seed: 7 },
+        };
+        const described = handleHumanizeNotes.describe(action);
+        if (!described.inverseAction || !described.redoAction) {
+            throw new Error('Expected an inverse and a redo');
+        }
+        return { action, inverseAction: described.inverseAction, redoAction: described.redoAction };
+    }
+
+    it('admits the entry of a seeded humanize and drops one without a seed or for another action', () => {
+        const seeded = describedEntry();
+        expect(handleHumanizeNotes.validateSessionEntry?.(seeded)).toBe(true);
+
+        const unseededAction: AppAction = { type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 1 } };
+        expect(handleHumanizeNotes.validateSessionEntry?.({ ...seeded, action: unseededAction })).toBe(false);
+
+        const foreign: AppAction = { type: 'invertNotes', payload: { clipId: 'clip1' } };
+        expect(handleHumanizeNotes.validateSessionEntry?.({ ...seeded, action: foreign })).toBe(false);
     });
 });
