@@ -4,12 +4,16 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 import { withDeviceParameterRuntimeWriteOwner } from './withDeviceParameterRuntimeWriteOwner';
 
+type WriteWebDeviceParamInput = {
+    trackId: string;
+    deviceId: string;
+    paramId: string;
+    value: number;
+};
+
 /** Clamp the project value and scope the Web Audio write to its parameter owner. */
 export function writeWebDeviceParam(
-    trackId: string,
-    deviceId: string,
-    paramId: string,
-    value: number,
+    { trackId, deviceId, paramId, value }: WriteWebDeviceParamInput,
     runtimeOwner?: symbol
 ): number {
     const clamped = clampDeviceParamWrite({ deviceId, paramId, value });

@@ -34,7 +34,7 @@ export function updateDeviceParam(
     value: number,
     runtimeOwner?: symbol
 ): void {
-    const clamped = writeWebDeviceParam(trackId, deviceId, paramId, value, runtimeOwner);
+    const clamped = writeWebDeviceParam({ trackId, deviceId, paramId, value }, runtimeOwner);
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
     if (body) {
         writeNativeBuiltinParameters(trackId, deviceId, { [body.parameterName(paramId)]: clamped });

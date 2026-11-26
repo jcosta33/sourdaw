@@ -13,7 +13,7 @@ export function updateDeviceParameters(
     }
     const clamped: [string, number][] = [];
     for (const [paramId, value] of parameters) {
-        clamped.push([paramId, writeWebDeviceParam(trackId, deviceId, paramId, value)]);
+        clamped.push([paramId, writeWebDeviceParam({ trackId, deviceId, paramId, value })]);
     }
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
     if (body) {
