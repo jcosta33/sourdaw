@@ -53,10 +53,6 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     addTrack: materializeAddedTrack,
     removeTrack: passThrough,
     renameTrack: passThrough,
-    createTrackAlternative: passThrough,
-    switchTrackAlternative: passThrough,
-    renameTrackAlternative: passThrough,
-    deleteTrackAlternative: passThrough,
     selectTrack: passThrough,
     muteTrack: (action, state) =>
         guardTrackAction(state, action.payload.trackId, (track) => ({
@@ -106,7 +102,6 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     removeDevice: materializeRemovedDevice,
     setDeviceParameter: materializeDeviceParameter,
     createBus: materializeCreatedBus,
-    createFolder: passThrough,
     setSend: passThrough,
     setWorkspaceMode: passThrough,
     openPreferencesDialog: passThrough,
@@ -191,8 +186,6 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     newProject: passThrough,
     exportMidi: passThrough,
     foldTrack: passThrough,
-    groupTracks: passThrough,
-    ungroupTracks: passThrough,
     scaleAutomation: passThrough,
     stretchAutomation: passThrough,
     invertAutomation: passThrough,

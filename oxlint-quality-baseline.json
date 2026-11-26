@@ -4088,16 +4088,10 @@
         }
     },
     "src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
-            "count": 3
+            "count": 2
         },
         "eslint/max-params": {
-            "count": 1
-        },
-        "sourdaw-craft/no-silent-catch": {
             "count": 1
         }
     },
@@ -7604,11 +7598,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/useCases/freezeBounce/initStalenessDetection.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts": {
         "eslint/complexity": {
             "count": 1
@@ -9040,7 +9029,7 @@
     },
     "src/modules/AudioEngine/stores/audioBufferCache.ts": {
         "eslint/complexity": {
-            "count": 12
+            "count": 11
         },
         "eslint/max-depth": {
             "count": 3
@@ -9049,7 +9038,7 @@
             "count": 9
         },
         "eslint/max-params": {
-            "count": 2
+            "count": 1
         },
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 2
@@ -9101,7 +9090,7 @@
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts": {
         "eslint/complexity": {
-            "count": 3
+            "count": 2
         }
     },
     "src/modules/AudioEngine/stores/preparedAudioBufferPersistenceAttempts.ts": {

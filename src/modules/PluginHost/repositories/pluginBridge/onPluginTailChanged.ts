@@ -11,7 +11,10 @@ function isPluginTailChange(value: unknown): value is PluginTailChange {
         typeof candidate.instance_id === 'string' &&
         typeof candidate.tail_samples === 'number' &&
         Number.isInteger(candidate.tail_samples) &&
-        candidate.tail_samples >= 0
+        candidate.tail_samples >= 0 &&
+        typeof candidate.sequence === 'number' &&
+        Number.isSafeInteger(candidate.sequence) &&
+        candidate.sequence > 0
     );
 }
 

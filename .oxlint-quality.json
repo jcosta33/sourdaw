@@ -77,6 +77,19 @@
             }
         },
         {
+            "files": ["src/{app,helpers,infra,routes,utils}/**/*.{ts,tsx}"],
+            "excludeFiles": [
+                "**/*.d.ts",
+                "**/*.{spec,test,mock}.{ts,tsx}",
+                "**/setupTests.ts",
+                "**/__tests__/**",
+                "src/**/testing/**"
+            ],
+            "rules": {
+                "eslint/no-lonely-if": "error"
+            }
+        },
+        {
             "files": [
                 "src/modules/{AgentAdapters,CommandInterface,ControlRoom,ControlSurface,FactorySynthesis,Gluten,Levain}/**/*.{ts,tsx}",
                 "src/modules/{Metering,ProjectVersioning,Proof,PunchRecording,SessionLauncher,Tuner}/**/*.{ts,tsx}",

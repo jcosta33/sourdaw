@@ -19,13 +19,17 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
-import { driveDesktopEditorWorkspace } from '../desktopEditorWorkspaceDrive.ts';
+import { driveDesktopEditorWorkspace, runWorkspaceGroups } from '../desktopEditorWorkspaceDrive.ts';
 import {
     pausePreservesProgress,
     renderedPlayheadBeat,
+    freshWorkspaceObservations,
     type EditorWorkspaceDrive,
+    type WorkspaceObservation,
     WORKSPACE_STAGES,
 } from '../desktopEditorWorkspaceEvidence.ts';
+import { heldReadingsMatch } from '../desktopEditorWorkspacePlayhead.ts';
+import { scaleStep } from '../desktopEditorWorkspaceScale.ts';
 import * as editorSession from '../desktopFermenterDrive.ts';
 import { FermenterDriveError, FERMENTER_OBSERVATIONS, type FermenterDrive } from '../desktopFermenterEvidence.ts';
 import { readPayloadIdentity } from '../desktopLatencyRecord.ts';
@@ -440,10 +444,180 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
     for (const row of observations.stages) {
         row.outcome = 'passed';
     }
+    const row = observations.stages.find(({ stage }) => stage === 'timeline-transport');
+    if (!row) {
+        throw new Error('missing timeline');
+    }
+    row.timeline = {
+        samples: {
+            before: 0,
+            sought: 7,
+            advancing: 7.5,
+            advanced: 8,
+            pauseClick: 8,
+            paused: 8.1,
+            pauseHold: 2,
+            stopped: 0,
+            stopHold: 2,
+        },
+        trackBefore: 'track-1',
+        trackAfter: 'track-1',
+        deviceBefore: 'device-1',
+        deviceAfter: 'device-1',
+    };
     observations.appQuit = true;
 };
 
 describe('packaged editor workspace proof', () => {
+    it.each([
+        [['Bars3.1.000', 'Bars3.1.000'], true],
+        [['Bars2.4.240', 'Bars2.4.240'], false],
+        [['Bars3.1.000', 'Bars3.1.001'], false],
+        [['Bars3.1.000'], false],
+    ] as const)('requires the expected beat throughout the hold window: %s', (values, expected) => {
+        expect(heldReadingsMatch([...values], 8)).toBe(expected);
+    });
+    it('rejects passed stage flags when timeline evidence is missing', async () => {
+        const { options, env } = fixture();
+        const record = await runEditorWorkspaceProof(options, env, {
+            hostSupported: true,
+            async drive(binary, observations) {
+                await completeWorkspaceDrive(binary, observations);
+                const row = observations.stages.find(({ stage }) => stage === 'timeline-transport');
+                if (!row) {
+                    throw new Error('missing timeline');
+                }
+                delete row.timeline;
+            },
+        });
+        expect(record.verdict).toBe('failed');
+        expect(record.failureCode).toBe('workspace-observations-incomplete');
+    });
+    it.each([
+        [
+            'missing sample',
+            (timeline) => {
+                delete timeline.samples.advanced;
+            },
+        ],
+        [
+            'non-finite sample',
+            (timeline) => {
+                timeline.samples.before = NaN;
+            },
+        ],
+        [
+            'seek outside tolerance',
+            (timeline) => {
+                timeline.samples.sought = 7.03;
+            },
+        ],
+        [
+            'no seek',
+            (timeline) => {
+                timeline.samples.before = 7;
+            },
+        ],
+        [
+            'no first advance',
+            (timeline) => {
+                timeline.samples.advancing = 7.25;
+            },
+        ],
+        [
+            'no second advance',
+            (timeline) => {
+                timeline.samples.advanced = 7.75;
+            },
+        ],
+        [
+            'pause outside tolerance',
+            (timeline) => {
+                timeline.samples.paused = 8.3;
+            },
+        ],
+        [
+            'short pause hold',
+            (timeline) => {
+                timeline.samples.pauseHold = 1;
+            },
+        ],
+        [
+            'stop not zero',
+            (timeline) => {
+                timeline.samples.stopped = 1;
+            },
+        ],
+        [
+            'short stop hold',
+            (timeline) => {
+                timeline.samples.stopHold = 1;
+            },
+        ],
+        [
+            'changed track',
+            (timeline) => {
+                timeline.trackAfter = 'track-2';
+            },
+        ],
+        [
+            'changed device',
+            (timeline) => {
+                timeline.deviceAfter = 'device-2';
+            },
+        ],
+        [
+            'missing device',
+            (timeline) => {
+                delete timeline.deviceBefore;
+            },
+        ],
+    ] satisfies [string, (timeline: NonNullable<WorkspaceObservation['timeline']>) => void][])(
+        'rejects incomplete timeline evidence: %s',
+        async (_name, change) => {
+            const { options, env } = fixture();
+            const record = await runEditorWorkspaceProof(options, env, {
+                hostSupported: true,
+                async drive(binary, observations) {
+                    await completeWorkspaceDrive(binary, observations);
+                    const timeline = observations.stages.find(({ stage }) => stage === 'timeline-transport')?.timeline;
+                    if (!timeline) {
+                        throw new Error('missing timeline');
+                    }
+                    change(timeline);
+                },
+            });
+            expect(record).toMatchObject({ verdict: 'failed', failureCode: 'workspace-observations-incomplete' });
+        }
+    );
+    it('keeps the first scale failure while admitting timeline in a fresh session', async () => {
+        const visited: string[] = [];
+        const observations = freshWorkspaceObservations();
+        const scale = observations.stages.find(({ stage }) => stage === 'scale-refit')!;
+        const timeline = observations.stages.find(({ stage }) => stage === 'timeline-transport')!;
+        const result = await runWorkspaceGroups(
+            async (name) => {
+                visited.push(name);
+                if (name === 'geometry') {
+                    scale.outcome = 'failed';
+                    await scaleStep(scale, 'close-click', async () => {
+                        throw new Error('scale-refit');
+                    });
+                }
+                if (name === 'timeline') {
+                    timeline.outcome = 'passed';
+                }
+            },
+            () => true
+        );
+        expect(visited).toEqual(['geometry', 'timeline', 'nested-escape', 'remove-instance']);
+        expect(result).toBe(true);
+        expect(scale).toMatchObject({
+            outcome: 'failed',
+            scaleSteps: [{ name: 'close-click', outcome: 'failed' }],
+        });
+        expect(timeline.outcome).toBe('passed');
+    });
     it.each([
         ['BARS\n1\n.\n1\n.\n000', 0],
         ['Bars2.4.000', 7],
@@ -532,7 +706,7 @@ describe('packaged editor workspace proof', () => {
         }
     );
 
-    it('reports launch-unavailable without teardown credit when all three isolated sessions refuse launch', async () => {
+    it('reports launch-unavailable without teardown credit when all four isolated sessions refuse launch', async () => {
         const { options, env } = fixture();
         const launch = vi
             .spyOn(editorSession, 'launchEditorSession')
@@ -543,7 +717,7 @@ describe('packaged editor workspace proof', () => {
                 hostSupported: true,
                 drive: driveDesktopEditorWorkspace,
             });
-            expect(launch).toHaveBeenCalledTimes(3);
+            expect(launch).toHaveBeenCalledTimes(4);
             expect(quit).not.toHaveBeenCalled();
             expect(record).toMatchObject({
                 verdict: 'not-run',
@@ -553,7 +727,7 @@ describe('packaged editor workspace proof', () => {
             expect(record.observations.stages.filter(({ outcome }) => outcome === 'passed')).toEqual([]);
             expect(
                 record.observations.stages.filter(({ outcome }) => outcome === 'failed').map(({ stage }) => stage)
-            ).toEqual(['workspace-ready', 'nested-escape', 'remove-instance']);
+            ).toEqual(['workspace-ready', 'timeline-transport', 'nested-escape', 'remove-instance']);
         } finally {
             launch.mockRestore();
             quit.mockRestore();
