@@ -132,18 +132,29 @@ function planArrangement(
 }
 
 /**
- * Abort the returned signal the moment any store this Save captured changes. A Worker round trip over a
- * dense project takes seconds, and the Save only discovers a concurrent edit when it returns, so the
- * retry would otherwise start that much later (#7500).
+ * Abort the returned signal once a store this Save captured has made its inputs stale. A Worker round trip
+ * over a dense project takes seconds, and the Save only discovers a concurrent edit when it returns, so the
+ * retry would otherwise start that much later (#7500). A store notifies even for a value it already holds,
+ * so each notification is judged by the Save's own currency check rather than treated as an edit.
  */
-function abortWhenSaveInputsChange(signal: AbortSignal): { signal: AbortSignal; stop: () => void } {
+function abortWhenSaveInputsGoStale(
+    signal: AbortSignal,
+    assertPreparationCurrent: () => void
+): { signal: AbortSignal; wentStale: () => boolean; stop: () => void } {
     const controller = new AbortController();
-    function abort(): void {
-        controller.abort(new ProjectSavePreparationStaleError());
+    function abortIfStale(): void {
+        try {
+            assertPreparationCurrent();
+        } catch {
+            controller.abort(new ProjectSavePreparationStaleError());
+        }
     }
-    const unsubscribers = [...snapshotStores(), arrangementStore, projectStore].map((store) => store.subscribe(abort));
+    const unsubscribers = [...snapshotStores(), arrangementStore, projectStore].map((store) =>
+        store.subscribe(abortIfStale)
+    );
     return {
         signal: AbortSignal.any([signal, controller.signal]),
+        wentStale: () => controller.signal.aborted,
         stop: () => {
             for (const unsubscribe of unsubscribers) {
                 unsubscribe();
@@ -160,7 +171,7 @@ async function materializeArrangement(
     plan.clone();
     const request = plan.requestMaterialization;
     if (request) {
-        const watched = abortWhenSaveInputsChange(signal);
+        const watched = abortWhenSaveInputsGoStale(signal, assertPreparationCurrent);
         try {
             await request(watched.signal);
         } catch (error) {
@@ -169,6 +180,10 @@ async function materializeArrangement(
             throw error;
         } finally {
             watched.stop();
+        }
+        // An abort after admission frees the prospective clone, so materializing it would not be a retry.
+        if (watched.wentStale()) {
+            throw new ProjectSavePreparationStaleError();
         }
     }
     // Roots with explicit native authors intentionally materialize locally to preserve authorship.

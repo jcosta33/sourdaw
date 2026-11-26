@@ -153,6 +153,94 @@ async function startSaveHeldInPreflight(
     return { release, saving };
 }
 
+type SlowWorkerRequest = {
+    signal: AbortSignal;
+    /** Runs the callback in a later task, so a write is not part of the save's own action. */
+    afterTask: (callback: () => void) => void;
+};
+
+function rejectWhenAborted(signal: AbortSignal): Promise<never> {
+    return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('Worker request abandoned')), { once: true });
+    });
+}
+
+/** Gives the first save preparation a Worker round trip, which these cases script. */
+async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequest) => Promise<void>) {
+    const arrangementStoreModule = await import('../../../../stores/arrangementStore');
+    const prepare = arrangementStoreModule.prepareArrangementStoreState;
+    const signals: AbortSignal[] = [];
+    let materializeCalls = 0;
+    vi.spyOn(arrangementStoreModule, 'prepareArrangementStoreState').mockImplementation((...args) => {
+        const plan = prepare(...args);
+        if (!plan || signals.length > 0) {
+            return plan;
+        }
+        return {
+            ...plan,
+            requestMaterialization: (signal: AbortSignal) => {
+                signals.push(signal);
+                return behaviour({
+                    signal,
+                    afterTask: (callback) => {
+                        setTimeout(callback, 0);
+                    },
+                });
+            },
+            materialize: () => {
+                materializeCalls += 1;
+                plan.materialize();
+            },
+        };
+    });
+    return { signals, materializeCalls: () => materializeCalls };
+}
+
+/** Counts the subscriptions the save's preparation still holds on the stores it captures. */
+async function countStoreSubscriptions() {
+    const [
+        { trackStore, markerStore, takeLaneStore },
+        { automationStore },
+        { midiStore },
+        transport,
+        arrangement,
+        projectStores,
+    ] = await Promise.all([
+        import('#/modules/Arrangement/stores'),
+        import('#/modules/Automation/stores'),
+        import('#/modules/MIDI/stores'),
+        import('#/modules/Transport/stores'),
+        import('../../../../stores/arrangementStore'),
+        import('../../../../stores/projectStore'),
+    ]);
+    let active = 0;
+    function countSubscriptions(store: { subscribe(callback: (value: unknown) => void): () => void }): void {
+        const subscribe = store.subscribe.bind(store);
+        vi.spyOn(store, 'subscribe').mockImplementation((callback) => {
+            active += 1;
+            const unsubscribe = subscribe(callback);
+            let released = false;
+            return () => {
+                if (!released) {
+                    released = true;
+                    active -= 1;
+                }
+                unsubscribe();
+            };
+        });
+    }
+    countSubscriptions(trackStore);
+    countSubscriptions(markerStore);
+    countSubscriptions(takeLaneStore);
+    countSubscriptions(automationStore);
+    countSubscriptions(midiStore);
+    countSubscriptions(transport.tempoMapStore);
+    countSubscriptions(transport.timeSignatureMapStore);
+    countSubscriptions(arrangement.arrangementStore);
+    countSubscriptions(projectStores.projectStore);
+    return { active: () => active };
+}
+
 const SERIAL_SNAPSHOT_WORK = ['capture', 'build', 'first save settled', 'capture', 'build'];
 
 /** Records each save's plugin capture and snapshot build, in order, through the real implementations. */
@@ -405,45 +493,129 @@ describe('saveProject snapshot continuation', () => {
         async () => {
             const indexedDb = installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
-            const arrangementStoreModule = await import('../../../../stores/arrangementStore');
-            const prepare = arrangementStoreModule.prepareArrangementStoreState;
             const workerFinished = Promise.withResolvers<void>();
-            let materializationAborted = false;
-            let slowRequests = 0;
-            vi.spyOn(arrangementStoreModule, 'prepareArrangementStoreState').mockImplementation((...args) => {
-                const plan = prepare(...args);
-                if (!plan || slowRequests > 0) {
-                    return plan;
-                }
-                slowRequests += 1;
-                // A slow Worker: it answers only when released, or fails when the save abandons it.
-                const slowRequest = async (signal: AbortSignal): Promise<void> => {
-                    setTimeout(() => {
-                        // Detect publishes its markers while the Worker still materializes the save's rows.
-                        opened.renameTrack(opened.track.id, 'Edited while the Worker materialized');
-                    }, 0);
-                    signal.addEventListener('abort', () => (materializationAborted = true), { once: true });
-                    await Promise.race([
-                        workerFinished.promise,
-                        new Promise<never>((_resolve, reject) => {
-                            signal.addEventListener('abort', () => reject(new Error('Worker request abandoned')), {
-                                once: true,
-                            });
-                        }),
-                    ]);
-                };
-                return { ...plan, requestMaterialization: slowRequest };
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    // Detect publishes its markers while the Worker still materializes the save's rows.
+                    opened.renameTrack(opened.track.id, 'Edited while the Worker materialized');
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
             });
 
             const saving = opened.project.saveProject();
             // The Worker has not answered, so only the edit itself can have told the save to stop waiting for it.
-            await vi.waitFor(() => expect(materializationAborted).toBe(true));
+            await vi.waitFor(() => expect(worker.signals[0]?.aborted).toBe(true));
             workerFinished.resolve();
 
             expect(await saving).toBe(true);
-            expect(slowRequests).toBe(1);
+            expect(worker.signals).toHaveLength(1);
             expect(opened.persistenceFailures()).toEqual([]);
             expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited while the Worker materialized']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'keeps waiting for the Worker when a watched store is set to the value it already holds',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const workerFinished = Promise.withResolvers<void>();
+            const sameValueSet = Promise.withResolvers<void>();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    opened.projectStore.set(opened.projectStore.value);
+                    sameValueSet.resolve();
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await sameValueSet.promise;
+            expect(worker.signals[0]?.aborted).toBe(false);
+            workerFinished.resolve();
+
+            // The stub cannot supply a real Worker answer, so the first attempt ends at materialization; it must
+            // get that far, with no second attempt, because the same-value set left its inputs current.
+            await saving;
+            expect(worker.signals).toHaveLength(1);
+            expect(worker.materializeCalls()).toBe(1);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'retries and saves the latest revision when an edit lands after the Worker admitted its answer',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const worker = await stubSlowMaterializationWorker(async ({ afterTask }) => {
+                afterTask(() => {
+                    opened.renameTrack(opened.track.id, 'Edited after admission');
+                });
+                // The answer is admitted regardless of the abort that the edit raises.
+                await new Promise<void>((resolve) => afterTask(resolve));
+            });
+
+            expect(await opened.project.saveProject()).toBe(true);
+
+            expect(worker.signals).toHaveLength(1);
+            expect(worker.materializeCalls()).toBe(0);
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited after admission']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it.each([
+        {
+            outcome: 'an answered request',
+            behaviour: async () => undefined,
+            // Only a real Worker answer lets materialization complete; the subscriptions must still be released.
+            failure: 'Prospective mutation Worker has not completed',
+        },
+        {
+            outcome: 'a failed request',
+            behaviour: () => Promise.reject(new Error('Worker failed')),
+            failure: 'Worker failed',
+        },
+    ])(
+        'leaves no watched store subscribed after $outcome',
+        async ({ behaviour, failure }) => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const subscriptions = await countStoreSubscriptions();
+            const worker = await stubSlowMaterializationWorker(behaviour);
+            const before = subscriptions.active();
+
+            const result = await opened.project.saveProject();
+
+            expect(opened.persistenceFailures()).toEqual([failure]);
+            expect(result).toBe(false);
+            expect(worker.signals).toHaveLength(1);
+            expect(subscriptions.active()).toBe(before);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'leaves no watched store subscribed after an edit aborted the request',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const subscriptions = await countStoreSubscriptions();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    opened.renameTrack(opened.track.id, 'Edited while the Worker materialized');
+                });
+                await rejectWhenAborted(signal);
+            });
+            const before = subscriptions.active();
+
+            expect(await opened.project.saveProject()).toBe(true);
+
+            expect(worker.signals[0]?.aborted).toBe(true);
+            expect(subscriptions.active()).toBe(before);
         },
         CASE_TIMEOUT_MS
     );
