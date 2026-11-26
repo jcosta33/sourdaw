@@ -72,6 +72,12 @@ pub struct PluginInstance {
     /// announces a new one — over `plugin-tail-changed` rather than in this
     /// value, which is the reading at load and nothing later.
     pub tail_samples: u32,
+    /// Where that load-time tail read falls in the order every tail the host
+    /// reports takes (see `host::tail_watcher::next_tail_sequence`), taken at
+    /// the same read. A `plugin-tail-changed` event or `read_plugin_tails`
+    /// answer numbered at or below it was read before this load, so it came
+    /// from an earlier instance that held the same id.
+    pub tail_sequence: u64,
     pub engine_plugin_id: Option<usize>,
 }
 
@@ -2619,7 +2625,7 @@ async fn load_plugin_under_runtime_gate(
     let latency_ms = wrapper.latency_ms();
     // Read on the same control-thread visit, and left in frames: see
     // `PluginInstance::tail_samples` for why this one does not convert.
-    let tail_samples = wrapper.tail_samples();
+    let (tail_samples, tail_sequence) = read_load_tail(&wrapper);
 
     // Wake the latency watcher when this instance flags a runtime latency
     // change, so the plugin's own notification — CLAP's `latency.changed()`
@@ -2754,10 +2760,19 @@ async fn load_plugin_under_runtime_gate(
         latency_samples,
         latency_ms,
         tail_samples,
+        tail_sequence,
         engine_plugin_id,
     };
 
     Ok(instance)
+}
+
+/// The tail a freshly activated plugin reports, with its place in the host-wide
+/// tail order taken at the same read. Runs on the load's control thread before
+/// the instance is shared, so it takes an atomic counter step and nothing the
+/// audio thread contends for.
+fn read_load_tail<Runtime: HostedPluginRuntime>(runtime: &Runtime) -> (u32, u64) {
+    (runtime.tail_samples(), next_tail_sequence())
 }
 
 fn ensure_plugin_instance_id_available(
@@ -11919,6 +11934,23 @@ mod tests {
             .into_iter()
             .map(|reading| (reading.instance_id, reading.tail_samples))
             .collect()
+    }
+
+    #[test]
+    fn a_load_tail_read_is_numbered_after_a_figure_a_predecessor_published() {
+        let plugin = MovableTailPlugin {
+            tail_samples: Arc::new(std::sync::atomic::AtomicU32::new(96_000)),
+            processing: Arc::new(daw_plugin_host::ProcessingGate::default()),
+        };
+        let predecessor_event = next_tail_sequence();
+
+        let (tail_samples, tail_sequence) = read_load_tail(&plugin);
+
+        assert_eq!(tail_samples, 96_000);
+        assert!(
+            tail_sequence > predecessor_event,
+            "the load read {tail_sequence} must outrank an event numbered {predecessor_event}"
+        );
     }
 
     #[test]

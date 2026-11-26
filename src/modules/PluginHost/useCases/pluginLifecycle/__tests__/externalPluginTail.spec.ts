@@ -51,6 +51,7 @@ function loadedInstance(instanceId: string, tailSamples: number): PluginInstance
         latency_samples: 0,
         latency_ms: 0,
         tail_samples: tailSamples,
+        tail_sequence: 0,
         engine_plugin_id: 7,
     };
 }
@@ -255,6 +256,27 @@ describe('external plugin tail store', () => {
         expect(tailOf('inst-1')).toBeUndefined();
         emitTailChange({ instance_id: 'inst-1', tail_samples: 240_000 });
         expect(tailOf('inst-1')).toBeUndefined();
+    });
+
+    it('ignores an event the predecessor of the same instance id published before the successor load read', async () => {
+        mocks.unloadPluginRepo.mockResolvedValue({ unloadedInstanceIds: ['inst-1'], errors: [], reports: [] });
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+        await unloadPlugin('inst-1');
+        const predecessorEventSequence = lastSequence + 1;
+        mocks.loadPluginRepo.mockImplementation((_pluginId, instanceId) =>
+            Promise.resolve({
+                ...loadedInstance(instanceId, 50_000),
+                tail_sequence: predecessorEventSequence + 1,
+            })
+        );
+        await activateExternalPlugin({ pluginId: 'reverb', instanceId: 'inst-1' });
+
+        // Delivered late: numbered by the host before the successor's load read.
+        nativeTailHandler?.({ instance_id: 'inst-1', tail_samples: 240_000, sequence: predecessorEventSequence });
+        expect(tailOf('inst-1')).toBe(50_000);
+
+        nativeTailHandler?.({ instance_id: 'inst-1', tail_samples: 300_000, sequence: predecessorEventSequence + 2 });
+        expect(tailOf('inst-1')).toBe(300_000);
     });
 
     it('drops every tail when the graph generation ends', async () => {

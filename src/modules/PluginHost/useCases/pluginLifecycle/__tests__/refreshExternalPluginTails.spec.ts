@@ -56,6 +56,7 @@ function loadedInstance(instanceId: string, tailSamples: number): PluginInstance
         latency_samples: 0,
         latency_ms: 0,
         tail_samples: tailSamples,
+        tail_sequence: 0,
         engine_plugin_id: 7,
     };
 }
