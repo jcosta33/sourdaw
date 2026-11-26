@@ -159,6 +159,7 @@ const retiredClipIdsByActionType: {
     addAutomationPoint: retiresNoClip,
     insertAutomationLanePoints: retiresNoClip,
     quantizeNotes: retiresNoClip,
+    editMidiNotes: retiresNoClip,
     removeShortMidiOverlaps: retiresNoClip,
     createDrumPreviewBranches: retiresNoClip,
     deleteDrumPreviewBranches: retiresNoClip,

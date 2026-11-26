@@ -11,6 +11,14 @@ describe('macroReplayRouteByActionType', () => {
             { kind: 'refuse', reason: 'Automation lane insertions are local edits.', precedence: 0 },
         ],
         ['setLevainIdentity', { kind: 'refuse', reason: 'Levain identity changes are local edits.', precedence: 1 }],
+        [
+            'editMidiNotes',
+            {
+                kind: 'refuse',
+                reason: 'Selective MIDI note edits depend on the original note selection.',
+                precedence: 2,
+            },
+        ],
         ['togglePlayback', { kind: 'replay' }],
     ] as const)('routes %s', (type, expected) => {
         expect(macroReplayRouteByActionType[type]).toEqual(expected);
@@ -22,6 +30,7 @@ describe('macroReplayRouteByActionType', () => {
             'restoreTempoMapEdit',
             'insertAutomationLanePoints',
             'setLevainIdentity',
+            'editMidiNotes',
         ]);
         const others = Object.entries(macroReplayRouteByActionType).filter(([type]) => !special.has(type));
         expect(others.length).toBeGreaterThan(300);

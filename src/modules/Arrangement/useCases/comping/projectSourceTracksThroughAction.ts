@@ -175,6 +175,7 @@ const sourceTrackStepByActionType: {
     addAutomationPoint: keepTracks,
     insertAutomationLanePoints: keepTracks,
     quantizeNotes: keepTracks,
+    editMidiNotes: keepTracks,
     removeShortMidiOverlaps: keepTracks,
     createDrumPreviewBranches: keepTracks,
     deleteDrumPreviewBranches: keepTracks,

@@ -173,6 +173,7 @@ export const deviceChainProjectorByActionType: {
     addAutomationPoint: null,
     insertAutomationLanePoints: null,
     quantizeNotes: null,
+    editMidiNotes: null,
     removeShortMidiOverlaps: null,
     createDrumPreviewBranches: null,
     deleteDrumPreviewBranches: null,

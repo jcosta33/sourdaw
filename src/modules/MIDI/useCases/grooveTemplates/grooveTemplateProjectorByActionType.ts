@@ -324,6 +324,7 @@ export const grooveTemplateProjectorByActionType: {
     addAutomationPoint: leaveGrooveTemplateStateUnchanged,
     insertAutomationLanePoints: leaveGrooveTemplateStateUnchanged,
     quantizeNotes: leaveGrooveTemplateStateUnchanged,
+    editMidiNotes: leaveGrooveTemplateStateUnchanged,
     removeShortMidiOverlaps: leaveGrooveTemplateStateUnchanged,
     createDrumPreviewBranches: leaveGrooveTemplateStateUnchanged,
     deleteDrumPreviewBranches: leaveGrooveTemplateStateUnchanged,
