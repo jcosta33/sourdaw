@@ -12,7 +12,7 @@ import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { leaveSession } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+import * as commandUseCases from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
@@ -203,9 +203,9 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getToasterHandlers());
-        clearUndoHistory();
-        resetActionReplayAuthority();
-        setActionHistoryMetadataPort({
+        commandUseCases.clearUndoHistory();
+        commandUseCases.resetActionReplayAuthority();
+        commandUseCases.setActionHistoryMetadataPort({
             record: () => [],
             markReverted: () => ({ status: 'unavailable' as const }),
             clear: () => undefined,
@@ -241,8 +241,8 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         raf.mockRestore();
         toasterStore.set({});
         resetToasterDeviceLifecycleState();
-        clearUndoHistory();
-        resetActionReplayAuthority();
+        commandUseCases.clearUndoHistory();
+        commandUseCases.resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         agentProjectRepairStateStore.set(null);
@@ -416,6 +416,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
     });
     it('refuses a held Master drag after its runtime is replaced', async () => {
         const disposeProject = await prepareMasterProject();
+        const executeBatch = vi.spyOn(commandUseCases, 'executeAppActionBatch');
         try {
             render(<ToasterPanel deviceId={DEVICE_ID} />);
             const slider = screen.getByRole('slider', { name: 'Master' });
@@ -423,19 +424,24 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
             slider.releasePointerCapture = vi.fn();
             const before = trackStore.value?.tracks[0]?.devices[0]?.deviceState;
             const history = undoStore.value?.past.length;
+            const baseline = slider.getAttribute('aria-valuenow');
             fireEvent.pointerDown(slider, { button: 0, pointerId: 7, clientY: 100 });
             fireEvent.pointerMove(slider, { pointerId: 7, clientY: 70 });
             flushFrame();
             expect(current.setParam).toHaveBeenCalledWith('master_gain', expect.any(Number));
+            expect(slider).not.toHaveAttribute('aria-valuenow', baseline);
             const replacement = controls();
             engine.getTrackStrip.mockReturnValue({
                 deviceNodes: [{ deviceId: DEVICE_ID, toasterControls: replacement }],
             });
             fireEvent.pointerUp(slider, { pointerId: 7 });
             expect(replacement.setParam).not.toHaveBeenCalled();
+            expect(executeBatch).not.toHaveBeenCalled();
             expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toEqual(before);
             expect(undoStore.value?.past).toHaveLength(history ?? 0);
+            expect(slider).toHaveAttribute('aria-valuenow', baseline);
         } finally {
+            executeBatch.mockRestore();
             disposeProject();
         }
     });
