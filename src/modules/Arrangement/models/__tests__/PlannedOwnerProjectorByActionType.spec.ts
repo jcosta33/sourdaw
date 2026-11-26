@@ -71,6 +71,20 @@ describe('plannedOwnerProjectorByActionType', () => {
             },
         },
         {
+            type: 'setProofPatchSelection',
+            action: {
+                type: 'setProofPatchSelection',
+                payload: {
+                    deviceId: 'd',
+                    trackId: 't',
+                    deviceIds: ['d', 'e'],
+                    selection: { kind: 'target', target: 'broadcast' },
+                    before: { parameters: { target_mode: null, target_lufs: -18 }, name: 'Init', presetId: null },
+                    after: { parameters: { target_mode: 3, target_lufs: -23 }, name: 'Init', presetId: null },
+                },
+            },
+        },
+        {
             type: 'setLevainIdentity',
             action: {
                 type: 'setLevainIdentity',

@@ -269,6 +269,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        engineSampleRateOf: vi.fn((): number | null => null),
         acceptsSidechainInput: actual.acceptsSidechainInput,
         findPadOutputHost: actual.findPadOutputHost,
         getSidechainTargetCapability: actual.getSidechainTargetCapability,
@@ -280,6 +281,15 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         findMidiTransformDevice: actual.findMidiTransformDevice,
         isMidiTransformDevice: actual.isMidiTransformDevice,
         commitPitchEdit: vi.fn(),
+        captureOfflineRenderSessionSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        describeSubgraphPrintInput: vi.fn(),
+        readLiveOfflineRenderProjectModels: vi.fn(),
+        readLiveOfflineRenderSessionModels: vi.fn(),
+        selectSubgraphPrintInput: vi.fn(),
+        subgraphPrintInputsMatch: vi.fn(() => true),
+        subscribeSubgraphPrintInputStores: vi.fn(() => () => undefined),
         isBuiltinSynthDevice: actual.isBuiltinSynthDevice,
         isBypassedNoteReceiver: actual.isBypassedNoteReceiver,
         isDrumDevice: actual.isDrumDevice,
@@ -441,6 +451,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
+        refreshExternalPluginTails: vi.fn(async () => {}),
         isFaustModule: actual.isFaustModule,
         compileFaustDSP: actual.compileFaustDSP,
         createFaustNode: actual.createFaustNode,

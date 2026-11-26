@@ -3,14 +3,16 @@ import { type Track } from '#/modules/Arrangement/stores';
 import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 
 import { type OfflineAudioBufferSource } from './OfflineRenderSource';
+import { readPlayedFrozenBufferId } from './readPlayedFrozenBufferId';
 
 /** Own the PCM so cache eviction and in-place edits cannot alter a pending render. */
 export function captureOfflineAudioBuffers(tracks: readonly Track[], sources: OfflineAudioBufferSource) {
     const buffers = new Map<string, AudioBuffer>();
     const ids = new Set<string>();
     for (const track of tracks) {
-        if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
-            ids.add(track.freezeState.frozenBufferId);
+        const playedFrozenBufferId = readPlayedFrozenBufferId(track);
+        if (playedFrozenBufferId) {
+            ids.add(playedFrozenBufferId);
         }
         for (const clip of track.clips) {
             if (clip.audioBufferId) {

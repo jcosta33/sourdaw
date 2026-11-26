@@ -9,13 +9,6 @@ export const mixPresets: readonly PresetAction[] = [
         buildAction: () => ({ type: 'analyzeMix' }),
     },
     {
-        id: 'autofix-mix',
-        label: 'Auto-Fix Mix',
-        keywords: ['fix mix', 'auto fix', 'auto-fix mix', 'balance mix', 'auto level'],
-        category: 'Mix',
-        buildAction: () => ({ type: 'autoFixMix' }),
-    },
-    {
         id: 'consolidate-all',
         label: 'Consolidate All Tracks',
         keywords: ['consolidate all', 'bounce all', 'render all'],

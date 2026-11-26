@@ -1,4 +1,20 @@
-import { type PresetAction } from './Types';
+import { type RuntimeAction } from '../../RuntimeAction';
+
+import { type PresetAction, type PresetContext } from './Types';
+
+function buildLoopToggle(ctx: PresetContext): RuntimeAction | null {
+    if (ctx.loopEnabled === undefined) {
+        return null;
+    }
+    return { type: 'setLoopEnabled', payload: { enabled: !ctx.loopEnabled } };
+}
+
+function buildMetronomeToggle(ctx: PresetContext): RuntimeAction | null {
+    if (ctx.metronomeEnabled === undefined) {
+        return null;
+    }
+    return { type: 'setMetronomeEnabled', payload: { enabled: !ctx.metronomeEnabled } };
+}
 
 export const transportPresets: readonly PresetAction[] = [
     {
@@ -31,14 +47,14 @@ export const transportPresets: readonly PresetAction[] = [
         keywords: ['loop', 'cycle', 'toggle loop'],
         commandAliases: ['loop', 'cycle'],
         category: 'Transport',
-        buildAction: () => ({ type: 'toggleLoop' }),
+        buildAction: buildLoopToggle,
     },
     {
         id: 'metronome',
         label: 'Toggle Metronome',
         keywords: ['metronome', 'click', 'click track', 'toggle metronome'],
         category: 'Transport',
-        buildAction: () => ({ type: 'toggleMetronome' }),
+        buildAction: buildMetronomeToggle,
     },
     {
         id: 'punch-in-out-on',
