@@ -540,8 +540,8 @@ struct StoredRegistry {
     /// [`PluginRegistryStore::apply_quarantine_removals`].
     quarantine: BTreeMap<String, PersistedQuarantineEntry>,
     /// Every key this process has explicitly decided about — quarantined,
-    /// cleared, or dropped as proven gone — as opposed to a key it merely
-    /// hydrated and never touched again.
+    /// cleared, or dropped as proven gone — and not yet written, as opposed to
+    /// a key it merely hydrated and never touched again.
     ///
     /// [`PluginRegistryStore::persist`] needs this distinction because the
     /// scan runs in a separate process with its own store, while the main
@@ -552,13 +552,18 @@ struct StoredRegistry {
     /// still win over a stale or concurrent sibling write, so `persist` reads
     /// the file's current quarantine column fresh and overlays only the keys
     /// in this set from `quarantine` — a key this process never touched
-    /// defers entirely to whatever is on disk.
+    /// defers entirely to whatever is on disk. A successful write empties it,
+    /// as it empties `entries_touched`: a decision kept after the file carries
+    /// it would overwrite every later decision the other process makes about
+    /// the same key, resurrecting a quarantine a retry cleared there or
+    /// erasing a re-quarantine.
     quarantine_touched: BTreeSet<String>,
     /// Each binary's largest recent run consumption, keyed by path. Loaded on
     /// hydration and mutated by [`PluginRegistryStore::record_scan_consumption`].
     scan_consumption: BTreeMap<String, PersistedScanConsumption>,
-    /// The `scan_consumption` keys this process recorded or expired, overlaid on the
-    /// file's column at persist the way `quarantine_touched` is.
+    /// The `scan_consumption` keys this process recorded or expired and has not
+    /// yet written, overlaid on the file's column at persist and emptied by a
+    /// successful write the way `quarantine_touched` is.
     scan_consumption_touched: BTreeSet<String>,
 }
 
@@ -709,8 +714,8 @@ impl PluginRegistryStore {
     /// the file on disk is the file the scan recorded, at the size and age it
     /// recorded, and its path is not quarantined: a quarantined row stays the
     /// last-known location but is never a registry hit, so a load misses and
-    /// takes the targeted rescan that runs the helper instead of loading a
-    /// plugin whose helper just crashed.
+    /// is refused as quarantined instead of loading a plugin whose helper just
+    /// crashed.
     /// Anything else is a plugin that has been updated, replaced or removed
     /// since, and resolving it would hand activation a path whose contents no
     /// longer match the descriptor id recorded next to it.
@@ -894,6 +899,31 @@ impl PluginRegistryStore {
             .cloned()
     }
 
+    /// The quarantine a load must honour for `path` right now, whichever
+    /// process wrote it and whenever this one hydrated.
+    ///
+    /// A key this process has decided about and not yet written answers from
+    /// that decision. Every other key answers from the file's quarantine column,
+    /// read fresh: the scan runs in another process, and a binary it quarantined
+    /// after this process hydrated must not load here on the strength of an
+    /// older view. When the column cannot be read — no file, an unreadable or
+    /// foreign one — the answer is this process's own record, so a read failure
+    /// can only keep a quarantine in force, never lift one.
+    pub fn quarantine_in_force(&self, path: &Path) -> Option<PersistedQuarantineEntry> {
+        let key = path.display().to_string();
+        let location = {
+            let stored = self.lock_stored();
+            match self.location.as_deref() {
+                Some(location) if !stored.quarantine_touched.contains(&key) => location,
+                _ => return stored.quarantine.get(&key).cloned(),
+            }
+        };
+        match read_quarantine_column(location) {
+            Some(column) => column.get(&key).cloned(),
+            None => self.lock_stored().quarantine.get(&key).cloned(),
+        }
+    }
+
     /// Record a scan helper's process-level failure against `path`, replacing
     /// any earlier record for it.
     ///
@@ -1062,9 +1092,9 @@ impl PluginRegistryStore {
     /// A row whose path is quarantined is kept whatever the predicate says. A
     /// quarantined candidate is scanned but publishes nothing, so the
     /// predicate reads it as gone; dropping the row would erase the
-    /// last-known location the activation miss path rescans to surface the
-    /// real refusal, and ordinary scans skip the candidate so nothing would
-    /// ever restore it. Quarantine keys are the candidate path's display
+    /// last-known location the activation miss path needs to refuse the load
+    /// as quarantined rather than as unknown, and ordinary scans skip the
+    /// candidate so nothing would ever restore it. Quarantine keys are the candidate path's display
     /// string, the same string a row stores as its `plugin.path`.
     ///
     /// The scope is also kept, folded into a bounded set of removed roots and
@@ -1116,13 +1146,26 @@ impl PluginRegistryStore {
     ///
     /// A decision made here and not yet written outranks every file row for
     /// its key, including one the other process wrote after the decision,
-    /// until this process writes: the file cannot say which came later.
-    /// Cross-process writes have no lock either, so when both processes read
-    /// the file before either renames its temporary file over it, the later
-    /// rename wins. The known cases are tracked in #7366. The merge holds only
-    /// when the file reads; one that exists and cannot be read is replaced by
-    /// this process's view alone. A successful write empties the decisions, so
-    /// a row written once stops outranking the file.
+    /// until this process writes: the file cannot say which came later. A
+    /// successful write empties every decision — rows, removals, quarantine and
+    /// consumption keys — so a value written once stops outranking the file and
+    /// a later write by the other process stands.
+    ///
+    /// The read, merge, write and rename run under an exclusive advisory lock
+    /// on a sidecar file beside the registry ([`lock_registry_file`]), which
+    /// every store over the file takes, in this process or the other one.
+    /// Without it both processes could read one version and the later rename
+    /// would drop the earlier one's rows. Readers take no lock: the rename is
+    /// atomic, so they see one whole version. Nothing is written when the lock
+    /// cannot be taken or the file exists and cannot be read — a transient I/O
+    /// failure must not write a file missing every row and quarantine record
+    /// the other process owns. Memory then stays ahead of disk with every
+    /// decision still pending, and the next persist writes them. A missing file
+    /// is the first-run state and merges over nothing. A file that reads but is
+    /// malformed, from another schema or oversized is a corrupt or foreign file
+    /// rather than a sibling's half-written one, since every sibling write is
+    /// an atomic rename under the lock, so it is replaced as before: by this
+    /// process's view, over whatever keyed columns it still yields.
     ///
     /// Each row is written with the fingerprint it carries, and this function
     /// never stats the file itself: the caller fingerprinted the file while its
@@ -1170,12 +1213,38 @@ impl PluginRegistryStore {
             }
         }
 
+        {
+            let mut stored = self.lock_stored();
+            stored
+                .entries_touched
+                .extend(scanned_this_session.keys().cloned());
+            stored.entries.extend(scanned_this_session);
+        }
+
+        // Taken before `stored`, never under it: the other process can hold
+        // the file lock for a whole write, and nothing in this process should
+        // queue behind that for a lookup.
+        let _write_lock = match lock_registry_file(location) {
+            Ok(lock) => lock,
+            Err(error) => {
+                eprintln!(
+                    "[Plugin] Could not save the plugin scan registry: cannot lock {}: {error}",
+                    registry_lock_location(location).display()
+                );
+                return;
+            }
+        };
         let mut stored = self.lock_stored();
-        stored
-            .entries_touched
-            .extend(scanned_this_session.keys().cloned());
-        stored.entries.extend(scanned_this_session);
-        let on_disk = read_registry_file(location);
+        let on_disk = match read_registry_file(location) {
+            Ok(on_disk) => on_disk,
+            Err(error) => {
+                eprintln!(
+                    "[Plugin] Could not save the plugin scan registry: cannot read {}: {error}",
+                    location.display()
+                );
+                return;
+            }
+        };
 
         // The quarantine column gets the same "never resurrect what a sibling
         // removed, never erase what a sibling added" treatment as `entries`,
@@ -1231,6 +1300,8 @@ impl PluginRegistryStore {
                 stored.quarantine = quarantine;
                 stored.scan_consumption = scan_consumption;
                 stored.entries_touched.clear();
+                stored.quarantine_touched.clear();
+                stored.scan_consumption_touched.clear();
                 stored.pending_removals.clear();
             }
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
@@ -1612,6 +1683,7 @@ enum BoundedRead<T> {
     Parsed(T),
     Malformed,
     PastByteBound,
+    Unreadable(std::io::Error),
 }
 
 /// Parse `source`, refusing anything that reads past `max_bytes`.
@@ -1637,30 +1709,76 @@ fn read_within_byte_bound<T: DeserializeOwned>(
         inner: BufReader::new(source.take(max_bytes + 1)),
         bytes: 0,
     };
-    let parsed = serde_json::from_reader(&mut reader).ok();
+    let parsed = serde_json::from_reader(&mut reader);
     if reader.bytes > max_bytes {
         return BoundedRead::PastByteBound;
     }
     match parsed {
-        Some(value) => BoundedRead::Parsed(value),
-        None => BoundedRead::Malformed,
+        Ok(value) => BoundedRead::Parsed(value),
+        Err(error) if error.is_io() => BoundedRead::Unreadable(error.into()),
+        Err(_) => BoundedRead::Malformed,
     }
 }
 
+/// What reading one shape out of the registry file found.
+enum RegistryFileContents<T> {
+    /// No file: the first-run state.
+    Missing,
+    /// A file this build cannot use: malformed, or past the byte bound.
+    Unusable,
+    /// A file that is there and could not be read.
+    Unreadable(std::io::Error),
+    Parsed(T),
+}
+
 /// Read one shape out of the registry file, under the byte bound.
-fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T> {
-    let file = File::open(location).ok()?;
+fn read_registry_file_contents<T: DeserializeOwned>(location: &Path) -> RegistryFileContents<T> {
+    let file = match File::open(location) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return RegistryFileContents::Missing
+        }
+        Err(error) => return RegistryFileContents::Unreadable(error),
+    };
     match read_within_byte_bound(file, MAX_REGISTRY_FILE_BYTES) {
-        BoundedRead::Parsed(value) => Some(value),
-        BoundedRead::Malformed => None,
+        BoundedRead::Parsed(value) => RegistryFileContents::Parsed(value),
+        BoundedRead::Malformed => RegistryFileContents::Unusable,
+        BoundedRead::Unreadable(error) => RegistryFileContents::Unreadable(error),
         BoundedRead::PastByteBound => {
             eprintln!(
                 "[Plugin] Ignoring an oversized plugin scan registry at {}",
                 location.display()
             );
-            None
+            RegistryFileContents::Unusable
         }
     }
+}
+
+/// One shape out of the registry file, or nothing, whatever kept it out.
+fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T> {
+    match read_registry_file_contents(location) {
+        RegistryFileContents::Parsed(value) => Some(value),
+        RegistryFileContents::Missing
+        | RegistryFileContents::Unusable
+        | RegistryFileContents::Unreadable(_) => None,
+    }
+}
+
+/// The quarantine column alone, at this build's own schema; see
+/// [`PluginRegistryStore::quarantine_in_force`].
+#[derive(Deserialize)]
+struct QuarantineColumn {
+    schema_version: u32,
+    #[serde(default)]
+    quarantine: Option<BTreeMap<String, PersistedQuarantineEntry>>,
+}
+
+/// The file's current quarantine column, or nothing when the file holds none
+/// this build can read.
+fn read_quarantine_column(location: &Path) -> Option<BTreeMap<String, PersistedQuarantineEntry>> {
+    read_bounded_registry_file::<QuarantineColumn>(location)
+        .filter(|column| column.schema_version == SCAN_REGISTRY_SCHEMA_VERSION)
+        .and_then(|column| column.quarantine)
 }
 
 /// The keyed columns of whatever is on disk now, at this build's own schema,
@@ -1682,21 +1800,36 @@ fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T>
 /// cannot be read — another schema, a row this build cannot parse, no
 /// `quarantine` column, more rows than a scan can produce — while the columns
 /// survive that, as above.
-fn read_registry_file(location: &Path) -> RegistryFileRead {
-    let Some(columns) = read_bounded_registry_file::<KeyedColumns>(location)
-        .filter(|columns| columns.schema_version == SCAN_REGISTRY_SCHEMA_VERSION)
-    else {
-        return RegistryFileRead::default();
+///
+/// A missing file reads as an empty one. A file that is there and cannot be
+/// read is the error, because nothing about what it holds is known.
+fn read_registry_file(location: &Path) -> Result<RegistryFileRead, std::io::Error> {
+    let columns = match read_registry_file_contents::<KeyedColumns>(location) {
+        RegistryFileContents::Parsed(columns)
+            if columns.schema_version == SCAN_REGISTRY_SCHEMA_VERSION =>
+        {
+            columns
+        }
+        RegistryFileContents::Missing => {
+            return Ok(RegistryFileRead {
+                entries: Some(BTreeMap::new()),
+                ..RegistryFileRead::default()
+            })
+        }
+        RegistryFileContents::Unreadable(error) => return Err(error),
+        RegistryFileContents::Parsed(_) | RegistryFileContents::Unusable => {
+            return Ok(RegistryFileRead::default())
+        }
     };
     let entries = match (columns.entries, columns.quarantine.is_some()) {
         (Some(rows), true) => parse_entries_within_bound(location, rows),
         _ => None,
     };
-    RegistryFileRead {
+    Ok(RegistryFileRead {
         entries,
         quarantine: columns.quarantine.unwrap_or_default(),
         scan_consumption: columns.scan_consumption,
-    }
+    })
 }
 
 /// What one read of the registry file yielded; see [`read_registry_file`].
@@ -1783,6 +1916,35 @@ fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
         return None;
     }
     Some(document)
+}
+
+/// The sidecar file whose lock serializes every write of the registry at
+/// `location`. Beside it, so every process that writes the registry finds the
+/// same one.
+fn registry_lock_location(location: &Path) -> PathBuf {
+    let mut lock = location.as_os_str().to_owned();
+    lock.push(".lock");
+    PathBuf::from(lock)
+}
+
+/// Take the exclusive lock every [`PluginRegistryStore::persist`] over
+/// `location` holds from its read to its rename, waiting for a holder in any
+/// process. Released when the returned file is dropped, and by the operating
+/// system when its holder dies.
+///
+/// A sidecar rather than the registry itself: the rename replaces the
+/// registry's inode, so a lock on it would guard a file no later writer opens.
+fn lock_registry_file(location: &Path) -> std::io::Result<File> {
+    if let Some(directory) = location.parent() {
+        fs::create_dir_all(directory)?;
+    }
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(registry_lock_location(location))?;
+    lock.lock()?;
+    Ok(lock)
 }
 
 /// Write through a temporary file and rename over the target, so a process that
@@ -3918,6 +4080,221 @@ mod tests {
         assert_eq!(
             store.recent_scan_consumption(plugin_path, last_recent_ms + 2),
             Some(1 << 20)
+        );
+    }
+
+    /// A quarantine this process wrote is the file's once written: the other
+    /// process's later clear of it, a retry of quarantined plugins, stands
+    /// through every later persist here.
+    ///
+    /// Mutation this catches: keeping `quarantine_touched` after a successful
+    /// write, which overlays the stale quarantine on every later persist.
+    #[test]
+    fn a_quarantine_written_here_and_cleared_there_is_not_restored_by_a_later_persist() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-cleared-elsewhere");
+        let hostile_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let other_path = test_root.write_plugin_file("Delay.clap", b"clap-bytes-2");
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        session.quarantine_failure(&hostile_path, "Plugin scan helper timed out".to_string(), 1);
+        session.persist(&[]);
+        let scan_process = test_root.store();
+        scan_process.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        scan_process.clear_quarantine(&hostile_path);
+        scan_process.persist(&[]);
+
+        session.persist(&one_row(&other_path, "yyyy0002"));
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.is_quarantined(&hostile_path).is_none(),
+            "a quarantine the other process cleared must stay cleared"
+        );
+        assert!(next_launch.last_known_entry("yyyy0002").is_some());
+    }
+
+    /// The converse: a clear this process wrote does not erase the other
+    /// process's later re-quarantine of the same binary.
+    ///
+    /// Mutation this catches: keeping `quarantine_touched` after a successful
+    /// write, which overlays the stale clear on every later persist.
+    #[test]
+    fn a_quarantine_cleared_here_and_set_again_there_is_not_erased_by_a_later_persist() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-set-again-elsewhere");
+        let hostile_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let other_path = test_root.write_plugin_file("Delay.clap", b"clap-bytes-2");
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        session.quarantine_failure(&hostile_path, "Plugin scan helper timed out".to_string(), 1);
+        session.clear_quarantine(&hostile_path);
+        session.persist(&[]);
+        let scan_process = test_root.store();
+        scan_process.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        scan_process.quarantine_failure(
+            &hostile_path,
+            "Plugin scan helper exited unsuccessfully".to_string(),
+            2,
+        );
+        scan_process.persist(&[]);
+
+        session.persist(&one_row(&other_path, "yyyy0002"));
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        let quarantined = next_launch
+            .is_quarantined(&hostile_path)
+            .expect("the other process's re-quarantine must survive a persist here");
+        assert_eq!(
+            quarantined.reason,
+            "Plugin scan helper exited unsuccessfully"
+        );
+    }
+
+    /// A consumption measurement this process wrote and the other process
+    /// later expired stays expired through a later persist here.
+    ///
+    /// Mutation this catches: keeping `scan_consumption_touched` after a
+    /// successful write.
+    #[test]
+    fn a_scan_consumption_written_here_and_expired_there_is_not_restored_by_a_later_persist() {
+        let test_root = TestRegistryRoot::create("registry-consumption-expired-elsewhere");
+        let measured_path = test_root.write_plugin_file("Heavy.clap", b"clap-bytes");
+        let later_path = test_root.write_plugin_file("Light.clap", b"clap-bytes-2");
+        let measured_at_ms = 1_700_000_000_000;
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        session.record_scan_consumption(&measured_path, 1 << 20, measured_at_ms);
+        session.persist(&[]);
+        let scan_process = test_root.store();
+        scan_process.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        scan_process.record_scan_consumption(
+            &later_path,
+            1 << 10,
+            measured_at_ms + SCAN_CONSUMPTION_WINDOW_MS + 1,
+        );
+        scan_process.persist(&[]);
+
+        session.persist(&one_row(&later_path, "yyyy0002"));
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert_eq!(
+            next_launch.recent_scan_consumption(&measured_path, measured_at_ms),
+            None,
+            "a measurement the other process expired must stay expired"
+        );
+    }
+
+    /// Every persist over one file takes the sidecar lock from its read to its
+    /// rename, so a persist that starts while another writer holds the lock
+    /// writes nothing until the holder lets go, and then writes.
+    ///
+    /// Mutation this catches: dropping `lock_registry_file` from `persist`,
+    /// which writes while the lock is held.
+    #[test]
+    fn a_persist_waits_for_the_registry_lock_and_writes_once_it_is_released() {
+        let test_root = TestRegistryRoot::create("registry-persist-lock");
+        let first_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let second_path = test_root.write_plugin_file("Delay.clap", b"clap-bytes-2");
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        test_root.store().persist(&one_row(&first_path, "xxxx0001"));
+        let before = fs::read(&location).expect("the registry was written");
+
+        let held = lock_registry_file(&location).expect("the test takes the registry lock");
+        let session = std::sync::Arc::new(test_root.store());
+        let (finished, persisted) = std::sync::mpsc::channel();
+        let writer = {
+            let session = std::sync::Arc::clone(&session);
+            let rows = one_row(&second_path, "yyyy0002");
+            std::thread::spawn(move || {
+                session.persist(&rows);
+                let _ = finished.send(());
+            })
+        };
+        // The rows are recorded before the lock is taken and stay unwritten
+        // for as long as the lock is held.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !session.has_unwritten_decision("yyyy0002") {
+            assert!(
+                Instant::now() < deadline,
+                "the persist never recorded its rows"
+            );
+            std::thread::yield_now();
+        }
+        assert!(
+            persisted.recv_timeout(Duration::from_millis(300)).is_err(),
+            "a persist must not finish while another writer holds the lock"
+        );
+        assert_eq!(
+            fs::read(&location).expect("the registry is still there"),
+            before,
+            "nothing is written while the lock is held"
+        );
+
+        drop(held);
+        persisted
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the persist finishes once the lock is released");
+        writer.join().expect("the writer thread finishes");
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(next_launch.last_known_entry("xxxx0001").is_some());
+        assert!(next_launch.last_known_entry("yyyy0002").is_some());
+    }
+
+    /// A registry file that is there and cannot be read says nothing about
+    /// the other process's rows, so a persist writes nothing over it and keeps
+    /// its own decisions for the next persist, which merges them over the
+    /// file's rows once it reads again.
+    ///
+    /// Mutation this catches: treating an unreadable file as an absent or
+    /// malformed one, which renames this process's view alone over it.
+    #[cfg(unix)]
+    #[test]
+    fn a_persist_over_an_unreadable_registry_writes_nothing_and_keeps_its_rows_pending() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_root = TestRegistryRoot::create("registry-persist-unreadable");
+        let first_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let second_path = test_root.write_plugin_file("Delay.clap", b"clap-bytes-2");
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        let session = test_root.store();
+        session.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        // Written by the other process after this one hydrated, so this
+        // process's own view has no row for it.
+        test_root.store().persist(&one_row(&first_path, "xxxx0001"));
+        let before = fs::read(&location).expect("the registry was written");
+
+        fs::set_permissions(&location, fs::Permissions::from_mode(0o000))
+            .expect("the registry is made unreadable");
+        assert!(
+            File::open(&location).is_err(),
+            "the registry must be unreadable for this test to observe anything"
+        );
+        session.persist(&one_row(&second_path, "yyyy0002"));
+        fs::set_permissions(&location, fs::Permissions::from_mode(0o644))
+            .expect("the registry is made readable again");
+
+        assert_eq!(
+            fs::read(&location).expect("the registry is still there"),
+            before,
+            "nothing is written over a registry that could not be read"
+        );
+        assert!(session.has_unwritten_decision("yyyy0002"));
+
+        session.persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.last_known_entry("xxxx0001").is_some(),
+            "the other process's row survives"
+        );
+        assert!(
+            next_launch.last_known_entry("yyyy0002").is_some(),
+            "the decision kept pending is written by the next persist"
         );
     }
 }
