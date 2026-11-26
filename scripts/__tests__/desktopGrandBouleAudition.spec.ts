@@ -4,7 +4,11 @@ import { runInNewContext } from 'node:vm';
 import { type Page } from 'playwright';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { assertBlackHoleInput, cardDeviceId } from '../desktopGrandBouleAuditionDrive.ts';
+import {
+    assertBlackHoleInput,
+    blackHoleCaptureAllowsHiddenDefault,
+    cardDeviceId,
+} from '../desktopGrandBouleAuditionDrive.ts';
 import {
     auditionFailure,
     freshAuditionObservations,
@@ -277,9 +281,78 @@ describe('BlackHole renderer capture admission', () => {
 
     afterEach(() => vi.unstubAllGlobals());
 
-    it('pins the concealed default and admits it only after a fresh enumeration binds its group to BlackHole', async () => {
+    it('refuses concealed input without explicit host isolation before any media request', async () => {
         const route = renderer();
-        await expect(openBlackHoleMedia(name)).resolves.toMatchObject({ input: name, track: route.track });
+
+        await expect(openBlackHoleMedia({ device: name })).rejects.toThrow('capture-named-input-unavailable');
+        expect(route.getUserMedia).not.toHaveBeenCalled();
+    });
+
+    function host(current = name, available = name) {
+        return vi.fn((args: string[]) => {
+            if (args.join(' ') === '-a -t input') {
+                return available;
+            }
+            if (args.join(' ') === '-c -t input') {
+                return current;
+            }
+            throw new Error('unexpected audio command');
+        });
+    }
+
+    it.each([
+        ['local host', '', name, [['-c', '-t', 'input']]],
+        ['self-hosted runner', 'self-hosted', name, [['-c', '-t', 'input']]],
+        [
+            'hosted runner with a competing input',
+            'github-hosted',
+            name + '\nBuilt-in Microphone',
+            [
+                ['-a', '-t', 'input'],
+                ['-c', '-t', 'input'],
+            ],
+        ],
+        [
+            'hosted runner with duplicate virtual inputs',
+            'github-hosted',
+            name + '\n' + name,
+            [
+                ['-a', '-t', 'input'],
+                ['-c', '-t', 'input'],
+            ],
+        ],
+    ] as const)(
+        'refuses hidden capture on a %s before any media request',
+        async (_host, environment, available, calls) => {
+            const route = renderer();
+            const run = host(name, available);
+            const allowHiddenDefault = blackHoleCaptureAllowsHiddenDefault(run, environment);
+
+            await expect(openBlackHoleMedia({ device: name, allowHiddenDefault })).rejects.toThrow(
+                'capture-named-input-unavailable'
+            );
+            expect(run.mock.calls).toEqual(calls.map((args) => [args]));
+            expect(route.getUserMedia).not.toHaveBeenCalled();
+        }
+    );
+
+    it('checks the current input after the hosted inventory and refuses a drifted default', () => {
+        const run = host('Built-in Microphone');
+
+        expect(() => blackHoleCaptureAllowsHiddenDefault(run, 'github-hosted')).toThrow();
+        expect(run.mock.calls).toEqual([[['-a', '-t', 'input']], [['-c', '-t', 'input']]]);
+    });
+
+    it('pins the hosted singleton default and freshly binds its revealed group to BlackHole', async () => {
+        const route = renderer();
+        const run = host();
+        const allowHiddenDefault = blackHoleCaptureAllowsHiddenDefault(run, 'github-hosted');
+
+        await expect(openBlackHoleMedia({ device: name, allowHiddenDefault })).resolves.toMatchObject({
+            input: name,
+            track: route.track,
+        });
+        expect(run.mock.calls).toEqual([[['-a', '-t', 'input']], [['-c', '-t', 'input']]]);
         expect(route.getUserMedia).toHaveBeenCalledExactlyOnceWith({
             audio: {
                 deviceId: { exact: 'default' },
@@ -302,7 +375,7 @@ describe('BlackHole renderer capture admission', () => {
             label: name,
             deviceId: 'virtual-id',
         });
-        await expect(openBlackHoleMedia(name)).resolves.toMatchObject({ input: name, track: route.track });
+        await expect(openBlackHoleMedia({ device: name })).resolves.toMatchObject({ input: name, track: route.track });
         expect(route.getUserMedia).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({ audio: expect.objectContaining({ deviceId: { exact: 'virtual-id' } }) })
         );
@@ -314,7 +387,7 @@ describe('BlackHole renderer capture admission', () => {
         ['two same-named inputs', [input('left', name, 'one'), input('right', name, 'two')]],
     ] as const)('rejects %s before any media request', async (_case, before) => {
         const route = renderer({ before: [...before] });
-        await expect(openBlackHoleMedia(name)).rejects.toThrow('capture-named-input-unavailable');
+        await expect(openBlackHoleMedia({ device: name })).rejects.toThrow('capture-named-input-unavailable');
         expect(route.getUserMedia).not.toHaveBeenCalled();
     });
 
@@ -331,13 +404,17 @@ describe('BlackHole renderer capture admission', () => {
         ['a missing concrete input', { after: [input('default', 'Standard – BlackHole 2ch', 'virtual')] }],
     ] as const)('stops capture when there is %s', async (_case, options) => {
         const route = renderer(options);
-        await expect(openBlackHoleMedia(name)).rejects.toThrow('capture-returned-input-mismatch');
+        await expect(openBlackHoleMedia({ device: name, allowHiddenDefault: true })).rejects.toThrow(
+            'capture-returned-input-mismatch'
+        );
         expect(route.stop).toHaveBeenCalledOnce();
     });
 
     it('stops a processed stream and does not admit it as raw output evidence', async () => {
         const route = renderer({ echoCancellation: true });
-        await expect(openBlackHoleMedia(name)).rejects.toThrow('capture-raw-input-unavailable');
+        await expect(openBlackHoleMedia({ device: name, allowHiddenDefault: true })).rejects.toThrow(
+            'capture-raw-input-unavailable'
+        );
         expect(route.stop).toHaveBeenCalledOnce();
     });
 
@@ -353,7 +430,11 @@ describe('BlackHole renderer capture admission', () => {
                 .fn<Page['evaluateHandle']>()
                 .mockRejectedValue(new Error(`page.evaluateHandle: ${detail}\n    at private renderer path`)),
         };
-        const failure = await captureBlackHole(page).catch(captureAdmissionFailure);
+        const failure = await captureBlackHole(page, true).catch(captureAdmissionFailure);
+        expect(page.evaluateHandle).toHaveBeenCalledExactlyOnceWith(openBlackHoleMedia, {
+            device: name,
+            allowHiddenDefault: true,
+        });
         expect(failure).toBe(code);
     });
 });

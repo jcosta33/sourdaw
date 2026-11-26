@@ -104,7 +104,13 @@ function admissionError(stage: 'input' | 'worklet' | 'graph', error: unknown): C
 }
 
 /** Runs in the packaged app renderer. The caller verifies the OS input before the request. */
-export async function openBlackHoleMedia(device: string) {
+export async function openBlackHoleMedia({
+    device,
+    allowHiddenDefault = false,
+}: {
+    device: string;
+    allowHiddenDefault?: boolean;
+}) {
     const media = navigator.mediaDevices;
     if (!media) {
         throw new Error('capture-media-devices-unavailable');
@@ -136,10 +142,10 @@ export async function openBlackHoleMedia(device: string) {
     }
     const inputs = await listInputs();
     const named = findNamed(inputs);
-    if (named.length > 1 || (named.length === 0 && inputs.some((entry) => entry.label))) {
+    if (named.length > 1 || (named.length === 0 && (!allowHiddenDefault || inputs.some((entry) => entry.label)))) {
         throw new Error('capture-named-input-unavailable');
     }
-    // With labels concealed, Chromium must request the already verified OS default explicitly.
+    // An isolated runner can use its verified default until Chromium reveals the labels.
     const deviceId = named[0]?.deviceId ?? 'default';
     const stream = await media.getUserMedia({
         audio: {
@@ -184,10 +190,12 @@ export async function openBlackHoleMedia(device: string) {
 }
 
 /** Isolated receive-only graph. It never connects to any audible destination. */
-export async function captureBlackHole(page: Pick<Page, 'evaluateHandle'>) {
-    const media = await page.evaluateHandle(openBlackHoleMedia, BLACKHOLE_INPUT).catch((error: unknown) => {
-        throw admissionError('input', error);
-    });
+export async function captureBlackHole(page: Pick<Page, 'evaluateHandle'>, allowHiddenDefault = false) {
+    const media = await page
+        .evaluateHandle(openBlackHoleMedia, { device: BLACKHOLE_INPUT, allowHiddenDefault })
+        .catch((error: unknown) => {
+            throw admissionError('input', error);
+        });
     let stage: 'worklet' | 'graph' = 'worklet';
     try {
         await media.evaluate(async (receiver, source) => {
