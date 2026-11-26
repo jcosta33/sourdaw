@@ -1,12 +1,12 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
-import { Bug, Code2, Ellipsis, History, Link2, MessageCircle, Scale, Users } from 'lucide-react';
+import { Bug, Code2, Ellipsis, Link2, MessageCircle, Scale } from 'lucide-react';
 
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { DawMetricCluster } from '#/components/daw/DawMetricCluster';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { DawStatusDot, getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
+import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import {
@@ -22,17 +22,13 @@ import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore, type LlmEngineStatus } from '#/modules/AiRuntime/stores';
 import { renderQueueStore } from '#/modules/BrowserAi/stores';
 
-import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggles/toggleCollaborationPanel';
-import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles/toggleUndoHistory';
-import { useCollaborationState } from '../hooks/useCollaborationState';
-import { useSelectionLabel } from '../hooks/useSelectionLabel';
 import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
-import { useUndoState } from '../hooks/useUndoState';
 import { PROJECT_LINKS } from '../projectLinks';
 
 import { CvOutputStatusBadge } from './CvOutputStatusBadge';
 import { MidiStatusBadge } from './MidiStatusBadge';
 import { MonitorStatusBadge } from './MonitorStatusBadge';
+import { CollaborationButton, LastActionReadout, SelectionReadout, UndoHistoryButton } from './StatusBarReadouts';
 
 // The expanded footer needed 1,191 CSS px to contain its active monitor/CV
 // controls in the exact 575px reproduction. Match the transport's established
@@ -48,9 +44,6 @@ const isCompactStatusBarViewport = (): boolean => {
 };
 
 export const StatusBar = (): ReactElement => {
-    const undoState = useUndoState();
-    const collab = useCollaborationState();
-    const selectionLabel = useSelectionLabel();
     const footerRef = useRef<HTMLElement>(null);
     const moreTriggerRef = useRef<HTMLButtonElement>(null);
     const moreSurfaceRef = useRef<HTMLDivElement>(null);
@@ -388,41 +381,9 @@ export const StatusBar = (): ReactElement => {
                 <TooltipContent>Third-party licenses and source</TooltipContent>
             </Tooltip>
             {renderProjectLinks(insideMore)}
-            <Button
-                variant="ghost"
-                size="xs"
-                className="flex h-5 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-                onClick={toggleCollaborationPanel}
-                aria-label="Toggle collaboration panel"
-                data-testid="toggle-collaboration"
-                title="Collaboration"
-            >
-                <DawStatusDot tone={collab.connectionStatus === 'connected' ? 'success' : 'muted'} />
-                <Users className="size-3" />
-                {collab.isEnabled ? collab.peers.length : 0}
-            </Button>
-            <Button
-                variant="ghost"
-                size="xs"
-                className="flex h-5 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-                onClick={toggleUndoHistory}
-                aria-label="Toggle undo history panel"
-                title="Undo history"
-            >
-                <History className="size-3" />
-                {undoState.undoCount} undo{undoState.undoCount !== 1 ? 's' : ''}
-            </Button>
+            <CollaborationButton />
+            <UndoHistoryButton />
         </>
-    );
-
-    const renderSelection = (): ReactElement => (
-        <span
-            role="status"
-            className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground"
-            title={selectionLabel}
-        >
-            {selectionLabel}
-        </span>
     );
 
     const renderCriticalStatus = (): ReactElement => (
@@ -443,11 +404,7 @@ export const StatusBar = (): ReactElement => {
                 {renderMeterMetrics()}
             </Row>
             <Row gap={3} wrap className="min-w-0 border-t border-border-soft pt-2">
-                {undoState.lastAction ? (
-                    <span className="max-w-full break-words text-[10px] text-muted-foreground/60">
-                        Last: {undoState.lastAction.label}
-                    </span>
-                ) : null}
+                <LastActionReadout className="max-w-full break-words text-[10px] text-muted-foreground/60" />
                 <MidiStatusBadge />
                 {renderActions(true)}
             </Row>
@@ -467,7 +424,7 @@ export const StatusBar = (): ReactElement => {
                     <Row gap={2} className="min-w-0 flex-1">
                         {renderCriticalStatus()}
                         {renderDeviceReadouts()}
-                        {renderSelection()}
+                        <SelectionReadout />
                     </Row>
                     <Popover open={moreOpen} onOpenChange={setMorePopoverOpen}>
                         <PopoverTrigger asChild>
@@ -497,13 +454,9 @@ export const StatusBar = (): ReactElement => {
                         {renderMeterMetrics()}
                         {renderDeviceReadouts()}
                     </Row>
-                    {renderSelection()}
+                    <SelectionReadout />
                     <Row gap={3} className="min-w-0 shrink-0">
-                        {undoState.lastAction ? (
-                            <span className="max-w-56 truncate text-[10px] text-muted-foreground/60">
-                                Last: {undoState.lastAction.label}
-                            </span>
-                        ) : null}
+                        <LastActionReadout className="max-w-56 truncate text-[10px] text-muted-foreground/60" />
                         <MidiStatusBadge />
                         {renderCriticalStatus()}
                         {renderActions(false)}
