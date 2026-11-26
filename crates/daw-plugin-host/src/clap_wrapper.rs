@@ -93,7 +93,7 @@ use clap_sys::ext::note_ports::{
 };
 use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
-    CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
+    CLAP_PARAM_IS_ENUM, CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY, CLAP_PARAM_IS_STEPPED,
 };
 use clap_sys::ext::render::{clap_plugin_render, CLAP_EXT_RENDER, CLAP_RENDER_OFFLINE};
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
@@ -1056,6 +1056,20 @@ fn bounded_parameter_name(value: &[std::os::raw::c_char]) -> Option<String> {
         .map(|character| *character as u8)
         .collect::<Vec<_>>();
     Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Room for one parameter's value text; a longer answer is the plugin's to
+/// truncate, and one that fills it without terminating reads as no text.
+const CLAP_PARAMETER_TEXT_CAPACITY: usize = 256;
+
+/// The step count the seam reports for a CLAP parameter: 0 when continuous,
+/// else the span of its range, at least 1 so a stepped parameter is never
+/// read as continuous.
+fn clap_step_count(info: &clap_param_info) -> u32 {
+    if info.flags & CLAP_PARAM_IS_STEPPED == 0 {
+        return 0;
+    }
+    ((info.max_value - info.min_value).round() as u32).max(1)
 }
 
 impl ClapWrapper {
@@ -3902,10 +3916,51 @@ impl AudioPlugin for ClapWrapper {
                 max_value: info.max_value,
                 unit: None, // CLAP does not expose units in clap_param_info
                 is_automatable: is_automatable && !is_readonly,
+                display_text: self.parameter_value_text(info.id, current_value),
+                step_count: clap_step_count(&info),
+                is_list: info.flags & CLAP_PARAM_IS_ENUM != 0,
+                is_read_only: is_readonly,
             });
         }
 
         result
+    }
+
+    fn parameter_value_text(&self, param_id: u32, value: f64) -> Option<String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            observe_vendor_call(fixture);
+            return fixture
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == param_id)
+                .and_then(|parameter| parameter.display_text.clone());
+        }
+
+        if self.params_ext.is_null() || self.plugin.is_null() {
+            return None;
+        }
+
+        // SAFETY: non-null (checked above); `params_ext` is the plugin's own extension
+        // struct from load, valid while the instance `self` owns is alive.
+        let params = unsafe { &*self.params_ext };
+        let value_to_text = params.value_to_text?;
+        let mut buffer = [0 as std::os::raw::c_char; CLAP_PARAMETER_TEXT_CAPACITY];
+        // SAFETY: the extension's `value_to_text`, matched as `Some`, on the live
+        // instance with a writable buffer of the capacity passed beside it.
+        let answered = unsafe {
+            value_to_text(
+                self.plugin,
+                param_id,
+                value,
+                buffer.as_mut_ptr(),
+                CLAP_PARAMETER_TEXT_CAPACITY as u32,
+            )
+        };
+        if !answered {
+            return None;
+        }
+        bounded_parameter_name(&buffer).filter(|text| !text.is_empty())
     }
 
     /// The plugin's saved state, or its refusal to produce one.
@@ -8002,6 +8057,132 @@ mod tests {
             AudioPlugin::get_parameters(&wrapper).is_empty(),
             "a parameter whose name cannot be read within its own bounds is skipped, like one whose get_info refused"
         );
+    }
+
+    unsafe extern "C" fn text_parameter_count(_plugin: *const clap_plugin) -> u32 {
+        2
+    }
+
+    unsafe extern "C" fn text_parameter_info(
+        _plugin: *const clap_plugin,
+        index: u32,
+        info: *mut clap_param_info,
+    ) -> bool {
+        if index > 1 || info.is_null() {
+            return false;
+        }
+        // SAFETY: `clap_param_info` is integers, floats, char arrays and a raw
+        // pointer, for all of which all-zero bytes are valid.
+        let mut parameter: clap_param_info = unsafe { mem::zeroed() };
+        // The stepped parameter's range is -2..2, so its step count (4) is the
+        // span, which neither its maximum nor its minimum alone gives.
+        let (id, name, flags, min_value, max_value) = if index == 0 {
+            (
+                21,
+                b"Shape",
+                CLAP_PARAM_IS_AUTOMATABLE
+                    | CLAP_PARAM_IS_STEPPED
+                    | CLAP_PARAM_IS_ENUM
+                    | CLAP_PARAM_IS_READONLY,
+                -2.0,
+                2.0,
+            )
+        } else {
+            (22, b"Level", CLAP_PARAM_IS_AUTOMATABLE, 0.0, 1.0)
+        };
+        for (slot, byte) in parameter.name.iter_mut().zip(name) {
+            *slot = *byte as std::os::raw::c_char;
+        }
+        parameter.id = id;
+        parameter.flags = flags;
+        parameter.min_value = min_value;
+        parameter.max_value = max_value;
+        // SAFETY: non-null (checked above); the host passes a live, writable out-param.
+        unsafe { *info = parameter };
+        true
+    }
+
+    unsafe extern "C" fn text_parameter_value(
+        _plugin: *const clap_plugin,
+        _id: u32,
+        value: *mut f64,
+    ) -> bool {
+        // SAFETY: the host passes a live, writable out-param.
+        unsafe { *value = 2.0 };
+        true
+    }
+
+    /// Answers text for the stepped parameter; the other refuses, after writing
+    /// text anyway, so only the refusal itself can keep that text from the host.
+    unsafe extern "C" fn text_parameter_value_to_text(
+        _plugin: *const clap_plugin,
+        id: u32,
+        value: f64,
+        out_buffer: *mut std::os::raw::c_char,
+        out_buffer_capacity: u32,
+    ) -> bool {
+        let text = if id == 21 {
+            format!("Saw {value}\0")
+        } else {
+            format!("Refused {value}\0")
+        };
+        assert!(text.len() <= out_buffer_capacity as usize);
+        for (offset, byte) in text.bytes().enumerate() {
+            // SAFETY: `offset` is within the capacity the host passed (asserted above).
+            let slot = unsafe { out_buffer.add(offset) };
+            // SAFETY: `slot` points inside the host's writable buffer, per the bound above.
+            unsafe { *slot = byte as std::os::raw::c_char };
+        }
+        id == 21
+    }
+
+    static TEXT_PARAMETERS: clap_plugin_params = clap_plugin_params {
+        count: Some(text_parameter_count),
+        get_info: Some(text_parameter_info),
+        get_value: Some(text_parameter_value),
+        value_to_text: Some(text_parameter_value_to_text),
+        text_to_value: None,
+        flush: None,
+    };
+
+    #[test]
+    fn the_parameter_list_carries_display_text_step_count_and_flags() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        wrapper.params_ext = &raw const TEXT_PARAMETERS;
+
+        let parameters = AudioPlugin::get_parameters(&wrapper);
+
+        let shape = &parameters[0];
+        assert_eq!(shape.display_text.as_deref(), Some("Saw 2"));
+        assert_eq!(shape.step_count, 4);
+        assert!(shape.is_list);
+        assert!(shape.is_read_only);
+        assert!(
+            !shape.is_automatable,
+            "a read-only parameter is never automatable"
+        );
+
+        let level = &parameters[1];
+        assert_eq!(
+            level.display_text, None,
+            "a plugin whose value_to_text returns false has no text"
+        );
+        assert_eq!(level.step_count, 0);
+        assert!(!level.is_list);
+        assert!(!level.is_read_only);
+        assert!(level.is_automatable);
+    }
+
+    #[test]
+    fn the_text_of_a_value_comes_from_the_plugin() {
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+        wrapper.params_ext = &raw const TEXT_PARAMETERS;
+
+        assert_eq!(
+            AudioPlugin::parameter_value_text(&wrapper, 21, 3.0).as_deref(),
+            Some("Saw 3")
+        );
+        assert_eq!(AudioPlugin::parameter_value_text(&wrapper, 22, 0.5), None);
     }
 
     // ── Plugin → host parameter events (#2984) ──────────────────────────

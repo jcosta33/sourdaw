@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AutomationLane, automationStore } from '#/modules/Automation/stores';
@@ -21,6 +21,7 @@ import { ExternalPluginParameterList } from '../ExternalPluginParameterList';
 
 const mockEdit = vi.fn<(input: { instanceId: string; parameterId: number; value: number }) => Promise<void>>();
 const mockRefresh = vi.fn<(instanceId: string) => Promise<readonly ExternalPluginParameter[]>>();
+const mockFormat = vi.fn<(instanceId: string, paramId: number, value: number) => Promise<string | null>>();
 const mockHasRestoreFailure = vi.fn<(instanceId: string) => boolean>();
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
@@ -30,6 +31,8 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
             mockEdit(input),
         hasUnresolvedExternalPluginRestoreFailure: (instanceId: string) => mockHasRestoreFailure(instanceId),
         refreshExternalPluginParameters: (instanceId: string) => mockRefresh(instanceId),
+        formatExternalPluginParameterValue: (instanceId: string, paramId: number, value: number) =>
+            mockFormat(instanceId, paramId, value),
     };
 });
 
@@ -79,26 +82,23 @@ const parameter = (overrides: Partial<ExternalPluginParameter>): ExternalPluginP
     maxValue: 1,
     unit: '',
     isAutomatable: true,
+    displayText: null,
+    stepCount: 0,
+    isList: false,
+    isReadOnly: false,
     ...overrides,
 });
-
-type ScannedPlugin = (typeof defaultPluginScanState)['scannedPlugins'][number];
 
 const seed = (
     parameters: readonly ExternalPluginParameter[],
     options: {
         status?: 'loading' | 'active' | 'error' | 'none';
         message?: string;
-        scanParameters?: ScannedPlugin['parameters'];
         snapshot?: boolean;
         format?: string;
     } = {}
 ): void => {
-    const { status = 'active', message, scanParameters, snapshot = true, format = 'clap' } = options;
-    const scannedParameters: Pick<ScannedPlugin, 'parameters'> = {};
-    if (scanParameters) {
-        scannedParameters.parameters = scanParameters;
-    }
+    const { status = 'active', message, snapshot = true, format = 'clap' } = options;
     const activation: ExternalPluginActivationStatus = { status: status === 'none' ? 'active' : status };
     if (message) {
         activation.message = message;
@@ -119,7 +119,6 @@ const seed = (
                 num_outputs: 2,
                 num_parameters: parameters.length,
                 has_custom_ui: true,
-                ...scannedParameters,
             },
         ],
     });
@@ -167,18 +166,6 @@ const publishTagged = (
     }
     return parameters;
 };
-
-const scanRow = (id: number, flags: { is_stepped?: boolean; is_enum?: boolean }) => ({
-    id,
-    name: `P${String(id)}`,
-    min_value: 0,
-    max_value: 1,
-    default_value: 0,
-    is_automatable: true,
-    is_modulatable: false,
-    is_stepped: flags.is_stepped ?? false,
-    is_enum: flags.is_enum ?? false,
-});
 
 const automationLane = (deviceId: string, parameterId: number, clipId?: string): AutomationLane => {
     const lane: AutomationLane = {
@@ -264,6 +251,10 @@ describe('ExternalPluginParameterList', () => {
         vi.stubGlobal('cancelAnimationFrame', (id: number) => {
             frameCallbacks.delete(id);
         });
+        mockFormat.mockReset();
+        // Every row with no snapshot text asks; an unanswered ask keeps rows that do not read the
+        // answer from updating state outside act.
+        mockFormat.mockReturnValue(new Promise<string | null>(() => {}));
         mockEdit.mockReset();
         mockEdit.mockResolvedValue();
         mockHasRestoreFailure.mockReset();
@@ -423,9 +414,7 @@ describe('ExternalPluginParameterList', () => {
     });
 
     it('renders a stepped two-value parameter as a switch that sends its range ends', () => {
-        seed([parameter({ id: 3, name: 'Freeze', value: 0 })], {
-            scanParameters: [scanRow(3, { is_stepped: true })],
-        });
+        seed([parameter({ id: 3, name: 'Freeze', value: 0, stepCount: 1 })]);
         render(<ExternalPluginParameterList device={device} />);
 
         const toggle = screen.getByRole('switch', { name: 'Freeze' });
@@ -437,29 +426,165 @@ describe('ExternalPluginParameterList', () => {
     });
 
     it('shows a switch as checked at the range maximum and unchecked at the minimum', () => {
-        seed([parameter({ id: 3, name: 'Freeze', value: 0 })], {
-            scanParameters: [scanRow(3, { is_stepped: true })],
-        });
+        seed([parameter({ id: 3, name: 'Freeze', value: 0, stepCount: 1 })]);
         render(<ExternalPluginParameterList device={device} />);
 
         act(() => {
-            moveStoreValue(3, 'Freeze', 1);
+            externalPluginParameterStore.set({
+                byInstanceId: {
+                    [INSTANCE_ID]: {
+                        engineAttached: true,
+                        parameters: [parameter({ id: 3, name: 'Freeze', value: 1, stepCount: 1 })],
+                    },
+                },
+            });
         });
         expect(screen.getByRole('switch', { name: 'Freeze' })).toBeChecked();
 
         act(() => {
-            moveStoreValue(3, 'Freeze', 0);
+            externalPluginParameterStore.set({
+                byInstanceId: {
+                    [INSTANCE_ID]: {
+                        engineAttached: true,
+                        parameters: [parameter({ id: 3, name: 'Freeze', value: 0, stepCount: 1 })],
+                    },
+                },
+            });
         });
         expect(screen.getByRole('switch', { name: 'Freeze' })).not.toBeChecked();
     });
 
     it('steps a stepped multi-value parameter by whole values', () => {
-        seed([parameter({ id: 4, name: 'Mode', value: 2, maxValue: 7 })], {
-            scanParameters: [scanRow(4, { is_enum: true })],
-        });
+        seed([parameter({ id: 4, name: 'Mode', value: 2, maxValue: 7, stepCount: 7, isList: true })]);
         render(<ExternalPluginParameterList device={device} />);
 
         expect(screen.getByRole('slider', { name: 'Mode' })).toHaveAttribute('step', '1');
+    });
+
+    it('shows the plugin display text instead of the plain number', () => {
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.43, displayText: '1.20 kHz' })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        expect(screen.getByText('1.20 kHz')).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Cutoff' })).toHaveAttribute('aria-valuetext', '1.20 kHz');
+        expect(mockFormat).not.toHaveBeenCalled();
+    });
+
+    it('asks the plugin for the text of a value that mounts with none, as after an edit and a remount', async () => {
+        mockFormat.mockResolvedValue('0.75 kHz');
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.75, displayText: null })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        expect(await screen.findByText('0.75 kHz')).toBeInTheDocument();
+        expect(mockFormat).toHaveBeenCalledWith(INSTANCE_ID, 7, 0.75);
+    });
+
+    it('asks once for a value the plugin has no text for', async () => {
+        mockFormat.mockResolvedValue(null);
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.75, displayText: null })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        await waitFor(() => expect(mockFormat).toHaveBeenCalledTimes(1));
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(mockFormat).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('0.750')).toBeInTheDocument();
+    });
+
+    it('never asks the plugin for the text of a non-finite value', async () => {
+        mockFormat.mockResolvedValue(null);
+        seed([parameter({ id: 7, name: 'Cutoff', value: Number.NaN, displayText: null })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        for (let flush = 0; flush < 5; flush++) {
+            await act(async () => {
+                await Promise.resolve();
+            });
+        }
+
+        expect(mockFormat).not.toHaveBeenCalled();
+    });
+
+    it('disables a read-only parameter and says why', () => {
+        seed([
+            parameter({ id: 8, name: 'Meter', isReadOnly: true }),
+            parameter({ id: 9, name: 'Bypass', stepCount: 1, isReadOnly: true }),
+        ]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        const meter = screen.getByRole('slider', { name: 'Meter' });
+        expect(meter).toBeDisabled();
+        expect(meter).toHaveAccessibleDescription('Read-only');
+        expect(screen.getByRole('switch', { name: 'Bypass' })).toBeDisabled();
+    });
+
+    it('asks the plugin for the text of a value it edited to and shows it once it arrives', async () => {
+        mockFormat.mockImplementation((_instanceId, _paramId, value) => Promise.resolve(`${String(value)} kHz`));
+        // An accepted edit moves the store's value and drops the text that described the old one.
+        mockEdit.mockImplementation(({ value }) => {
+            moveStoreValue(7, 'Cutoff', value);
+            return Promise.resolve();
+        });
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.25, displayText: '0.25 kHz' })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        fireEvent.change(screen.getByRole('slider', { name: 'Cutoff' }), { target: { value: '0.75' } });
+
+        expect(await screen.findByText('0.75 kHz')).toBeInTheDocument();
+        expect(mockFormat).toHaveBeenCalledWith(INSTANCE_ID, 7, 0.75);
+    });
+
+    it('falls back to the plain number until the text arrives', async () => {
+        let answer: (text: string | null) => void = () => {};
+        mockFormat.mockImplementation(
+            () =>
+                new Promise<string | null>((resolve) => {
+                    answer = resolve;
+                })
+        );
+        mockEdit.mockImplementation(() => new Promise<void>(() => {}));
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.25, displayText: '0.25 kHz' })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        fireEvent.change(screen.getByRole('slider', { name: 'Cutoff' }), { target: { value: '0.75' } });
+
+        expect(screen.getByRole('slider', { name: 'Cutoff' })).toHaveAttribute('aria-valuetext', '0.750');
+        await act(async () => {
+            answer('three quarters');
+            await Promise.resolve();
+        });
+        expect(screen.getByRole('slider', { name: 'Cutoff' })).toHaveAttribute('aria-valuetext', 'three quarters');
+    });
+
+    it('drops an answer for a value the row no longer shows and asks for the one it shows now', async () => {
+        const answers = new Map<number, (text: string | null) => void>();
+        mockFormat.mockImplementation(
+            (_instanceId, _paramId, value) =>
+                new Promise<string | null>((resolve) => {
+                    answers.set(value, resolve);
+                })
+        );
+        mockEdit.mockImplementation(() => new Promise<void>(() => {}));
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.25, displayText: '0.25 kHz' })]);
+        render(<ExternalPluginParameterList device={device} />);
+        const slider = screen.getByRole('slider', { name: 'Cutoff' });
+
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        fireEvent.change(slider, { target: { value: '0.75' } });
+        await act(async () => {
+            answers.get(0.5)?.('half');
+            await Promise.resolve();
+        });
+
+        expect(slider).toHaveAttribute('aria-valuetext', '0.750');
+        expect(screen.queryByText('half')).not.toBeInTheDocument();
+        await waitFor(() => expect(mockFormat).toHaveBeenCalledWith(INSTANCE_ID, 7, 0.75));
+        await act(async () => {
+            answers.get(0.75)?.('three quarters');
+            await Promise.resolve();
+        });
+        expect(slider).toHaveAttribute('aria-valuetext', 'three quarters');
     });
 
     it('shows a value patched into the store, as a vendor-editor edit would', () => {
@@ -681,6 +806,16 @@ describe('ExternalPluginParameterList', () => {
             }
         });
 
+        it('describes an automated read-only parameter as both automated and read-only', () => {
+            seed([parameter({ id: 7, name: 'Decay', value: 0.25, isReadOnly: true })]);
+            automationStore.set({ lanes: [automationLane(device.id, 7)] });
+            render(<ExternalPluginParameterList device={device} />);
+
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveAccessibleDescription(
+                expect.stringMatching(/^(?=.*\bAutomated\b)(?=.*\bRead-only\b)/)
+            );
+        });
+
         it('moves an automated row with the delivered value without announcing each step', () => {
             seedAutomated();
             setPlaying(true);
@@ -702,6 +837,34 @@ describe('ExternalPluginParameterList', () => {
             expect(slider).toHaveValue('0.75');
             expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
             expect(within(screen.getByTestId('external-parameter-7')).getByText('0.750')).toBeInTheDocument();
+        });
+
+        it('asks no text while following and asks once for the settled value when following ends', async () => {
+            mockFormat.mockImplementation((_instanceId, _paramId, value) => Promise.resolve(`${String(value)} dB`));
+            seedAutomated();
+            setPlaying(true);
+            render(<ExternalPluginParameterList device={device} />);
+            // Mounting asks for the snapshot's own value before any lane value is delivered.
+            mockFormat.mockClear();
+
+            for (const [timestamp, applied] of [
+                [0, 0.5],
+                [50, 0.75],
+                [100, 0.6],
+            ] as const) {
+                mockReadApplied.mockReturnValue(applied);
+                runFrame(timestamp);
+                await act(async () => {
+                    await Promise.resolve();
+                });
+            }
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveValue('0.6');
+            expect(mockFormat.mock.calls.filter(([, paramId]) => paramId === 7)).toEqual([]);
+
+            setPlaying(false);
+
+            expect(await screen.findByText('0.6 dB')).toBeInTheDocument();
+            expect(mockFormat.mock.calls.filter(([, paramId]) => paramId === 7)).toEqual([[INSTANCE_ID, 7, 0.6]]);
         });
 
         it('does not read or move a row that is scrolled out of view', () => {

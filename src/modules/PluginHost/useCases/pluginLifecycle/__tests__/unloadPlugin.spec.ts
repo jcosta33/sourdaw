@@ -53,6 +53,10 @@ const PARAMETER = {
     maxValue: 1,
     unit: '%',
     isAutomatable: true,
+    displayText: null,
+    stepCount: 0,
+    isList: false,
+    isReadOnly: false,
 };
 
 vi.mock('../../../repositories/pluginBridge/unloadPlugin', () => ({ unloadPlugin: mocks.unloadRepo }));

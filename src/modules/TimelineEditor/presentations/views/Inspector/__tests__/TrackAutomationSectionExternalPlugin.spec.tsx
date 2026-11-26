@@ -79,6 +79,10 @@ function externalParameter(overrides: Partial<ExternalPluginParameter> = {}): Ex
         maxValue: 24,
         unit: 'dB',
         isAutomatable: true,
+        displayText: null,
+        stepCount: 0,
+        isList: false,
+        isReadOnly: false,
         ...overrides,
     };
 }

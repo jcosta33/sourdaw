@@ -10,6 +10,7 @@ import {
 const EXPECTED_PLUGIN_RUNTIME_COMMANDS = [
     'apply_graph_commands',
     'close_plugin_gui',
+    'format_plugin_parameter_value',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
     'load_plugin',

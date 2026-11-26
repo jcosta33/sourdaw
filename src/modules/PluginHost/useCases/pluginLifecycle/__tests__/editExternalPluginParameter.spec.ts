@@ -34,6 +34,10 @@ function seed(): void {
                 maxValue: 1,
                 unit: '',
                 isAutomatable: true,
+                displayText: null,
+                stepCount: 0,
+                isList: false,
+                isReadOnly: false,
             },
         ],
     });

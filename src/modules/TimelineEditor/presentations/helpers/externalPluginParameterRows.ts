@@ -2,13 +2,6 @@ import { type ExternalPluginParameter } from '#/modules/PluginHost/stores';
 
 import { type Device } from '../../models/TrackViewTypes';
 
-/** Scan-time facts about one parameter that the live snapshot does not carry. */
-export type ExternalPluginParameterScanFacts = {
-    id: number;
-    is_stepped: boolean;
-    is_enum: boolean;
-};
-
 export type ExternalPluginParameterControlKind = 'toggle' | 'stepped' | 'continuous';
 
 export type ExternalPluginParameterRow = {
@@ -19,25 +12,39 @@ export type ExternalPluginParameterRow = {
     max: number;
     step: number;
     kind: ExternalPluginParameterControlKind;
+    /** The number of steps the plugin declares; 0 when it declares none. */
+    stepCount: number;
+    /** The host reports `value` normalized to 0..1, so a stepped value is shown as its step index. */
+    valuesAreNormalized: boolean;
     /** The unit shown beside the value; empty when the plugin declares none or the value is normalized. */
     unit: string;
+    /** The plugin's own text for `value`, or the plain number when it offers none. */
     valueText: string;
+    /** The plugin's own text for `value`; null when it offers none. */
+    displayText: string | null;
+    /** The plugin reports this parameter and nobody edits it, such as a meter. */
+    readOnly: boolean;
 };
 
 const CONTINUOUS_STEPS = 1000;
 
-function classify(
-    parameter: ExternalPluginParameter,
-    scan: ExternalPluginParameterScanFacts | undefined
-): ExternalPluginParameterControlKind {
-    if (!scan || !(scan.is_stepped || scan.is_enum)) {
-        return 'continuous';
-    }
-    const span = parameter.maxValue - parameter.minValue;
-    if (span === 1 && Number.isInteger(parameter.minValue) && Number.isInteger(parameter.maxValue)) {
+function classify(parameter: ExternalPluginParameter): ExternalPluginParameterControlKind {
+    if (parameter.stepCount === 1) {
         return 'toggle';
     }
-    return 'stepped';
+    if (parameter.stepCount > 1) {
+        return 'stepped';
+    }
+    return 'continuous';
+}
+
+/** One step between neighbouring settings: the span divided by the plugin's step count. */
+function stepFor(parameter: ExternalPluginParameter, kind: ExternalPluginParameterControlKind): number {
+    const span = parameter.maxValue - parameter.minValue;
+    if (kind === 'continuous') {
+        return span / CONTINUOUS_STEPS;
+    }
+    return span / parameter.stepCount;
 }
 
 /** A wider range needs fewer decimals to tell neighbouring settings apart. */
@@ -62,12 +69,25 @@ function formatNumber(value: number, kind: ExternalPluginParameterControlKind, s
     return value.toFixed(fractionDigitsForSpan(span));
 }
 
-/** A value of this row as a plain number, with the unit the row carries when it has one. */
-export function formatExternalPluginParameterValue(
-    row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'unit'>,
+function formatPlainValue(
+    row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'stepCount' | 'valuesAreNormalized'>,
     value: number
 ): string {
-    const text = formatNumber(value, row.kind, row.max - row.min);
+    if (row.valuesAreNormalized && row.kind !== 'continuous' && row.stepCount > 0) {
+        return String(Math.round(value * row.stepCount));
+    }
+    return formatNumber(value, row.kind, row.max - row.min);
+}
+
+/**
+ * A value of this row as a plain number, with the unit the row carries when it has one. A normalized
+ * stepped value is shown as its step index; rounding the 0..1 value itself would show 0 or 1.
+ */
+export function formatExternalPluginParameterValue(
+    row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'unit' | 'stepCount' | 'valuesAreNormalized'>,
+    value: number
+): string {
+    const text = formatPlainValue(row, value);
     return row.unit === '' ? text : `${text} ${row.unit}`;
 }
 
@@ -81,24 +101,28 @@ export type BuildExternalPluginParameterRowsOptions = {
 
 export function buildExternalPluginParameterRows(
     parameters: readonly ExternalPluginParameter[],
-    scanParameters: readonly ExternalPluginParameterScanFacts[] | undefined,
     options: BuildExternalPluginParameterRowsOptions = { valuesAreNormalized: false }
 ): ExternalPluginParameterRow[] {
-    const scanById = new Map((scanParameters ?? []).map((scan) => [scan.id, scan]));
     return parameters.map((parameter) => {
-        const kind = classify(parameter, scanById.get(parameter.id));
-        const span = parameter.maxValue - parameter.minValue;
+        const kind = classify(parameter);
         const row = {
             id: parameter.id,
             name: parameter.name,
             value: parameter.value,
             min: parameter.minValue,
             max: parameter.maxValue,
-            step: kind === 'continuous' ? span / CONTINUOUS_STEPS : 1,
+            step: stepFor(parameter, kind),
             kind,
+            stepCount: parameter.stepCount,
+            valuesAreNormalized: options.valuesAreNormalized,
             unit: options.valuesAreNormalized ? '' : parameter.unit,
+            displayText: parameter.displayText,
+            readOnly: parameter.isReadOnly,
         };
-        return { ...row, valueText: formatExternalPluginParameterValue(row, parameter.value) };
+        return {
+            ...row,
+            valueText: parameter.displayText ?? formatExternalPluginParameterValue(row, parameter.value),
+        };
     });
 }
 

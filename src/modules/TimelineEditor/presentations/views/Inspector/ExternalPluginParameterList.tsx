@@ -19,6 +19,7 @@ import {
 } from '#/modules/PluginHost/stores';
 import {
     editExternalPluginParameter,
+    formatExternalPluginParameterValue as askPluginForValueText,
     hasUnresolvedExternalPluginRestoreFailure,
     isSupportedPluginFormat,
     refreshExternalPluginParameters,
@@ -86,23 +87,40 @@ type ParameterRowProps = {
     onAnnounce: (message: string) => void;
 };
 
-const ParameterRow = ({
-    instanceId,
-    deviceId,
-    automated,
-    settledParameter,
-    row,
-    onAnnounce,
-}: ParameterRowProps): ReactElement => {
-    const rowRef = useRef<HTMLLIElement>(null);
-    const automatedDescriptionId = useId();
-    const followed = useFollowedAutomationValue({
-        deviceId,
-        parameterId: row.id,
-        automated,
-        element: rowRef,
-        settledToken: settledParameter,
-    });
+type AnsweredValueTextInput = {
+    instanceId: string;
+    parameterId: number;
+    value: number;
+    skip: boolean;
+};
+
+// The snapshot's text describes the snapshot's value. Any other shown value (a pending edit,
+// a followed lane, a value just patched in) asks the plugin, one question in flight at a time:
+// the answer for a value no longer shown is dropped by the check below and the next question
+// is for the value shown now. Only the latest answer is kept, so a null answer stops a repeat
+// question for the value still shown, while a value shown again after another is asked again.
+// A followed lane moves every frame, so it never asks; the explicit Number.isFinite check keeps a
+// non-finite value from being asked.
+const useAnsweredValueText = ({ instanceId, parameterId, value, skip }: AnsweredValueTextInput): string | null => {
+    const [answer, setAnswer] = useState<{ value: number; text: string | null } | null>(null);
+    const askingRef = useRef(false);
+    useEffect(() => {
+        if (skip || !Number.isFinite(value) || answer?.value === value || askingRef.current) {
+            return;
+        }
+        askingRef.current = true;
+        void (async () => {
+            const text = await askPluginForValueText(instanceId, parameterId, value);
+            askingRef.current = false;
+            setAnswer({ value, text });
+        })();
+    }, [skip, answer, value, instanceId, parameterId]);
+    return answer?.value === value ? answer.text : null;
+};
+
+type ParameterEditInput = Pick<ParameterRowProps, 'instanceId' | 'row' | 'onAnnounce'>;
+
+const useParameterEdit = ({ instanceId, row, onAnnounce }: ParameterEditInput) => {
     const [refused, setRefused] = useState(false);
     // The store moves only once the plugin accepts a change, so while the latest send is in flight the
     // row holds the value it asked for; otherwise a second nudge would start from the stale store value.
@@ -133,12 +151,125 @@ const ParameterRow = ({
         void sendEdit(requested, send);
     };
 
+    return { refused, pendingValue, edit };
+};
+
+const describeBy = (descriptions: readonly { present: boolean; id: string }[]): string | undefined =>
+    descriptions
+        .filter((description) => description.present)
+        .map((description) => description.id)
+        .join(' ') || undefined;
+
+const AutomatedMarker = ({
+    automated,
+    descriptionId,
+}: {
+    automated: boolean;
+    descriptionId: string;
+}): ReactElement | null => {
+    if (!automated) {
+        return null;
+    }
+    return (
+        <>
+            <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-[var(--color-accent-peach)]" />
+            <span id={descriptionId} className="sr-only">
+                Automated
+            </span>
+        </>
+    );
+};
+
+type ParameterControlProps = {
+    row: ExternalPluginParameterRow;
+    value: number;
+    describedBy: string | undefined;
+    onEdit: (requested: number) => void;
+};
+
+const ToggleSwitch = ({ row, value, describedBy, onEdit }: ParameterControlProps): ReactElement | null => {
+    if (row.kind !== 'toggle') {
+        return null;
+    }
+    return (
+        <input
+            type="checkbox"
+            role="switch"
+            aria-label={row.name}
+            aria-describedby={describedBy}
+            disabled={row.readOnly}
+            checked={value - row.min >= 0.5}
+            aria-checked={value - row.min >= 0.5}
+            onChange={(event) => onEdit(event.target.checked ? row.max : row.min)}
+        />
+    );
+};
+
+const RangeSlider = ({
+    row,
+    value,
+    describedBy,
+    valueText,
+    onEdit,
+}: ParameterControlProps & { valueText: string }): ReactElement | null => {
+    if (row.kind === 'toggle') {
+        return null;
+    }
+    return (
+        <input
+            type="range"
+            aria-label={row.name}
+            aria-describedby={describedBy}
+            disabled={row.readOnly}
+            aria-valuetext={valueText}
+            className="w-full"
+            min={row.min}
+            max={row.max}
+            step={row.step}
+            value={value}
+            onChange={(event) => onEdit(Number(event.target.value))}
+        />
+    );
+};
+
+const ParameterRow = ({
+    instanceId,
+    deviceId,
+    automated,
+    settledParameter,
+    row,
+    onAnnounce,
+}: ParameterRowProps): ReactElement => {
+    const rowRef = useRef<HTMLLIElement>(null);
+    const automatedDescriptionId = useId();
+    const followed = useFollowedAutomationValue({
+        deviceId,
+        parameterId: row.id,
+        automated,
+        element: rowRef,
+        settledToken: settledParameter,
+    });
+    const { refused, pendingValue, edit } = useParameterEdit({ instanceId, row, onAnnounce });
+
     const shownValue = pendingValue ?? followed.value;
     const value = shownValue ?? row.value;
-    const valueText = shownValue === null ? row.valueText : formatExternalPluginParameterValue(row, shownValue);
+    const snapshotText = value === row.value ? row.displayText : null;
+    const snapshotTextIsCurrent = snapshotText !== null;
     // The visible number moves with the lane; announcing every step would flood a screen reader.
     const followingAnnounced = followed.following && pendingValue === null;
-    const describedBy = automated ? automatedDescriptionId : undefined;
+    const answeredText = useAnsweredValueText({
+        instanceId,
+        parameterId: row.id,
+        value,
+        skip: snapshotTextIsCurrent || followingAnnounced,
+    });
+    const valueText = snapshotText ?? answeredText ?? formatExternalPluginParameterValue(row, value);
+
+    const readOnlyDescriptionId = useId();
+    const describedBy = describeBy([
+        { present: automated, id: automatedDescriptionId },
+        { present: row.readOnly, id: readOnlyDescriptionId },
+    ]);
 
     return (
         <li
@@ -149,44 +280,22 @@ const ParameterRow = ({
         >
             <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1 break-words text-[10px] text-foreground">{row.name}</span>
-                {automated && (
-                    <>
-                        <span
-                            aria-hidden="true"
-                            className="mt-1 size-1.5 shrink-0 rounded-full bg-[var(--color-accent-peach)]"
-                        />
-                        <span id={automatedDescriptionId} className="sr-only">
-                            Automated
-                        </span>
-                    </>
+                <AutomatedMarker automated={automated} descriptionId={automatedDescriptionId} />
+                {row.readOnly && (
+                    <span id={readOnlyDescriptionId} className="sr-only">
+                        Read-only
+                    </span>
                 )}
-                {row.kind === 'toggle' && (
-                    <input
-                        type="checkbox"
-                        role="switch"
-                        aria-label={row.name}
-                        aria-describedby={describedBy}
-                        checked={value - row.min >= 0.5}
-                        aria-checked={value - row.min >= 0.5}
-                        onChange={(event) => edit(event.target.checked ? row.max : row.min)}
-                    />
-                )}
+                <ToggleSwitch row={row} value={value} describedBy={describedBy} onEdit={edit} />
                 <MetaText className="shrink-0 text-right tabular-nums">{valueText}</MetaText>
             </div>
-            {row.kind !== 'toggle' && (
-                <input
-                    type="range"
-                    aria-label={row.name}
-                    aria-describedby={describedBy}
-                    aria-valuetext={followingAnnounced ? FOLLOWING_VALUE_TEXT : valueText}
-                    className="w-full"
-                    min={row.min}
-                    max={row.max}
-                    step={row.step}
-                    value={value}
-                    onChange={(event) => edit(Number(event.target.value))}
-                />
-            )}
+            <RangeSlider
+                row={row}
+                value={value}
+                describedBy={describedBy}
+                valueText={followingAnnounced ? FOLLOWING_VALUE_TEXT : valueText}
+                onEdit={edit}
+            />
             {refused && <span className="text-[10px] text-destructive">{REFUSED_MESSAGE}</span>}
         </li>
     );
@@ -284,9 +393,9 @@ export const ExternalPluginParameterList = ({ device }: ExternalPluginParameterL
     }
 
     const rows = filterExternalPluginParameterRows(
-        buildExternalPluginParameterRows(snapshot.parameters, scanned?.parameters, {
-            // The host reports VST3 values normalized, so the unit does not describe the number; #6579
-            // tracks showing the plugin's own display text.
+        buildExternalPluginParameterRows(snapshot.parameters, {
+            // The host reports VST3 values normalized, so the unit does not describe the plain number
+            // a plugin with no display text falls back to.
             valuesAreNormalized: scanned?.format.toLowerCase() === 'vst3',
         }),
         query

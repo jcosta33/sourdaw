@@ -469,6 +469,10 @@ describe('DeviceInspector external plugin', () => {
                             maxValue: 1,
                             unit: '',
                             isAutomatable: true,
+                            displayText: null,
+                            stepCount: 0,
+                            isList: false,
+                            isReadOnly: false,
                         },
                     ],
                 },
@@ -510,6 +514,10 @@ describe('DeviceInspector external plugin', () => {
             maxValue: 1,
             unit: '',
             isAutomatable: true,
+            displayText: null,
+            stepCount: 0,
+            isList: false,
+            isReadOnly: false,
         });
         seedPlugin(scannedReverb({ has_custom_ui: true }), 'active');
         externalPluginActivationStore.set({

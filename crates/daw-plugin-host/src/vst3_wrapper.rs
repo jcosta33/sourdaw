@@ -50,7 +50,7 @@ use vst3::Steinberg::Vst::{
     IParamValueQueueTrait, IParameterChanges, IParameterChangesTrait, MediaTypes_, NoteOffEvent,
     NoteOnEvent, ParamID, ParamValue, ParameterInfo, ParameterInfo_::ParameterFlags_,
     ProcessContext, ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_, ProcessSetup,
-    RestartFlags_, SymbolicSampleSizes_,
+    RestartFlags_, String128, SymbolicSampleSizes_,
 };
 use vst3::Steinberg::{
     int32, int64, kInvalidArgument, kNotImplemented, kOutOfMemory, kResultFalse, kResultOk,
@@ -2582,6 +2582,12 @@ impl AudioPlugin for Vst3Wrapper {
             .unwrap_or_default()
     }
 
+    fn parameter_value_text(&self, param_id: u32, value: f64) -> Option<String> {
+        self.instance
+            .controller()
+            .and_then(|controller| read_parameter_text(controller, param_id, value))
+    }
+
     /// Both chunks, or the plugin's refusal.
     ///
     /// A component that could not produce its state has not produced *empty*
@@ -2997,21 +3003,43 @@ pub fn read_parameters(controller: &ComPtr<IEditController>) -> Vec<PluginParame
             if info.flags & ParameterFlags_::kIsHidden != 0 {
                 return None;
             }
+            // SAFETY: live, initialised controller; `info.id` is an id the
+            // controller itself just reported.
+            let value = unsafe { controller.getParamNormalized(info.id) };
             Some(PluginParameter {
                 id: info.id,
                 name: read_string128(&info.title),
-                // SAFETY: live, initialised controller; `info.id` is an id the
-                // controller itself just reported.
-                value: unsafe { controller.getParamNormalized(info.id) },
+                value,
                 default_value: info.defaultNormalizedValue,
                 min_value: 0.0,
                 max_value: 1.0,
                 unit: non_empty(read_string128(&info.units)),
                 is_automatable: info.flags & ParameterFlags_::kCanAutomate != 0
                     && info.flags & ParameterFlags_::kIsReadOnly == 0,
+                display_text: read_parameter_text(controller, info.id, value),
+                step_count: info.stepCount.max(0) as u32,
+                is_list: info.flags & ParameterFlags_::kIsList != 0,
+                is_read_only: info.flags & ParameterFlags_::kIsReadOnly != 0,
             })
         })
         .collect()
+}
+
+/// The controller's own text for a normalised value of one parameter, or
+/// `None` when it refuses or answers an empty string.
+pub fn read_parameter_text(
+    controller: &ComPtr<IEditController>,
+    id: ParamID,
+    value: ParamValue,
+) -> Option<String> {
+    let mut text: String128 = [0; 128];
+    // SAFETY: control path only; live, initialised controller, and `text` is a
+    // local the plugin writes for the call's duration only.
+    let result = unsafe { controller.getParamStringByValue(id, value, &mut text) };
+    if result != kResultOk {
+        return None;
+    }
+    non_empty(read_string128(&text))
 }
 
 /// The name the factory gives a class, when it lists one with this CID.

@@ -69,6 +69,10 @@ function snapshot(store: Awaited<ReturnType<typeof freshWatcher>>['store'], inst
                 maxValue: 1,
                 unit: 'Hz',
                 isAutomatable: true,
+                displayText: '0.10 Hz',
+                stepCount: 0,
+                isList: false,
+                isReadOnly: false,
             },
         ],
     });
@@ -110,6 +114,11 @@ describe('watchExternalPluginParameterEvents', () => {
             maxValue: 1,
             unit: 'Hz',
             isAutomatable: true,
+            // The text described the old value, so a plugin-side edit clears it.
+            displayText: null,
+            stepCount: 0,
+            isList: false,
+            isReadOnly: false,
         });
     });
 

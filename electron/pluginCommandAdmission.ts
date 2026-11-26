@@ -39,6 +39,7 @@ import { APPLY_GRAPH_COMMANDS, RETIRE_NATIVE_ENGINE, SCAN_PLUGINS } from './comm
 export const PLUGIN_RUNTIME_COMMANDS = [
     APPLY_GRAPH_COMMANDS,
     'close_plugin_gui',
+    'format_plugin_parameter_value',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
     'load_plugin',

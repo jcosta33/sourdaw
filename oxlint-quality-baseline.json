@@ -17209,7 +17209,7 @@
     },
     "src/modules/TimelineEditor/presentations/views/Inspector/ExternalPluginParameterList.tsx": {
         "eslint/max-lines-per-function": {
-            "count": 2
+            "count": 1
         }
     },
     "src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx": {

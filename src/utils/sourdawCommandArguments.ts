@@ -60,6 +60,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['engine_rt_diagnostics', []],
     ['engine_transport_position', []],
     ['engine_transport_set_maps', ['maps']],
+    ['format_plugin_parameter_value', ['instance_id', 'param_id', 'value']],
     ['get_crumbs_dropped_sample_writes', ['instance_id']],
     ['get_crumbs_position', ['instance_id']],
     ['get_crumbs_recording_state', ['instance_id']],

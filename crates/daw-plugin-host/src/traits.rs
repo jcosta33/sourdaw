@@ -405,6 +405,15 @@ pub trait AudioPlugin: Send + Sync {
     /// Get all parameters exposed by the plugin
     fn get_parameters(&self) -> Vec<PluginParameter>;
 
+    /// The plugin's own text for `value` of one parameter, in the unit
+    /// `get_parameters` reports values in.
+    ///
+    /// `None` when the plugin offers no text for it: no text call, a refusal,
+    /// or an empty answer. Control path only, never the audio callback.
+    fn parameter_value_text(&self, _param_id: u32, _value: f64) -> Option<String> {
+        None
+    }
+
     /// The opaque binary state of the plugin, or why the plugin would not give
     /// it.
     ///
