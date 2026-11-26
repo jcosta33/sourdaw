@@ -11,7 +11,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { type SourdawBridge } from '../electron/channels.ts';
 
 import { emptyDiagnostics, printDiagnostics } from './desktopLatencyDiagnostics.ts';
-import { waitForWorkspaceOrLaunchScreen } from './desktopLatencyLaunch.ts';
+import { waitForVisibleLaunchScreen } from './desktopLatencyLaunch.ts';
 import { harnessPluginDestination } from './installHarnessPlugin.ts';
 import { launchPackagedApp, step } from './packagedAppSession.ts';
 
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
                     try {
                         receipt.rendererUrl = app.page.url();
                         receipt.browser = app.version.browser;
-                        receipt.renderer = await waitForWorkspaceOrLaunchScreen(app.page, STARTUP_TIMEOUT_MS);
+                        receipt.renderer = await waitForVisibleLaunchScreen(app.page, STARTUP_TIMEOUT_MS);
                         const { sampleUrl, signature } = await step('read a packaged WAV via app://', () =>
                             app.page.evaluate(async (sample) => {
                                 const sampleUrl = `${await (window as DesktopWindow).sourdaw.paths.samplesBase()}/${sample}`;
