@@ -40,7 +40,8 @@
 use crate::commands::graph::BoundHostedInstance;
 use crate::commands::plugins::{
     activation_refusal_reason, construct_runtime_on_ui_thread, create_hosted_runtime,
-    hold_plugin_runtime_gate, host_backend, HostBackend, PluginCommandError, VettedRegistryEntry,
+    hold_plugin_runtime_gate, host_backend, HostBackend, PluginCommandError, PreOpenChecks,
+    VettedRegistryEntry,
 };
 use crate::host::native_bridge::{HostedPluginSlot, PluginControlRefusal, SharedHostedPlugin};
 #[cfg(test)]
@@ -1077,7 +1078,10 @@ pub(crate) async fn build_offline_instances<'a>(
             construct_runtime_on_ui_thread(
                 ui,
                 backend,
-                seams.scan_policy.clone(),
+                PreOpenChecks {
+                    scan_policy: seams.scan_policy.clone(),
+                    registry_store: Arc::clone(&state.plugin_registry_store),
+                },
                 vetted,
                 sample_rate,
                 ProcessMode::Offline,
