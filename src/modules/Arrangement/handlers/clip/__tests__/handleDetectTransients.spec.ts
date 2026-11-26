@@ -22,6 +22,9 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
 import { setWarpState } from '../../../stores/warpStates';
 import { handleDetectTransients, transientStateMatches } from '../handleDetectTransients';
 
@@ -123,7 +126,10 @@ function prepareWorkerReply({ seed, actor, message, mutation }: PreparationReque
     }
 }
 
-function startDetection() {
+type DetectedHit = { sampleOffset: number; confidence: number };
+const defaultHits: DetectedHit[] = [{ sampleOffset: 24000, confidence: 0.875 }];
+
+function startDetection(detected: { tempo: number; hits: DetectedHit[] } = { tempo: 120, hits: defaultHits }) {
     const controller = new AbortController();
     const isCurrent = (): boolean => !controller.signal.aborted;
     type Consume = Parameters<typeof detectTransientsForClip>[3];
@@ -143,8 +149,8 @@ function startDetection() {
                     frameCount: 96000,
                     channelCount: 1,
                 },
-                tempo: 120,
-                hits: [{ sampleOffset: 24000, confidence: 0.875 }],
+                tempo: detected.tempo,
+                hits: detected.hits,
                 isCurrent,
                 completeUnchanged: () => false,
             },
@@ -152,12 +158,12 @@ function startDetection() {
         ),
     }));
     const action = { type: 'detectTransients' as const, payload: { clipId: 'clip-1' } };
-    handleDetectTransients.describe(action);
+    const description = handleDetectTransients.describe(action);
     const transaction = runWithAutomergeStorageTransaction(undefined, () => handleDetectTransients.execute(action));
     if (transaction.status !== 'returned') {
         throw transaction.error;
     }
-    return { transaction, cancel: () => controller.abort() };
+    return { description, transaction, cancel: () => controller.abort() };
 }
 
 function waitForFirstReply(
@@ -204,6 +210,88 @@ describe('Arrangement Detect admits private Worker preparations against current 
             },
         });
     }
+
+    function setTransportTempo(tempo: number): void {
+        mutateCrdtDoc<{ transport: { tempo: number } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.transport.tempo = tempo;
+            },
+        });
+    }
+
+    async function detectAndCommit(detected: { tempo: number; hits: DetectedHit[] }) {
+        installProspectiveWorker();
+        const { description, transaction } = startDetection(detected);
+        try {
+            const result = await transaction.value;
+            expect(result?.status).toBe('written');
+            const validation = result?.commitValidation;
+            if (!validation) {
+                throw new Error('Expected the Detect document validator');
+            }
+            transaction.validateDocument(validation.documentId, validation.validateDocument);
+            transaction.commit();
+            return description;
+        } finally {
+            transaction.abort();
+        }
+    }
+
+    function storedWarpState() {
+        return (getCrdtDoc('root') as { warpStates: { states: Record<string, unknown> } }).warpStates.states['clip-1'];
+    }
+
+    it('stamps the transport tempo as the reference tempo and encodes a hit at it', async () => {
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+        await detectAndCommit({ tempo: 120, hits: [{ sampleOffset: 24000, confidence: 0.875 }] });
+        expect(storedWarpState()).toMatchObject({
+            originalTempo: 120,
+            markers: [{ originalBeat: 1, warpedBeat: 1, origin: 'transient-auto', confidence: 0.875 }],
+        });
+    });
+
+    it('keeps encoding at the stored reference tempo after the transport tempo changes', async () => {
+        const userMarker = { id: 'user', originalBeat: 2, warpedBeat: 2, origin: 'user' as const, locked: false };
+        setWarpState('clip-1', {
+            enabled: true,
+            stretchMode: 'repitch',
+            originalTempo: 120,
+            markers: [userMarker],
+        });
+        setTransportTempo(90);
+        await detectAndCommit({
+            tempo: 90,
+            hits: [
+                { sampleOffset: 48000, confidence: 0.5 },
+                { sampleOffset: 24000, confidence: 0.75 },
+            ],
+        });
+        const state = storedWarpState() as { originalTempo: number; markers: { id: string; originalBeat: number }[] };
+        expect(state.originalTempo).toBe(120);
+        expect(state.markers.map(({ id, originalBeat }) => [id, originalBeat])).toEqual([
+            [expect.any(String), 1],
+            ['user', 2],
+        ]);
+    });
+
+    it('records the reference tempo in the undo snapshots and restores it to null', async () => {
+        trackStore.trySet({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [ClipDummy.create({ id: 'clip-1', trackId: 'track-1', audioBufferId: 'audio-1' })],
+                }),
+            ],
+            selectedTrackId: null,
+        });
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+        const { inverseAction: inverse } = await detectAndCommit({ tempo: 120, hits: defaultHits });
+        const entries = inverse.payload.replacement.flatMap((entry) => entry.clipSatellites);
+        const expectedEntries = inverse.payload.expected.flatMap((entry) => entry.clipSatellites);
+        expect(entries.find((satellite) => satellite.clipId === 'clip-1')?.warpState?.originalTempo).toBeNull();
+        expect(expectedEntries.find((satellite) => satellite.clipId === 'clip-1')?.warpState?.originalTempo).toBe(120);
+    });
 
     it('replans after a sibling commit invalidates the pending reply and publishes only the fresh markers', async () => {
         const { firstReply, requests } = installProspectiveWorker();

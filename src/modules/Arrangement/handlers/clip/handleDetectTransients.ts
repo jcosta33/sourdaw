@@ -114,8 +114,11 @@ function planTransientRows(clipId: string, result: DetectedSource) {
     const preserved = existing.markers.filter(
         (marker) => marker.locked === true || (marker.origin ?? 'user') !== 'transient-auto'
     );
+    // A marker's originalBeat counts source beats at this reference tempo, so it
+    // stays the source position when the project tempo changes later.
+    const referenceTempo = existing.originalTempo ?? result.tempo;
     const added = result.hits.flatMap((hit) => {
-        const beat = ((hit.sampleOffset / result.identity.sampleRate) * result.tempo) / 60;
+        const beat = ((hit.sampleOffset / result.identity.sampleRate) * referenceTempo) / 60;
         if (preserved.some((marker) => Math.abs(marker.originalBeat - beat) < 1e-3)) {
             return [];
         }
@@ -126,6 +129,7 @@ function planTransientRows(clipId: string, result: DetectedSource) {
         added,
         replacement: {
             ...existing,
+            originalTempo: referenceTempo,
             markers: [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat),
         },
     };
