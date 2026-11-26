@@ -32,7 +32,8 @@ export const SONG_SECTION_NOUNS: readonly string[] = [
  * The words that name a device's own control or processing rather than a track's fader, in normalized
  * singular words: "put Drums threshold at -6 dB", "set Drums to -6 dB of gain reduction", "put Drums at
  * -6 dB on the high shelf", "set Drums to normalize at -6 dB". A level clause naming one is about that
- * control, never the fader.
+ * control, never the fader. "Frequency" needs no entry: it is a word of a metric's name, which a level
+ * clause refuses as well.
  */
 export const DEVICE_CONTROL_WORDS: readonly string[] = [
     'threshold',
@@ -46,7 +47,6 @@ export const DEVICE_CONTROL_WORDS: readonly string[] = [
     'filter',
     'cutoff',
     'resonance',
-    'frequency',
     'eq',
     'compress',
     'compressor',

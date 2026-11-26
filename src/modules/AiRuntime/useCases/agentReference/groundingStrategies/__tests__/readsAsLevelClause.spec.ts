@@ -302,12 +302,12 @@ describe('readsAsLevelClause', () => {
 
     it.each([
         ['just', 'turn Drums up just 2 dB'],
-        ['exactly', 'lower Drums by exactly 3 dB'],
+        ['exactly', 'lower Drums by 3 dB exactly'],
         ['about', 'turn Drums up about 2 dB'],
-        ['approximately', 'lower Drums by approximately 3 dB'],
+        ['approximately', 'lower Drums by 3 dB approximately'],
         ['around', 'turn Drums up around 2 dB'],
-        ['roughly', 'turn Drums up roughly 2 dB'],
-        ['slightly', 'turn Drums up slightly by 2 dB'],
+        ['roughly', 'turn Drums up 2 dB roughly'],
+        ['slightly', 'turn Drums up 2 dB slightly'],
         ['a bit', 'turn Drums up a bit by 2 dB'],
         ['a little', 'turn Drums up a little by 2 dB'],
         ['a touch', 'turn Drums up a touch by 2 dB'],
@@ -367,7 +367,7 @@ describe('readsAsLevelClause', () => {
         ['because', 'turn Drums down 3 dB because Keys is too loud'],
         ['since', 'turn Drums down 3 dB since Keys is too loud'],
         ['so', 'turn Drums up 2 dB so it sits better'],
-        ['so that', 'turn Drums up 2 dB so that it sits better'],
+        ['so that', 'turn Drums up 2 dB so that it cuts through the master'],
         ['to', 'turn Drums up 2 dB to make room for Keys'],
     ])('reads the reason opener "%s": "%s"', (_word, prompt) => {
         expect(reads(prompt)).toBe(true);
