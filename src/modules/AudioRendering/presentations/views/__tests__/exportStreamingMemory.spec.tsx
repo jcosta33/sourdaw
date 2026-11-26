@@ -632,6 +632,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         },
         getAudioContext: mocks.getAudioContext,
         getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
+        engineSampleRateOf: vi.fn(() => null),
         isExportActive: mocks.isExportActive,
         renderOffline: mocks.renderOffline,
         restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,

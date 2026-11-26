@@ -32,12 +32,24 @@ export const externalPluginTailStore = createStore<ExternalPluginTailState>({
  */
 
 /**
- * Which write last touched each instance's tail. A seed, a `plugin-tail-changed`
- * revision and a drop each take the next value of one counter, and a drop keeps
- * its own rather than resetting, so a stamp issued before an instance was
- * dropped never matches one a later seed of the same id takes. A published host
- * read is not a write in this sense: it never advances the stamp, so one
- * answer cannot invalidate another read issued at the same stamp.
+ * One tail the native host reported, with its place in the order the host took
+ * every figure in. The host numbers the `plugin-tail-changed` events and the
+ * `read_plugin_tails` answers from one counter, inside the instance's control
+ * gate, so a larger sequence is the figure read later however late either was
+ * delivered.
+ */
+export type NativeTailFigure = {
+    tailSamples: number;
+    sequence: number;
+};
+
+/**
+ * Which seed or drop last touched each instance's tail. Each takes the next
+ * value of one counter, and a drop keeps its own rather than resetting, so a
+ * stamp issued before an instance was dropped never matches one a later seed
+ * of the same id takes. This orders only what a native sequence cannot: a read
+ * issued before a seed or a drop belongs to an earlier instance, or to the
+ * load's own figure, and loses. A published figure never advances it.
  */
 const tailStamps = new Map<string, number>();
 let lastTailStamp = 0;
@@ -48,53 +60,94 @@ function advanceTailStamp(instanceId: string): void {
 }
 
 /**
- * Which host read last published each instance's tail, by issue token. Reads
- * take tokens from one counter in the order they are issued, so a larger token
- * is a later read.
+ * The highest native sequence applied to each seeded instance. A figure at or
+ * below it is older than what the store shows and is ignored. A seed clears it,
+ * so every native figure outranks the load's own.
  */
-const publishedReadTokens = new Map<string, number>();
-let lastReadToken = 0;
+const appliedSequences = new Map<string, number>();
+
+/** How many issued reads have yet to settle, per instance; a stamp is kept while any has. */
+const readsInFlight = new Map<string, number>();
+
+/** Ended by a graph rebuild, so reads issued before one are not for this generation's instances. */
+let tailGeneration = 0;
 
 /** What a read remembers about one instance from the moment it was issued. */
 export type ExternalPluginTailReadIssue = {
     /** The instance's write stamp when the read was issued. */
     writeStamp: number | undefined;
-    /** The read's place in issue order, shared by every instance it covers. */
-    token: number;
+    generation: number;
 };
 
-/** Each instance's write stamp as it stands now, with this read's issue token, for a read about to be issued. */
+/** Each instance's write stamp as it stands now, for a read about to be issued. Settle it when the read ends. */
 export function issueExternalPluginTailRead(
     instanceIds: readonly string[]
 ): ReadonlyMap<string, ExternalPluginTailReadIssue> {
-    lastReadToken += 1;
-    const token = lastReadToken;
-    return new Map(instanceIds.map((instanceId) => [instanceId, { writeStamp: tailStamps.get(instanceId), token }]));
+    for (const instanceId of instanceIds) {
+        readsInFlight.set(instanceId, (readsInFlight.get(instanceId) ?? 0) + 1);
+    }
+    return new Map(
+        instanceIds.map((instanceId) => [
+            instanceId,
+            { writeStamp: tailStamps.get(instanceId), generation: tailGeneration },
+        ])
+    );
+}
+
+/** End a read issued by `issueExternalPluginTailRead`, whether it answered or failed. */
+export function settleExternalPluginTailRead(issued: ReadonlyMap<string, ExternalPluginTailReadIssue>): void {
+    for (const [instanceId, issue] of issued) {
+        if (issue.generation !== tailGeneration) {
+            continue;
+        }
+        const remaining = (readsInFlight.get(instanceId) ?? 1) - 1;
+        if (remaining > 0) {
+            readsInFlight.set(instanceId, remaining);
+            continue;
+        }
+        readsInFlight.delete(instanceId);
+        pruneForgottenInstance(instanceId);
+    }
+}
+
+/** Nothing for a forgotten instance is worth keeping once no read can compare against it. */
+function pruneForgottenInstance(instanceId: string): void {
+    if (externalPluginTailStore.value?.tailSamplesByInstanceId[instanceId] !== undefined) {
+        return;
+    }
+    if (readsInFlight.has(instanceId)) {
+        return;
+    }
+    tailStamps.delete(instanceId);
+    appliedSequences.delete(instanceId);
 }
 
 /**
- * Publish a tail a host read answered. The answer is dropped when a write
- * (seed, `plugin-tail-changed` revision, drop, so also an unload and reload
- * under the same id) touched that instance's tail since the read was issued, or
- * when a read issued later already published for it. Otherwise it lands, and
- * records its token without advancing the write stamp, so reads that overlap at
- * one stamp are ordered by issue, not by which answers first.
+ * What became of a read's answer for one instance. `unseeded` means the answer
+ * is current but its instance's load has not seeded a figure yet, so the caller
+ * decides whether to hold it for the seed.
+ */
+export type ExternalPluginTailReadOutcome = 'applied' | 'stale' | 'unseeded';
+
+/**
+ * Publish a tail a host read answered. It is stale when a seed, a drop (so also
+ * an unload and reload under the same id) or a graph rebuild touched that
+ * instance since the read was issued, or when a figure with a sequence at or
+ * above its own already landed, which is how an event the host emitted later
+ * than the read ran outranks it, and an event it emitted earlier does not.
  */
 export function publishExternalPluginTailRead(
     instanceId: string,
     issue: ExternalPluginTailReadIssue,
-    tailSamples: number
-): void {
-    if (tailStamps.get(instanceId) !== issue.writeStamp) {
-        return;
+    figure: NativeTailFigure
+): ExternalPluginTailReadOutcome {
+    if (issue.generation !== tailGeneration || tailStamps.get(instanceId) !== issue.writeStamp) {
+        return 'stale';
     }
-    if ((publishedReadTokens.get(instanceId) ?? 0) > issue.token) {
-        return;
+    if (externalPluginTailStore.value?.tailSamplesByInstanceId[instanceId] === undefined) {
+        return 'unseeded';
     }
-    if (!setExistingExternalPluginTail(instanceId, tailSamples)) {
-        return;
-    }
-    publishedReadTokens.set(instanceId, issue.token);
+    return applyNativeTailFigure(instanceId, figure) ? 'applied' : 'stale';
 }
 
 function setExternalPluginTail(instanceId: string, tailSamples: number): void {
@@ -107,18 +160,23 @@ function setExternalPluginTail(instanceId: string, tailSamples: number): void {
     });
 }
 
-/** Set the tail of an instance that already has one; false when it has none. */
-function setExistingExternalPluginTail(instanceId: string, tailSamples: number): boolean {
-    if (externalPluginTailStore.value?.tailSamplesByInstanceId[instanceId] === undefined) {
+/** Set a seeded instance's tail unless a figure at or after this one already landed. */
+function applyNativeTailFigure(instanceId: string, { tailSamples, sequence }: NativeTailFigure): boolean {
+    if (sequence <= (appliedSequences.get(instanceId) ?? 0)) {
         return false;
     }
+    appliedSequences.set(instanceId, sequence);
     setExternalPluginTail(instanceId, tailSamples);
     return true;
 }
 
+/**
+ * Seed an instance's tail from its load. Every native figure outranks it, and
+ * every read issued before it drops.
+ */
 export function writeExternalPluginTail(instanceId: string, tailSamples: number): void {
     advanceTailStamp(instanceId);
-    publishedReadTokens.delete(instanceId);
+    appliedSequences.delete(instanceId);
     setExternalPluginTail(instanceId, tailSamples);
 }
 
@@ -127,21 +185,19 @@ export function writeExternalPluginTail(instanceId: string, tailSamples: number)
  * `plugin-tail-changed` event. A change for an instance with no entry is
  * dropped: recording it would describe a plugin that no longer exists. The
  * caller holds a change for an instance still loading and hands it to the
- * load's seed instead. A revision advances the write stamp, so every read
- * issued before it drops.
+ * load's seed instead. An event the host emitted before a figure already
+ * applied is ignored, by sequence.
  */
-export function reviseExternalPluginTail(instanceId: string, tailSamples: number): void {
+export function reviseExternalPluginTail(instanceId: string, figure: NativeTailFigure): void {
     if (externalPluginTailStore.value?.tailSamplesByInstanceId[instanceId] === undefined) {
         return;
     }
-    advanceTailStamp(instanceId);
-    publishedReadTokens.delete(instanceId);
-    setExternalPluginTail(instanceId, tailSamples);
+    applyNativeTailFigure(instanceId, figure);
 }
 
 export function dropExternalPluginTail(instanceId: string): void {
     advanceTailStamp(instanceId);
-    publishedReadTokens.delete(instanceId);
+    appliedSequences.delete(instanceId);
     externalPluginTailStore.update((state) => {
         const current = state ?? defaultExternalPluginTailState;
         if (current.tailSamplesByInstanceId[instanceId] === undefined) {
@@ -152,4 +208,19 @@ export function dropExternalPluginTail(instanceId: string): void {
         );
         return { ...current, tailSamplesByInstanceId };
     });
+    pruneForgottenInstance(instanceId);
+}
+
+/** End the graph generation: every tail, stamp and sequence goes, and reads still in flight drop their answers. */
+export function resetExternalPluginTails(): void {
+    tailGeneration += 1;
+    tailStamps.clear();
+    appliedSequences.clear();
+    readsInFlight.clear();
+    externalPluginTailStore.set(defaultExternalPluginTailState);
+}
+
+/** How many instances the store still keeps a stamp or a sequence for; a spec reads it to prove forgetting prunes. */
+export function countExternalPluginTailBookkeeping(): number {
+    return new Set([...tailStamps.keys(), ...appliedSequences.keys()]).size;
 }
