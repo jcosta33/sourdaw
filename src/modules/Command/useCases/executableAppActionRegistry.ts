@@ -13,7 +13,10 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
+import { chordTrackDescriptors } from './executableDescriptors/chordTrackDescriptors';
+import { midiNoteTransformDescriptors } from './executableDescriptors/midiNoteTransformDescriptors';
 import {
+    editableMidiClipTargetRules,
     type ExecutableAppActionDescriptor,
     type ExecutableAppActionMutationIdentityRule,
     type ExecutableAppActionParentTrackTargetCapability,
@@ -44,28 +47,6 @@ export type {
 
 const MARKER_COLOR_NAMES = getMarkerColorNames();
 
-const MIDI_VELOCITY_CURVES = ['linear', 'exponential', 'logarithmic', 's-curve', 'compress', 'expand'] as const;
-
-const CHORD_QUALITIES = [
-    'major',
-    'minor',
-    'dim',
-    'aug',
-    'sus2',
-    'sus4',
-    '7',
-    'maj7',
-    'min7',
-    'dim7',
-    'aug7',
-    '6',
-    'min6',
-    '9',
-    'add9',
-    'min9',
-    '7sus4',
-] as const;
-
 const clipTargetRules = [
     { argument: 'clipId', capability: 'clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
@@ -76,10 +57,6 @@ const editableClipTargetRules = [
 
 const editableAudioClipTargetRules = [
     { argument: 'clipId', capability: 'editable-audio-clip' },
-] as const satisfies readonly ExecutableAppActionTargetRule[];
-
-const editableMidiClipTargetRules = [
-    { argument: 'clipId', capability: 'editable-midi-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const writableMidiClipTargetRules = [
@@ -1360,130 +1337,8 @@ export const executableAppActionDescriptors = [
             required: ['clipId', 'velocity'],
         },
     },
-    {
-        actionType: 'scaleVelocities',
-        risk: 'broad-reversible',
-        description:
-            "Remap the velocity of every note in one MIDI clip through a named curve that reshapes the clip's softest-to-loudest span within minVelocity..maxVelocity: linear, exponential, logarithmic and s-curve span the whole range, compress narrows the span toward the middle of it, and expand widens it toward both ends.",
-        intentPhrases: ['scale velocity curve', 'apply velocity curve', 'remap midi velocities', 'compress velocities'],
-        targetRules: editableMidiClipTargetRules,
-        valueRules: [
-            { argument: 'curve', kind: 'enum-if-present', values: [...MIDI_VELOCITY_CURVES], requiredInPrompt: true },
-        ],
-        parameters: {
-            properties: {
-                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
-                curve: { type: 'string', enum: [...MIDI_VELOCITY_CURVES], description: 'Velocity response curve' },
-                minVelocity: {
-                    type: 'integer',
-                    minimum: 1,
-                    maximum: 127,
-                    description: 'Lower bound of the output velocity range, from 1 through 127; defaults to 1',
-                },
-                maxVelocity: {
-                    type: 'integer',
-                    minimum: 1,
-                    maximum: 127,
-                    description: 'Upper bound of the output velocity range, from 1 through 127; defaults to 127',
-                },
-            },
-            required: ['clipId', 'curve'],
-        },
-    },
-    {
-        actionType: 'humanizeNotes',
-        risk: 'broad-reversible',
-        description:
-            'Loosen the timing and velocity of every note in one MIDI clip by a seeded random offset; the application fixes the seed when the command is compiled, so redo lands every note exactly where it first landed.',
-        intentPhrases: ['humanize notes', 'humanize midi', 'humanize the notes', 'humanize the clip'],
-        targetRules: editableMidiClipTargetRules,
-        valueRules: [
-            {
-                argument: 'amount',
-                kind: 'number-if-present',
-                requiredInPrompt: true,
-                match: 'exact',
-                scale: 'percentage-only',
-            },
-        ],
-        parameters: {
-            properties: {
-                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
-                amount: {
-                    type: 'number',
-                    minimum: 0,
-                    maximum: 1,
-                    description:
-                        'Timing looseness from 0 (none) through 1; each note moves by up to an eighth of this many beats either way (never before the clip start), and its velocity too unless velocityAmount is given',
-                },
-                velocityAmount: {
-                    type: 'number',
-                    minimum: 0,
-                    maximum: 1,
-                    description:
-                        'Velocity looseness from 0 through 1; each note moves by up to five times this many velocity steps either way; defaults to amount',
-                },
-            },
-            required: ['clipId', 'amount'],
-        },
-    },
-    {
-        actionType: 'addChordEvent',
-        risk: 'bounded-reversible',
-        description: 'Add one chord to the project chord track at an explicit beat.',
-        intentPhrases: ['add chord', 'add a chord', 'insert chord', 'insert a chord', 'place a chord'],
-        targetRules: [],
-        valueRules: [
-            { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, match: 'exact', connector: 'beat' },
-        ],
-        parameters: {
-            properties: {
-                beat: { type: 'number', minimum: 0, description: 'Chord start in beats (bar 1 = beat 0)' },
-                root: {
-                    type: 'integer',
-                    minimum: 0,
-                    maximum: 11,
-                    description: 'Root pitch class, C = 0 through B = 11',
-                },
-                quality: { type: 'string', enum: [...CHORD_QUALITIES], description: 'Chord quality' },
-                duration: {
-                    type: 'number',
-                    minimum: 0.25,
-                    description: 'Chord length in beats, at least 0.25; defaults to 4',
-                },
-            },
-            required: ['beat', 'root', 'quality'],
-        },
-    },
-    {
-        actionType: 'clearChordTrack',
-        risk: 'destructive-reversible',
-        description: 'Remove every chord from the project chord track.',
-        intentPhrases: ['clear chord track', 'clear the chord track', 'remove all chords', 'delete all chords'],
-        targetRules: [],
-        parameters: { properties: {}, required: [] },
-    },
-    {
-        actionType: 'toggleChordTrack',
-        risk: 'bounded-reversible',
-        description: 'Turn the project chord track on or off without changing its chords.',
-        intentPhrases: ['enable chord track', 'disable chord track', 'turn on chord track', 'turn off chord track'],
-        targetRules: [],
-        valueRules: [
-            {
-                argument: 'enabled',
-                kind: 'boolean-intent',
-                truePhrases: ['enable chord track', 'turn on chord track'],
-                falsePhrases: ['disable chord track', 'turn off chord track'],
-            },
-        ],
-        parameters: {
-            properties: {
-                enabled: { type: 'boolean', description: 'true=enable the chord track, false=disable it' },
-            },
-            required: ['enabled'],
-        },
-    },
+    ...midiNoteTransformDescriptors,
+    ...chordTrackDescriptors,
     {
         actionType: 'renameTrack',
         risk: 'bounded-reversible',

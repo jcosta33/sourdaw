@@ -178,5 +178,9 @@ export const existingTrackTargetRules = [
     { argument: 'trackId', capability: 'track', allowBatchLocal: false },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
+export const editableMidiClipTargetRules = [
+    { argument: 'clipId', capability: 'editable-midi-clip' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
 export const SINGLETON_MUTATION_IDENTITY = [{ arguments: [] }] as const;
 export const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }], resourceFamily: 'track' }] as const;
