@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
     },
     copySelectedNotes: vi.fn(),
     notifyUser: vi.fn(),
-    trackState: { tracks: [] as Array<{ id: string; frozen: boolean; clips: Array<{ id: string }> }> },
+    trackState: { tracks: [] as Array<{ id: string; frozen: boolean; clips: Array<{ id: string; name: string }> }> },
 }));
 
 vi.mock('#/components/daw/DawContextMenuSurface', () => ({
@@ -111,7 +111,7 @@ describe('PianoRollContextMenu on a frozen track', () => {
 
     describe.each(editItems)('%s', (label) => {
         it('writes nothing and warns once when the clip track is frozen', () => {
-            mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1' }] }];
+            mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1', name: 'Clip 1' }] }];
             renderMenu();
 
             fireEvent.click(screen.getByText(label));
@@ -121,7 +121,7 @@ describe('PianoRollContextMenu on a frozen track', () => {
         });
 
         it('still writes with no frozen warning when the track is not frozen', () => {
-            mocks.trackState.tracks = [{ id: 'track-1', frozen: false, clips: [{ id: 'clip-1' }] }];
+            mocks.trackState.tracks = [{ id: 'track-1', frozen: false, clips: [{ id: 'clip-1', name: 'Clip 1' }] }];
             renderMenu();
 
             fireEvent.click(screen.getByText(label));
@@ -143,7 +143,7 @@ describe('PianoRollContextMenu on a frozen track', () => {
         };
 
         it('assigns no groove and warns once when the clip track is frozen', async () => {
-            mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1' }] }];
+            mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1', name: 'Clip 1' }] }];
 
             await chooseGrooveThenApply();
 
@@ -152,7 +152,7 @@ describe('PianoRollContextMenu on a frozen track', () => {
         });
 
         it('still assigns the groove with no frozen warning when the track is not frozen', async () => {
-            mocks.trackState.tracks = [{ id: 'track-1', frozen: false, clips: [{ id: 'clip-1' }] }];
+            mocks.trackState.tracks = [{ id: 'track-1', frozen: false, clips: [{ id: 'clip-1', name: 'Clip 1' }] }];
 
             await chooseGrooveThenApply();
 
@@ -162,7 +162,7 @@ describe('PianoRollContextMenu on a frozen track', () => {
     });
 
     it('keeps Copy available on a frozen track without a warning', () => {
-        mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1' }] }];
+        mocks.trackState.tracks = [{ id: 'track-1', frozen: true, clips: [{ id: 'clip-1', name: 'Clip 1' }] }];
         renderMenu();
 
         fireEvent.click(screen.getByText('Copy'));
