@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../../../models/ProjectContext';
-import { DEVICE_CONTROL_WORDS, SONG_SECTION_NOUNS } from '../levelClauseWords';
 import { maskProjectReferences } from '../maskProjectReferences';
 import { readsAsLevelClause } from '../readsAsLevelClause';
 
@@ -251,11 +250,53 @@ describe('readsAsLevelClause', () => {
         expect(reads(prompt)).toBe(false);
     });
 
-    it.each(DEVICE_CONTROL_WORDS)('refuses the device control "%s" before the target', (word) => {
+    it.each([
+        'threshold',
+        'ratio',
+        'attack',
+        'release',
+        'knee',
+        'makeup',
+        'reduction',
+        'shelf',
+        'filter',
+        'cutoff',
+        'resonance',
+        'frequency',
+        'eq',
+        'compress',
+        'compressor',
+        'compression',
+        'limit',
+        'limiter',
+        'normalize',
+        'normalise',
+        'drive',
+        'saturation',
+        'decay',
+        'feedback',
+        'width',
+        'wet',
+        'dry',
+    ])('refuses the device control "%s" before the target', (word) => {
         expect(reads(`${word} lower Drums by 3 dB`)).toBe(false);
     });
 
-    it.each(SONG_SECTION_NOUNS)('refuses the section kind "%s" before the target', (word) => {
+    it.each([
+        'intro',
+        'verse',
+        'prechorus',
+        'chorus',
+        'refrain',
+        'hook',
+        'bridge',
+        'breakdown',
+        'buildup',
+        'drop',
+        'interlude',
+        'outro',
+        'section',
+    ])('refuses the section kind "%s" before the target', (word) => {
         expect(reads(`in the ${word} lower Drums by 3 dB`, 'setTrackGain', contextWithoutPlaces)).toBe(false);
     });
 
