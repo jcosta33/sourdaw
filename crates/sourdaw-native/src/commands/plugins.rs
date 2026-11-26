@@ -3739,13 +3739,11 @@ async fn unload_plugin_runtime(
         // `removed` and CLAP `gui.destroy`, and running them on this worker
         // un-parents an NSView off the main thread. Behind a hung call the
         // close waits out the gate's deadline and is skipped.
-        if let Err(error) =
-            runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
-                    plugin.close_gui()
-                })
-            })
-        {
+        if let Err(error) = runtime.with_unload_control_on_ui_thread(
+            std::time::Duration::from_secs(2),
+            editor_thread(windows_host),
+            |plugin| plugin.close_gui(),
+        ) {
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
         }
         remove_plugin_window(instance_id, windows_host, state);
@@ -3783,13 +3781,11 @@ async fn unload_plugin_runtime(
 
         state.retain_retired_engine_plugin(Arc::clone(&runtime));
 
-        if let Err(error) =
-            runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
-                    plugin.close_gui()
-                })
-            })
-        {
+        if let Err(error) = runtime.with_unload_control_on_ui_thread(
+            std::time::Duration::from_secs(2),
+            editor_thread(windows_host),
+            |plugin| plugin.close_gui(),
+        ) {
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
         }
 
