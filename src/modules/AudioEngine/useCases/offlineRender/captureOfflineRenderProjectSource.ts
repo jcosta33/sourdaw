@@ -1,38 +1,21 @@
-import { gainEnvelopeStore, getVcaGroupsState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { automationStore } from '#/modules/Automation/stores';
-import { chordTrackStore, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
-import { sidechainStore } from '#/modules/Routing/stores';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-
 import { isMidiTransformDevice } from '../deviceCapabilities/isMidiTransformDevice';
 
 import { offlineRenderCapturePorts } from './offlineRenderCapturePorts';
 import { type OfflineRenderProjectSource, type OfflineYeastProcessor } from './OfflineRenderSource';
+import {
+    type OfflineRenderDocumentModels as DocumentReadModels,
+    readLiveOfflineRenderProjectModels,
+} from './readLiveOfflineRenderProjectModels';
 
 /** Runs `read` with the CRDT-backed stores answering for one document, and returns what it read. */
 type DocumentReader = <Result>(read: () => Result) => Result;
-
-type DocumentReadModels = Omit<OfflineRenderProjectSource, 'yeastProcessorsByDevice'>;
 
 function readLiveDocument<Result>(read: () => Result): Result {
     return read();
 }
 
 function readDocumentModels(): DocumentReadModels {
-    return structuredClone({
-        tracks: trackStore.value,
-        midi: midiStore.value,
-        transport: transportStore.value,
-        tempoMap: tempoMapStore.value,
-        timeSignatureMap: timeSignatureMapStore.value,
-        automationLanes: automationStore.value?.lanes ?? [],
-        takeLanes: takeLaneStore.value,
-        gainEnvelopes: gainEnvelopeStore.value?.envelopes ?? {},
-        sidechainRoutes: sidechainStore.value?.routes ?? [],
-        vcaGroups: getVcaGroupsState(),
-        grooveTemplates: grooveTemplateStore.value,
-        chordTrack: chordTrackStore.value,
-    });
+    return structuredClone(readLiveOfflineRenderProjectModels());
 }
 
 /**

@@ -2,7 +2,7 @@ use crate::commands::plugins::VettedRegistryEntry;
 use crate::host::native_bridge::{PluginControlError, SharedHostedPlugin};
 use crate::host::plugin_registry_store::FileFingerprint;
 use crate::host::runtime_scope::RuntimeScopeRefusal;
-use crate::host::ui_thread::{release_on_ui_thread, UiThread};
+use crate::host::ui_thread::{release_on_ui_thread, UiThread, UiThreadError};
 use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::ScannedPlugin;
@@ -1108,6 +1108,40 @@ impl AppState {
     ) -> Result<ResultValue, EnginePluginControlError<OperationError>> {
         let runtime = self.engine_plugin_runtime(instance_id)?;
         Ok(runtime.try_with_control(Duration::from_secs(2), operation)?)
+    }
+
+    /// One editor call into an engine-owned instance on `ui`'s thread, holding
+    /// the audio access seam only once the call has landed there; see
+    /// [`ControlVisit::on_ui_thread`](crate::host::native_bridge::ControlVisit::on_ui_thread).
+    pub fn with_engine_plugin_on_ui_thread<Ui, Produced>(
+        &self,
+        instance_id: &str,
+        ui: &Ui,
+        call: impl FnOnce(&mut HostedRuntime) -> Produced + Send + 'static,
+    ) -> Result<Produced, EnginePluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Produced: Send + 'static,
+    {
+        let runtime = self.engine_plugin_runtime(instance_id)?;
+        Ok(runtime.with_control_on_ui_thread(Duration::from_secs(2), ui, call)?)
+    }
+
+    /// [`Self::with_engine_plugin_on_ui_thread`], refusing a busy control gate
+    /// rather than waiting for it, for the reason
+    /// [`Self::try_with_engine_plugin_control`] gives.
+    pub fn try_with_engine_plugin_on_ui_thread<Ui, Produced>(
+        &self,
+        instance_id: &str,
+        ui: &Ui,
+        call: impl FnOnce(&mut HostedRuntime) -> Produced + Send + 'static,
+    ) -> Result<Produced, EnginePluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Produced: Send + 'static,
+    {
+        let runtime = self.engine_plugin_runtime(instance_id)?;
+        Ok(runtime.try_with_control_on_ui_thread(Duration::from_secs(2), ui, call)?)
     }
 
     pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedHostedPlugin>) {

@@ -1,28 +1,23 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureProjectIdentity, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import {
     AGENT_RUN_TERMINAL_PHASES,
     type AgentRun,
     type AgentRunBatch,
     type AgentRunBatchSchedule,
-    type AgentRunBulkSetBatchSchedule,
-    type AgentRunProviderProposal,
     type AgentRunVibeRunBatchSchedule,
 } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
 import { type VibeBatchValueChoice } from '../../models/VibeBatchValueChoice';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { appendChatMessage, removeChatMessage, updateChatMessage } from '../../stores/chatStore';
-import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import { type AgentRunPlanBoundRefusal } from '../../validators/readAgentRunPlanBoundRefusal';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { describeAgentRunPlanBoundRefusal } from '../describeAgentRunPlanBoundRefusal';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
-import { getProjectContext } from '../getProjectContext';
-import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { buildVibeBatchValueRequest } from '../vibeRun/buildVibeBatchValueRequest';
@@ -32,16 +27,17 @@ import { composeVibeBatchCardContent } from '../vibeRun/composeVibeBatchCardCont
 import { describeAppliedBatches } from './describeAppliedBatches';
 import { describeBatchPreviewProgress } from './describeBatchPreviewProgress';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
+import { groundBulkSetSlice } from './groundBulkSetSlice';
 import { groundVibeRunBatch } from './groundVibeRunBatch';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { postVibeRunSummary } from './postVibeRunSummary';
 import { preflightVibeRunBatch } from './preflightVibeRunBatch';
-import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
 import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
-import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
 import { recordBatchPreviewEvidence } from './recordBatchPreviewEvidence';
 import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
+
+import type { getProjectContext } from '../getProjectContext';
 
 type ScheduledBatchOutcome =
     | { status: 'awaiting-approval' }
@@ -87,113 +83,6 @@ function getOwedSchedule(run: AgentRun | null): AgentRunBatchSchedule | null {
     }
     const settled = letsNextBatchFollow(run.batches.at(-1)?.status, schedule);
     return settled && schedule.position < schedule.total ? schedule : null;
-}
-
-function readProviderProposal(schedule: AgentRunBulkSetBatchSchedule): AgentRunProviderProposal | null | undefined {
-    if (schedule.serializedProviderProposal === null) {
-        return null;
-    }
-    try {
-        return normalizeAgentPlanProposal(JSON.parse(schedule.serializedProviderProposal)) ?? undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-/** Grounds the bulk-set slice at `position` against the live project exactly as the planner grounded the first. */
-function groundBulkSetSlice(
-    run: AgentRun,
-    schedule: AgentRunBulkSetBatchSchedule,
-    position: number
-): GroundedScheduledBatch {
-    const requestProtections = schedule.requestProtections;
-    if (requestProtections === undefined || requestProtections.request !== run.request) {
-        return {
-            status: 'rejected',
-            reason: 'its original request protection binding is missing or no longer matches',
-        };
-    }
-    const slices = schedule.slices.map((stored) => readBulkSetSliceEvidence(stored.serializedSlice));
-    const evidence = slices[position - 1] ?? null;
-    const providerProposal = readProviderProposal(schedule);
-    if (evidence === null || slices.includes(null) || providerProposal === undefined) {
-        return { status: 'rejected', reason: 'its stored plan could not be read back' };
-    }
-    const revision = settlePendingProjectWritesAndCaptureRevision();
-    const context = getProjectContext();
-    const rebased = rebaseBulkSetSliceEvidence({
-        evidence,
-        context,
-        revision,
-        earlierCommands: slices.slice(0, position - 1).flatMap((earlier) => earlier?.commands ?? []),
-        recordedFingerprints: new Map(
-            slices.flatMap((stored) =>
-                (stored?.selectors ?? []).flatMap((selector) =>
-                    selector.preconditions.map(
-                        (precondition) => [precondition.stableId, precondition.fingerprint] as const
-                    )
-                )
-            )
-        ),
-    });
-    if (rebased.status === 'rejected') {
-        return rebased;
-    }
-    const grounded = groundCompiledCommandBatch({
-        toolCalls: rebased.evidence.commands,
-        context,
-        prompt: run.request,
-        projectRevision: revision,
-        workflowCapabilityId: undefined,
-        compilerEvidence: rebased.evidence,
-        selectedCompilations: [],
-        transformCommands: [],
-        transformTargetIds: [],
-        creativeAuthority: undefined,
-        providerProposal,
-        requestProtections,
-    });
-    if (grounded.status === 'rejected') {
-        return { status: 'rejected', reason: grounded.rejectionReason };
-    }
-    if (grounded.status === 'clarify') {
-        return { status: 'rejected', reason: grounded.planningOutcome.reason };
-    }
-    if (grounded.status === 'empty') {
-        return { status: 'rejected', reason: 'it no longer grounds to any executable action' };
-    }
-    const plannedSchedule: NonNullable<IntentResult['batchSchedule']> = {
-        schemaVersion: schedule.schemaVersion,
-        kind: schedule.kind,
-        scheduleId: schedule.scheduleId,
-        position,
-        total: schedule.total,
-        totalCommands: schedule.totalCommands,
-        serializedProviderProposal: schedule.serializedProviderProposal,
-        requestProtections: structuredClone(requestProtections),
-        slices: structuredClone(schedule.slices),
-    };
-    return {
-        status: 'grounded',
-        context,
-        revision,
-        result: {
-            actions: grounded.actions,
-            metricGoalState: schedule.metricGoalState,
-            actionCommandGraph: grounded.actionCommandGraph,
-            rawText: run.request,
-            requiresConfirmation: grounded.requiresConfirmation,
-            applicationToolReceipts: structuredClone(run.plan?.applicationToolReceipts ?? []),
-            terminalMeasurementSettlement: run.plan?.terminalMeasurementSettlement,
-            executionMode: 'atomic',
-            providerKnownTargetIds: grounded.providerKnownTargetIds,
-            matchSelectorPredicates:
-                grounded.matchSelectorPredicates.length === 0 ? undefined : grounded.matchSelectorPredicates,
-            providerProposal: grounded.providerProposal ?? undefined,
-            protectionFacts: grounded.protectionFacts,
-            batchSchedule: plannedSchedule,
-        },
-    };
 }
 
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
@@ -327,6 +216,40 @@ async function proposeMeasuredVibeBatch(input: {
 }
 
 /**
+ * Plans the grounded batch onto its run. A plan the planner or the run refuses takes the batch's
+ * progress line off before the refusal propagates, since the run tells that refusal in a message
+ * of its own, exactly as it does a batch refused at grounding.
+ */
+function materializeScheduledBatchPlan(input: {
+    run: AgentRun;
+    schedule: AgentRunBatchSchedule;
+    grounded: GroundedBatch;
+    description: ReturnType<typeof describePendingActionConfirmation>;
+    assistantMessageId: string;
+}): ReturnType<typeof materializePromptCommandPlan> {
+    const { run, schedule, grounded, description, assistantMessageId } = input;
+    try {
+        return materializePromptCommandPlan({
+            userText: run.request,
+            runId: run.runId,
+            assistantMessageId,
+            interactionMode: schedule.interactionMode,
+            trustCeiling: schedule.trustCeiling ?? undefined,
+            resume: undefined,
+            onResumedPlanAccepted: undefined,
+            projectRevision: grounded.revision,
+            context: grounded.context,
+            result: { ...grounded.result, planningOutcome: { kind: 'proposal' } },
+            actionLabels: description.actionLabels,
+            protectedTargetIds: description.protectedUnchanged.map((item) => item.id),
+        });
+    } catch (error) {
+        removeChatMessage(assistantMessageId);
+        throw error;
+    }
+}
+
+/**
  * Plans, records and either parks the grounded batch for approval or, under a ceiling that approves
  * it, executes it — through the same plan, confirmation and execution path the first batch took.
  */
@@ -352,20 +275,7 @@ async function dispatchScheduledBatch(
         inheritedProtectedUnchanged: grounded.result.protectionFacts?.protectedUnchanged,
         requestProtectionFacts: grounded.result.protectionFacts,
     });
-    const materialized = materializePromptCommandPlan({
-        userText: run.request,
-        runId: run.runId,
-        assistantMessageId,
-        interactionMode: schedule.interactionMode,
-        trustCeiling: schedule.trustCeiling ?? undefined,
-        resume: undefined,
-        onResumedPlanAccepted: undefined,
-        projectRevision: grounded.revision,
-        context: grounded.context,
-        result: { ...grounded.result, planningOutcome: { kind: 'proposal' } },
-        actionLabels: description.actionLabels,
-        protectedTargetIds: description.protectedUnchanged.map((item) => item.id),
-    });
+    const materialized = materializeScheduledBatchPlan({ run, schedule, grounded, description, assistantMessageId });
     if (materialized.status === 'terminal') {
         await materialized.completion;
         return { status: 'awaiting-approval' };

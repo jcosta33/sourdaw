@@ -2252,6 +2252,7 @@ fn a_host_write_outranks_an_editor_gesture_in_the_same_block() {
         &[HostParameterUpdate {
             param_id: GAIN_PARAM,
             value: 0.125,
+            sample_offset: 0,
         }],
     );
 
@@ -4373,6 +4374,7 @@ fn a_render_block_performs_no_heap_allocation() {
     let updates = [HostParameterUpdate {
         param_id: GAIN_PARAM,
         value: 0.5,
+        sample_offset: 0,
     }];
     let notes = [host_note(60, 100, 0, true, 0)];
 
@@ -4402,4 +4404,207 @@ fn a_render_block_performs_no_heap_allocation() {
         "the render path allocated {} times",
         after - before
     );
+}
+
+/// Every point the host stages for one parameter is a point the plugin reads,
+/// at its own offset and in order, and a value staged at an offset the queue
+/// already holds replaces that point's value. Only the value the points end on can be
+/// an echo of the host's own write, so `carries` matches that one and nothing else.
+#[test]
+fn a_parameter_queue_hands_the_plugin_every_staged_point_at_its_offset() {
+    let changes = HostParameterChanges::new();
+    changes.stage(5, 0, 0.1);
+    changes.stage(5, 0, 0.3);
+    changes.stage(5, 10, 0.2);
+    changes.stage(5, 200, 0.8);
+    changes.stage(9, 100, 0.5);
+
+    let read = |index: usize| {
+        let queue = &changes.queues[index];
+        // SAFETY: the list and its queues are this test's own live host objects.
+        let point_count = unsafe { queue.getPointCount() };
+        let points: Vec<(int32, ParamValue)> = (0..point_count)
+            .map(|point| {
+                let (mut offset, mut value) = (-1, -1.0);
+                // SAFETY: as above.
+                let result = unsafe { queue.getPoint(point, &mut offset, &mut value) };
+                assert_eq!(result, kResultOk);
+                (offset, value)
+            })
+            .collect();
+        // SAFETY: as above.
+        (unsafe { queue.getParameterId() }, points)
+    };
+
+    // SAFETY: as above.
+    assert_eq!(unsafe { changes.getParameterCount() }, 2);
+    assert_eq!(read(0), (5, vec![(0, 0.3), (10, 0.2), (200, 0.8)]));
+    assert_eq!(read(1), (9, vec![(100, 0.5)]));
+    assert!(
+        changes.carries(5, 0.8),
+        "the final value is the host's echo"
+    );
+    assert!(
+        !changes.carries(5, 0.2) && !changes.carries(5, 0.3),
+        "an intermediate point is not the value the block ends on"
+    );
+    assert!(!changes.carries(5, 0.1), "a replaced value is not staged");
+    assert!(
+        !changes.carries(9, 0.2),
+        "a point of another parameter is not an echo"
+    );
+}
+
+fn read_queue_points(queue: &ComWrapper<HostParamValueQueue>) -> Vec<(int32, ParamValue)> {
+    // SAFETY: the queue is this test's own live host object.
+    let point_count = unsafe { queue.getPointCount() };
+    (0..point_count)
+        .map(|point| {
+            let (mut offset, mut value) = (-1, -1.0);
+            // SAFETY: as above.
+            let result = unsafe { queue.getPoint(point, &mut offset, &mut value) };
+            assert_eq!(result, kResultOk);
+            (offset, value)
+        })
+        .collect()
+}
+
+/// A point staged at an offset the queue already holds replaces that point's
+/// value wherever it sits: the third stage lands on offset 50, which is not the
+/// last point, so the 100-sample point keeps its place and value.
+#[test]
+fn a_point_at_a_held_offset_replaces_that_point_wherever_it_sits() {
+    let changes = HostParameterChanges::new();
+    changes.stage(5, 50, 0.1);
+    changes.stage(5, 100, 0.2);
+    changes.stage(5, 50, 0.3);
+
+    assert_eq!(
+        read_queue_points(&changes.queues[0]),
+        vec![(50, 0.3), (100, 0.2)]
+    );
+}
+
+/// A queue filled to its bound hands the plugin every point, in order, at its
+/// own offset: the bound is the engine's admitted depth, not a cut below it.
+#[test]
+fn a_queue_filled_to_its_bound_hands_the_plugin_every_point_in_order() {
+    // The engine's 64-deep pending queue (all one parameter's ramp) plus the
+    // staged editor gesture; a literal so lowering the bound cannot shrink the test.
+    const ENGINE_DEPTH_AND_GESTURE: usize = 65;
+    let changes = HostParameterChanges::new();
+    for point in 0..ENGINE_DEPTH_AND_GESTURE {
+        changes.stage(3, point as u32 * 2, point as f64 / 100.0);
+    }
+
+    let expected: Vec<(int32, ParamValue)> = (0..ENGINE_DEPTH_AND_GESTURE)
+        .map(|point| (point as int32 * 2, point as f64 / 100.0))
+        .collect();
+    assert_eq!(read_queue_points(&changes.queues[0]), expected);
+}
+
+/// Past the bound the count stays and the queue ends on the newest value, for
+/// the host's own staging as for a plugin's output points.
+#[test]
+fn a_full_queue_keeps_its_count_and_ends_on_the_newest_value() {
+    let changes = HostParameterChanges::new();
+    for point in 0..MAX_QUEUE_POINTS + 5 {
+        changes.stage(3, point as u32, point as f64 / 1000.0);
+    }
+
+    let points = read_queue_points(&changes.queues[0]);
+    assert_eq!(points.len(), MAX_QUEUE_POINTS);
+    let newest = (MAX_QUEUE_POINTS + 4) as f64 / 1000.0;
+    assert_eq!(changes.queues[0].last_value(), Some(newest));
+    assert!(changes.carries(3, newest));
+    assert!(points.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+}
+
+/// A full queue ends on the newest value whatever offset the new point names,
+/// including one an earlier middle point already holds.
+/// Mutation: test the equal-offset replacement before the full-queue law — the
+/// middle point takes 99.0 and the queue ends on 64.0.
+#[test]
+fn a_full_queue_given_a_point_at_a_middle_offset_still_ends_on_it() {
+    let changes = HostParameterChanges::new();
+    for point in 0..MAX_QUEUE_POINTS {
+        changes.stage(3, point as u32 * 2, point as f64);
+    }
+    assert_eq!(changes.queues[0].last_value(), Some(64.0));
+
+    changes.stage(3, 4, 99.0);
+
+    let points = read_queue_points(&changes.queues[0]);
+    assert_eq!(points.len(), MAX_QUEUE_POINTS);
+    assert_eq!(changes.queues[0].last_value(), Some(99.0));
+    assert!(points.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+}
+
+/// A plugin may add its points out of offset order; the queue keeps them
+/// sorted, as Steinberg's own does, so the value the block settles on is the
+/// one at the highest offset, not the last one added.
+/// Mutation: append instead of inserting at the sorted position — it settles
+/// on 0.2.
+#[test]
+fn an_output_point_added_below_the_last_offset_is_sorted_into_place() {
+    let output = HostParameterChanges::new();
+    let id: ParamID = 7;
+    let mut index = -1;
+    // SAFETY: the list is this test's own live host object; `id` and `index`
+    // outlive the call.
+    let queue = unsafe { output.addParameterData(&id, &mut index) };
+    assert!(!queue.is_null());
+
+    let mut position = -1;
+    // SAFETY: the queue is the live one `addParameterData` returned.
+    unsafe { output.queues[0].addPoint(300, 0.9, &mut position) };
+    assert_eq!(position, 0);
+    // SAFETY: as above.
+    unsafe { output.queues[0].addPoint(100, 0.2, &mut position) };
+    assert_eq!(
+        position, 0,
+        "the earlier point lands ahead of the later one"
+    );
+
+    assert_eq!(
+        read_queue_points(&output.queues[0]),
+        vec![(100, 0.2), (300, 0.9)]
+    );
+    assert_eq!(output.settled().collect::<Vec<_>>(), vec![(7, 0.9)]);
+}
+
+/// A plugin reporting one parameter at more offsets than the queue holds is
+/// settled on the last value it reported, as before the queue was bounded.
+#[test]
+fn an_output_queue_filled_past_its_bound_settles_on_the_newest_value() {
+    let output = HostParameterChanges::new();
+    let id: ParamID = 7;
+    let mut index = -1;
+    // SAFETY: the list is this test's own live host object; `id` and `index`
+    // outlive the call.
+    let queue = unsafe { output.addParameterData(&id, &mut index) };
+    assert!(!queue.is_null());
+
+    for offset in 0..(MAX_QUEUE_POINTS as int32 + 6) {
+        let mut position = -1;
+        // SAFETY: the queue is the live one `addParameterData` returned.
+        let result =
+            unsafe { output.queues[0].addPoint(offset, offset as f64 / 1000.0, &mut position) };
+        assert_eq!(result, kResultOk, "point {offset} was refused");
+    }
+
+    let newest = (MAX_QUEUE_POINTS + 5) as f64 / 1000.0;
+    assert_eq!(output.settled().collect::<Vec<_>>(), vec![(7, newest)]);
+}
+
+/// The plugin clamps the ramp's last point to a value an earlier point already
+/// carried. What it reports is its own correction, not the host's echo.
+#[test]
+fn a_report_equal_to_an_earlier_point_but_not_the_last_is_not_an_echo() {
+    let changes = HostParameterChanges::new();
+    changes.stage(5, 0, 1.0);
+    changes.stage(5, 200, 1.2);
+
+    assert!(!changes.carries(5, 1.0));
+    assert!(changes.carries(5, 1.2));
 }
