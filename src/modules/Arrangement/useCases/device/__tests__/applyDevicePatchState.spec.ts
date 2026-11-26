@@ -84,14 +84,14 @@ describe('applyDevicePatchState', () => {
     });
 
     it('clamps authored writes and restores captured legacy values and absence exactly', () => {
+        const chunk = { version: 1, data: { disclosureTier: 'lab' } };
         track.devices[0] = {
             ...track.devices[0]!,
             type: 'grinder',
-            deviceState: { version: 1, data: { disclosureTier: 'lab' } },
+            deviceState: chunk,
             parameterValues: { master: 999, unrelatedLeaf: 0.7 },
         };
         const before = structuredClone(track);
-        const chunk = track.devices[0].deviceState;
         const captured = { deviceState: chunk, parameterValues: { master: 999, gain: null } };
         const authored = { deviceState: chunk, parameterValues: { master: 999, gain: 9 } };
         const written = { deviceState: chunk, parameterValues: { master: 10, gain: 9 } };

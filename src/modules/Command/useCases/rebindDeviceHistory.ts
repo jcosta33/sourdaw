@@ -4,7 +4,8 @@ import { getHandler } from '../stores/handlerRegistry';
 import { undoStore } from '../stores/undoStore';
 
 function rebindAction(action: AppAction, owner: HandlerDeviceOwnerChange): AppAction {
-    return getHandler(action)?.rebindDeviceOwner?.(action, owner) ?? action;
+    const rebound = getHandler(action)?.rebindDeviceOwner?.(action, owner);
+    return rebound?.type === action.type ? rebound : action;
 }
 
 /** Extend existing replay bindings with the exact owner produced by a local publication. */
