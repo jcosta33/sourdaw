@@ -3124,7 +3124,6 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                     'closing ps command',
                     'closing ps fields',
                     'missing identity',
-                    'changed UID',
                     'whole command',
                     'whole fields',
                     'scoped command',
@@ -3155,8 +3154,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 if(command==='ps'){
                     if(args[0]==='-p'){
                         if(diagnosed&&failure==='missing identity')return failed(true);
-                        if(diagnosed&&failure==='changed UID'){failureReached=true;stdout=(uid+1)+' S\\n'}
-                        else stdout=uid+' S\\n';
+                        stdout=uid+' S\\n';
                     }else if(args[1]==='pid=,ppid=,uid='){
                         if(failure==='parent command')return failed(true);
                         if(failure==='parent fields')return failed(false);
@@ -3182,7 +3180,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                         if(failure==='whole command')return failed(true);
                         if(failure==='whole fields')return failed(false);
                         if(failure==='thrown command'){failureReached=true;throw Error('inspection unavailable')}
-                        const missing=['missing identity','changed UID','scoped command','scoped fields','parent command','parent fields'].includes(failure);
+                        const missing=['missing identity','scoped command','scoped fields','parent command','parent fields'].includes(failure);
                         stdout=entry(pid)+(missing?'':entry(missed));
                     }
                 }else throw Error('unexpected command '+command);
@@ -3220,6 +3218,107 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         expect(observed.released).toBe(false);
         expect(observed.retained).toBe(true);
     });
+
+    // lsof lists a forked same-UID process, then is refused its files once it execs a set-user-ID
+    // binary such as another guard's `ps`. Every simulated lsof call costs 100 ms.
+    it.skipIf(process.getuid === undefined).each([
+        { route: 'whole', departure: 'exited', ending: 'complete', state: 'dead', reason: undefined },
+        { route: 'whole', departure: 'changed UID', ending: 'complete', state: 'dead', reason: undefined },
+        { route: 'whole', departure: 'exited', ending: 'holder', state: 'alive', reason: undefined },
+        { route: 'whole', departure: 'changed UID', ending: 'deadline', state: 'unknown', reason: 'left' },
+        { route: 'whole', departure: 'stays', ending: 'deadline', state: 'unknown', reason: 'stable' },
+        { route: 'scoped', departure: 'exited', ending: 'complete', state: 'dead', reason: undefined },
+        { route: 'scoped', departure: 'changed UID', ending: 'complete', state: 'dead', reason: undefined },
+        { route: 'scoped', departure: 'changed UID', ending: 'holder', state: 'alive', reason: undefined },
+    ])(
+        'classifies a Darwin $route refusal whose process $departure by the $ending observation',
+        async ({ route, departure, ending, state, reason }) => {
+            const root = fixture();
+            chmodSync(root, 0o700);
+            const program = `
+                import childProcess from 'node:child_process';
+                import os from 'node:os';
+                import {syncBuiltinESMExports} from 'node:module';
+                import {existsSync} from 'node:fs';
+                const route=${JSON.stringify(route)},departure=${JSON.stringify(departure)},ending=${JSON.stringify(ending)};
+                const uid=process.getuid(),pid=process.pid,missed=pid+100000;
+                let now=0,refused=false,temp;
+                const departed=()=>refused&&departure!=='stays';
+                os.platform=()=> 'darwin';
+                Date.now=()=>now;
+                process.kill=(target)=>{
+                    if(target===missed&&departed()&&departure==='exited'){
+                        const error=Error('gone');
+                        error.code='ESRCH';
+                        throw error;
+                    }
+                    return true;
+                };
+                const entry=(owner,path)=>'p'+owner+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';
+                // The record shape macOS lsof printed for a forked shell mid-exec of /bin/ps.
+                const refusal=()=>{refused=true;return 'p'+missed+'\\0\\nftxt\\0nregion info error: Operation not permitted\\0\\nferr\\0nFD info error: Operation not permitted\\0\\n'};
+                childProcess.spawnSync=(command,args)=>{
+                    let stdout;
+                    if(command==='ps'){
+                        if(args[0]==='-p'){
+                            if(Number(args[1])===missed&&departed()){
+                                if(departure==='exited')return {status:1,stdout:'',stderr:''};
+                                stdout='0 S\\n';
+                            }else stdout=uid+' S\\n';
+                        }else if(args[1]==='pid=,uid='){
+                            stdout=pid+' '+uid+'\\n';
+                            if(!departed())stdout+=missed+' '+uid+'\\n';
+                            else if(departure==='changed UID')stdout+=missed+' 0\\n';
+                        }else throw Error('unexpected ps '+args.join(' '));
+                    }else if(command==='lsof'){
+                        now+=100;
+                        const scoped=args.includes('-p');
+                        if(scoped)stdout=refusal();
+                        else if(route==='whole'&&(!refused||ending==='deadline'))stdout=entry(pid,'/outside')+refusal();
+                        else stdout=entry(pid,departed()&&ending==='holder'?temp:'/outside');
+                    }else throw Error('unexpected command '+command);
+                    return {status:0,stdout,stderr:''};
+                };
+                syncBuiltinESMExports();
+                const {storageFileState}=await import(${JSON.stringify(guardPath)});
+                const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+                const {areTransientProofReasons}=await import(${JSON.stringify(resolve('scripts/resourceGuardProofReasons.ts'))});
+                const reasons=[];
+                const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],value=>reasons.push(value))};
+                const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+                temp=storage.tempDirectory;
+                const state=storageFileState([temp],[],value=>reasons.push(value));
+                const initial={state,reasons:[...reasons],missed,transient:areTransientProofReasons(reasons)};
+                now=0;
+                const released=await storage.release(true);
+                console.log(JSON.stringify({initial,released,retained:existsSync(temp)}));
+            `;
+            const observed: {
+                initial: { state: string; reasons: string[]; missed: number; transient: boolean };
+                released: boolean;
+                retained: boolean;
+            } = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                })
+            );
+            const detail = `pid=${observed.initial.missed}:fd=txt:type=missing:name=text:match=operation-not-permitted`;
+            const expectedReasons: string[] = [];
+            if (reason === 'left') {
+                expectedReasons.push(`lsof-inspected-pid-left:${detail}`);
+            }
+            if (reason === 'stable') {
+                expectedReasons.push(`lsof-fields-unusable:file-inspection-diagnostic:${detail}`);
+            }
+            expect(observed.initial.state).toBe(state);
+            expect(observed.initial.reasons).toEqual(expectedReasons);
+            expect(observed.initial.transient).toBe(reason === 'left');
+            expect(observed.released).toBe(state === 'dead');
+            expect(observed.retained).toBe(state !== 'dead');
+        }
+    );
 
     // Each newborn is first missed by a whole catalog and by its PID-scoped read, so only a later
     // whole catalog covers it. Every simulated lsof call costs 100 ms of the five-second deadline.
@@ -5002,6 +5101,43 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         }
     });
 
+    it.each([
+        {
+            records:
+                'ftxt\0nregion info error: Operation not permitted\0\nferr\0nFD info error: Operation not permitted',
+            reason: 'file-inspection-diagnostic',
+            detail: 'pid=123:fd=txt:type=missing:name=text:match=operation-not-permitted',
+        },
+        {
+            records: 'fcwd\0tDIR\0n/outside\0\nferr\0nFD info error: Operation not permitted',
+            reason: 'file-inspection-diagnostic',
+            detail: 'pid=123:fd=err:type=missing:name=text:match=operation-not-permitted',
+        },
+        { records: 'fcwd\0tDIR\0n/outside\0\nferr\0nFD info error: unexpected', reason: 'invalid-descriptor' },
+        { records: 'ferr\0tREG\0n/outside/held', reason: 'invalid-descriptor' },
+    ])('reports a refused Darwin process as $reason', ({ records, reason, detail }) => {
+        const reports: { reason: string; detail: string | undefined; pid: number | undefined }[] = [];
+        expect(
+            parseLsofCensus(`p123\0\n${records}\0\n`, (value, valueDetail, pid) =>
+                reports.push({ reason: value, detail: valueDetail, pid })
+            )
+        ).toBeUndefined();
+        expect(reports).toEqual([
+            detail === undefined ? { reason, detail: undefined, pid: undefined } : { reason, detail, pid: 123 },
+        ]);
+    });
+
+    it('lets only an inspected process that left the account warn instead of failing', () => {
+        const detail = 'pid=123:fd=txt:type=missing:name=text:match=operation-not-permitted';
+        expect(areTransientProofReasons([`lsof-inspected-pid-left:${detail}`])).toBe(true);
+        expect(
+            areTransientProofReasons([
+                `lsof-inspected-pid-left:${detail}`,
+                `lsof-fields-unusable:file-inspection-diagnostic:${detail}`,
+            ])
+        ).toBe(false);
+    });
+
     it('keeps whole and scoped inspection diagnostics outside warning-success proof reasons', () => {
         for (const reason of [
             'lsof-fields-unusable:file-inspection-diagnostic',
@@ -5937,6 +6073,23 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(code).toBe(0);
         expect(result?.retainedStorage?.reason).toBe('file-census-time-bound');
         expect(lines.some((line) => line.includes('warning: guard storage retained'))).toBe(true);
+        expect(existsSync(guardFailureReceiptPath(root, 'agent-1-lane'))).toBe(false);
+    });
+
+    it('warns instead of failing when every catalog was refused by a process that left the account', async () => {
+        const root = fixture();
+        const left = 'lsof-inspected-pid-left:pid=11:fd=cwd:type=missing:name=text:match=operation-not-permitted';
+        const { code, lines, result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: censusSequence(['unknown', left], ['unknown', left]),
+        });
+        expect(result?.reason).toBeUndefined();
+        expect(code).toBe(0);
+        expect(result?.retainedStorage?.reason).toBe(left);
+        expect(existsSync(result?.retainedStorage?.path ?? '')).toBe(true);
+        expect(lines.some((line) => line.includes(`warning: guard storage retained, not proved free (${left})`))).toBe(
+            true
+        );
         expect(existsSync(guardFailureReceiptPath(root, 'agent-1-lane'))).toBe(false);
     });
 
