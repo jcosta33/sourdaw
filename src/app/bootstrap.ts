@@ -199,7 +199,6 @@ import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
 import { initCrumbsModePush } from './initCrumbsModePush';
-import { initCrumbsSamplePush } from './initCrumbsSamplePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
 import { initLevainDeviceStateProjectAccess } from './initLevainDeviceStateProjectAccess';
@@ -622,7 +621,6 @@ function startDeviceStateSubscribers(): void {
     // is already carrying what the document held; the route's history and its
     // barrel-cycle home live on `initCrumbsModePush`.
     initCrumbsModePush(eventBus);
-    initCrumbsSamplePush();
     // The native Crumbs instance follows the device's presence on the project, not
     // the panel's mount: the mapper splices a Crumbs device onto its strip by the
     // instance the engine holds, so a sampler whose window is shut would otherwise

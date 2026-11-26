@@ -13,20 +13,28 @@ describe('initCrumbsSamplePush', () => {
         const unrelated = vi.fn();
         const stop = vi.fn();
         mocks.subscribe.mockReturnValue(stop);
-        mocks.tracks.mockReturnValue([{ id: 'track', devices: [{ id: 'sampler' }] }]);
-        mocks.strip.mockReturnValue({
-            deviceNodes: [
-                { deviceId: 'other', crumbsControls: { ready: true, refreshSample: unrelated } },
-                { deviceId: 'sampler', crumbsControls: { ready: true, refreshSample: refresh } },
-            ],
+        mocks.tracks.mockReturnValue([
+            { id: 'other-track', devices: [{ id: 'other' }] },
+            { id: 'track', devices: [{ id: 'sampler' }] },
+        ]);
+        const ownerNode = { deviceId: 'sampler', crumbsControls: { ready: true, refreshSample: refresh } };
+        mocks.strip.mockImplementation((trackId: string) => {
+            if (trackId === 'other-track') {
+                return {
+                    deviceNodes: [{ deviceId: 'other', crumbsControls: { ready: true, refreshSample: unrelated } }],
+                };
+            }
+            return { deviceNodes: [ownerNode] };
         });
         expect(initCrumbsSamplePush()).toBe(stop);
         const publish = mocks.subscribe.mock.calls[0][0];
         publish('sampler');
-        expect(mocks.strip).toHaveBeenCalledWith('track');
+        expect(mocks.strip).toHaveBeenCalledExactlyOnceWith('track');
         expect(refresh).toHaveBeenCalledOnce();
         expect(unrelated).not.toHaveBeenCalled();
         publish('absent');
+        ownerNode.crumbsControls.ready = false;
+        publish('sampler');
         mocks.strip.mockReturnValue(undefined);
         publish('sampler');
         expect(refresh).toHaveBeenCalledOnce();
