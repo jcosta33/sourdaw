@@ -20,7 +20,6 @@ type SaveAuthority = {
 };
 
 const SAVE_PREPARATION_TIMEOUT_MS = 30_000;
-const MAX_SAVE_PREPARATION_ATTEMPTS = 3;
 
 function readCurrentProject(authority: SaveAuthority, signal: AbortSignal) {
     signal.throwIfAborted();
@@ -69,7 +68,10 @@ async function prepareSaveRevision(authority: SaveAuthority, signal: AbortSignal
 
 export async function buildPreparedProjectSaveData(authority: SaveAuthority) {
     const signal = AbortSignal.timeout(SAVE_PREPARATION_TIMEOUT_MS);
-    for (let attempt = 0; attempt < MAX_SAVE_PREPARATION_ATTEMPTS; attempt += 1) {
+    // A concurrent writer (Detect publishing markers, a drag) moves the revision a preparation captured.
+    // Each such move only means this attempt planned against an old revision, so retry against the
+    // latest one until the deadline, which reports a project that never held still.
+    while (!signal.aborted) {
         readCurrentProject(authority, signal);
         let prepared: Awaited<ReturnType<typeof prepareSaveRevision>>;
         try {

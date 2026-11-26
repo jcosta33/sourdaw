@@ -401,6 +401,64 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
+        'saves the latest revision after concurrent writes keep moving it through several preparation attempts (#7500)',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const buildModule = await import('../../fileIO/buildProjectData');
+            const buildProjectData = buildModule.buildProjectData;
+            const concurrentWrites = 4;
+            let builds = 0;
+            vi.spyOn(buildModule, 'buildProjectData').mockImplementation((...args) => {
+                builds += 1;
+                if (builds <= concurrentWrites) {
+                    // Detect publishes its markers outside the save's own action, after the save captured its inputs.
+                    opened.renameTrack(opened.track.id, `Edited during preparation ${builds}`);
+                }
+                return buildProjectData(...args);
+            });
+
+            const saved = await opened.project.saveProject();
+
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(saved).toBe(true);
+            expect(builds).toBe(concurrentWrites + 1);
+            expect(savedTrackNames(indexedDb, opened)).toEqual([`Edited during preparation ${concurrentWrites}`]);
+            expect(opened.projectStore.value?.dirty).toBe(false);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'reports a save that the project keeps outrunning once the preparation deadline passes (#7500)',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const buildModule = await import('../../fileIO/buildProjectData');
+            const buildProjectData = buildModule.buildProjectData;
+            const deadline = new AbortController();
+            vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+            let builds = 0;
+            vi.spyOn(buildModule, 'buildProjectData').mockImplementation((...args) => {
+                builds += 1;
+                opened.renameTrack(opened.track.id, `Never settles ${builds}`);
+                if (builds === 6) {
+                    deadline.abort(new Error('Save preparation deadline passed'));
+                }
+                return buildProjectData(...args);
+            });
+
+            const saved = await opened.project.saveProject();
+
+            expect(saved).toBe(false);
+            expect(builds).toBe(6);
+            expect(opened.persistenceFailures()).toEqual(['Save preparation deadline passed']);
+            expect(opened.projectStore.value?.dirty).toBe(true);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
         'refuses a different PCM replacing a required buffer during the snapshot write',
         async () => {
             const indexedDb = installMultiDatabaseIndexedDb();
