@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+// Registered-port fill (ADR 0065): an unfilled port throws, so every spec starts with each module's neutral
+// double already filled. Each fixture imports only its own leaf port file, never a barrel or a collaborator,
+// so loading it here cannot pull in a module a spec later mocks. A spec that needs other behaviour fills the
+// port itself through the port's fill function; none unfills one.
+import.meta.glob('./modules/*/__tests__/fillRegisteredPorts.ts', { eager: true });
+
 const createStorageShim = (): Storage => {
     const values = new Map<string, string>();
 

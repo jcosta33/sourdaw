@@ -189,7 +189,6 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
         clearCrdtActionHistory();
         await flushPendingFrame();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
-        sessionUndoWitnessStampPort.setProvider(null);
         removeCrdtDoc('root');
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         vi.restoreAllMocks();

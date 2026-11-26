@@ -296,7 +296,6 @@ describe('exact row captures through real Command history and persistence (#5695
     });
     afterAll(async () => {
         unsubscribe();
-        sessionUndoWitnessStampPort.setProvider(null);
         setActionHistoryMetadataPort({
             record: () => [],
             markReverted: () => ({ status: 'unavailable' }),

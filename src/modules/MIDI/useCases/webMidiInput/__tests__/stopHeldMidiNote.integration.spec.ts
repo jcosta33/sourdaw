@@ -67,7 +67,6 @@ import { recordChannelEvent } from '../recordChannelEvent';
 registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-recording';
-let disposeRecordingAdmission = (): void => {};
 let restorePunchHardware = (): void => {};
 
 type RecordingTerminal = (result: {
@@ -227,7 +226,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         trackStore.set({ tracks: [recordingTrack('midi')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
-        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+        setRecordingMidiAdmissionPort({
             admitRecordingMidiNoteOn,
             admitRecordingMidiNoteOff,
             admitRecordingMidiExpression,
@@ -268,7 +267,6 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
         setMidiInputTrack(null);
-        disposeRecordingAdmission();
         setMpeEnabledInternal(false);
         setGestureClockSource({
             getAudioTimeSeconds: () => mocks.audioClock.currentTime,

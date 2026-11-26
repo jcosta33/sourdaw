@@ -30,7 +30,6 @@ import {
     setActionHistoryMetadataPort,
     syncActionReplayMetadata,
     undo,
-    undoReplayPreparationPort,
 } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
@@ -195,7 +194,6 @@ describe('undo history audio buffer residency (#6003)', () => {
     afterEach(async () => {
         configureLiveAudioBufferReferences(null);
         configureHistoryAudioBufferReferences(null);
-        undoReplayPreparationPort.setProvider(null);
         // No saved project owns this file's PCM, so the store clear may delete it.
         configureDurableAudioBufferOwnership(() => Promise.resolve([]));
         clearUndoHistory();

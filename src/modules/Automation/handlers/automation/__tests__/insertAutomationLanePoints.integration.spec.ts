@@ -342,7 +342,6 @@ describe('local automation lane insertion', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
-        sessionUndoWitnessStampPort.setProvider(null);
     });
 
     it('keeps one exact shape entry, the previous point, and color across past and future reloads', async () => {

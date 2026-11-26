@@ -9,12 +9,13 @@ type UndoReplayRelease = () => void;
  * Readies what a replay needs before it runs, and returns the release to run
  * once it has applied or failed. `entries` are the undo entries the replay
  * applies; `actions` are actions it applies that no undo entry carries any
- * longer, such as an action history revert's retained inverse.
+ * longer, such as an action history revert's retained inverse. It answers
+ * `null` when the replay needs nothing readied, so the replay starts at once.
  */
 type UndoReplayPreparationProvider = (
     entries: readonly UndoEntry[],
     actions: readonly AppAction[]
-) => Promise<UndoReplayRelease>;
+) => Promise<UndoReplayRelease> | null;
 
 let provider: UndoReplayPreparationProvider | null = null;
 
@@ -24,11 +25,13 @@ let provider: UndoReplayPreparationProvider | null = null;
  * its PCM is durably stored, so before an entry's inverse or redo runs the
  * provider puts that buffer back and holds it until the replay settles.
  * Command must not import the modules that own those resources, so the
- * composition root injects the provider. With none registered, replays run
- * as they are.
+ * composition root injects the provider. A replay that runs before
+ * `initAudioBufferCacheAccess()` in `src/app/initAudioBufferCacheAccess.ts`
+ * fills it throws: a replay that skipped its preparation would restore a clip
+ * whose evicted buffer is missing.
  */
 export const undoReplayPreparationPort = {
-    setProvider(next: UndoReplayPreparationProvider | null): void {
+    setProvider(next: UndoReplayPreparationProvider): void {
         provider = next;
     },
 };
@@ -47,9 +50,15 @@ export async function runPreparedUndoReplay<Result>(
     replay: () => Promise<Result>
 ): Promise<Result> {
     if (!provider) {
+        throw new Error(
+            'runPreparedUndoReplay: no replay preparation provider is registered; call undoReplayPreparationPort.setProvider() from initAudioBufferCacheAccess() in src/app/initAudioBufferCacheAccess.ts'
+        );
+    }
+    const preparation = provider(entries, actions);
+    if (preparation === null) {
         return replay();
     }
-    const release = await provider(entries, actions);
+    const release = await preparation;
     try {
         return await replay();
     } finally {

@@ -91,7 +91,6 @@ describe('revertAction discards the redo future once its inverse lands', () => {
     });
 
     afterEach(() => {
-        undoReplayPreparationPort.setProvider(null);
         unsubscribeFromHistory();
         unsubscribeFromHistory = () => undefined;
         clearActionHistory();

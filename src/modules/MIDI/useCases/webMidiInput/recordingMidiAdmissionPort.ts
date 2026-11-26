@@ -35,41 +35,37 @@ export type RecordingMidiAdmissionPort = {
     recordingMidiSourceBeatAt(clipId: string, position: EventPosition): number | null;
 };
 
-const inactive: RecordingMidiAdmissionPort = {
-    isRecordingMidiInputExcluded: () => false,
-    admitRecordingMidiNoteOn: () => null,
-    admitRecordingMidiNoteOff: () => undefined,
-    admitRecordingMidiExpression: () => undefined,
-    findOpenRecordingMidiAdmission: () => undefined,
-    findOpenRecordingMidiMemberAdmission: () => undefined,
-    getRecordingMidiAdmission: () => undefined,
-    retireRecordingMidiAdmission: () => undefined,
-    takeOwnsRecordingRoot: () => false,
-    recordingMidiSourceBeatAt: () => null,
-};
+let configured: RecordingMidiAdmissionPort | null = null;
 
-let configured = inactive;
+function readConfigured(caller: string): RecordingMidiAdmissionPort {
+    if (configured === null) {
+        throw new Error(
+            `recordingMidiAdmissionPort.${caller}: no admission port is registered; call setRecordingMidiAdmissionPort() from wireMidiAndNotificationBuses() in src/app/bootstrap.ts`
+        );
+    }
+    return configured;
+}
 
-/** Registered synchronously by app bootstrap before live input starts. */
+/** Registered synchronously by app bootstrap before live input starts; reading it earlier throws. */
 export const recordingMidiAdmissionPort: RecordingMidiAdmissionPort = {
     isRecordingMidiInputExcluded: (audioTime, trackId, clipId) =>
-        configured.isRecordingMidiInputExcluded(audioTime, trackId, clipId),
-    admitRecordingMidiNoteOn: (input) => configured.admitRecordingMidiNoteOn(input),
-    admitRecordingMidiNoteOff: (input) => configured.admitRecordingMidiNoteOff(input),
-    admitRecordingMidiExpression: (input) => configured.admitRecordingMidiExpression(input),
-    findOpenRecordingMidiAdmission: (channel, note) => configured.findOpenRecordingMidiAdmission(channel, note),
-    findOpenRecordingMidiMemberAdmission: (channel) => configured.findOpenRecordingMidiMemberAdmission(channel),
-    getRecordingMidiAdmission: (id) => configured.getRecordingMidiAdmission(id),
-    retireRecordingMidiAdmission: (id) => configured.retireRecordingMidiAdmission(id),
-    takeOwnsRecordingRoot: () => configured.takeOwnsRecordingRoot(),
-    recordingMidiSourceBeatAt: (clipId, position) => configured.recordingMidiSourceBeatAt(clipId, position),
+        readConfigured('isRecordingMidiInputExcluded').isRecordingMidiInputExcluded(audioTime, trackId, clipId),
+    admitRecordingMidiNoteOn: (input) => readConfigured('admitRecordingMidiNoteOn').admitRecordingMidiNoteOn(input),
+    admitRecordingMidiNoteOff: (input) => readConfigured('admitRecordingMidiNoteOff').admitRecordingMidiNoteOff(input),
+    admitRecordingMidiExpression: (input) =>
+        readConfigured('admitRecordingMidiExpression').admitRecordingMidiExpression(input),
+    findOpenRecordingMidiAdmission: (channel, note) =>
+        readConfigured('findOpenRecordingMidiAdmission').findOpenRecordingMidiAdmission(channel, note),
+    findOpenRecordingMidiMemberAdmission: (channel) =>
+        readConfigured('findOpenRecordingMidiMemberAdmission').findOpenRecordingMidiMemberAdmission(channel),
+    getRecordingMidiAdmission: (id) => readConfigured('getRecordingMidiAdmission').getRecordingMidiAdmission(id),
+    retireRecordingMidiAdmission: (id) =>
+        readConfigured('retireRecordingMidiAdmission').retireRecordingMidiAdmission(id),
+    takeOwnsRecordingRoot: () => readConfigured('takeOwnsRecordingRoot').takeOwnsRecordingRoot(),
+    recordingMidiSourceBeatAt: (clipId, position) =>
+        readConfigured('recordingMidiSourceBeatAt').recordingMidiSourceBeatAt(clipId, position),
 };
 
-export function setRecordingMidiAdmissionPort(port: RecordingMidiAdmissionPort): () => void {
+export function setRecordingMidiAdmissionPort(port: RecordingMidiAdmissionPort): void {
     configured = port;
-    return () => {
-        if (configured === port) {
-            configured = inactive;
-        }
-    };
 }
