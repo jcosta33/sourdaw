@@ -13,6 +13,7 @@ import {
 } from './createPostScopeAdmissionStrategyRegistry';
 import { getAddClipPromptEvidence } from './getAddClipPromptEvidence';
 import { getMoveBeatAssertions } from './getMoveBeatAssertions';
+import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { getPromptClauses } from './getPromptClauses';
 import { maskProjectReferences } from './maskProjectReferences';
 import { maskQuotedLabels } from './maskQuotedLabels';
@@ -158,9 +159,8 @@ function hasGroundedAddClipAssertions({
 }
 
 function isExplicitSetPlaybackScope(actionScope: ActionPromptScope): boolean {
-    let commandText = actionScope.text.trim();
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandText = commandText.replace(/^please\s+/iu, '');
+    const trimmed = actionScope.text.trim();
+    const commandText = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     const normalized = normalizePromptText(commandText);
     return ['play', 'start playback', 'resume playback', 'pause', 'pause playback'].includes(normalized);
 }

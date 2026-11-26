@@ -18,6 +18,8 @@ type ClauseActionIntent = {
     phrase: string;
     /** Where the project reference a referenced level phrase acts on sits in the clause. */
     referenceSlot?: { start: number; end: number };
+    /** The track kind noun written right before that reference, which the object it names must fit. */
+    referenceKindNoun?: string;
 };
 
 /** The earliest place the phrase names its action: contiguously, or across one gap the clause admits. */
@@ -61,6 +63,7 @@ export function resolveClauseActionIntent(
                     index: referenced?.index ?? -1,
                     phrase,
                     referenceSlot: referenced?.slot,
+                    referenceKindNoun: referenced?.kindNoun,
                 };
             });
             const phraseMatches = vocabulary.phrases.map((phrase): ClauseActionIntent => ({

@@ -6,6 +6,15 @@ import { normalizePromptText } from './normalizePromptText';
 /** The glyph a masked project reference is written in, one per character; the constraint readers read it from here. */
 export const PROJECT_REFERENCE_MASK_GLYPH = '□';
 
+/**
+ * A project reference as the masking writes it: a clip name keeps its `clip` prefix, and one of exactly
+ * four characters is written as `clip` alone.
+ */
+export const MASKED_REFERENCE_PATTERN = new RegExp(
+    `clip${PROJECT_REFERENCE_MASK_GLYPH}*|${PROJECT_REFERENCE_MASK_GLYPH}+`,
+    'gu'
+);
+
 export const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 
 function getProjectReferenceTexts(context: ProjectContext): string[] {

@@ -1,4 +1,10 @@
+import { DETERMINER, POSSESSIVE_DETERMINER } from '../../perceptualConstraints/constraintClauseWords';
+import { words } from '../../perceptualConstraints/words';
+import { LEVEL_CONTROL_WORDS, TRACK_KIND_NOUNS } from '../protectionObjectForms';
+
+import { ARTICLES } from './classifyPromptDecibelFigures';
 import { escapeRegExp } from './escapeRegExp';
+import { LEVEL_NOUN_PREPOSITIONS } from './levelClauseWords';
 import { normalizePromptText } from './normalizePromptText';
 
 export type GappedIntentPhraseMatch = {
@@ -18,8 +24,21 @@ export type IntentPhraseGaps = {
 /** Spacing and punctuation, never a masked reference. */
 const GAP_SEPARATOR = '[^\\p{L}\\p{N}□]+';
 
-/** `maskProjectReferences.ts` writes each project reference as one run of mask glyphs, a clip name after `clip`. */
-const MASKED_REFERENCE_GAP = `${GAP_SEPARATOR}(?:(?:the|an|a)${GAP_SEPARATOR})?(?:clip)?□+${GAP_SEPARATOR}`;
+/** A word that opens the noun phrase a reference heads: "the Drums", "my Drums". */
+const REFERENCE_DETERMINER = `(?:${words([...ARTICLES])}|${DETERMINER}|${POSSESSIVE_DETERMINER})${GAP_SEPARATOR}`;
+
+/** A level noun and the preposition that hands it to the reference: "the volume for Drums". */
+const LEVEL_NOUN_OF_REFERENCE = `(?:${REFERENCE_DETERMINER})?${words(LEVEL_CONTROL_WORDS)}${GAP_SEPARATOR}${words([...LEVEL_NOUN_PREPOSITIONS])}${GAP_SEPARATOR}`;
+
+/**
+ * `maskProjectReferences.ts` writes each project reference as one run of mask glyphs, a clip name after
+ * `clip`. The reference may head a noun phrase: a level noun handing its level to it, a determiner and a
+ * track kind noun ("turn the volume for the track Drums down"), which say only what the reference is.
+ * The gap reads no project, so whether that noun fits the object the reference names is read where the
+ * clause is read against the project (`readsAsLevelClause.ts`), which refuses "turn the bus Drums down"
+ * for an audio track Drums.
+ */
+const MASKED_REFERENCE_GAP = `${GAP_SEPARATOR}(?:${LEVEL_NOUN_OF_REFERENCE})?(?:${REFERENCE_DETERMINER})?(?:${words([...TRACK_KIND_NOUNS])}${GAP_SEPARATOR})?(?:clip)?□+${GAP_SEPARATOR}`;
 
 /** Proposed names come from provider calls, so compiled patterns are bounded; the oldest leaves first. */
 const COMPILED_PATTERN_CAPACITY = 1024;

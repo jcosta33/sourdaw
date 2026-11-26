@@ -131,13 +131,13 @@ import {
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
-import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
 import { findTrailingRangePhrase } from './groundingStrategies/findTrailingRangePhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
 import { getIntentPhraseIndex } from './groundingStrategies/getIntentPhraseIndex';
 import { getNearestIntentAction } from './groundingStrategies/getNearestIntentAction';
+import { getPoliteCommandPrefixLength } from './groundingStrategies/getPoliteCommandPrefixLength';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { getReferencedCancellationAction } from './groundingStrategies/getReferencedCancellationAction';
 import { getStatedDecibelLevelForms } from './groundingStrategies/getStatedDecibelLevelForms';
@@ -146,9 +146,14 @@ import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/get
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
+import { isLeftAsWritten } from './groundingStrategies/isLeftAsWritten';
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
-import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
+import { kindNounFitsVcaGroup } from './groundingStrategies/kindNounFitsVcaGroup';
+import { MASKED_REFERENCE_PATTERN, maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
+import { NAME_END_WORDS } from './groundingStrategies/nameEndWords';
+import { namesLevelOutsideActionFader } from './groundingStrategies/namesLevelOutsideActionFader';
+import { namesOnlyNonTrackObject } from './groundingStrategies/namesOnlyNonTrackObject';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
 import { groundPostScopeAdmission } from './groundingStrategies/postScopeAdmissionStrategy';
@@ -156,8 +161,10 @@ import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTar
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
+import { readsAsLevelClause } from './groundingStrategies/readsAsLevelClause';
 import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
 import { readStatedRangeBeats } from './groundingStrategies/readStatedRangeBeats';
+import { REASON_OPENER_WORDS } from './groundingStrategies/reasonOpenerWords';
 import { resolveCallRange } from './groundingStrategies/resolveCallRange';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
@@ -169,11 +176,12 @@ import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameter
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
 import { proposalProtection } from './proposalProtection';
-import { protectionObjectForms } from './protectionObjectForms';
+import { LEVEL_CONTROL_WORDS, protectionObjectForms } from './protectionObjectForms';
 import { inertProtectionClauses, readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
+import { refinementCourtesy } from './refinementCourtesy';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 import { resolveAgentReference, type ResolveAgentReferenceResult } from './resolveAgentReference';
 import { resolveCompleteClipReference } from './resolveCompleteClipReference';
@@ -765,9 +773,8 @@ function isExplicitDirectionalCommandClause(
     directionalIntent: NonNullable<GroundingRules['directionalIntent']>,
     targetReferences: DirectionalTargetReferences
 ): boolean {
-    let commandSource = text.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
+    const trimmed = text.trim();
+    const commandSource = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     if (/^["'“”‘’]/u.test(commandSource)) {
         return false;
     }
@@ -846,6 +853,19 @@ function isCueWithinDirectionalTargetReference(
         }
     }
     return false;
+}
+
+/** An unsafe control cue the action does not answer itself: `clearSolos` reads its own restriction. */
+function hasUnansweredUnsafeControlCue(input: {
+    actionName: string;
+    groundingRules: GroundingRules;
+    targetReferences: DirectionalTargetReferences;
+    text: string;
+}): boolean {
+    return (
+        hasUnsafeControlCue(input.text, input.groundingRules.intentPhrases, input.targetReferences) &&
+        !(input.actionName === 'clearSolos' && hasClearSolosRestriction(input.text))
+    );
 }
 
 function hasUnsafeControlCue(
@@ -1205,59 +1225,11 @@ function getProposedCreationNames(
     );
 }
 
-/**
- * Whether a clause names a send ("the Kick send", "send the Kick to the Drum Bus") or the master.
- * Either one is what a level stated there moves, never a track fader.
- */
-function namesSendOrMaster(clause: PromptClause, context: ProjectContext): boolean {
-    if (/□\s+sends?\b/u.test(clause.masked) || /\bsends?\b.*\b(?:to|into)\b/iu.test(clause.masked)) {
-        return true;
-    }
-    return namesMaster(clause, context);
-}
-
-function isBareMasterReference(reference: string): boolean {
-    return normalizePromptText(reference) === 'master';
-}
-
-/**
- * The project's objects other than the master, less any whose whole name is the bare word "master":
- * a synth parameter named "Master" cannot tell the master apart from itself, so it never hides it.
- */
-function getOtherThanMasterReferences(context: ProjectContext): ProjectContext {
-    return {
-        ...context,
-        vcaGroups: context.vcaGroups?.filter((group) => !isBareMasterReference(group.name)),
-        tracks: context.tracks
-            .filter((track) => track.kind !== 'master' && !isBareMasterReference(track.name))
-            .map((track) => ({
-                ...track,
-                clips: track.clips.filter((clip) => !isBareMasterReference(clip.name)),
-                devices: track.devices.map((device) => ({
-                    ...device,
-                    parameters: device.parameters?.filter(
-                        (parameter) => !isBareMasterReference(parameter.id) && !isBareMasterReference(parameter.name)
-                    ),
-                })),
-            })),
-    };
-}
-
-/** Whether a clause names the master itself, outside a longer name of another project object ("Master Keys"). */
-function namesMaster(clause: PromptClause, context: ProjectContext): boolean {
-    return /\bmaster\b/iu.test(maskProjectReferences(clause.text, getOtherThanMasterReferences(context)));
-}
-
-/**
- * Whether a clause states a level the action never moves: a send's or the master's for a track
- * fader, and anything but the master's for the master fader.
- */
-function namesLevelOutsideActionFader(actionName: string, clause: PromptClause, context: ProjectContext): boolean {
-    if (actionName === 'setTrackGain') {
-        return namesSendOrMaster(clause, context);
-    }
-    return actionName === 'setMasterGain' && !namesMaster(clause, context);
-}
+/** One masked reference and its decibel figure: "the Snare at -9 dB", or "Riff to -3 dB" for a four-character clip. */
+const LEVEL_CONTINUATION_PATTERN = new RegExp(
+    String.raw`^\s*(?:(?:the|a|an)\s+)?(?:${MASKED_REFERENCE_PATTERN.source})\s+(?:at|to|by|up|down)\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*d\s?b\s*$`,
+    'iu'
+);
 
 /**
  * A clause that only adds one more reference and its decibel figure to the level change before it:
@@ -1267,15 +1239,70 @@ function isLevelContinuationClause(
     maskedClause: string,
     decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[]
 ): boolean {
-    if (
-        !/^\s*(?:(?:the|a|an)\s+)?(?:clip)?□+\s+(?:at|to|by|up|down)\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*d\s?b\s*$/iu.test(
-            maskedClause
-        )
-    ) {
+    if (!LEVEL_CONTINUATION_PATTERN.test(maskedClause)) {
         return false;
     }
     const statedLevelForms = getStatedDecibelLevelForms(maskedClause);
     return decibelLevelForms.some((form) => statedLevelForms.has(form));
+}
+
+/**
+ * Whether a continuation adds an object other than a track to a track action's level: "set Drums to
+ * -6 dB, Vocal Take to -3 dB" names the clip Vocal Take, which no fader is, and so does the word "clip"
+ * the masking leaves as written.
+ */
+function continuesOntoNonTrackObject(
+    groundingRules: GroundingRules,
+    clause: PromptClause,
+    context: ProjectContext
+): boolean {
+    if (groundingRules.targetRules[0]?.capability !== 'track') {
+        return false;
+    }
+    const [reference] = clause.masked.matchAll(MASKED_REFERENCE_PATTERN);
+    if (reference === undefined) {
+        return false;
+    }
+    const span = { start: reference.index, end: reference.index + reference[0].length };
+    return (
+        isLeftAsWritten(clause.text, clause.masked, span) ||
+        namesOnlyNonTrackObject(clause.text.slice(span.start, span.end), context)
+    );
+}
+
+/**
+ * Whether a clause continues the level change before it onto this action's own fader: one more track
+ * reference and its figure, naming no other fader and no object other than a track.
+ */
+function continuesActionFaderLevel(input: {
+    actionName: string;
+    clause: PromptClause;
+    context: ProjectContext;
+    decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[];
+    groundingRules: GroundingRules;
+}): boolean {
+    const { actionName, clause, context } = input;
+    return (
+        isLevelContinuationClause(clause.masked, input.decibelLevelForms) &&
+        !namesLevelOutsideActionFader(actionName, clause, context) &&
+        !continuesOntoNonTrackObject(input.groundingRules, clause, context)
+    );
+}
+
+/** Whether a track fader clause stating a decibel figure reads in the one level-clause shape. */
+function readsAsTrackLevelClause(
+    actionName: string,
+    clause: PromptClause,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): boolean {
+    if (actionName !== 'setTrackGain') {
+        return true;
+    }
+    const entry = catalog.find((candidate) => candidate.actionType === actionName);
+    return (
+        entry !== undefined && readsAsLevelClause({ clause, closesOnRange: declaresRange(actionName), context, entry })
+    );
 }
 
 /**
@@ -1419,24 +1446,33 @@ function getSendSetScope(input: {
     };
 }
 
-/** The head may contain only the action carrier before the first whole target. */
-function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
-    const commandLead = lead
-        .trim()
-        .replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '')
-        .replace(/^please(?:\s+|$)/iu, '');
-    const normalizedLead = normalizePromptText(commandLead);
-    const normalizedIntent = normalizePromptText(intentPhrase);
-    if (intentPhrase.startsWith(REFERENCE_PLACEHOLDER)) {
-        // "Drums and Bass up 2 dB": the phrase opens with its reference, so the list is the whole head.
-        return normalizedLead.length === 0;
-    }
+/**
+ * Whether the list, read with its members as one, is a level clause in the shape a single target's is,
+ * so "lower the volume of the Drums and the Bass by 3 dB" reads as "lower the volume of the Drums by 3 dB".
+ */
+function readsAsCollapsedLevelClause(
+    list: CoordinatedTrackList,
+    input: { actionName: string; catalog: GroundingCatalog; context: ProjectContext }
+): boolean {
+    const entry = input.catalog.find((candidate) => candidate.actionType === input.actionName);
     return (
-        normalizedLead.length > 0 &&
-        (normalizedIntent === normalizedLead ||
-            normalizedIntent.startsWith(`${normalizedLead} `) ||
-            // "set Drums and Bass volume to -6 dB" states its gain intent after the list.
-            (/^(?:set|make)$/u.test(normalizedLead) && /^(?:gain|volume|louder|quieter)$/u.test(normalizedIntent)))
+        entry !== undefined &&
+        readsAsLevelClause({
+            clause: { masked: list.collapsedMasked, text: list.collapsedText },
+            closesOnRange: declaresRange(input.actionName),
+            context: input.context,
+            entry,
+        })
+    );
+}
+
+/**
+ * Whether a member's whole name is a courtesy word: "Okay, Drums up 2 dB" beside a track called Okay
+ * may list Okay or open on courtesy, and nothing in the words says which.
+ */
+function hasCourtesyNamedMember(list: CoordinatedTrackList, prompt: string): boolean {
+    return list.members.some((member) =>
+        refinementCourtesy.strict.has(normalizePromptText(prompt.slice(member.start, member.end)))
     );
 }
 
@@ -1555,13 +1591,18 @@ function getCoordinatedLevelLists(input: {
         const intent = resolveClauseActionIntent(list.collapsedMasked, input.catalog, input.actionName);
         if (
             intent?.actionType !== input.actionName ||
-            !hasCompleteListHead(list.lead, intent.phrase) ||
+            !readsAsCollapsedLevelClause(list, input) ||
             namesLevelOutsideActionFader(input.actionName, clause, input.context)
         ) {
             return [];
         }
         const range = { firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex };
-        if (list.memberIds === null || list.memberNamedOutsideList || !list.everyOtherClauseNamesAnotherTrack) {
+        if (
+            list.memberIds === null ||
+            list.memberNamedOutsideList ||
+            !list.everyOtherClauseNamesAnotherTrack ||
+            hasCourtesyNamedMember(list, input.prompt)
+        ) {
             return [{ ...range, scope: null }];
         }
         if (targetRule.cardinality === 'many') {
@@ -1792,8 +1833,12 @@ function resolveActionPromptScope({
         if (intent) {
             if (intent.actionType === actionName) {
                 if (
-                    hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences) &&
-                    !(actionName === 'clearSolos' && hasClearSolosRestriction(clause.text))
+                    hasUnansweredUnsafeControlCue({
+                        actionName,
+                        groundingRules,
+                        targetReferences: controlTargetReferences,
+                        text: clause.text,
+                    })
                 ) {
                     continue;
                 }
@@ -1801,6 +1846,9 @@ function resolveActionPromptScope({
                     // The clause carries the level verb even though another fader owns its level,
                     // so the next clause may still continue that verb onto this action's fader.
                     takesContinuation = decibelLevelForms.length > 0;
+                    continue;
+                }
+                if (!readsAsTrackLevelClause(actionName, clause, catalog, context)) {
                     continue;
                 }
                 const sendSetScope = getSendSetScope({
@@ -1821,6 +1869,7 @@ function resolveActionPromptScope({
                     matchedIntentPhrase: intent.phrase,
                     referencedSlot:
                         intent.referenceSlot && clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end),
+                    referencedKindNoun: intent.referenceKindNoun,
                 });
                 takesContinuation = decibelLevelForms.length > 0;
             }
@@ -1829,8 +1878,7 @@ function resolveActionPromptScope({
         const previousScope = matchingScopes.at(-1);
         if (
             continuesScope &&
-            isLevelContinuationClause(clause.masked, decibelLevelForms) &&
-            !namesLevelOutsideActionFader(actionName, clause, context)
+            continuesActionFaderLevel({ actionName, clause, context, decibelLevelForms, groundingRules })
         ) {
             if (previousScope) {
                 matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
@@ -1944,35 +1992,25 @@ function resolveActionPromptScope({
             return null;
         }
     } else if (
-        hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences) &&
-        !(actionName === 'clearSolos' && hasClearSolosRestriction(selectedScope.text))
+        hasUnansweredUnsafeControlCue({
+            actionName,
+            groundingRules,
+            targetReferences: selectedTargetReferences,
+            text: selectedScope.text,
+        })
     ) {
         return null;
     }
     return compiledGroup ? { ...selectedScope, compilerGroupArguments: compiledGroup.arguments } : selectedScope;
 }
 
-/** The whole clauses a request may carry beside a referenced level phrase, and nothing else. */
-const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay']);
-
 /**
- * Whether a coordinated list is read: it resolves to a scope (it ends on its one figure and names no member
- * outside it) and the batch answers every member it grounds. A list that does not may single a member out
- * or restate the level ("... down 3 dB instead", "... only in the chorus"), which no word list enumerates.
+ * Whether a coordinated list is read: it resolves to a scope of its own, reading in the one level-clause
+ * shape and naming no member outside it. A list that does not may single a member out or restate the
+ * level ("... down 3 dB instead", "... only in the chorus"), which no word list enumerates.
  */
-function isListAnsweredByEveryMember(
-    list: CoordinatedLevelList,
-    calls: readonly ToolCallResult[],
-    actionName: string,
-    targetArgument: string
-): boolean {
-    const memberIds = list.scope?.coordinatedTargets?.memberIds;
-    return (
-        memberIds !== undefined &&
-        memberIds.every((memberId) =>
-            calls.some((call) => call.name === actionName && call.arguments[targetArgument] === memberId)
-        )
-    );
+function resolvesToListScope(list: CoordinatedLevelList): boolean {
+    return list.scope?.coordinatedTargets?.memberIds !== undefined;
 }
 
 /**
@@ -2007,6 +2045,9 @@ function readsOnlyReferencedVcaLevel(input: {
     if (intent?.actionType !== 'setVcaGain' || !intent.referenceSlot) {
         return false;
     }
+    if (intent.referenceKindNoun !== undefined && !kindNounFitsVcaGroup(intent.referenceKindNoun)) {
+        return false;
+    }
     const reference = normalizePromptText(clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end));
     const matches = (input.context.vcaGroups ?? []).filter((candidate) =>
         [candidate.id, candidate.name].some((name) => normalizePromptText(name) === reference)
@@ -2022,19 +2063,14 @@ function readsOnlyReferencedVcaLevel(input: {
 }
 
 function readsOnlyReferencedLevelClauses(input: {
-    calls: readonly ToolCallResult[];
     catalog: GroundingCatalog;
     context: ProjectContext;
     prompt: string;
 }): boolean {
-    const { calls, catalog, context, prompt } = input;
+    const { catalog, context, prompt } = input;
     const actionName = 'setTrackGain';
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     if (!groundingRules) {
-        return false;
-    }
-    const targetArgument = groundingRules.targetRules[0]?.argument;
-    if (targetArgument === undefined) {
         return false;
     }
     const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
@@ -2050,33 +2086,27 @@ function readsOnlyReferencedLevelClauses(input: {
         maskedPrompt,
         prompt,
     });
-    let continuesReferencedLevel = false;
     return clauses.every((clause, clauseIndex) => {
-        const continuesScope = continuesReferencedLevel;
-        continuesReferencedLevel = false;
         if (
             coordinatedLevelLists.some(
                 (list) =>
                     clauseIndex >= list.firstClauseIndex &&
                     clauseIndex <= list.lastClauseIndex &&
-                    isListAnsweredByEveryMember(list, calls, actionName, targetArgument)
+                    resolvesToListScope(list)
             )
         ) {
             return true;
         }
-        if (STRICT_COURTESY_CLAUSES.has(normalizePromptText(clause.masked))) {
+        if (refinementCourtesy.strict.has(normalizePromptText(clause.masked))) {
             return true;
         }
         if (namesLevelOutsideActionFader(actionName, clause, context)) {
             return false;
         }
         const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
-        const continuesLevel =
-            intent === null
-                ? continuesScope && isLevelContinuationClause(clause.masked, decibelLevelForms)
-                : intent.actionType === actionName && intent.referenceSlot !== undefined;
-        continuesReferencedLevel = continuesLevel;
-        return continuesLevel;
+        return intent === null
+            ? isLevelContinuationClause(clause.masked, decibelLevelForms)
+            : intent.actionType === actionName && intent.referenceSlot !== undefined;
     });
 }
 
@@ -3149,6 +3179,12 @@ function getMarkerNameFromPrompt(promptText: string): string | null {
     return unquotedName || null;
 }
 
+/** Where a stated reason opens after a marker or section name, so the reason is never read as part of the name. */
+const RATIONALE_BOUNDARY_PATTERN = new RegExp(
+    String.raw`\s+(?=(?:${[...REASON_OPENER_WORDS, ...NAME_END_WORDS].join('|')})\b)`,
+    'iu'
+);
+
 function getMarkerReferenceNameFromPrompt(promptText: string): string | null {
     const intent =
         /\b(?:(?:remove|delete)(?:\s+the)?\s+marker|(?:set|change)(?:\s+the)?\s+marker\s+color(?:\s+(?:for|of))?|recolor(?:\s+the)?\s+marker)\b/iu.exec(
@@ -3174,7 +3210,7 @@ function getMarkerReferenceNameFromPrompt(promptText: string): string | null {
     if (!beatClause) {
         return null;
     }
-    const rationale = /\s+(?=(?:because\b|since\b|so\b|to\b|for\b|as\b|which\b|when\b|where\b))/iu.exec(tail);
+    const rationale = RATIONALE_BOUNDARY_PATTERN.exec(tail);
     const nameEnd = Math.min(beatClause.index, rationale?.index ?? beatClause.index);
     const unquotedName = tail
         .slice(0, nameEnd)
@@ -3293,7 +3329,7 @@ function getSectionNameFromPrompt(promptText: string): string | null {
     if (/^(?:"|'|“|‘)/u.test(rawName.trim())) {
         return parseExplicitSectionName(rawName);
     }
-    const rationale = /\s+(?=(?:because|since|so|to|for|as|which|when|where)\b)/iu.exec(rawName);
+    const rationale = RATIONALE_BOUNDARY_PATTERN.exec(rawName);
     return parseExplicitSectionName(rawName.slice(0, rationale?.index ?? rawName.length));
 }
 
@@ -3864,7 +3900,7 @@ function validateStringLiteralValue(
         const normalizedAssertedValue = normalizePromptText(assertedValue);
         let aliases: readonly string[] = [];
         if (normalizedAssertedValue === 'gain') {
-            aliases = ['gain', 'volume', 'fader', 'level'];
+            aliases = LEVEL_CONTROL_WORDS;
         } else if (normalizedAssertedValue === 'pan') {
             aliases = ['pan', 'panning'];
         }
@@ -6301,18 +6337,16 @@ function hasClipLoopLengthFamilyReference(prompt: string): boolean {
 }
 
 function isExactPunchCommandClause(clause: PromptClause): boolean {
-    let commandSource = clause.masked.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
+    const trimmed = clause.masked.trim();
+    const commandSource = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     return /^(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\s+(?:(?:at|to)\s+)?beat\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[?!]?$/iu.test(
         commandSource
     );
 }
 
 function isExactPunchEnabledCommandClause(clause: PromptClause): boolean {
-    let commandSource = clause.masked.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
+    const trimmed = clause.masked.trim();
+    const commandSource = trimmed.slice(getPoliteCommandPrefixLength(trimmed));
     return /^(?:(?:enable|disable)\s+punch\s+(?:in\s*\/\s*out|mode)|turn\s+punch\s+(?:in\s*\/\s*out|mode)\s+(?:on|off))(?:\s+please)?\s*[?!.]?$/iu.test(
         commandSource
     );
@@ -7555,7 +7589,6 @@ function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput):
     if (
         main.rejections.some((mainRejection) => mainRejection.name === '<batch>') ||
         (!readsOnlyReferencedLevelClauses({
-            calls: input.calls,
             catalog,
             context: input.context,
             prompt: input.prompt,

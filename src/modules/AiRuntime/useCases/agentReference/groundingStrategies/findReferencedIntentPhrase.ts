@@ -1,4 +1,8 @@
+import { words } from '../../perceptualConstraints/words';
+import { TRACK_KIND_NOUNS } from '../protectionObjectForms';
+
 import { escapeRegExp } from './escapeRegExp';
+import { POLITE_COMMAND_PREFIX_SOURCE } from './getPoliteCommandPrefixLength';
 import { normalizePromptText } from './normalizePromptText';
 
 export type ReferencedIntentPhraseMatch = {
@@ -6,23 +10,28 @@ export type ReferencedIntentPhraseMatch = {
     index: number;
     /** Where the reference the placeholder stands for sits in the clause itself. */
     slot: { start: number; end: number };
+    /** The track kind noun written right before the reference, lowercased, which says what it names. */
+    kindNoun?: string;
 };
 
 /** The registry writes the project object a phrase acts on as this placeholder. */
 export const REFERENCE_PLACEHOLDER = '{reference}';
 
-/** `maskProjectReferences.ts` writes each project reference as one run of mask glyphs. */
-const MASKED_REFERENCE = '(?:the\\s+)?(□+)';
+/**
+ * `maskProjectReferences.ts` writes each project reference as one run of mask glyphs, optionally after
+ * "the" and a track kind noun that says what it is: "set channel Drums to -6 dB". The match reports the
+ * noun, so a reader that knows the project holds it to the object the reference names.
+ */
+const MASKED_REFERENCE = `(?:the\\s+)?(?:(${words([...TRACK_KIND_NOUNS])})\\s+)?(□+)`;
 
 /** A signed decibel figure and its unit, the way `classifyPromptDecibelFigures.ts` reads one. */
 const DECIBEL_FIGURE = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*d\\s?b';
 
 /**
- * The clause opens with exactly the polite prefix `isExplicitCommandClause.ts` strips: the carrier
- * ("could you", "could you please") and then at most one "please" ("could you please please set" reads,
- * "please please set" does not). It closes with at most "please" and a full stop.
+ * The clause opens with exactly the polite prefix `isExplicitCommandClause.ts` strips, and closes with
+ * at most "please" and a full stop.
  */
-const CLAUSE_START = '^\\s*(?:(?:please\\s+)?(?:can|could|would)\\s+you(?:\\s+please)?\\s+)?(?:please\\s+)?';
+const CLAUSE_START = POLITE_COMMAND_PREFIX_SOURCE;
 const CLAUSE_END = '(?:\\s+please)?\\s*\\.?\\s*$';
 
 /** Registry phrases bound this; each pattern is built once. */
@@ -52,7 +61,7 @@ function getPhrasePattern(phrase: string): RegExp {
 export function findReferencedIntentPhrase(text: string, phrase: string): ReferencedIntentPhraseMatch | null {
     const match = getPhrasePattern(phrase).exec(text);
     const phraseSpan = match?.indices?.[1];
-    const slotSpan = match?.indices?.[2];
+    const slotSpan = match?.indices?.[3];
     if (!phraseSpan || !slotSpan) {
         return null;
     }
@@ -60,5 +69,6 @@ export function findReferencedIntentPhrase(text: string, phrase: string): Refere
     return {
         index: normalizedPrefix.length === 0 ? 0 : normalizedPrefix.length + 1,
         slot: { start: slotSpan[0], end: slotSpan[1] },
+        kindNoun: match[2]?.toLocaleLowerCase(),
     };
 }

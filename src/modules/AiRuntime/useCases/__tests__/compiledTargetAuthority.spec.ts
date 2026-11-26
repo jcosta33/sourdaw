@@ -1116,6 +1116,14 @@ describe('compiled selectors for objects the request names or selects still grou
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
     });
+
+    it('refuses that selection when words after its figure name another control', () => {
+        const result = compileMix('lower every audio track other than Vocals by 3 dB on the send', [
+            everyAudioTrackExceptVocals('setTrackGain', { deltaDb: -3 }),
+        ]);
+
+        expect(targetsOf(result)).toEqual([]);
+    });
 });
 
 const renameTrack: ProjectTrack = {
@@ -1450,12 +1458,39 @@ describe('supported named prohibitions protect rather than state their object', 
         'turn Vocals down 3 dB relative to Keys',
         'turn Vocals down 3 dB because Keys is too loud',
         'turn Vocals down 3 dB like Keys',
+        'turn Vocals down 3 dB compared to Keys',
+        'turn Vocals down 3 dB compared to the Keys',
+        'turn Vocals down 3 dB compared with Keys',
+        'turn Vocals down 3 dB compared with the Keys',
+        'turn Vocals down 3 dB like Keys in the mix',
+        'turn Vocals down 3 dB so the Keys sit better',
+        'turn Vocals down 3 dB so the Keys track sits better',
+        'turn Vocals down 3 dB like the Keys track',
     ])('grounds the named Vocals selector in "%s"', (prompt) => {
         const value = prompt.startsWith('set') ? { gain: 0.75 } : { deltaDb: -3 };
         const result = compileMix(prompt, [trackItem('setTrackGain', mixVocals, value)]);
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([mixVocals.id]);
+    });
+
+    it.each([
+        'turn Vocals down 3 dB like Keys on the send',
+        'turn Vocals down 3 dB like Keys panned hard left',
+        'turn Vocals down 3 dB relative to Keys at -12 dB',
+        'turn Vocals down 3 dB so the Keys',
+    ])('refuses the named Vocals selector in "%s", whose words after Keys name more than Keys', (prompt) => {
+        const result = compileMix(prompt, [trackItem('setTrackGain', mixVocals, { deltaDb: -3 })]);
+
+        expect(targetsOf(result)).toEqual([]);
+    });
+
+    it('refuses the named Vocals selector compared against nothing the project holds', () => {
+        const result = compileMix('turn Vocals down 3 dB like the snare', [
+            trackItem('setTrackGain', mixVocals, { deltaDb: -3 }),
+        ]);
+
+        expect(targetsOf(result)).toEqual([]);
     });
 
     it('grounds a named source routed to a bus whose name holds another bus name', () => {

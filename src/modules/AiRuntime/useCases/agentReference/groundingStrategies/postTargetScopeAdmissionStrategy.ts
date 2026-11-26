@@ -15,6 +15,7 @@ import {
     type PostTargetScopeAdmissionStrategyDefinition,
 } from './createPostTargetScopeAdmissionStrategyRegistry';
 import { escapeRegExp } from './escapeRegExp';
+import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { PROMPT_CLAUSE_SEPARATOR } from './getPromptClauses';
 import { hasReferenceOutsideMatchedIntent } from './hasReferenceOutsideMatchedIntent';
 import { hasTrackControlRestriction } from './hasTrackControlRestriction';
@@ -74,8 +75,7 @@ function isExplicitTrackDeletionScope({
         commandText = commandText.replaceAll(pattern, ' ');
     }
     commandText = normalizePromptText(commandText);
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/u, '');
-    commandText = commandText.replace(/^please\s+/u, '');
+    commandText = commandText.slice(getPoliteCommandPrefixLength(commandText));
     return /^(?:delete|remove)(?: the)?(?: (?:selected|current|this)(?: (?:audio|midi|bus|folder))?)?(?: track)?(?: from (?:the )?project)?$/u.test(
         commandText
     );
@@ -115,8 +115,7 @@ function isExplicitClipDeletionScope({
         commandText = commandText.replaceAll(pattern, ' ');
     }
     commandText = normalizePromptText(commandText);
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/u, '');
-    commandText = commandText.replace(/^please\s+/u, '');
+    commandText = commandText.slice(getPoliteCommandPrefixLength(commandText));
     return /^(?:delete|remove)(?: the)?(?: (?:selected|current|this)(?: (?:audio|midi))?)?(?: clip)?(?: from (?:the )?project)?$/u.test(
         commandText
     );

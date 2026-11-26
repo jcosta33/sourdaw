@@ -28,16 +28,20 @@ export const CONNECTIVE_WORDS: ReadonlySet<string> = new Set([
     'into',
     'than',
 ]);
+/** The mixer controls that name a track's level: "the Drums fader", "the volume of the Drums". */
+export const LEVEL_CONTROL_WORDS: readonly string[] = ['gain', 'volume', 'fader', 'level'];
+/**
+ * A noun after a track's name that names that track's level in the mix: "the Drums mix". Where a device
+ * parameter carries the name the reference masking hides it, so it names that parameter instead.
+ */
+export const MIX_LEVEL_NOUNS: readonly string[] = ['mix'];
 /** The mixer controls a protection may qualify an object with, in the singular; a plural reads as its singular. */
 export const CONTROL_WORDS: ReadonlySet<string> = new Set([
     'pan',
     'panning',
     'solo',
     'mute',
-    'fader',
-    'gain',
-    'level',
-    'volume',
+    ...LEVEL_CONTROL_WORDS,
     'arm',
     'send',
     'routing',
@@ -130,7 +134,11 @@ function writesUnboundName(named: readonly Token[]): boolean {
     return isWrittenAsName(named) && !conventional;
 }
 
-const KIND_OBJECT: Readonly<Record<string, ProtectableObjectName['kind']>> = {
+/**
+ * The kind of object each track kind noun names: a track or channel any track, a bus or return a bus,
+ * a group or VCA a VCA group.
+ */
+export const KIND_OBJECT: Readonly<Record<string, ProtectableObjectName['kind']>> = {
     track: 'track',
     channel: 'track',
     bus: 'bus',

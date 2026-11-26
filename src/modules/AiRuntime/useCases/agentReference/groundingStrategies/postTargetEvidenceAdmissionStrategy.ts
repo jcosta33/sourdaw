@@ -12,6 +12,7 @@ import { getAddClipPromptEvidence } from './getAddClipPromptEvidence';
 import { getMoveBeatAssertions } from './getMoveBeatAssertions';
 import { getTargetPromptScope } from './getTargetPromptScope';
 import { isDirectGlueClipPairScope } from './isDirectGlueClipPairScope';
+import { kindNounFitsTrack } from './kindNounFitsTrack';
 import { normalizePromptText } from './normalizePromptText';
 import { type ActionPromptScope } from './promptScope';
 
@@ -129,16 +130,20 @@ function isDirectAddClipTarget(targetText: string, trackId: unknown, context: Pr
 /**
  * A referenced level phrase ("set {reference} to") acts on the track its reference slot names. A device,
  * parameter, VCA group or clip in the slot selects no fader, and a call on another track is not that
- * phrase's. A scope that continued the phrase onto further tracks answers for each of them, so there the
- * slot must still name a track.
+ * phrase's, and neither is a track a kind noun before the slot does not fit ("set vca Drums to", "set the
+ * bus Drums to" for an audio track Drums). A scope that continued the phrase onto further tracks answers
+ * for each of them, so there the slot must still name a track.
  */
 function isReferencedSlotTheTrack(actionScope: ActionPromptScope, trackId: unknown, context: ProjectContext): boolean {
     if (actionScope.referencedSlot === undefined) {
         return true;
     }
     const slot = normalizePromptText(actionScope.referencedSlot);
-    const namedTracks = context.tracks.filter((track) =>
-        [track.id, track.name].some((reference) => normalizePromptText(reference) === slot)
+    const kindNoun = actionScope.referencedKindNoun;
+    const namedTracks = context.tracks.filter(
+        (track) =>
+            [track.id, track.name].some((reference) => normalizePromptText(reference) === slot) &&
+            (kindNoun === undefined || kindNounFitsTrack(kindNoun, track))
     );
     if ((actionScope.referenceSlots ?? 1) > 1) {
         return namedTracks.length > 0;

@@ -3,6 +3,7 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 import { findGappedIntentPhrase, type IntentPhraseGaps } from './findGappedIntentPhrase';
 import { findReferencedIntentPhrase } from './findReferencedIntentPhrase';
 import { getClauseIntentVocabulary, type CreationProposal } from './getClauseIntentVocabulary';
+import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { normalizePromptText } from './normalizePromptText';
 
@@ -31,14 +32,16 @@ function startsWithGappedPhrase(commandSource: string, phrase: string, gaps: Int
     return !describesRatherThanCommands(normalizePromptText(commandSource.slice(gapped.end)));
 }
 
+function stripPoliteCommandPrefix(text: string): string {
+    return text.slice(getPoliteCommandPrefixLength(text)).trim();
+}
+
 export function isExplicitCommandClause(
     maskedText: string,
     catalog: GroundingCatalog,
     creationProposal?: CreationProposal
 ): boolean {
-    let commandSource = maskedText.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
+    const commandSource = stripPoliteCommandPrefix(maskedText);
     if (/^["'“”‘’]/u.test(commandSource)) {
         return false;
     }

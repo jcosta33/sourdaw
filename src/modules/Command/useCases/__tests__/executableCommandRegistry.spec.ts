@@ -2353,7 +2353,19 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'setTrackGain',
         intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
-        levelIntentPhrases: ['put', 'bring up', 'bring down'],
+        levelIntentPhrases: [
+            'put',
+            'bring up',
+            'bring down',
+            'bump up',
+            'bump down',
+            'take up',
+            'take down',
+            'pull up',
+            'pull down',
+            'nudge up',
+            'nudge down',
+        ],
         targetRules: [{ argument: 'trackId', capability: 'track' }],
         valueRules: [
             { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
