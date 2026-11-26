@@ -3243,6 +3243,21 @@ describe('a call reads the figures of the other tracks in its scope only where t
     });
 });
 
+describe('a name fragment that is a stop word of the request states no track', () => {
+    it('grounds "Mute Vocals. Add a compressor to it." beside a track named Synth A', () => {
+        const synthA = createTrack({ id: 'track-mix-synth-a', name: 'Synth A' });
+        const result = compileAndBridge(
+            'Mute Vocals. Add a compressor to it.',
+            [trackItem('muteTrack', mixVocals, { muted: true }), addDeviceItem(mixVocals, 'builtin-compressor')],
+            [],
+            { ...mixContext, tracks: [...mixContext.tracks, synthA] }
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixVocals.id]);
+    });
+});
+
 describe('a name fragment picks only tracks whose name has it as a word start', () => {
     it('refuses Launchpad for "turn down the pads by 3 dB"', () => {
         const { context, track } = namedTracksContext(['Warm Pad', 'Dark Pad', 'Launchpad']);

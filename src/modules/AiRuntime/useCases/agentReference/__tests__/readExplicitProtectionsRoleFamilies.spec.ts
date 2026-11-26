@@ -319,7 +319,7 @@ describe('readExplicitProtections over a canonical role phrase and the negating 
 
     it.each([
         ['Do not change Keys, not Bass and the drums.', [keys.id, ...DRUM_IDS]],
-        ['Never change Keys, not Bass, not Drums.', [keys.id, ...DRUM_IDS]],
+        ['Never change Keys, not Bass, not Drums.', [keys.id]],
         ["Don't touch Keys, not Bass.", [keys.id]],
         ['Leave Keys alone, not Bass.', [keys.id]],
     ])('"%s" continues the protection through a coordinated not', (prompt, protectedTrackIds) => {

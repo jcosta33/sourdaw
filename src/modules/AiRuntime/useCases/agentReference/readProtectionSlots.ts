@@ -215,22 +215,15 @@ function continuesProtectionOwner(masked: string, event: Event, lead: Piece['lea
 }
 
 /**
- * A coordinated "not" inside a still-open protection that closes later in its sentence lists a member of that
- * protection ("keep Keys, not Bass, unchanged"), so it opens no carve-out that would cut the clause before its closer.
+ * A coordinated "not" carves its member out only of a change instruction ("turn Drums down 3 dB, not Keys"). After a
+ * protection it belongs to that protection's own member list ("keep Keys, not Bass, unchanged", "do not change Keys,
+ * not Bass or Drums"), which the protection reads whole, so it opens no carve-out there.
  */
 function insideOpenProtection(masked: string, event: Event, lead: Piece['lead']): boolean {
     if (event.kind !== 'carve-out' || masked.slice(event.index, event.end).toLowerCase() !== 'not') {
         return false;
     }
-    if (lead === null || lead.kind === 'carve-out') {
-        return false;
-    }
-    if (findCloser(masked, lead.end, event.index, closerPattern, lead.text) !== null) {
-        return false;
-    }
-    const boundary = masked.slice(event.end).search(hardBoundaryPattern);
-    const end = boundary === -1 ? masked.length : event.end + boundary;
-    return findCloser(masked, event.end, end, closerPattern, lead.text) !== null;
+    return lead?.kind === 'verb' || lead?.kind === 'prohibition';
 }
 
 /** Whether an instruction verb or a coordinated "not" belongs to the protection still open before it. */
@@ -274,32 +267,7 @@ function splitPieces(masked: string, names: readonly Range[]): Piece[] {
         }
     }
     pieces.push({ start: cursor, end: masked.length, lead, memberSeparators });
-    return pieces.flatMap((piece, index) => resumeProhibitionAfterNot(masked, piece, pieces[index - 1]));
-}
-
-const RESUMING_AND = /\band\s+(?!not\b)/iu;
-
-/**
- * A coordinated "not" after a prohibition sets its own member apart, and an `and` after that member returns to the
- * prohibition ("do not change Keys, not Bass and the drums" protects the drums), so the joined members are cut off
- * the carve-out as a prohibition of their own.
- */
-function resumeProhibitionAfterNot(masked: string, piece: Piece, previous: Piece | undefined): Piece[] {
-    const { lead } = piece;
-    const prohibition = previous?.lead;
-    if (prohibition?.kind !== 'prohibition' || lead?.kind !== 'carve-out') {
-        return [piece];
-    }
-    const joining = RESUMING_AND.exec(masked.slice(lead.end, piece.end));
-    if (masked.slice(piece.start, lead.end).toLowerCase() !== 'not' || joining === null) {
-        return [piece];
-    }
-    const cut = lead.end + joining.index;
-    const resumed = { kind: 'prohibition' as const, end: cut + joining[0].length, text: prohibition.text };
-    return [
-        { ...piece, end: cut },
-        { start: cut, end: piece.end, lead: resumed, memberSeparators: [] },
-    ];
+    return pieces;
 }
 
 type Closer = Range & { word: string };

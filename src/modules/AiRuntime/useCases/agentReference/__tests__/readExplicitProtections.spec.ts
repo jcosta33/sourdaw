@@ -450,6 +450,14 @@ describe('readExplicitProtections', () => {
         ])('protects the track a skip verb sets aside in "%s"', (prompt) => {
             expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([keys.id]);
         });
+
+        it.each([
+            ['Do not change Keys, not Bass or Drums.', [keys.id, drums.id]],
+            ['Do not change Keys, not Bass, Drums.', [keys.id, drums.id]],
+            ['Do not change Keys and not Bass.', [keys.id]],
+        ])('keeps a prohibition whole across a coordinated not in "%s"', (prompt, protectedTrackIds) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(protectedTrackIds);
+        });
     });
 
     describe('reserved and complete owners', () => {
