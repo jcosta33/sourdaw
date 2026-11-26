@@ -131,8 +131,10 @@ const defaultHits: DetectedHit[] = [{ sampleOffset: 24000, confidence: 0.875 }];
 
 function startDetection(
     detected: { tempo: number; hits: DetectedHit[] } = { tempo: 120, hits: defaultHits },
-    completeUnchanged = false
+    completeUnchanged = false,
+    beforeFirstFrame?: () => void
 ) {
+    let framesWaited = 0;
     const controller = new AbortController();
     const isCurrent = (): boolean => !controller.signal.aborted;
     type Consume = Parameters<typeof detectTransientsForClip>[3];
@@ -157,7 +159,17 @@ function startDetection(
                 isCurrent,
                 completeUnchanged: () => completeUnchanged,
             },
-            { signal: controller.signal, isCurrent, waitForFrame: async () => isCurrent() }
+            {
+                signal: controller.signal,
+                isCurrent,
+                waitForFrame: async () => {
+                    framesWaited += 1;
+                    if (framesWaited === 1) {
+                        beforeFirstFrame?.();
+                    }
+                    return isCurrent();
+                },
+            }
         ),
     }));
     const action = { type: 'detectTransients' as const, payload: { clipId: 'clip-1' } };
@@ -372,6 +384,96 @@ describe('Arrangement Detect admits private Worker preparations against current 
         } finally {
             transaction.abort();
         }
+    });
+
+    describe('refuses without writing when the clip-start tempo cannot be read', () => {
+        const refusal = {
+            status: 'conflict',
+            reason: 'Transient detection was cancelled or its source changed',
+        };
+        const unreadableDocuments: [string, (document: Record<string, any>) => void][] = [
+            [
+                'the clip is absent from the document',
+                (document) => {
+                    document.tracks.tracks[0].clips = [];
+                },
+            ],
+            [
+                'the clip has no start beat',
+                (document) => {
+                    delete document.tracks.tracks[0].clips[0].startBeat;
+                },
+            ],
+            [
+                'the transport tempo is not a number',
+                (document) => {
+                    document.transport.tempo = 'fast';
+                },
+            ],
+            [
+                'a tempo-map row is malformed',
+                (document) => {
+                    document.tempoMap = { changes: [{ id: 'bad', beat: 'zero', tempo: 90, curve: 'instant' }] };
+                },
+            ],
+        ];
+
+        function corruptDocument(corrupt: (document: Record<string, any>) => void): void {
+            mutateCrdtDoc<Record<string, any>>({ id: 'root', changeFn: corrupt });
+        }
+
+        it.each(unreadableDocuments)('at planning time when %s', async (_name, corrupt) => {
+            const { requests } = installProspectiveWorker();
+            corruptDocument(corrupt);
+            const stored = storedWarpState();
+            const saved = getCrdtDoc('root');
+            const { transaction } = startDetection();
+            try {
+                expect(await transaction.value).toEqual(refusal);
+                expect(requests).toHaveLength(0);
+                expect(getCrdtDoc('root')).toBe(saved);
+                expect(storedWarpState()).toEqual(stored);
+            } finally {
+                transaction.abort();
+            }
+        });
+
+        it.each(unreadableDocuments)(
+            'at commit time on the ordinary write route when %s after planning',
+            async (_name, corrupt) => {
+                const { requests } = installProspectiveWorker();
+                const stored = { enabled: false, stretchMode: 'repitch' as const, originalTempo: 120, markers: [] };
+                setWarpState('clip-1', stored);
+                flushAutomergeStorageWrites();
+                // Planning sees an identical markerless state, so it prepares nothing; the stored state then gains
+                // an auto marker, so the commit replan differs and takes the ordinary write route.
+                const withAutoMarker = {
+                    enabled: false,
+                    stretchMode: 'repitch' as const,
+                    originalTempo: 120,
+                    markers: [
+                        {
+                            id: 'auto',
+                            originalBeat: 1,
+                            warpedBeat: 1,
+                            origin: 'transient-auto' as const,
+                            locked: false,
+                        },
+                    ],
+                };
+                const { transaction } = startDetection({ tempo: 120, hits: [] }, false, () => {
+                    setWarpState('clip-1', withAutoMarker);
+                    corruptDocument(corrupt);
+                });
+                try {
+                    expect(await transaction.value).toEqual(refusal);
+                    expect(requests).toHaveLength(0);
+                } finally {
+                    transaction.abort();
+                }
+                expect(storedWarpState()).toEqual(stored);
+            }
+        );
     });
 
     it('carries the reference tempo in the undo snapshots: null before, the stamped tempo after', async () => {
