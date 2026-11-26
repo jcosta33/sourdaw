@@ -1,4 +1,3 @@
-import { type PromptDecibelFigure } from './classifyPromptDecibelFigures';
 import { normalizePromptText } from './normalizePromptText';
 
 export type PromptReferenceSpan = {
@@ -16,20 +15,21 @@ function isCoordinatingGap(gap: string): boolean {
 }
 
 /**
- * The decibel figures one scope binds to each reference it names, keyed by reference id. A figure
- * binds to the nearest reference before it; a figure after a coordinated list ("from A and B at
- * -15 dB") binds to every member of that list. A figure no reference precedes binds to none.
+ * The figures (decibel figures, or any number) one scope binds to each reference it names, keyed by
+ * reference id. A figure binds to the nearest reference before it; a figure after a coordinated list
+ * ("from A and B at -15 dB") binds to every member of that list. A figure no reference precedes
+ * binds to none.
  *
  * Reference spans and figure indexes share one coordinate space: the scope text and its masked
  * form are the same length.
  */
-export function bindDecibelFiguresToReferences(
+export function bindDecibelFiguresToReferences<Figure extends { index: number }>(
     scopeText: string,
     references: readonly PromptReferenceSpan[],
-    figures: readonly PromptDecibelFigure[]
-): ReadonlyMap<string, readonly PromptDecibelFigure[]> {
+    figures: readonly Figure[]
+): ReadonlyMap<string, readonly Figure[]> {
     const orderedReferences = references.toSorted((left, right) => left.start - right.start);
-    const boundFigures = new Map<string, PromptDecibelFigure[]>();
+    const boundFigures = new Map<string, Figure[]>();
     for (const figure of figures) {
         const nearest = orderedReferences.findLastIndex((reference) => reference.end <= figure.index);
         if (nearest < 0) {
