@@ -3281,7 +3281,10 @@ function parseExplicitSectionName(value: string): string | null {
     return trimmed.replace(/[,:;.?!]+$/u, '').trim() || null;
 }
 
-/** The text a section request states between its section intent and its beat range, or null. */
+/**
+ * The text after the first section intent in the clause, up to the beat range; null when the range
+ * comes before that intent.
+ */
 function getSectionNameSlot(promptText: string): string | null {
     const intent = /\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/iu.exec(promptText);
     const range = getSectionRangeFromPrompt(promptText);
