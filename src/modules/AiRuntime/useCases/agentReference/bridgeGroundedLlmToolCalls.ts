@@ -144,9 +144,11 @@ import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/get
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
+import { isLeftAsWritten } from './groundingStrategies/isLeftAsWritten';
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { MASKED_REFERENCE_PATTERN, maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
+import { NAME_END_WORDS } from './groundingStrategies/nameEndWords';
 import { namesOnlyNonTrackObject } from './groundingStrategies/namesOnlyNonTrackObject';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
@@ -1312,8 +1314,11 @@ function continuesOntoNonTrackObject(
     if (reference === undefined) {
         return false;
     }
-    const text = clause.text.slice(reference.index, reference.index + reference[0].length);
-    return text === reference[0] || namesOnlyNonTrackObject(text, context);
+    const span = { start: reference.index, end: reference.index + reference[0].length };
+    return (
+        isLeftAsWritten(clause.text, clause.masked, span) ||
+        namesOnlyNonTrackObject(clause.text.slice(span.start, span.end), context)
+    );
 }
 
 /**
@@ -1342,11 +1347,13 @@ function readsAsTrackLevelClause(
     catalog: GroundingCatalog,
     context: ProjectContext
 ): boolean {
-    const entry = catalog.find((candidate) => candidate.actionType === actionName);
-    if (actionName !== 'setTrackGain' || entry === undefined) {
+    if (actionName !== 'setTrackGain') {
         return true;
     }
-    return readsAsLevelClause({ clause, closesOnRange: false, context, entry });
+    const entry = catalog.find((candidate) => candidate.actionType === actionName);
+    return (
+        entry !== undefined && readsAsLevelClause({ clause, closesOnRange: declaresRange(actionName), context, entry })
+    );
 }
 
 /**
@@ -3218,14 +3225,6 @@ function getMarkerNameFromPrompt(promptText: string): string | null {
         .trim();
     return unquotedName || null;
 }
-
-/**
- * Beside the reason openers, the words that end a marker or section name: a purpose or comparison
- * ("for the drop", "as a cue") and a relative or temporal clause ("which ...", "when ...", "where ...").
- * A name never holds them, while after a level figure "for" may name the object the level is for, so
- * only a name reads them as a boundary.
- */
-const NAME_END_WORDS: readonly string[] = ['for', 'as', 'which', 'when', 'where'];
 
 /** Where a stated reason opens after a marker or section name, so the reason is never read as part of the name. */
 const RATIONALE_BOUNDARY_PATTERN = new RegExp(

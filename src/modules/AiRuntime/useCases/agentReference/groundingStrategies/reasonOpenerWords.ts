@@ -13,7 +13,7 @@ export const SUBJECT_PURPOSE_OPENER_WORDS: readonly string[] = ['so', 'so that']
  * is also where a level lands or goes ("to -6 dB", "to the send"), so a purpose opens only where a verb
  * follows it.
  */
-export const VERB_PURPOSE_OPENER_WORDS: readonly string[] = ['to'];
+const VERB_PURPOSE_OPENER_WORDS: readonly string[] = ['to'];
 
 /**
  * The words that open a stated reason or purpose. A reason says why, never where, when or on what, so a

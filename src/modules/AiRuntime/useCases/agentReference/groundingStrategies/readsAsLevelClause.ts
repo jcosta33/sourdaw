@@ -50,6 +50,7 @@ import { getClauseIntentVocabulary } from './getClauseIntentVocabulary';
 import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { isGenericDeviceIntent } from './isGenericDeviceIntent';
+import { isLeftAsWritten } from './isLeftAsWritten';
 import {
     DEVICE_CONTROL_WORDS,
     LEVEL_CARRIER_VERBS,
@@ -176,10 +177,10 @@ function findMaskedSpans(clause: LevelClause, from: number, to: number): ReadSpa
  * by it, and a request aimed at the object ("the Drums mix") still reads the word outside the level's.
  */
 function isReference(clause: LevelClause, span: ReadSpan, context: ProjectContext): boolean {
-    const text = clause.text.slice(span.start, span.end);
-    if (text === clause.masked.slice(span.start, span.end)) {
+    if (isLeftAsWritten(clause.text, clause.masked, span)) {
         return false;
     }
+    const text = clause.text.slice(span.start, span.end);
     return !(LEVEL_CLAUSE_OWN_WORDS.has(normalizePromptText(text)) && namesOnlyNonTrackObject(text, context));
 }
 

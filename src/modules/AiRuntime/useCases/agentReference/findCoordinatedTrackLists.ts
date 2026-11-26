@@ -197,6 +197,26 @@ function getTracksNamedOutsideList(input: {
         .map((clause) => getTracksNamedByClause({ ...input, clause }));
 }
 
+/**
+ * The list read as one clause, masked and in the request's own words alike: the head's lead, the head
+ * past any "both", and the last member's tail. Both forms cut at the same offsets, so they stay
+ * character for character.
+ */
+function collapseList(input: {
+    head: PromptClauseSpan;
+    last: PromptClauseSpan;
+    listHead: ListHead;
+    listTail: ListTail;
+}): { collapsedMasked: string; collapsedText: string } {
+    const { head, last, listHead, listTail } = input;
+    const keptStart = listHead.lead.length + listHead.both.length;
+    const keptEnd = keptStart + head.masked.slice(keptStart).trimEnd().length;
+    const tailStart = last.masked.length - listTail.tail.length;
+    const collapse = (headSource: string, lastSource: string) =>
+        `${headSource.slice(0, listHead.lead.length)}${headSource.slice(keptStart, keptEnd)}${lastSource.slice(tailStart)}`;
+    return { collapsedMasked: collapse(head.masked, last.masked), collapsedText: collapse(head.text, last.text) };
+}
+
 /** The list that opens at `headIndex`, or null when no complete list does. */
 function readListAt(input: {
     capability: AgentReferenceCapability;
@@ -230,10 +250,6 @@ function readListAt(input: {
         if (listHead.both.length > 0 && members.length !== 2) {
             return null;
         }
-        const headWithoutBothStart = listHead.lead.length + listHead.both.length;
-        const headWithoutBoth = head.masked.slice(headWithoutBothStart).trimEnd();
-        const headWithoutBothEnd = headWithoutBothStart + headWithoutBoth.length;
-        const tailStart = clause.masked.length - listTail.tail.length;
         const memberIds = resolveMembers({ ...input, members });
         const namedOutsideList = getTracksNamedOutsideList({
             ...input,
@@ -246,8 +262,7 @@ function readListAt(input: {
             lastClauseIndex: index,
             start: head.start,
             end: clause.end,
-            collapsedMasked: `${listHead.lead}${headWithoutBoth}${listTail.tail}`,
-            collapsedText: `${head.text.slice(0, listHead.lead.length)}${head.text.slice(headWithoutBothStart, headWithoutBothEnd)}${clause.text.slice(tailStart)}`,
+            ...collapseList({ head, last: clause, listHead, listTail }),
             memberIds,
             memberNamedOutsideList: namedOutsideList.some((trackIds) => [...trackIds].some(isMember)),
             everyOtherClauseNamesAnotherTrack: namedOutsideList.every((trackIds) =>
