@@ -41,6 +41,7 @@ import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 import { MAX_TRACK_HEIGHT, MAX_TRACK_ZOOM_DELTA, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
+import { MAX_TRACK_NOTES_LENGTH } from '#/utils/trackNotesLimits';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
@@ -841,13 +842,22 @@ const validators = {
         isNonEmptyString(param.outputId) &&
         param.trackId !== param.outputId &&
         isOptionalOwn(param, 'expectedOutputId', isNonEmptyString),
-    setTrackNotes: 'unchecked',
+    setTrackNotes: (param): param is PayloadOf<'setTrackNotes'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'notes']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.notes === 'string' &&
+        param.notes.length <= MAX_TRACK_NOTES_LENGTH,
     hideTrack: (param): param is PayloadOf<'hideTrack'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'hidden']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.hidden === 'boolean',
-    disableTrack: 'unchecked',
+    disableTrack: (param): param is PayloadOf<'disableTrack'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'disabled']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.disabled === 'boolean',
     foldTrack: (param): param is PayloadOf<'foldTrack'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'folded']) &&
