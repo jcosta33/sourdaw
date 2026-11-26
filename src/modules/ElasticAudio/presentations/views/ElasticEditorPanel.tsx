@@ -26,6 +26,7 @@ import {
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../stores/audioWarp';
@@ -36,12 +37,23 @@ import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
 import { cancelTransientDetection } from '../../useCases/elasticAudio/cancelTransientDetection';
 import { detectElasticEditorTransients } from '../../useCases/elasticAudio/detectElasticEditorTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
+import { resolveAudibleSourceSpans } from '../../useCases/elasticAudio/resolveAudibleSourceSpans';
 import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
 import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 import { quantizeTransients } from '../../useCases/quantizeTransients';
+
+import {
+    backingPixelRatio,
+    dimmedRanges,
+    markerColor,
+    strokeBeatGrid,
+    visibleBinRange,
+    visibleMarkers,
+    type WarpMarkerView,
+} from '../renderers/elasticWaveformDrawing';
 
 type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
@@ -58,15 +70,6 @@ const AVAILABLE_STRETCH_MODES: StretchMode[] = STRETCH_MODES.filter((mode) => ge
 const AVAILABLE_ALGORITHMS: WarpAlgorithm[] = WARP_ALGORITHMS.filter(
     (algorithm) => getAlgorithmInfo(algorithm).available
 );
-
-type WarpMarkerView = {
-    id: string;
-    originalBeat: number;
-    warpedBeat: number;
-    origin?: 'user' | 'transient-auto' | 'grid-snap';
-    confidence?: number;
-    locked?: boolean;
-};
 
 type WarpStateView = {
     enabled: boolean;
@@ -91,11 +94,6 @@ const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
     { id: 'lock-marker', label: 'Lock' },
 ];
 
-const VIRTUALIZE_THRESHOLD = 200;
-// Chromium 73+ per-side canvas limit: a 2D canvas wider or taller than this many backing pixels stays blank.
-const MAX_CANVAS_DIMENSION = 65535;
-// Chromium 73+ canvas area limit: 16384 x 16384 backing pixels.
-const MAX_CANVAS_AREA = 268435456;
 const EMPTY_WARP_STATE: WarpStateView = { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
 
 export const ElasticEditorPanel = (): ReactElement => {
@@ -116,6 +114,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     const transientSensitivity = preferences.elasticTransientSensitivity;
     const isAudioClip = clip !== null && clip.type === 'audio';
 
+    const tempo = useStore(transportStore, defaultTransportState).tempo;
     const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
     const [detectionStatus, setDetectionStatus] = useState('');
     const detectRequest = useRef(0);
@@ -133,6 +132,8 @@ export const ElasticEditorPanel = (): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const previousDrawingRef = useRef<WaveformDrawing | null>(null);
+    const sourceFrameRef = useRef<{ key: string; tempo: number } | null>(null);
+    const scrolledToWindowRef = useRef<string | null>(null);
     const dragRef = useRef<DragState | null>(null);
     const didDragRef = useRef(false);
 
@@ -167,9 +168,16 @@ export const ElasticEditorPanel = (): ReactElement => {
     }, [clipId, elasticState.openClipId, elasticState.selectedMarkerIds, snapValue, transientSensitivity]);
 
     const beatWidth = Math.max(1, 40 * zoom);
-    const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
+    const sourceFrameKey = `${clipId ?? ''}:${clip?.audioBufferId ?? ''}`;
+    let sourceFrame = sourceFrameRef.current;
+    if (sourceFrame?.key !== sourceFrameKey) {
+        sourceFrame = { key: sourceFrameKey, tempo: warpState.originalTempo ?? tempo };
+        sourceFrameRef.current = sourceFrame;
+    }
+    const sourceTempo = sourceFrame.tempo;
 
     useEffect(() => {
+        const audibleSpans = resolveAudibleSourceSpans(clip, sourceTempo, tempo);
         const args: DrawArgs = {
             canvasRef,
             containerRef,
@@ -177,7 +185,10 @@ export const ElasticEditorPanel = (): ReactElement => {
             beatWidth,
             warpState,
             clipAudioBufferId: clip?.audioBufferId ?? null,
-            clipLengthBeats,
+            audibleSpans,
+            tempo: sourceTempo,
+            scrollKey: `${sourceFrameKey}:${audibleSpans[0]?.startBeats ?? 0}`,
+            scrolledToWindowRef,
             viewScrollLeft,
         };
         // Paint in the next frame, so a marker commit's task never also pays for the canvas;
@@ -198,7 +209,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             canvas?.removeEventListener('contextlost', invalidate);
             canvas?.removeEventListener('contextrestored', restore);
         };
-    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip?.audioBufferId, clipLengthBeats]);
+    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip, tempo, sourceTempo, sourceFrameKey]);
 
     if (clipId === null || !isAudioClip) {
         return (
@@ -554,23 +565,6 @@ function snapToGrid(beat: number, snap: number): number {
     return Math.round(beat / snap) * snap;
 }
 
-function visibleMarkers(
-    markers: ReadonlyArray<WarpMarkerView>,
-    beatWidth: number,
-    scrollLeft: number,
-    containerWidth: number
-): WarpMarkerView[] {
-    if (markers.length <= VIRTUALIZE_THRESHOLD || containerWidth <= 0) {
-        return [...markers];
-    }
-    const minX = scrollLeft - 16;
-    const maxX = scrollLeft + containerWidth + 16;
-    return markers.filter((m) => {
-        const x = m.warpedBeat * beatWidth;
-        return x >= minX && x <= maxX;
-    });
-}
-
 type DrawArgs = {
     canvasRef: { current: HTMLCanvasElement | null };
     containerRef: { current: HTMLDivElement | null };
@@ -578,7 +572,10 @@ type DrawArgs = {
     beatWidth: number;
     warpState: WarpStateView;
     clipAudioBufferId: string | null;
-    clipLengthBeats: number;
+    audibleSpans: ReturnType<typeof resolveAudibleSourceSpans>;
+    tempo: number;
+    scrollKey: string;
+    scrolledToWindowRef: { current: string | null };
     viewScrollLeft: number;
 };
 
@@ -589,10 +586,13 @@ type WaveformDrawing = {
     sourceId: string | null;
     width: number;
     height: number;
+    backingWidth: number;
+    backingHeight: number;
     containerWidth: number;
     dpr: number;
     beatWidth: number;
     scrollLeft: number;
+    windowsKey: string;
     background: string;
     cssWidth: string;
     cssHeight: string;
@@ -618,6 +618,32 @@ function sameMarkerVisuals(previous: readonly WarpMarkerView[], current: readonl
     );
 }
 
+function sameWaveformDrawing(previous: WaveformDrawing | null, current: WaveformDrawing): boolean {
+    return (
+        previous !== null &&
+        previous.canvas === current.canvas &&
+        previous.context === current.context &&
+        previous.peaks === current.peaks &&
+        previous.sourceId === current.sourceId &&
+        previous.width === current.width &&
+        previous.height === current.height &&
+        previous.containerWidth === current.containerWidth &&
+        previous.dpr === current.dpr &&
+        previous.beatWidth === current.beatWidth &&
+        previous.scrollLeft === current.scrollLeft &&
+        previous.windowsKey === current.windowsKey &&
+        previous.background === current.background &&
+        current.canvas.width === current.backingWidth &&
+        current.canvas.height === current.backingHeight &&
+        current.canvas.style.width === previous.cssWidth &&
+        current.canvas.style.height === previous.cssHeight &&
+        // Even a same-size backing assignment or context.reset() erases pixels and
+        // resets strokeStyle to black. Every completed draw leaves a nonblack grid/marker stroke.
+        previous.strokeStyle === current.context.strokeStyle &&
+        sameMarkerVisuals(previous.markers, current.markers)
+    );
+}
+
 function drawWaveform(args: DrawArgs): void {
     const {
         canvasRef,
@@ -626,7 +652,10 @@ function drawWaveform(args: DrawArgs): void {
         beatWidth,
         warpState,
         clipAudioBufferId,
-        clipLengthBeats,
+        audibleSpans,
+        tempo,
+        scrollKey,
+        scrolledToWindowRef,
         viewScrollLeft,
     } = args;
     const canvas = canvasRef.current;
@@ -638,11 +667,17 @@ function drawWaveform(args: DrawArgs): void {
     if (!ctx) {
         return;
     }
-    // The clip's own length sets the extent, so the canvas keeps its size when Detect adds markers:
-    // growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
+    // Markers and peaks share the source tempo captured for this clip and buffer. Live project tempo
+    // changes only the playback projection, never this saved marker coordinate frame.
+    const sourceSeconds = clipAudioBufferId ? (audioBufferCache.get(clipAudioBufferId)?.duration ?? 0) : 0;
+    const sourceBeats = (sourceSeconds * tempo) / 60;
+    const lastWindowEndBeats = audibleSpans.reduce((max, span) => Math.max(max, span.endBeats), 0);
+    // The source and the audible windows set the extent, so the canvas keeps its size when Detect adds
+    // markers: growing the backing store inside the commit frame re-layouts, repaints and re-commits it.
     const contentBeats = Math.max(
         64,
-        clipLengthBeats + 8,
+        sourceBeats + 8,
+        lastWindowEndBeats + 8,
         warpState.markers.reduce((max, m) => Math.max(max, m.warpedBeat, m.originalBeat), 0) + 8
     );
     const width = Math.max(container.clientWidth, contentBeats * beatWidth);
@@ -651,32 +686,36 @@ function drawWaveform(args: DrawArgs): void {
     const backingWidth = Math.floor(width * dpr);
     const backingHeight = Math.floor(height * dpr);
     const background = resolveToken('--color-bg-overlay', '#151515');
+    const windows = audibleSpans.map((span) => ({
+        startX: span.startBeats * beatWidth,
+        endX: span.endBeats * beatWidth,
+    }));
+    const windowsKey = windows.map((window) => `${window.startX}:${window.endX}`).join('|');
+    const sourceBins = Math.max(1, Math.floor(sourceBeats * beatWidth));
     // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
     // removing a source invalidates its waveform cache. A new peak identity must redraw.
-    const peaks = clipAudioBufferId ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width)) : null;
-    const previous = previousDrawingRef.current;
-    if (
-        previous &&
-        previous.canvas === canvas &&
-        previous.context === ctx &&
-        previous.peaks === peaks &&
-        previous.sourceId === clipAudioBufferId &&
-        previous.width === width &&
-        previous.height === height &&
-        previous.containerWidth === container.clientWidth &&
-        previous.dpr === dpr &&
-        previous.beatWidth === beatWidth &&
-        previous.scrollLeft === viewScrollLeft &&
-        previous.background === background &&
-        canvas.width === backingWidth &&
-        canvas.height === backingHeight &&
-        canvas.style.width === previous.cssWidth &&
-        canvas.style.height === previous.cssHeight &&
-        // Even a same-size backing assignment or context.reset() erases pixels and
-        // resets strokeStyle to black. Every completed draw leaves a nonblack grid/marker stroke.
-        previous.strokeStyle === ctx.strokeStyle &&
-        sameMarkerVisuals(previous.markers, warpState.markers)
-    ) {
+    const peaks = clipAudioBufferId ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, sourceBins) : null;
+    const drawing: WaveformDrawing = {
+        canvas,
+        context: ctx,
+        peaks,
+        sourceId: clipAudioBufferId,
+        width,
+        height,
+        backingWidth,
+        backingHeight,
+        containerWidth: container.clientWidth,
+        dpr,
+        beatWidth,
+        scrollLeft: viewScrollLeft,
+        windowsKey,
+        background,
+        cssWidth: canvas.style.width,
+        cssHeight: canvas.style.height,
+        markers: warpState.markers,
+        strokeStyle: ctx.strokeStyle,
+    };
+    if (sameWaveformDrawing(previousDrawingRef.current, drawing)) {
         return;
     }
     previousDrawingRef.current = null;
@@ -689,6 +728,12 @@ function drawWaveform(args: DrawArgs): void {
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (scrolledToWindowRef.current !== scrollKey) {
+        scrolledToWindowRef.current = scrollKey;
+        container.scrollLeft = windows[0]?.startX ?? 0;
+    }
+    // Only the bins in view are stroked, so a scroll redraw costs the viewport, not the source length.
+    const binRange = visibleBinRange(container.scrollLeft, container.clientWidth, peaks?.length ?? 0);
 
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, width, height);
@@ -704,17 +749,23 @@ function drawWaveform(args: DrawArgs): void {
         if (peaks.some((v) => v > 0)) {
             ctx.fillStyle = 'rgba(90,150,115,0.5)';
             ctx.beginPath();
-            ctx.moveTo(0, midY);
-            for (let i = 0; i < peaks.length; i++) {
+            ctx.moveTo(binRange.first, midY);
+            for (let i = binRange.first; i <= binRange.last; i++) {
                 ctx.lineTo(i, midY - peaks[i]! * midY * 0.9);
             }
-            ctx.lineTo(peaks.length - 1, midY);
-            for (let i = peaks.length - 1; i >= 0; i--) {
+            ctx.lineTo(binRange.last, midY);
+            for (let i = binRange.last; i >= binRange.first; i--) {
                 ctx.lineTo(i, midY + peaks[i]! * midY * 0.9);
             }
             ctx.closePath();
             ctx.fill();
         }
+    }
+
+    // Source outside the clip's audible windows stays visible, dimmed.
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    for (const range of dimmedRanges(windows, width)) {
+        ctx.fillRect(range.x, 0, range.width, height);
     }
 
     const grid = { width, height, beatWidth };
@@ -756,53 +807,17 @@ function drawWaveform(args: DrawArgs): void {
         sourceId: clipAudioBufferId,
         width,
         height,
+        backingWidth,
+        backingHeight,
         containerWidth: container.clientWidth,
         dpr,
         beatWidth,
         scrollLeft: viewScrollLeft,
+        windowsKey,
         background,
         cssWidth: canvas.style.width,
         cssHeight: canvas.style.height,
         markers: structuredClone(warpState.markers),
         strokeStyle: ctx.strokeStyle,
     };
-}
-
-function backingPixelRatio(devicePixelRatio: number, width: number, height: number): number {
-    return Math.min(
-        devicePixelRatio,
-        MAX_CANVAS_DIMENSION / width,
-        MAX_CANVAS_DIMENSION / height,
-        Math.sqrt(MAX_CANVAS_AREA / (width * height))
-    );
-}
-
-function strokeBeatGrid(
-    ctx: CanvasRenderingContext2D,
-    { width, height, beatWidth }: { width: number; height: number; beatWidth: number },
-    style: string,
-    includesBeat: (beat: number) => boolean
-): void {
-    ctx.strokeStyle = style;
-    ctx.beginPath();
-    for (let beat = 0; beat < width / beatWidth; beat++) {
-        if (includesBeat(beat)) {
-            ctx.moveTo(beat * beatWidth, 0);
-            ctx.lineTo(beat * beatWidth, height);
-        }
-    }
-    ctx.stroke();
-}
-
-function markerColor(marker: WarpMarkerView): string {
-    const origin = marker.origin ?? 'user';
-    if (origin === 'transient-auto') {
-        const confidence = marker.confidence ?? 1;
-        const alpha = 0.35 + 0.55 * Math.max(0, Math.min(1, confidence));
-        return `rgba(99, 160, 214, ${alpha.toFixed(2)})`;
-    }
-    if (origin === 'grid-snap') {
-        return 'rgba(120, 190, 130, 0.85)';
-    }
-    return 'rgba(220, 150, 60, 0.9)';
 }
