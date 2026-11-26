@@ -1826,3 +1826,93 @@ describe('a referenced level continuation reads its reference through the shared
         ).toEqual([]);
     });
 });
+
+describe('a level clause holds each rule the round reads it by (#5551)', () => {
+    const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+    const riff: NonNullable<ProjectTrack['clips']>[number] = { ...vocalTake, id: 'clip-riff', name: 'Riff' };
+    const bass = createTrack({ id: 'track-bass', name: 'Bass', clips: [riff] });
+    const ruleContext: ProjectContext = {
+        ...projectContext,
+        sections: [{ id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 }],
+        tracks: [drums, bass, vocals, reverb, master],
+        selectedTrackId: null,
+    };
+
+    function gain(trackId: string, value: Record<string, number>) {
+        return { name: 'setTrackGain', arguments: { trackId, ...value } };
+    }
+
+    function clipGain(clipId: string, gainDb: number) {
+        return { name: 'setClipGain', arguments: { clipId, gainDb } };
+    }
+
+    it.each(['turn Drums up 2 dB to Vocals', 'turn Drums up 2 dB so Vocals'])(
+        'puts no fader level on Drums for "%s", whose reference after the opener is where the level goes',
+        (prompt) => {
+            const result = bridge([gain(drums.id, { deltaDb: 2 })], prompt, ruleContext);
+
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it('grounds both members of a list the amount word together follows', () => {
+        const calls = [gain(drums.id, { deltaDb: -3 }), gain(bass.id, { deltaDb: -3 })];
+
+        const result = bridge(calls, 'lower Drums and Bass together by 3 dB', ruleContext);
+
+        expect(result.actions).toEqual(calls.map((call) => ({ type: call.name, payload: call.arguments })));
+    });
+
+    it('grounds a clip level continued onto a four-character clip', () => {
+        const calls = [clipGain(vocalTake.id, -6), clipGain(riff.id, -3)];
+
+        const result = bridge(calls, 'set clip Vocal Take gain to -6 dB, Riff to -3 dB', ruleContext);
+
+        expect(result.actions).toEqual(calls.map((call) => ({ type: call.name, payload: call.arguments })));
+    });
+
+    it('puts no fader level on the track a continuation reaches through the word clip', () => {
+        const context: ProjectContext = { ...ruleContext, selectedTrackId: bass.id, selectedClipId: riff.id };
+
+        const result = bridge(
+            [gain(drums.id, { gainDb: -6 }), gain(bass.id, { gainDb: -3 })],
+            'set Drums to -6 dB, the clip to -3 dB',
+            context
+        );
+
+        expect(result.actions.filter((action) => action.type === 'setTrackGain')).toEqual([]);
+    });
+
+    it('moves no master level a continuation onto a track states', () => {
+        const result = bridge(
+            [
+                { name: 'setMasterGain', arguments: { gainDb: -3 } },
+                { name: 'setMasterGain', arguments: { gainDb: -6 } },
+            ],
+            'set the Master to -3 dB, Drums to -6 dB',
+            ruleContext
+        );
+
+        expect(result.actions).not.toContainEqual({ type: 'setMasterGain', payload: { gainDb: -6 } });
+    });
+
+    it('puts no track fader level on the master a continuation names', () => {
+        const result = bridge(
+            [gain(drums.id, { gainDb: -6 }), gain(master.id, { gainDb: -3 })],
+            'set Drums to -6 dB, the Master to -3 dB',
+            ruleContext
+        );
+
+        expect(result.actions.filter((action) => action.type === 'setTrackGain')).toEqual([]);
+    });
+
+    it('puts no fader level on a list whose figure a range phrase follows, which a fader declares none of', () => {
+        const result = bridge(
+            [gain(drums.id, { deltaDb: -3 }), gain(bass.id, { deltaDb: -3 })],
+            'lower Drums and Bass by 3 dB in the Chorus',
+            ruleContext
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+});
