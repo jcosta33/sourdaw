@@ -361,9 +361,6 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         reason: 'Track-level edits whose handlers carry no executable descriptor, target capability, effect declaration or session replay contract yet.',
         actionTypes: [
             'disableTrack',
-            'createFolder',
-            'groupTracks',
-            'ungroupTracks',
             'setTrackNotes',
             'createTrackAlternative',
             'switchTrackAlternative',

@@ -4,7 +4,7 @@ import { onPluginTailChanged } from '../../repositories/pluginBridge/onPluginTai
 import { externalPluginTailStore, reviseExternalPluginTail } from '../../stores/externalPluginTailStore';
 
 import { loadedExternalInstances } from './loadedExternalInstances';
-import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
+import { holdTailDuringLoad } from './tailRevisionsDuringLoad';
 
 /**
  * The single live subscription, or `null` when none is running. Held as the
@@ -27,17 +27,17 @@ export function watchExternalPluginTail(): void {
         return;
     }
 
-    subscription = onPluginTailChanged(({ instance_id: instanceId, tail_samples: tailSamples }) => {
+    subscription = onPluginTailChanged(({ instance_id: instanceId, tail_samples: tailSamples, sequence }) => {
         if (!loadedExternalInstances.has(instanceId)) {
             return;
         }
         // Held but not yet seeded: the load is still in flight, and its own
         // answer, older than this one, must not overwrite it.
         if (externalPluginTailStore.value?.tailSamplesByInstanceId[instanceId] === undefined) {
-            tailRevisionsDuringLoad.set(instanceId, tailSamples);
+            holdTailDuringLoad(instanceId, { tailSamples, sequence });
             return;
         }
-        reviseExternalPluginTail(instanceId, tailSamples);
+        reviseExternalPluginTail(instanceId, { tailSamples, sequence });
     }).catch((error: unknown) => {
         subscription = null;
         logger.warn(`Failed to subscribe to native plugin tail changes: ${String(error)}`);

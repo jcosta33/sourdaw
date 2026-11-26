@@ -317,6 +317,9 @@ const RETIRED_RUNTIME_ACTION_TYPES = [
     'audioToMidi',
     'autoFixMix',
     'enableWarping',
+    'createFolder',
+    'groupTracks',
+    'ungroupTracks',
 ] as const;
 
 describe('RuntimeAction', () => {
@@ -358,7 +361,7 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(217);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(214);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).not.toContain('stemSeparate');
@@ -366,7 +369,7 @@ describe('RuntimeAction', () => {
         expect(RUNTIME_ACTION_TYPES).toContain('automateParameterRange');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
         expect(RUNTIME_ACTION_TYPES).toContain('editMidiNotes');
-        expect(digest >>> 0).toBe(981_419_132);
+        expect(digest >>> 0).toBe(4_183_679_757);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
