@@ -9,7 +9,7 @@
  * runtime collision.
  */
 
-import { readdirSync } from 'node:fs';
+import { type Dirent, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -36,10 +36,16 @@ function isCensusSourceFile(entryName: string): boolean {
     return (entryName.endsWith('.ts') || entryName.endsWith('.tsx')) && !entryName.includes('.spec.');
 }
 
+// A directory entry does not follow symlinks, so a symlink resolves through
+// statSync: a symlinked directory is walked and a dangling link fails the walk.
+function isDirectoryEntry(entry: Dirent, path: string): boolean {
+    return entry.isSymbolicLink() ? statSync(path).isDirectory() : entry.isDirectory();
+}
+
 function collectTypeScriptFiles(directory: string, into: string[]): string[] {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
-        if (entry.isDirectory()) {
+        if (isDirectoryEntry(entry, path)) {
             if (isExcludedDirectory(entry.name)) {
                 continue;
             }
@@ -53,9 +59,8 @@ function collectTypeScriptFiles(directory: string, into: string[]): string[] {
     return into;
 }
 
-// Reads run in bounded batches so a cold page cache costs one queued pass over
-// the tree rather than one serial read per file, without holding thousands of
-// file handles open at once.
+// Reads overlap within a bounded batch instead of running one after another,
+// without holding thousands of file handles open at once.
 const READ_BATCH_SIZE = 64;
 
 type SourceFile = { path: string; source: string };
