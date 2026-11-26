@@ -3,7 +3,9 @@ import {
     type SemanticCommandListRoleFamily,
 } from '../../models/SemanticCommandList';
 
+import { findAgentReferenceNameSpans } from './findAgentReferenceNameSpans';
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
+import { PHRASED_ROLES } from './phrasedRoles';
 import { CONNECTIVE_WORDS, KIND_NOUNS, protectionObjectForms, type Token } from './protectionObjectForms';
 
 /** The kind nouns a role family word may carry ("the drum tracks", "the vocal bus"). */
@@ -33,6 +35,19 @@ function namesNoFamily(token: Token): boolean {
     return token.quoted || token.text.includes('□');
 }
 
+/** The tracks the shared selector resolver places in a role family or in one canonical role. */
+export type RoleTrackIds = (predicate: { roleFamily: SemanticCommandListRoleFamily } | { role: string }) => string[];
+
+/** The canonical role the words state as one whole role phrase, in either number ("backing vocals"). */
+function readRolePhrase(words: readonly string[]): string | undefined {
+    const phrase = words.join(' ');
+    return PHRASED_ROLES.find((role) =>
+        findAgentReferenceNameSpans(phrase, role, 'with-number-forms', []).some(
+            (span) => span.start === 0 && span.end === phrase.length
+        )
+    );
+}
+
 /** The prepositions a control run names its owner by, as the object forms read them ("the pan on Kick"). */
 const OWNER_PREPOSITIONS: ReadonlySet<string> = new Set(['of', 'on']);
 
@@ -58,9 +73,10 @@ function namesKindObject(word: Token, kindNoun: Token): boolean {
 }
 
 /**
- * The tracks a protection member keeps when it names one role family and nothing else but its
- * controls, quantifiers before it and a kind noun after it ("the drums", "all the drum tracks", "the
- * drum kit", "the vocals' sends"). A control opening the member as its verb ("mute the drums") names
+ * The tracks a protection member keeps when it names one role family, or one canonical role by its
+ * whole phrase, and nothing else but its controls, quantifiers before it and a kind noun after it
+ * ("the drums", "all the drum tracks", "the drum kit", "the vocals' sends", "the backing vocals",
+ * "the kick track"); a role phrase keeps the tracks of that role alone. A control opening the member as its verb ("mute the drums") names
  * what the request changes and protects nothing. The tokens come with project names blanked and
  * quotations flagged, so "Drum Bus" and a quoted "drums" name no family, and a capitalized singular
  * kind form of an absent object ("the Drum Bus") is left to the object forms' unbound refusal. A
@@ -68,7 +84,7 @@ function namesKindObject(word: Token, kindNoun: Token): boolean {
  */
 export function readRoleFamilyProtection(
     tokens: readonly Token[],
-    familyTrackIds: (family: SemanticCommandListRoleFamily) => string[]
+    roleTrackIds: RoleTrackIds
 ): { trackIds: string[]; controls: string[] } | null {
     if (tokens.some(namesNoFamily) || opensOnControlVerb(tokens)) {
         return null;
@@ -76,7 +92,24 @@ export function readRoleFamilyProtection(
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
     const named = content.filter((token) => !protectionObjectForms.isControl(token.lower));
     const firstNamed = named.findIndex((token) => !QUANTIFIERS.has(token.lower));
-    const [word, kindNoun, ...rest] = firstNamed === -1 ? [] : named.slice(firstNamed);
+    const members = firstNamed === -1 ? [] : named.slice(firstNamed);
+    const predicate = readFamilyPredicate(members) ?? readRolePredicate(members);
+    if (predicate === null) {
+        return null;
+    }
+    const trackIds = roleTrackIds(predicate);
+    if (trackIds.length === 0) {
+        return null;
+    }
+    const controls = content
+        .filter((token) => protectionObjectForms.isControl(token.lower))
+        .map((token) => token.lower);
+    return { trackIds, controls };
+}
+
+/** A family word alone or with a kind noun it carries ("the drums", "the drum tracks"). */
+function readFamilyPredicate(members: readonly Token[]): { roleFamily: SemanticCommandListRoleFamily } | null {
+    const [word, kindNoun, ...rest] = members;
     if (word === undefined || rest.length > 0 || (kindNoun !== undefined && namesKindObject(word, kindNoun))) {
         return null;
     }
@@ -85,12 +118,21 @@ export function readRoleFamilyProtection(
     if (family === undefined || others.length > 0 || !fitsKindNoun) {
         return null;
     }
-    const trackIds = familyTrackIds(family);
-    if (trackIds.length === 0) {
+    return { roleFamily: family };
+}
+
+/**
+ * A whole role phrase, with or without a kind noun of its family after it ("the backing vocals", "the
+ * kick track"), which keeps the tracks of that role alone. A phrase written as a name ("the Kick track"
+ * with no such object) is left to the object forms' unbound refusal.
+ */
+function readRolePredicate(members: readonly Token[]): { role: string } | null {
+    const last = members.at(-1);
+    const hasKindNoun = last !== undefined && FAMILY_KIND_NOUNS.has(last.lower);
+    const phrase = hasKindNoun ? members.slice(0, -1) : members;
+    if (phrase.length === 0 || protectionObjectForms.writesUnboundName([...members])) {
         return null;
     }
-    const controls = content
-        .filter((token) => protectionObjectForms.isControl(token.lower))
-        .map((token) => token.lower);
-    return { trackIds, controls };
+    const role = readRolePhrase(phrase.map((token) => token.lower));
+    return role === undefined ? null : { role };
 }

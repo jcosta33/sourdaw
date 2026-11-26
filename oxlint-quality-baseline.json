@@ -3763,11 +3763,6 @@
             "count": 1
         }
     },
-    "src/modules/AiRuntime/useCases/agentReference/readRoleFamilyProtection.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/AiRuntime/useCases/agentReference/readStoredCardRemoval.ts": {
         "eslint/complexity": {
             "count": 2
