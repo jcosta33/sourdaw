@@ -108,6 +108,7 @@ fn command(wrapper: &mut ClapWrapper, command: GuiCommand) {
         &[HostParameterUpdate {
             param_id: COMMAND_PARAM_ID,
             value: command.value(),
+            sample_offset: 0,
         }],
     );
 }

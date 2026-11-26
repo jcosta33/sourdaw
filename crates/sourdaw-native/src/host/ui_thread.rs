@@ -16,11 +16,21 @@
 //!
 //! Two rules keep that carry from deadlocking, and neither is optional.
 //!
-//! The first is that the claim stays behind. An editor command takes the
+//! The first is that the gate stays behind. An editor command takes the
 //! runtime owner's control gate on its own worker and only then hands the
 //! plugin call over; the UI thread never waits for a control gate itself. The
 //! other arrangement closes a cycle — the UI thread waiting on a gate whose
 //! holder is waiting for the UI thread — and the app freezes with no way out.
+//!
+//! The audio access seam is the other way round: it does not cross the wait at
+//! all. The worker hops holding only the gate, and the call claims the seam
+//! when it lands on the UI thread, for as long as the plugin call itself
+//! (`ControlVisit::on_ui_thread` in `native_bridge.rs`). The seam is the one
+//! claim the audio thread competes for, and a hop can wait for as long as the
+//! shell's thread is busy; held across that wait, it skips the plugin's blocks
+//! for the whole of it. Claiming it on the UI thread waits on nothing that
+//! waits on the UI thread: while the worker holds the gate, the only other
+//! holder of the seam is the audio thread, which lets go at the end of a block.
 //!
 //! The second is that a call already on the UI thread runs there, inline. The
 //! editor lifecycle re-enters the host from inside its own calls (a VST3 view
@@ -41,6 +51,18 @@ use std::fmt;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
+
+/// How long a worker waits for the shell's UI thread to take an editor call
+/// before it withdraws it.
+///
+/// A worker waits here holding a plugin's control gate, and the main thread may
+/// be blocked on that very gate — the one cycle the ordering rules above cannot
+/// rule out. What ends it is this side giving up, so the bound is chosen against
+/// what is waiting behind it: two seconds is the control timeout every editor
+/// command already spends, so a hop can never outlast the claim it runs inside,
+/// and the shell's own assertion keeps it clear of the deadline at which the
+/// shell stops waiting for a graceful exit and kills every plugin mid-flight.
+pub const EDITOR_UI_THREAD_DEADLINE: Duration = Duration::from_secs(2);
 
 /// Why a call carried to the UI thread did not run there, or ran without
 /// answering.
@@ -169,6 +191,22 @@ pub trait UiThread: Send + Sync {
         Ok(())
     }
 
+    /// [`Self::run_on_ui_thread`], giving up once `deadline` has passed with the
+    /// task not yet started, if that comes before the implementation's own.
+    ///
+    /// For a caller that serves every instance on a timer and must not stand
+    /// behind one shell turn for longer than its tick allows: a withdrawn task
+    /// never ran, so the caller retries it. A task the UI thread has started is
+    /// still waited out, as [`Self::run_on_ui_thread`] does. The default is the
+    /// unbounded wait, for an implementation that runs the task in place.
+    fn run_on_ui_thread_within(
+        &self,
+        task: &Arc<UiThreadTask>,
+        _deadline: Duration,
+    ) -> Result<(), UiThreadError> {
+        self.run_on_ui_thread(task)
+    }
+
     /// Run, now, the runtime releases other threads have already posted to this
     /// UI thread and that its loop has not yet reached. Call it only on the UI
     /// thread. Every other posted task stays queued for the loop.
@@ -247,6 +285,18 @@ impl PostedUiThread {
         task: &Arc<UiThreadTask>,
         wake: impl FnOnce() -> Result<(), UiThreadError>,
     ) -> Result<(), UiThreadError> {
+        self.post_and_wait_within(task, self.deadline, wake)
+    }
+
+    /// [`Self::post_and_wait`], giving up at `deadline` when that comes before
+    /// this queue's own. See [`UiThread::run_on_ui_thread_within`].
+    pub fn post_and_wait_within(
+        &self,
+        task: &Arc<UiThreadTask>,
+        deadline: Duration,
+        wake: impl FnOnce() -> Result<(), UiThreadError>,
+    ) -> Result<(), UiThreadError> {
+        let deadline = deadline.min(self.deadline);
         let (ran, waited) = mpsc::sync_channel(1);
         let inner = Arc::clone(task);
         let work = move || {
@@ -265,7 +315,7 @@ impl PostedUiThread {
             return self.give_up(&posted, unreachable);
         }
 
-        if waited.recv_timeout(self.deadline).is_ok() {
+        if waited.recv_timeout(deadline).is_ok() {
             return Ok(());
         }
 
@@ -307,12 +357,23 @@ pub fn call_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     ui: &Ui,
     work: impl FnOnce() -> Produced + Send + 'static,
 ) -> Result<Produced, UiThreadError> {
-    call_marked_on_ui_thread(ui, UiThreadTask::new, work)
+    call_marked_on_ui_thread(ui, UiThreadTask::new, None, work)
+}
+
+/// [`call_on_ui_thread`], withdrawing the work if the UI thread has not started
+/// it by `deadline`. See [`UiThread::run_on_ui_thread_within`].
+pub fn call_on_ui_thread_within<Ui: UiThread + ?Sized, Produced: Send + 'static>(
+    ui: &Ui,
+    deadline: Duration,
+    work: impl FnOnce() -> Produced + Send + 'static,
+) -> Result<Produced, UiThreadError> {
+    call_marked_on_ui_thread(ui, UiThreadTask::new, Some(deadline), work)
 }
 
 fn call_marked_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     ui: &Ui,
     make_task: fn(Box<dyn FnOnce() + Send>) -> Arc<UiThreadTask>,
+    deadline: Option<Duration>,
     work: impl FnOnce() -> Produced + Send + 'static,
 ) -> Result<Produced, UiThreadError> {
     if ui.is_ui_thread() {
@@ -323,7 +384,10 @@ fn call_marked_on_ui_thread<Ui: UiThread + ?Sized, Produced: Send + 'static>(
     let task = make_task(Box::new(move || {
         let _ = answer.send(work());
     }));
-    ui.run_on_ui_thread(&task)?;
+    match deadline {
+        Some(deadline) => ui.run_on_ui_thread_within(&task, deadline)?,
+        None => ui.run_on_ui_thread(&task)?,
+    }
 
     answered.try_recv().map_err(|_| UiThreadError::Unanswered)
 }
@@ -345,7 +409,7 @@ where
 {
     let slot = Arc::new(Mutex::new(Some(value)));
     let released = Arc::clone(&slot);
-    let outcome = call_marked_on_ui_thread(ui, release_task, move || {
+    let outcome = call_marked_on_ui_thread(ui, release_task, None, move || {
         let value = take_slot(&released);
         drop(value);
     });
@@ -401,16 +465,49 @@ impl<Value: ?Sized> LentMut<Value> {
     }
 }
 
+/// A shared borrow lent to the UI thread for exactly one call.
+///
+/// [`LentMut`]'s shared twin, for a target that is `Sync` and so may be read
+/// from another thread, but whose borrow is not `'static`. Sound for the same
+/// reason: [`call_on_ui_thread`] does not return until the closure has run or
+/// been withdrawn unrun, so the lender — and the value it borrowed — outlives
+/// every use made here.
+pub struct LentRef<Value: ?Sized + Sync>(*const Value);
+
+// SAFETY: `Value: Sync`, so a `&Value` may be used from any thread; the pointer
+// is only dereferenced inside one `call_on_ui_thread` whose caller holds the
+// borrow it came from and is blocked for that call's whole duration.
+unsafe impl<Value: ?Sized + Sync> Send for LentRef<Value> {}
+
+impl<Value: ?Sized + Sync> LentRef<Value> {
+    pub fn new(value: &Value) -> Self {
+        Self(value)
+    }
+
+    /// Take the lent borrow back up on the other thread.
+    ///
+    /// # Safety
+    /// Call only from inside the [`call_on_ui_thread`] this lend was made for,
+    /// which is the only window in which the lender is parked.
+    pub unsafe fn with<Produced>(self, use_it: impl FnOnce(&Value) -> Produced) -> Produced {
+        // SAFETY: the caller's contract above.
+        use_it(unsafe { &*self.0 })
+    }
+}
+
 /// Make one call against `target` on the UI thread, and wait for it.
 ///
-/// The caller keeps its control claim on its own thread; only the call crosses.
-/// The borrow crosses with it as a [`LentMut`] rather than as a reference,
-/// because a plugin runtime is reachable across threads only through the access
-/// seam that produced this `&mut` — and what makes the lend sound is that this
-/// does not return until the call has run or been withdrawn unrun.
+/// The caller keeps whatever claim produced the `&mut` on its own thread for the
+/// whole wait; only the call crosses. The borrow crosses with it as a
+/// [`LentMut`] rather than as a reference, because a plugin runtime is reachable
+/// across threads only through the access seam that produced this `&mut` — and
+/// what makes the lend sound is that this does not return until the call has run
+/// or been withdrawn unrun.
 ///
-/// Every path that reaches a plugin's editor lifecycle goes through here: the
-/// GUI commands, and the unload path that closes an editor on the way out.
+/// Not for a call into a registered runtime's editor: the `&mut` comes from the
+/// audio access seam, which this would hold across the wait. Those go through
+/// `ControlVisit::on_ui_thread` (`native_bridge.rs`), which claims the seam only
+/// once the call has landed.
 pub fn lend_on_ui_thread<Ui, Target, Produced>(
     ui: &Ui,
     target: &mut Target,
