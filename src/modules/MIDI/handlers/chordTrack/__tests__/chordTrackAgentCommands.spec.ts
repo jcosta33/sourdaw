@@ -147,6 +147,62 @@ describe('toggleChordTrack as an agent command', () => {
     });
 });
 
+describe('chord track session entries', () => {
+    function describedEntry(): Parameters<NonNullable<typeof handleClearChordTrack.validateSessionEntry>>[0] {
+        const action: AppAction = { type: 'clearChordTrack' };
+        const described = handleClearChordTrack.describe(action);
+        if (!described.inverseAction || !described.redoAction) {
+            throw new Error('Expected an inverse and a redo');
+        }
+        return { action, inverseAction: described.inverseAction, redoAction: described.redoAction };
+    }
+
+    it('describes redo as the inverse pair swapped and admits that entry', () => {
+        const entry = describedEntry();
+        const inverse = requireRestore(entry.inverseAction);
+        const redo = requireRestore(entry.redoAction);
+
+        expect(redo.payload.expected).toEqual(inverse.payload.replacement);
+        expect(redo.payload.replacement).toEqual(inverse.payload.expected);
+        expect(handleClearChordTrack.validateSessionEntry?.(entry)).toBe(true);
+    });
+
+    it('refuses an entry without a redo and one whose redo is not guarded by the track it replaces', () => {
+        const entry = describedEntry();
+        const redo = requireRestore(entry.redoAction);
+
+        expect(handleClearChordTrack.validateSessionEntry?.({ ...entry, redoAction: undefined })).toBe(false);
+        expect(
+            handleClearChordTrack.validateSessionEntry?.({
+                ...entry,
+                redoAction: {
+                    type: 'restoreChordTrackState',
+                    payload: { expected: { enabled: false, events: [] }, replacement: redo.payload.replacement },
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('refuses an entry whose expected track does not follow from its replacement under the stored action', () => {
+        const entry = describedEntry();
+        const inverse = requireRestore(entry.inverseAction);
+        const tamperedExpected = { enabled: true, events: [THREE_CHORDS.events[0]!] };
+        const tampered = {
+            ...entry,
+            inverseAction: {
+                type: 'restoreChordTrackState' as const,
+                payload: { expected: tamperedExpected, replacement: inverse.payload.replacement },
+            },
+            redoAction: {
+                type: 'restoreChordTrackState' as const,
+                payload: { expected: inverse.payload.replacement, replacement: tamperedExpected },
+            },
+        };
+
+        expect(handleClearChordTrack.validateSessionEntry?.(tampered)).toBe(false);
+    });
+});
+
 describe('chord track restores', () => {
     it('refuses to overwrite a chord edit made after the command it undoes', () => {
         const inverse = requireRestore(

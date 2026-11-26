@@ -37,6 +37,11 @@ export function describeChordTrackMutation(
             type: 'restoreChordTrackState',
             payload: { expected, replacement: cloneChordTrackState(before) },
         },
+        // Redo is the inverse pair swapped, so it refuses once the track changed since the undo.
+        redoAction: {
+            type: 'restoreChordTrackState',
+            payload: { expected: cloneChordTrackState(before), replacement: cloneChordTrackState(expected) },
+        },
     };
 }
 
@@ -77,22 +82,32 @@ function findRestoreConflict(
 
 /**
  * A saved chord-track edit is replayable only when its undo restores the track the edit read, guarded by
- * exactly the track the edit wrote: the stored result must be what the action yields for the stored source,
- * so a stale or tampered entry is dropped, and an undo over a chord edited since refuses at execution.
+ * exactly the track the edit wrote, and its redo is that same pair swapped: the stored result must be what
+ * the action yields for the stored source, so a stale or tampered entry is dropped, and an undo or redo over
+ * a chord edited since refuses at execution.
  */
 export function isChordTrackSessionEntry(entry: HandlerSessionActionEntry): boolean {
     const { action, inverseAction, redoAction } = entry;
-    if (redoAction !== undefined || inverseAction?.type !== 'restoreChordTrackState') {
+    if (inverseAction?.type !== 'restoreChordTrackState' || redoAction?.type !== 'restoreChordTrackState') {
         return false;
     }
-    if (!isChordTrackEditAction(action) || !isChordTrackRestorePayload(inverseAction.payload)) {
+    if (!isChordTrackEditAction(action)) {
+        return false;
+    }
+    if (!isChordTrackRestorePayload(inverseAction.payload) || !isChordTrackRestorePayload(redoAction.payload)) {
         return false;
     }
     if (action.type === 'addChordEvent' && !action.payload.eventId) {
         return false;
     }
-    const { expected, replacement } = inverseAction.payload;
-    return jsonValuesEqual(projectChordTrackAction(cloneChordTrackState(replacement), action), expected);
+    const inverse = inverseAction.payload;
+    const redo = redoAction.payload;
+    const isSwappedPair =
+        jsonValuesEqual(redo.expected, inverse.replacement) && jsonValuesEqual(redo.replacement, inverse.expected);
+    return (
+        isSwappedPair &&
+        jsonValuesEqual(projectChordTrackAction(cloneChordTrackState(inverse.replacement), action), inverse.expected)
+    );
 }
 
 export const handleMoveChordEvent = createHandler<'moveChordEvent'>({
