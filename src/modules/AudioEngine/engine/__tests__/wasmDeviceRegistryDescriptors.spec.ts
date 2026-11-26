@@ -669,6 +669,28 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(startPadAudition).toHaveBeenCalledExactlyOnceWith(36, 90);
         });
 
+        it('refreshes the existing Crumbs worklet when a sample is published', async () => {
+            const result = createResult();
+            const prepareCrumbsDevice = vi.fn().mockResolvedValue('ready');
+            factoryMocks.createCrumbsNode.mockResolvedValue(result);
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice });
+            const deps = createDeps({ deviceType: 'builtin-crumbs' });
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
+            await loadPromise;
+
+            const loaded = lastLoadedNode(deps.onLoaded);
+            loaded.crumbsControls?.refreshSample?.();
+            expect(prepareCrumbsDevice).toHaveBeenCalledTimes(2);
+            expect(prepareCrumbsDevice).toHaveBeenNthCalledWith(
+                2,
+                expect.objectContaining({
+                    deviceId: 'dev-1',
+                    port: result.workletNode.port,
+                    sampleOnly: true,
+                })
+            );
+        });
+
         it('settles content readiness only after project sample preparation completes', async () => {
             const preparation = Promise.withResolvers<DeviceContentLoadOutcome>();
             const prepareCrumbsDevice = vi.fn(() => preparation.promise);
@@ -685,7 +707,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 expect(prepareCrumbsDevice).toHaveBeenCalledWith({
                     deviceId: 'dev-1',
                     port: result.workletNode.port,
-                    signal: controller.signal,
+                    signal: expect.any(AbortSignal),
                 });
             });
             expect(onContentLoadSettled).not.toHaveBeenCalled();
@@ -693,6 +715,63 @@ describe('wasmDeviceRegistry descriptors', () => {
             preparation.resolve('ready');
             await loadPromise;
             expect(onContentLoadSettled).toHaveBeenCalledWith('ready');
+        });
+
+        it('cancels an older preparation and waits for the latest sample before content settles', async () => {
+            const old = Promise.withResolvers<DeviceContentLoadOutcome>();
+            const latest = Promise.withResolvers<DeviceContentLoadOutcome>();
+            const prepareCrumbsDevice = vi
+                .fn<NonNullable<Parameters<typeof setAudioDeviceRuntimeSink>[0]['prepareCrumbsDevice']>>()
+                .mockReturnValueOnce(old.promise)
+                .mockReturnValueOnce(latest.promise);
+            const onContentLoadSettled = vi.fn();
+            factoryMocks.createCrumbsNode.mockResolvedValue(createResult());
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice });
+            const deps = createDeps({ deviceType: 'builtin-crumbs', onContentLoadSettled });
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
+            await vi.waitFor(() => expect(prepareCrumbsDevice).toHaveBeenCalledTimes(1));
+            const loaded = lastLoadedNode(deps.onLoaded);
+            loaded.crumbsControls?.refreshSample?.();
+            const oldSignal = prepareCrumbsDevice.mock.calls[0]?.[0]?.signal;
+            expect(oldSignal?.aborted).toBe(true);
+            old.resolve('cancelled');
+            await vi.waitFor(() => expect(prepareCrumbsDevice).toHaveBeenCalledTimes(2));
+            expect(onContentLoadSettled).not.toHaveBeenCalled();
+            latest.resolve('ready');
+            await loadPromise;
+            expect(onContentLoadSettled).toHaveBeenCalledExactlyOnceWith('ready');
+            loaded.dispose?.();
+            const latestSignal = prepareCrumbsDevice.mock.calls[1]?.[0]?.signal;
+            expect(latestSignal?.aborted).toBe(true);
+            loaded.crumbsControls?.refreshSample?.();
+            expect(prepareCrumbsDevice).toHaveBeenCalledTimes(2);
+        });
+
+        it('retains a refresh published synchronously while the node is being installed', async () => {
+            const old = Promise.withResolvers<DeviceContentLoadOutcome>();
+            const latest = Promise.withResolvers<DeviceContentLoadOutcome>();
+            const prepareCrumbsDevice = vi
+                .fn<NonNullable<Parameters<typeof setAudioDeviceRuntimeSink>[0]['prepareCrumbsDevice']>>()
+                .mockReturnValueOnce(old.promise)
+                .mockReturnValueOnce(latest.promise);
+            const onContentLoadSettled = vi.fn();
+            factoryMocks.createCrumbsNode.mockResolvedValue(createResult());
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice });
+            const onLoaded = vi.fn((node: BuiltinDeviceNode) => {
+                node.crumbsControls?.refreshSample?.();
+                return true;
+            });
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(
+                createDeps({ deviceType: 'builtin-crumbs', onLoaded, onContentLoadSettled })
+            );
+            await vi.waitFor(() => expect(prepareCrumbsDevice).toHaveBeenCalledTimes(2));
+            expect(prepareCrumbsDevice.mock.calls[0]?.[0].signal?.aborted).toBe(true);
+            expect(prepareCrumbsDevice).toHaveBeenNthCalledWith(2, expect.objectContaining({ sampleOnly: true }));
+            old.resolve('cancelled');
+            expect(onContentLoadSettled).not.toHaveBeenCalled();
+            latest.resolve('ready');
+            await loadPromise;
+            expect(onContentLoadSettled).toHaveBeenCalledExactlyOnceWith('ready');
         });
 
         it('reports project sample preparation failure as content failure', async () => {

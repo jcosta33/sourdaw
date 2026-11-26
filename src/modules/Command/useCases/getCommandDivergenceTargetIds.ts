@@ -135,6 +135,7 @@ const extraTargetsByActionType: {
     setGrandBouleDeviceState: noExtraTargets,
     setToasterFactoryKit: noExtraTargets,
     setBacteriaFactoryPatch: noExtraTargets,
+    setCrustFactoryPreset: noExtraTargets,
     setGlutenFactoryPreset: noExtraTargets,
     setProofPatchSelection: noExtraTargets,
     createBus: noExtraTargets,

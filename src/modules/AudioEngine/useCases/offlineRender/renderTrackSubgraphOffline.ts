@@ -1,4 +1,4 @@
-import { deriveVcaMultiplier, getVcaGroupsState, trackStore, type Track } from '#/modules/Arrangement/stores';
+import { getVcaGroupsState, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
@@ -11,7 +11,7 @@ import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
-import { captureOfflineSubgraphInput } from './captureOfflineSubgraphInput';
+import { captureOfflineSubgraphInput, type OfflineSubgraphSource } from './captureOfflineSubgraphInput';
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { composeOfflineStripLevel } from './composeOfflineStripLevel';
@@ -22,12 +22,13 @@ import { createOfflineTrackStrip } from './createOfflineTrackStrip';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './destroyOfflineDeviceStrategies';
 import { resolveTrackAdjustmentComposition } from './offlineAdjustmentLayers';
-import { type OfflineRenderProjectSource, type OfflineRenderRuntimeSource } from './OfflineRenderSource';
 import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { readOfflineAdjustmentLayerSnapshot } from './readOfflineAdjustmentLayerSnapshot';
 import { renderInSegments } from './renderInSegments';
+import { resolveContributorVcaMultiplier } from './resolveContributorVcaMultiplier';
 import { resolveHistoryAwareRenderContext } from './resolveHistoryAwareRenderContext';
+import { resolveMuteHonoringTrackIds } from './resolveMuteHonoringTrackIds';
 import { resolvePrintReachability } from './resolvePrintReachability';
 import { scheduleOfflineAdjustmentCurves } from './scheduleOfflineAdjustmentCurves';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
@@ -44,49 +45,23 @@ const EMPTY_MIDI_STATE = {
     pitchBendByClipId: {},
 } as const;
 
-export type ResolveContributorVcaMultiplierInput = {
-    track: Track;
-    isTarget: boolean;
-    groups: ReturnType<typeof getVcaGroupsState>;
-    /**
-     * Whether the target itself should also receive its group master. See
-     * `includeTargetVca` on `renderTrackSubgraphOffline` for the rule this
-     * flips.
-     */
-    includeTargetVca?: boolean;
-};
+type CapturedSubgraphInput = ReturnType<typeof captureOfflineSubgraphInput> | null;
 
-/**
- * The VCA group master to bake into one track of this render.
- *
- * **Upstream contributors always get it.** Their audio is summed into the print
- * exactly once and is never recomposed afterwards: the routing edge that got
- * baked stops carrying live signal the moment the target is frozen, so whatever
- * their group master was worth has to be in the samples or it is lost for good.
- *
- * **The target does not, by default.** Freeze and bounce replay their buffer
- * through the very strip that stays live afterwards, and `applyVcaGains` / the
- * gain-automation branch keep driving that same fader — baking the multiplier
- * in here would apply the group twice, once in the buffer and again on the
- * fader the buffer is replayed through.
- *
- * **`includeTargetVca` opts the target in.** A measurement's render is never
- * replayed through a live strip — nothing downstream will ever apply the
- * group again — so leaving it out here would drop it from the measured figure
- * entirely rather than double it. Freeze and bounce never set this; only a
- * caller whose buffer is the end of the line does.
- */
-function resolveContributorVcaMultiplier({
-    track,
-    isTarget,
-    groups,
-    includeTargetVca = false,
-}: ResolveContributorVcaMultiplierInput): number {
-    if (isTarget && !includeTargetVca) {
-        return 1;
+function readAdjustmentLayers(captured: CapturedSubgraphInput) {
+    return captured?.adjustmentLayers ?? readOfflineAdjustmentLayerSnapshot();
+}
+
+function createScheduleTally(captured: CapturedSubgraphInput): OfflineScheduleTally {
+    const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
+    if (!captured) {
+        return tally;
     }
+    return { ...tally, compensationInput: captured.scheduling.latency };
+}
 
-    return deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups });
+/** A track's delay under the captured device latencies, or the live ones when nothing was captured. */
+function readCompensationDelay(trackId: string, captured: CapturedSubgraphInput): number {
+    return getCompensationDelay(trackId, undefined, undefined, captured?.scheduling.latency);
 }
 
 type RenderTrackSubgraphOfflineInput = {
@@ -149,10 +124,12 @@ type RenderTrackSubgraphOfflineInput = {
      * The document to render in place of the live project — an isolated
      * command preview, for one. Every project read this render makes then
      * comes from it, all taken before the render first yields; `renderTracks`
-     * must be that document's tracks. Absent, the render reads the live
-     * project exactly as it always has.
+     * must be that document's tracks. With a session source too, the document
+     * is the live session's own (a freeze), and the render reads nothing live
+     * once it yields. Absent, the render reads the live project exactly as it
+     * always has.
      */
-    source?: { project: OfflineRenderProjectSource; runtime?: OfflineRenderRuntimeSource };
+    source?: OfflineSubgraphSource;
 };
 
 /**
@@ -236,7 +213,7 @@ export async function renderTrackSubgraphOffline({
     const renderTrackIds = new Set(renderTracks.map((track) => track.id));
     const wiredDetectorRoutes = collectWiredSidechainDetectorRoutes({ tracks: renderTracks, routes: sidechainRoutes });
     /** Tracks whose only role here is feeding a keyed device's detector. */
-    const sidechainKeySourceIds = new Set(wiredDetectorRoutes.map((route) => route.sourceTrackId));
+    const sidechainKeySourceIds = resolveMuteHonoringTrackIds(wiredDetectorRoutes);
 
     // Which strips this render's print can actually carry, from the routing
     // graph rather than from each strip's own mute alone (#4376). A content
@@ -276,7 +253,7 @@ export async function renderTrackSubgraphOffline({
     // strip, which keeps applying the layers itself, so baking them would
     // apply them twice — the same rule `projectStripTrack` applies to the
     // fader and panner those layers compose onto.
-    const adjustmentLayers = readOfflineAdjustmentLayerSnapshot();
+    const adjustmentLayers = readAdjustmentLayers(captured);
     // An implicit layer position resolves against the full ordered project
     // track list — live `resolveAffectedTrackIds` and the mixdown composition
     // slice that list, not this render's subgraph subset, whose index space
@@ -485,7 +462,7 @@ export async function renderTrackSubgraphOffline({
                 regionStartBeat: renderStartBeat,
                 tickSeconds: adjustmentTickSeconds,
                 projectSecondsToBeat,
-                compensationDelaySec: getCompensationDelay(track.id),
+                compensationDelaySec: readCompensationDelay(track.id, captured),
             });
         }
 
@@ -493,7 +470,7 @@ export async function renderTrackSubgraphOffline({
         // scheduler only reads note tables, so an empty one is the honest input.
         const midiState = midi ?? EMPTY_MIDI_STATE;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
-        const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
+        const tally = createScheduleTally(captured);
         for (const track of renderTracks) {
             const strip = trackStripsById.get(track.id);
             if (!strip) {

@@ -1,6 +1,8 @@
 import { type AdjustmentLayer } from '#/modules/Arrangement/stores';
 import { PAN_SCALE_MAX, dbToGain } from '#/utils/audioLevelLaw';
 
+import { affectsTrack } from './affectsTrack';
+
 /**
  * The offline resolution of one track's adjustment-layer composition.
  *
@@ -48,14 +50,6 @@ export type OfflineTrackAdjustmentComposition = {
      */
     constant: boolean;
 };
-
-/** The tracks a layer reaches: its explicit list, or every track below its stack position (live `resolveAffectedTrackIds`). */
-function affectsTrack(layer: AdjustmentLayer, trackId: string, allTrackIds: readonly string[]): boolean {
-    if (layer.affectedTrackIds.length > 0) {
-        return layer.affectedTrackIds.includes(trackId);
-    }
-    return allTrackIds.slice(layer.insertionIndex).includes(trackId);
-}
 
 /**
  * Live `adjustmentLayerApplier.computeRegionBlend`: regions active at the beat,
