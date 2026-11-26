@@ -4,8 +4,9 @@ import { digest } from '#/utils/canonicalDigest';
 import { getCreativeSelectionSnapshot } from '../../models/CreativeInterpretation';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from '../metricGoalContractTypes';
+import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 
+import { createPerceptualConstraintAuthority } from './createPerceptualConstraintAuthority';
 import { readPerceptualConstraintGoals } from './readPerceptualConstraintGoals';
 
 type CommandBatch = { serialized: string; authority: Parameters<typeof parseVersionedCommandBatchEnvelope>[1] };
@@ -72,23 +73,14 @@ export function withPerceptualConstraintAuthority(input: {
     if (envelope.commands.every((command) => changesNoSound(command.operation))) {
         return input.state;
     }
-    const requestDigest = digest(input.prompt.trim());
-    const authorityId = `perceptual-constraints-${digest({ requestDigest, reading: input.reading })}`;
-    const authority: MetricRequestAuthority = {
-        schemaVersion: 1,
-        authorityId,
-        origin: 'perceptual-constraint-reader',
-        callId: null,
-        turn: null,
-        catalogId: 'perceptual-constraints-v1',
-        requestDigest,
+    const authority = createPerceptualConstraintAuthority({
+        reading: input.reading,
+        goals,
+        requestDigest: digest(input.prompt.trim()),
         revision: envelope.baseRevision,
         projectId: envelope.projectId,
         selection: getCreativeSelectionSnapshot(input.context),
-        kind: 'perceptual',
-        goals,
-        creativeAuthority: null,
-    };
+    });
     const state = { ...structuredClone(original), authorities: [...original.authorities, authority] };
     if (state.steps.length > 0) {
         return state;

@@ -8,6 +8,8 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
 import { readRecipeExpectationTolerance } from './metricHoldTolerances';
+import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
+import { readPerceptualConstraintGoals } from './perceptualConstraints/readPerceptualConstraintGoals';
 import { readComparedQualities } from './readComparedQualities';
 import { type ComparedQuality } from './readComparedQualityWords';
 import { readRequestMetricNumbers } from './readRequestMetricNumbers';
@@ -289,6 +291,19 @@ function numericObjectives(prompt: string, allScopeIds: string[]): Objective[] {
     return objectives;
 }
 
+/**
+ * The protections the request records that no measurement verifies, as the goals the constraint route compiles
+ * them to, or null when it records none. A measured protection is joined where the batch compiles.
+ */
+function readUnsupportedProtections(prompt: string, answer: AnswerInterpretationCatalog) {
+    const { unsupported } = compilePerceptualConstraints(prompt, answer.context);
+    if (unsupported.length === 0) {
+        return null;
+    }
+    const reading = { constraints: [], unsupported };
+    return { reading, goals: readPerceptualConstraintGoals(reading, answer.context) };
+}
+
 /** Lexical numeric candidates and authored policies, never a second semantic classifier. */
 export function prepareMetricIntentCatalog(input: { prompt: string; answer: AnswerInterpretationCatalog }) {
     const catalog = getMixRecipeCatalog();
@@ -311,6 +326,7 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
         ranges: input.answer.ranges,
         // Wire ids are bounded enum members; original source identities remain app-private lookup facts.
         unaccountedQualityWord: readUnaccountedQualityWord(input.prompt, input.answer.context),
+        unsupportedProtections: readUnsupportedProtections(input.prompt, input.answer),
         objectives: objectives.map((objective, index) => ({ ...objective, id: `o${String(index)}` })),
     };
 }

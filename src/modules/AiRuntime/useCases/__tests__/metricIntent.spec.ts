@@ -32,6 +32,7 @@ import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { OBJECTIVE_METRIC_UNITS } from '../objectiveMetricProjection';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { planPromptActions } from '../planPromptActions';
 import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
@@ -256,6 +257,90 @@ describe('positive whole-request metric intent', () => {
             turn: 1,
         });
         expect(admitted).toMatchObject({ status: 'admitted', kind: 'literal' });
+    });
+
+    describe('a literal intake and the protections the request records', () => {
+        const UNSUPPORTED_CLAUSE = 'keep the vocal warm';
+        const BOUND_CLAUSE = "don't touch the low end";
+
+        function admitLiteral(prompt: string) {
+            const value = fixture(prompt);
+            return {
+                value,
+                admitted: admitPlanningInterpretation({ ...value, projectRevision: 'metric-revision', turn: 1 }),
+            };
+        }
+
+        it('records "keep the vocal warm" unsupported, so the rows below observe an unsupported protection', () => {
+            const { value } = admitLiteral(`Set Lead Vocal gain to 70% and ${UNSUPPORTED_CLAUSE}`);
+            expect(
+                compilePerceptualConstraints(`Set Lead Vocal gain to 70% and ${UNSUPPORTED_CLAUSE}`, value.context)
+            ).toMatchObject({
+                constraints: [],
+                unsupported: [{ constraintId: 'unsupported', clause: UNSUPPORTED_CLAUSE }],
+            });
+        });
+
+        it('carries an unsupported protection into a metric authority whose goal quotes the clause', () => {
+            const { admitted } = admitLiteral(`Set Lead Vocal gain to 70% and ${UNSUPPORTED_CLAUSE}`);
+            expect(admitted).toMatchObject({
+                status: 'admitted',
+                kind: 'literal',
+                metricAuthority: { kind: 'literal', goals: [] },
+                protectionAuthority: {
+                    origin: 'perceptual-constraint-reader',
+                    kind: 'perceptual',
+                    goals: [
+                        {
+                            relation: 'unsupported',
+                            source: { kind: 'constraint', constraintId: 'unsupported', clause: UNSUPPORTED_CLAUSE },
+                        },
+                    ],
+                },
+            });
+        });
+
+        it('keeps a state with the unsupported protection unverified for the confirmation card', () => {
+            const { admitted } = admitLiteral(`Set Lead Vocal gain to 70% and ${UNSUPPORTED_CLAUSE}`);
+            if (
+                !hasMetricAuthority(admitted) ||
+                !('protectionAuthority' in admitted) ||
+                admitted.protectionAuthority === null
+            ) {
+                throw new Error('Expected the literal admission to carry both authorities.');
+            }
+            const state = metricGoalStateCodec(
+                JSON.stringify({
+                    schemaVersion: 1,
+                    authorities: [admitted.metricAuthority, admitted.protectionAuthority],
+                    steps: [
+                        {
+                            stepId: 'overall',
+                            commandCount: 1,
+                            operationTypes: ['setTrackGain'],
+                            recipePrefixHash: null,
+                        },
+                    ],
+                    proofs: [],
+                    binding: null,
+                })
+            );
+            expect(state?.authorities.flatMap((authority) => authority.goals.map((goal) => goal.relation))).toEqual([
+                'unsupported',
+            ]);
+        });
+
+        it('carries no protection authority for a measured protection, which a literal request keeps as before', () => {
+            const { admitted } = admitLiteral(`Set Lead Vocal gain to 70% and ${BOUND_CLAUSE}`);
+            expect(admitted).toMatchObject({ status: 'admitted', kind: 'literal', metricAuthority: { goals: [] } });
+            expect(admitted).toMatchObject({ protectionAuthority: null });
+        });
+
+        it('carries no protection authority for a request that records no protection', () => {
+            const { admitted } = admitLiteral('Set Lead Vocal gain to 70%');
+            expect(admitted).toMatchObject({ status: 'admitted', kind: 'literal', metricAuthority: { goals: [] } });
+            expect(admitted).toMatchObject({ protectionAuthority: null });
+        });
     });
 
     describe('quality-word reader read directly', () => {
