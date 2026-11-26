@@ -437,6 +437,10 @@ describe('reproposePendingChatActions', () => {
         expect(mocks.appendChatMessage).toHaveBeenCalledWith(
             expect.objectContaining({ role: 'assistant', isCommandAction: true })
         );
+        expect(mocks.appendChatMessage).toHaveBeenCalledTimes(1);
+        expect(mocks.appendChatMessage).not.toHaveBeenCalledWith(
+            expect.objectContaining({ content: expect.stringContaining('Re-preview refused') })
+        );
         expect(mocks.recordBatch).toHaveBeenCalledWith({
             runId: 'run-repropose',
             batch: {
