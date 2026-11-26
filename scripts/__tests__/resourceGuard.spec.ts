@@ -9,6 +9,7 @@ import {
     renameSync,
     rmSync,
     symlinkSync,
+    utimesSync,
     writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:http';
@@ -46,6 +47,7 @@ import {
     RESOURCE_ROOT_ENV,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
+    staleUnreadableReservationMs,
     type DetectedLane,
     type GuardedCommandResult,
     type ResourceProfile,
@@ -338,6 +340,73 @@ describe('resource admission', () => {
 
             expect(sampledTokens).toEqual([]);
             expect(existsSync(deadPath)).toBe(false);
+            session.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps an unreadable reservation inside the stale horizon and counts it at the largest budget', async () => {
+        const root = fixtureRoot('unreadable-record-held');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            const damagedPath = join(reservationsRoot, 'damaged.json');
+            writeFileSync(damagedPath, '{ not json');
+            const justInside = new Date(Date.now() - staleUnreadableReservationMs + 60_000);
+            utimesSync(damagedPath, justInside, justInside);
+            let availableBytes = 3 * 1024 ** 3;
+            let samples = 0;
+            let settled = false;
+            const waits: string[] = [];
+            const admission = enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memoryReserveBytes: 0,
+                memorySampler: () => {
+                    samples += 1;
+                    return availableBytes;
+                },
+                waitIntervalMs: 10,
+                onWait: (message) => waits.push(message),
+            }).then((session) => {
+                settled = true;
+                return session;
+            });
+
+            await vi.waitFor(() => expect(samples).toBeGreaterThanOrEqual(3));
+            expect(settled).toBe(false);
+            expect(existsSync(damagedPath)).toBe(true);
+            expect(waits).toHaveLength(1);
+            expect(waits[0]).toMatch(/^waiting for validation capacity: need \d+ MiB, 3072 MiB available$/);
+
+            availableBytes = 16 * 1024 ** 3;
+            const session = await admission;
+            expect(existsSync(damagedPath)).toBe(true);
+            session.release();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reaps an unreadable reservation older than the stale horizon and admits', async () => {
+        const root = fixtureRoot('unreadable-record-stale');
+        try {
+            const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+            mkdirSync(reservationsRoot, { recursive: true });
+            const damagedPath = join(reservationsRoot, 'damaged.json');
+            writeFileSync(damagedPath, '{ not json');
+            const beyond = new Date(Date.now() - staleUnreadableReservationMs - 60_000);
+            utimesSync(damagedPath, beyond, beyond);
+
+            const session = await enterResourceSession({
+                root,
+                requiredRssBytes: 1024 ** 3,
+                memoryReserveBytes: 0,
+                availableMemoryBytes: 3 * 1024 ** 3,
+            });
+
+            expect(existsSync(damagedPath)).toBe(false);
             session.release();
         } finally {
             rmSync(root, { recursive: true, force: true });

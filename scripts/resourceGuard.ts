@@ -724,6 +724,47 @@ export function reservationIsLive(owner: ReservationRecord, host: ProcessTreeHos
     return reservationInOrphanGrace(owner);
 }
 
+// An admitted command is killed at its timeout and its orphan grace is that same timeout,
+// so no command can hold a reservation longer than two of the longest profile timeouts.
+const longestProfileTimeoutMs = Math.max(...Object.values(profiles).map((profile) => profile.timeoutMs));
+export const staleUnreadableReservationMs = longestProfileTimeoutMs * 2;
+
+// The most memory any admitted command can reserve: a profile ceiling or a measured script budget.
+const largestGrantableRssBytes = Math.max(
+    ...Object.values(profiles).map((profile) => profile.maxRssBytes),
+    ...measuredScriptBudgets.values()
+);
+
+type ReservationRead = { readable: true; owner: ReservationRecord } | { readable: false };
+
+function readReservationRecord(path: string): ReservationRead {
+    try {
+        return { readable: true, owner: reservationWithState(path) };
+    } catch {
+        return { readable: false };
+    }
+}
+
+function unreadableReservationOwner(path: string): ReservationRecord {
+    return {
+        token: basename(path, '.json'),
+        pid: 0,
+        cwd: '',
+        command: 'unreadable reservation',
+        startedAt: '',
+        processStartedAt: '',
+        reservedRssBytes: largestGrantableRssBytes,
+    };
+}
+
+function reservationFileIsStale(path: string): boolean {
+    try {
+        return Date.now() - statSync(path).mtimeMs > staleUnreadableReservationMs;
+    } catch {
+        return false;
+    }
+}
+
 function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: ReservationRecord; path: string }> {
     mkdirSync(root, { recursive: true });
     const live: Array<{ owner: ReservationRecord; path: string }> = [];
@@ -732,14 +773,20 @@ function liveReservations(root: string, host: ProcessTreeHost): Array<{ owner: R
             continue;
         }
         const path = join(root, name);
-        try {
-            const owner = reservationWithState(path);
-            if (reservationIsLive(owner, host)) {
-                live.push({ owner, path });
-            } else {
+        const read = readReservationRecord(path);
+        if (!read.readable) {
+            // Records are written atomically, so an unreadable one is external damage and its
+            // command may still run: hold the largest budget until the file is provably stale.
+            if (reservationFileIsStale(path)) {
                 removeReservation(path);
+            } else if (existsSync(path)) {
+                live.push({ owner: unreadableReservationOwner(path), path });
             }
-        } catch {
+            continue;
+        }
+        if (reservationIsLive(read.owner, host)) {
+            live.push({ owner: read.owner, path });
+        } else {
             removeReservation(path);
         }
     }
