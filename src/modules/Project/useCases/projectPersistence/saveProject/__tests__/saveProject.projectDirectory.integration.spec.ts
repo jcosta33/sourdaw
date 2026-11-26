@@ -551,7 +551,9 @@ function captureDirectoryLoadBoundary(
     };
 }
 
-function persistenceFailures(warn: { readonly mock: { readonly calls: readonly (readonly unknown[])[] } }): string[] {
+function persistenceFailureMessages(warn: {
+    readonly mock: { readonly calls: readonly (readonly unknown[])[] };
+}): string[] {
     return warn.mock.calls
         .filter(([message]) => message === '[saveProject] Project persistence failed:')
         .map(([, error]) => (error instanceof Error ? error.message : String(error)));
@@ -793,7 +795,9 @@ describe('project directory save and cold Recent open', () => {
 
         await expect(runtime.project.saveProject()).resolves.toBe(false);
 
-        expect(persistenceFailures(warn)).toEqual(['Project Save preparation requires matching native metadata']);
+        expect(persistenceFailureMessages(warn)).toEqual([
+            'Project Save preparation requires matching native metadata',
+        ]);
         expect(runtime.crdt.captureDurableDocumentWitness()).toBe(witness);
         expect(await readNamedProjectJson(recentKey)).toBe(previousNamed);
         expect(await projectDirectory.read(runtime.directory, runtime.projectId)).toEqual(previousDirectory);
@@ -815,12 +819,11 @@ describe('project directory save and cold Recent open', () => {
         expect(typeof previousNamed).toBe('string');
         const previousDirectory = await projectDirectory.read(runtime.directory, runtime.projectId);
 
-        // Settle, then leave exactly one store write pending in the same synchronous block as the native edit. The
-        // write carries the stored values unchanged, so flushing it commits nothing to the document. The Save's own
-        // settle step flushes it and re-projects the edited native identity after the Save captured the store's
-        // identity, whatever animation frames ran during the awaits above.
+        // Only a pending store write makes the Save's settle step flush and re-project the edited native identity
+        // into the store after the Save captured the store's identity. Settling first and writing the stored value
+        // back unchanged leaves exactly that one write pending, and it commits nothing to the document.
         flushAutomergeStorageWrites();
-        projectStore.set({ ...project, updatedAt: project.updatedAt });
+        projectStore.set(project);
         type NativeProjectRoot = { projectMeta?: { projectId?: string } };
         const rootId = runtime.crdt.DOC_PREFIX_ROOT;
         const differentProjectId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -841,7 +844,7 @@ describe('project directory save and cold Recent open', () => {
 
         await expect(runtime.project.saveProject()).resolves.toBe(false);
 
-        expect(persistenceFailures(warn)).toEqual(['Project identity changed during Save preparation']);
+        expect(persistenceFailureMessages(warn)).toEqual(['Project identity changed during Save preparation']);
         expect(runtime.crdt.captureDurableDocumentWitness()).toBe(witness);
         expect(await readNamedProjectJson(recentKey)).toBe(previousNamed);
         expect(await projectDirectory.read(runtime.directory, runtime.projectId)).toEqual(previousDirectory);
