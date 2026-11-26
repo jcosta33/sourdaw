@@ -1061,8 +1061,6 @@ const planPromptIntent = inject({ logger })(
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
                 let metricAuthority: MetricRequestAuthority | undefined;
-                // A literal intake's protection no measurement verifies, kept beside the intake it came with.
-                let protectionAuthority: MetricRequestAuthority | undefined;
                 let admittedWorkflow: (typeof workflowMetricScopes)[number] | undefined;
                 const transformSnapshot =
                     readonly || projectRevision === undefined || projectRevision === ''
@@ -1352,9 +1350,7 @@ const planPromptIntent = inject({ logger })(
                                       if ('metricAuthority' in admission) {
                                           metricAuthority = admission.metricAuthority;
                                       }
-                                      protectionAuthority = undefined;
                                       if (admission.kind === 'literal') {
-                                          protectionAuthority = admission.protectionAuthority ?? undefined;
                                           return {
                                               status: 'admitted',
                                               providerProjection: {
@@ -1577,7 +1573,6 @@ const planPromptIntent = inject({ logger })(
                         )
                     ) {
                         metricAuthority = undefined;
-                        protectionAuthority = undefined;
                         admittedWorkflow = undefined;
                     }
                 }
@@ -1756,13 +1751,6 @@ const planPromptIntent = inject({ logger })(
                     !authorities.some((authority) => authority.authorityId === admittedMetricAuthority.authorityId)
                 ) {
                     authorities.push(admittedMetricAuthority);
-                }
-                const admittedProtectionAuthority = protectionAuthority;
-                if (
-                    admittedProtectionAuthority !== undefined &&
-                    !authorities.some((authority) => authority.authorityId === admittedProtectionAuthority.authorityId)
-                ) {
-                    authorities.push(admittedProtectionAuthority);
                 }
                 const metricProofs = collectMetricGoalProof({
                     authorities,

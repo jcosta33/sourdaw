@@ -9,7 +9,6 @@ import { type ToolCallResult } from '../models/ToolCallResult';
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { admitMetricIntent } from './admitMetricIntent';
-import { createPerceptualConstraintAuthority } from './perceptualConstraints/createPerceptualConstraintAuthority';
 import { type MetricIntentCatalog } from './prepareMetricIntentCatalog';
 
 const BRIEF_REQUIRES_NON_ACOUSTIC =
@@ -35,25 +34,6 @@ type PlanningInterpretationInput = {
     metric?: MetricIntentCatalog;
     turn?: number;
 };
-
-/**
- * A literal authority holds no goal, so a protection no measurement verifies joins the state as the
- * constraint route's own authority, which keeps the batch from being approved as verified.
- */
-function readProtectionAuthority(metric: MetricIntentCatalog) {
-    const protections = metric.unsupportedProtections;
-    if (protections === null) {
-        return null;
-    }
-    return createPerceptualConstraintAuthority({
-        reading: protections.reading,
-        goals: protections.goals,
-        requestDigest: metric.requestDigest,
-        revision: metric.revision,
-        projectId: metric.projectId,
-        selection: metric.selection,
-    });
-}
 
 function admitLiteralInterpretation(
     input: PlanningInterpretationInput,
@@ -99,12 +79,7 @@ function admitLiteralInterpretation(
             reason: 'Literal mode requires positive whole-request literal intent.',
         };
     }
-    return {
-        status: 'admitted' as const,
-        kind: 'literal' as const,
-        metricAuthority: admitted.authority,
-        protectionAuthority: readProtectionAuthority(input.metric),
-    };
+    return { status: 'admitted' as const, kind: 'literal' as const, metricAuthority: admitted.authority };
 }
 
 function admitCreativeInterpretationWithMetricIntent(

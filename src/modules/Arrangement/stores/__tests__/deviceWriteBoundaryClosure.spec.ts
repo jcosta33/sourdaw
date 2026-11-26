@@ -976,11 +976,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // literal label's quality words are read. Pure prompt reading; no
         // device hydration or write.
         'src/modules/AiRuntime/useCases/readUnaccountedQualityWord.ts': 3,
-        // Count provenance: measured 3 — the `compilePerceptualConstraints` import,
-        // its module path and one call that reads the request's unsupported
-        // protections into the metric intent catalog. Pure prompt reading; no
-        // device hydration or write.
-        'src/modules/AiRuntime/useCases/prepareMetricIntentCatalog.ts': 3,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
         // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
         // Compilers, barrel re-exports, the loadPreset handler, and

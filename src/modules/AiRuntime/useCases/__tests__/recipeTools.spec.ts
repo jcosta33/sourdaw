@@ -18,7 +18,6 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
-import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
 
 import { advertisedAnswerCandidateId } from './answerWireFixture';
@@ -1809,91 +1808,6 @@ describe('recipe.expand through provider planning', () => {
         expect(metricGoalStateCodec(planned.metricGoalState)?.authorities[0]).toMatchObject({
             kind: 'literal',
             goals: [],
-        });
-    });
-
-    describe('a literal request and the protections it records', () => {
-        async function planLiteralTempo(prompt: string) {
-            vi.mocked(generateToolPlanningOutcome)
-                .mockImplementationOnce(async (_system, userMessage, schemas) => {
-                    const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
-                    return {
-                        status: 'complete',
-                        toolCalls: [
-                            {
-                                id: 'literal-intake',
-                                name: 'selectCreativeInterpretation',
-                                arguments: {
-                                    catalogId: catalog.catalogId,
-                                    modeId: 'literal',
-                                    uncertainty: 'none',
-                                    targetCandidateIds: [],
-                                    editDimensionCandidateIds: [],
-                                    constraintCandidateIds: [],
-                                    creationSlotIds: [],
-                                    answer: null,
-                                    metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
-                                },
-                            },
-                        ],
-                    };
-                })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'discover-1',
-                            name: 'agent.catalog.discover',
-                            arguments: { category: 'command', names: ['setTempo'] },
-                        },
-                    ],
-                })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'propose-1',
-                            name: 'command.batch.propose',
-                            arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 100 } }] },
-                        },
-                    ],
-                });
-            return parsePromptToActions({ prompt, context: getProjectContext(), projectRevision: REVISION });
-        }
-
-        it('carries a protection no measurement verifies into the card state, quoting its clause', async () => {
-            const prompt = 'set the tempo to 100 and keep the vocal warm';
-            expect(compilePerceptualConstraints(prompt, getProjectContext())).toMatchObject({
-                constraints: [],
-                unsupported: [{ clause: 'keep the vocal warm' }],
-            });
-            const planned = await planLiteralTempo(prompt);
-            expect(planned.rejectionReason).toBeUndefined();
-            expect(planned.actions).toMatchObject([{ type: 'setTempo', payload: { bpm: 100 } }]);
-            const state = metricGoalStateCodec(planned.metricGoalState);
-            expect(state?.authorities).toMatchObject([
-                { kind: 'literal', goals: [] },
-                {
-                    origin: 'perceptual-constraint-reader',
-                    kind: 'perceptual',
-                    goals: [
-                        {
-                            relation: 'unsupported',
-                            source: { kind: 'constraint', constraintId: 'unsupported', clause: 'keep the vocal warm' },
-                        },
-                    ],
-                },
-            ]);
-            expect(state?.steps).toMatchObject([{ stepId: 'overall' }]);
-        });
-
-        it('carries no protection authority for a request that records none', async () => {
-            const planned = await planLiteralTempo('set the tempo to 100');
-            expect(planned.rejectionReason).toBeUndefined();
-            expect(metricGoalStateCodec(planned.metricGoalState)?.authorities).toMatchObject([
-                { kind: 'literal', goals: [] },
-            ]);
-            expect(metricGoalStateCodec(planned.metricGoalState)?.authorities).toHaveLength(1);
         });
     });
 });
