@@ -806,14 +806,14 @@ const EXPECTED_COMMANDS = [
                 minimum: 0,
                 maximum: 1,
                 description:
-                    'Timing looseness from 0 (none) through 1; each note moves by up to a quarter of this many beats either way, and its velocity too unless velocityAmount is given',
+                    'Timing looseness from 0 (none) through 1; each note moves by up to an eighth of this many beats either way (never before the clip start), and its velocity too unless velocityAmount is given',
             },
             velocityAmount: {
                 type: 'number',
                 minimum: 0,
                 maximum: 1,
                 description:
-                    'Velocity looseness from 0 through 1; each note moves by up to ten times this many velocity steps either way; defaults to amount',
+                    'Velocity looseness from 0 through 1; each note moves by up to five times this many velocity steps either way; defaults to amount',
             },
         },
         ['clipId', 'amount'],
