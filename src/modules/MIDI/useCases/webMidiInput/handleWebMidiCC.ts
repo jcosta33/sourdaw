@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases';
+import { applyNoteExpression, audioEngine, resolveStoredControllerHosting } from '#/modules/AudioEngine/useCases';
 
 import {
     CC_ALL_NOTES_OFF,
@@ -194,7 +194,9 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
 
             const trackState = deps.getTrackStoreState();
             const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
-            const grandBouleDevice = track?.devices.find((device) => device.type === 'grand-boule');
+            const grandBouleDevice = track?.devices.find(
+                (device) => resolveStoredControllerHosting(device.type)?.moves === 'pedal-positions'
+            );
             if (grandBouleDevice) {
                 routePedalToBodies(
                     {
@@ -213,10 +215,12 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                 );
             }
 
-            const levainDevice = track?.devices.find((device) => device.type === 'levain');
+            const levainDevice = track?.devices.find(
+                (device) => resolveStoredControllerHosting(device.type)?.moves === 'raw-controllers'
+            );
             if (levainDevice) {
                 const strip = audioEngine.getTrackStrip(targetTrackId);
-                const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: 'levain' });
+                const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: levainDevice.type });
                 if (deviceNode?.levainControls?.ready) {
                     // The raw wire bytes, deliberately: `handleCc` is the
                     // message boundary into the Levain worklet and its Rust

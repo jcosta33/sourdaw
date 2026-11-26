@@ -23,7 +23,9 @@ vi.mock('../resolveRecordingPlacement', () => ({
     }),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    resolveStoredControllerHosting: (await importOriginal<typeof import('#/modules/AudioEngine/useCases')>())
+        .resolveStoredControllerHosting,
     builtinSynthVoice: { read: vi.fn() },
     audioEngine: { context: { currentTime: 3, sampleRate: 48_000, baseLatency: 0, outputLatency: 0 } },
     getCompensationDelay: () => 0,

@@ -42,6 +42,7 @@ const engineWrites: { trackId: string; deviceId: string; paramId: string; value:
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        resolveStoredControllerHosting: actual.resolveStoredControllerHosting,
         engineSampleRateOf: vi.fn((): number | null => null),
         acceptsSidechainInput: actual.acceptsSidechainInput,
         getSidechainTargetCapability: actual.getSidechainTargetCapability,

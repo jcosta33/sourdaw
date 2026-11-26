@@ -1303,7 +1303,10 @@ export async function scheduleMidiNotes(
                             // frame's events must reach the engine release,
                             // controller, note-on, expression whichever clip or
                             // window the note came from.
-                            if (workletSynthDevice?.type === 'levain' && workletSynthNode?.levainControls) {
+                            if (
+                                workletSynthEntry.controlsKey === 'levainControls' &&
+                                workletSynthNode?.levainControls
+                            ) {
                                 const levainControls = workletSynthNode.levainControls;
                                 posts.add('on', sampleFrame, () =>
                                     levainControls.noteOn(
@@ -1402,7 +1405,10 @@ export async function scheduleMidiNotes(
                             // pitch instead of the one held on that channel.
                             // All four control types accept three numbers, so
                             // the compiler had nothing to object to.
-                            if (workletSynthDevice?.type === 'grand-boule' && workletSynthNode?.grandBouleControls) {
+                            if (
+                                workletSynthEntry.controlsKey === 'grandBouleControls' &&
+                                workletSynthNode?.grandBouleControls
+                            ) {
                                 const grandBouleControls = workletSynthNode.grandBouleControls;
                                 posts.add('off', endSampleFrame, () =>
                                     grandBouleControls.noteOff(pitch, endSampleFrame, undefined, noteChannel)
