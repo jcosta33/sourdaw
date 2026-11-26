@@ -429,12 +429,12 @@ describe('saveProject snapshot continuation', () => {
                     ),
                 ]);
                 expect(firstToHappen).toBe('preparation reached');
+                expect(preparationReached).toBe(true);
                 const requestsWhileHeld = lockManager.requestedNames.length;
                 const retiredWindowElapsed = vi.fn();
                 setTimeout(retiredWindowElapsed, RETIRED_POLL_WINDOW_MS + 1);
                 await vi.advanceTimersByTimeAsync(RETIRED_POLL_WINDOW_MS * 2);
                 expect(retiredWindowElapsed).toHaveBeenCalledOnce();
-                expect(preparationReached).toBe(true);
                 expect(lockManager.requestedNames).toHaveLength(requestsWhileHeld);
                 // The save's later yields wait on real timers; fake time only spans the held window.
                 vi.useRealTimers();
