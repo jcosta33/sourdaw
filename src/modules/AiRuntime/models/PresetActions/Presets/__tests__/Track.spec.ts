@@ -39,13 +39,14 @@ describe('trackPresets — creation presets', () => {
         }
     });
 
-    it('builds createFolder action for add-folder', () => {
+    it('builds a named folder addTrack for add-folder', () => {
         const preset = trackPresets.find((p) => p.id === 'add-folder')!;
         const action = preset.buildAction(ctxWithTrack);
         if (action === null || Array.isArray(action)) {
             throw new Error('Expected action');
         }
-        expect(action.type).toBe('createFolder');
+        expect(action.type).toBe('addTrack');
+        expect(action.payload).toMatchObject({ kind: 'folder', name: expect.stringMatching(/^Folder \d+$/u) });
     });
 });
 

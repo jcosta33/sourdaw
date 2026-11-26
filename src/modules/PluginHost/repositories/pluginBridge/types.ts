@@ -50,6 +50,13 @@ export type PluginInstance = {
      */
     tail_samples: number;
     /**
+     * Where that load-time tail read falls in the one order the native host
+     * takes every tail it reports in; see `PluginTailChange.sequence`. A figure
+     * numbered at or below it was read before this load, so it belongs to an
+     * earlier instance that held the same id.
+     */
+    tail_sequence: number;
+    /**
      * The id this instance was given inside the native audio engine, or `null`
      * when the load succeeded but no engine was running to attach it to.
      *

@@ -19,7 +19,7 @@ describe('external plugin tail store sequence rule', () => {
     });
 
     it('applies a figure with a larger sequence over one already applied', () => {
-        writeExternalPluginTail('inst-1', 96_000);
+        writeExternalPluginTail('inst-1', { tailSamples: 96_000, sequence: 1 });
 
         reviseExternalPluginTail('inst-1', { tailSamples: 240_000, sequence: 5 });
         reviseExternalPluginTail('inst-1', { tailSamples: 300_000, sequence: 6 });
@@ -28,7 +28,7 @@ describe('external plugin tail store sequence rule', () => {
     });
 
     it('ignores a second figure that carries the same sequence as the one applied', () => {
-        writeExternalPluginTail('inst-1', 96_000);
+        writeExternalPluginTail('inst-1', { tailSamples: 96_000, sequence: 1 });
 
         reviseExternalPluginTail('inst-1', { tailSamples: 240_000, sequence: 5 });
         reviseExternalPluginTail('inst-1', { tailSamples: 300_000, sequence: 5 });
@@ -36,14 +36,28 @@ describe('external plugin tail store sequence rule', () => {
         expect(tailOf('inst-1')).toBe(240_000);
     });
 
-    it('lets a figure with a lower sequence land after the instance is seeded again', () => {
-        writeExternalPluginTail('inst-1', 96_000);
+    it('ignores a figure the previous load of the same instance id published after the successor seeded', () => {
+        writeExternalPluginTail('inst-1', { tailSamples: 96_000, sequence: 1 });
         reviseExternalPluginTail('inst-1', { tailSamples: 240_000, sequence: 9 });
 
-        // A fresh load of the instance: the load's own figure outranks nothing the host sends next.
-        writeExternalPluginTail('inst-1', 50_000);
-        reviseExternalPluginTail('inst-1', { tailSamples: 300_000, sequence: 4 });
+        // The successor's load read took sequence 12; the predecessor's event, numbered 10, is still in flight.
+        writeExternalPluginTail('inst-1', { tailSamples: 50_000, sequence: 12 });
+        reviseExternalPluginTail('inst-1', { tailSamples: 300_000, sequence: 10 });
+
+        expect(tailOf('inst-1')).toBe(50_000);
+    });
+
+    it('applies a figure numbered after the successor load read', () => {
+        writeExternalPluginTail('inst-1', { tailSamples: 96_000, sequence: 12 });
+        reviseExternalPluginTail('inst-1', { tailSamples: 300_000, sequence: 13 });
 
         expect(tailOf('inst-1')).toBe(300_000);
+    });
+
+    it('ignores a figure numbered at the load read itself', () => {
+        writeExternalPluginTail('inst-1', { tailSamples: 96_000, sequence: 12 });
+        reviseExternalPluginTail('inst-1', { tailSamples: 300_000, sequence: 12 });
+
+        expect(tailOf('inst-1')).toBe(96_000);
     });
 });

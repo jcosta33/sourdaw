@@ -165,11 +165,23 @@ pub trait NativePlugin: Any + Send {
     /// path holds it, so a control operation landing on this block pushes the
     /// drain to a later one.
     ///
+    /// `sample_offset` is the sample inside the next process call the write
+    /// applies at, measured in the frame of reference that call is handed —
+    /// the span's first frame for a chain device, the callback's for a master
+    /// insert — exactly as a scheduled note's `frame_offset` is. Writes for one
+    /// plugin arrive in non-decreasing offset within that call, and several for
+    /// one parameter are points of one ramp that must all reach the plugin.
+    ///
     /// `true` means the write is queued. `false` refuses it, and the caller
     /// counts the refusal as an unmapped parameter call — the default, because
     /// a plugin body with no addressable parameters (a built-in wrapper, a
     /// fixture) has nothing to queue the write against.
-    fn apply_parameter_on_audio_thread(&mut self, _id: u32, _value: f64) -> bool {
+    fn apply_parameter_on_audio_thread(
+        &mut self,
+        _id: u32,
+        _value: f64,
+        _sample_offset: u32,
+    ) -> bool {
         false
     }
 

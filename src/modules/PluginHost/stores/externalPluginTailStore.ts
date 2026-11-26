@@ -61,8 +61,10 @@ function advanceTailStamp(instanceId: string): void {
 
 /**
  * The highest native sequence applied to each seeded instance. A figure at or
- * below it is older than what the store shows and is ignored. A seed clears it,
- * so every native figure outranks the load's own.
+ * below it is older than what the store shows and is ignored. A seed sets it to
+ * the sequence the host took at the load's own read, so a figure a previous
+ * load of the same instance id published before it was unloaded, delivered
+ * after the seed, is older than the load and ignored.
  */
 const appliedSequences = new Map<string, number>();
 
@@ -171,12 +173,13 @@ function applyNativeTailFigure(instanceId: string, { tailSamples, sequence }: Na
 }
 
 /**
- * Seed an instance's tail from its load. Every native figure outranks it, and
- * every read issued before it drops.
+ * Seed an instance's tail from its load, with the sequence the host took at the
+ * load's own read. Only a figure the host read after that outranks it, and every
+ * read issued before it drops.
  */
-export function writeExternalPluginTail(instanceId: string, tailSamples: number): void {
+export function writeExternalPluginTail(instanceId: string, { tailSamples, sequence }: NativeTailFigure): void {
     advanceTailStamp(instanceId);
-    appliedSequences.delete(instanceId);
+    appliedSequences.set(instanceId, sequence);
     setExternalPluginTail(instanceId, tailSamples);
 }
 

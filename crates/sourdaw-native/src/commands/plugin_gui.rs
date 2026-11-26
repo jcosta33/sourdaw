@@ -7,12 +7,18 @@
 //! is this module's, and it reaches every format through `AudioPlugin`.
 //!
 //! Both formats make that lifecycle thread-affine, so every call into a plugin's
-//! editor leaves here through [`lend_on_ui_thread`]. The order is the same
-//! everywhere and it is what keeps the shell answering: the runtime owner's
-//! control claim is taken on this worker, and only the plugin call itself
-//! crosses to the shell's thread. A claim taken on that thread instead would
-//! park it behind whatever holds the gate, and whatever holds the gate is
-//! waiting for that same thread.
+//! editor crosses to the shell's thread through
+//! [`ControlVisit::on_ui_thread`](crate::host::native_bridge::ControlVisit::on_ui_thread).
+//! The order is the same everywhere and it is what keeps the shell answering:
+//! the runtime owner's control gate is taken on this worker, and only the plugin
+//! call itself crosses. A gate taken on that thread instead would park it
+//! behind whatever holds the gate, and whatever holds the gate is waiting for
+//! that same thread.
+//!
+//! No editor call holds the audio access seam across that crossing. The seam is
+//! claimed once the call has landed on the shell's thread and let go when the
+//! plugin call returns, so a shell busy with something else delays the editor,
+//! never the plugin's audio.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -27,7 +33,7 @@ use crate::host::plugin_window::{
     next_editor_open_sequence, plugin_editor_window_label, NoWindowHost, PluginEditorWindow,
     PluginWindowError, PluginWindowHost,
 };
-use crate::host::ui_thread::{lend_on_ui_thread, UiThreadError};
+use crate::host::ui_thread::{UiThreadError, EDITOR_UI_THREAD_DEADLINE};
 use crate::state::{
     AppState, EditorTeardownSignal, EnginePluginControlError, PluginInstanceData,
     PluginWindowRecords,
@@ -239,7 +245,7 @@ fn command_owned_runtime(
 ///
 /// Both stores are reached the same way: the runtime owner is cloned out of
 /// its map, the map is released, and the call claims the owner's control gate.
-/// The thread rule is the module's: the claim is taken here, and only the call
+/// The thread rule is the module's: the gate is taken here, and only the call
 /// crosses.
 fn call_plugin_on_ui_thread<Answer: Send + 'static>(
     instance_id: &str,
@@ -249,9 +255,7 @@ fn call_plugin_on_ui_thread<Answer: Send + 'static>(
 ) -> Result<Answer, PluginGuiError> {
     if let Some(runtime) = command_owned_runtime(state, instance_id)? {
         return runtime
-            .with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
-                lend_on_ui_thread(windows_host, plugin, |plugin| call(plugin))
-            })
+            .with_control_on_ui_thread(EDITOR_CONTROL_TIMEOUT, windows_host, |plugin| call(plugin))
             .map_err(PluginGuiError::from);
     }
 
@@ -265,9 +269,7 @@ fn call_plugin_on_ui_thread<Answer: Send + 'static>(
     }
 
     state
-        .with_engine_plugin_control(instance_id, |plugin| {
-            lend_on_ui_thread(windows_host, plugin, |plugin| call(plugin))
-        })
+        .with_engine_plugin_on_ui_thread(instance_id, windows_host, |plugin| call(plugin))
         .map_err(PluginGuiError::from)
 }
 
@@ -549,8 +551,8 @@ async fn open_editor_in_new_window(
         )
     };
     let gui_size_result = runtime
-        .with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
-            lend_on_ui_thread(windows_host, plugin, move |plugin| open_editor(plugin))
+        .with_control_on_ui_thread(EDITOR_CONTROL_TIMEOUT, windows_host, move |plugin| {
+            open_editor(plugin)
         })
         .map_err(PluginGuiError::from)
         .and_then(|opened| opened);
@@ -605,9 +607,11 @@ async fn open_editor_in_new_window(
     cleanup_opened_engine_gui_after_rejected_lifecycle(
         publish_result,
         || {
-            let _ = runtime.with_unload_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
-                lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
-            });
+            let _ = runtime.with_unload_control_on_ui_thread(
+                EDITOR_CONTROL_TIMEOUT,
+                windows_host,
+                |plugin| plugin.close_gui(),
+            );
         },
         || {
             if let Ok(mut windows) = state.plugin_windows.lock() {
@@ -851,74 +855,102 @@ pub async fn reset_plugin_gui_state_after_os_close(
 
 /// Close the plugin's own GUI through whichever map owns the instance.
 ///
-/// Command-owned first, then engine-owned: an instance lives in exactly one of
-/// them. Either way the close runs under the instance's own control gate with
-/// the map released.
+/// Either way the close runs under the instance's own control gate with the map
+/// released, and an instance found in neither store gets one bounded wait for
+/// an attach's move; see [`owning_runtime_after_attach_transit`].
 ///
-/// An instance found in neither store gets one bounded wait for an attach's
-/// move before the lookup is repeated; see [`wait_out_attach_transit`].
+/// Both callers have just claimed the editor's record by removing it, so a
+/// record standing again when the gate is held belongs to a newer editor: a
+/// reopen published it while this close waited — for the move, or for the
+/// gate. Closing then would close that editor, the one now on screen, so the
+/// close is skipped. The plugin's editor this close was for is already gone,
+/// because the reopen could only open once it was.
 async fn close_owning_plugin_gui(
     instance_id: &str,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) {
-    wait_out_attach_transit(instance_id, state).await;
-
-    if let Ok(Some(runtime)) = command_owned_runtime(state, instance_id) {
-        let _ = runtime.with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
-            lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
-        });
+    let Ok(Some(runtime)) = owning_runtime_after_attach_transit(instance_id, state).await else {
+        return;
+    };
+    let Ok(visit) = runtime.control_visit() else {
+        return;
+    };
+    if has_editor_record(instance_id, state) {
         return;
     }
-
-    let is_engine_owned = state
-        .engine_plugins
-        .lock()
-        .map(|engine_plugins| engine_plugins.contains_key(instance_id))
-        .unwrap_or(false);
-
-    if is_engine_owned {
-        let _ = state.with_engine_plugin_control(instance_id, |plugin| {
-            lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
-        });
-    }
+    let _ = visit.on_ui_thread(windows_host, EDITOR_CONTROL_TIMEOUT, |plugin| {
+        plugin.close_gui()
+    });
 }
 
-/// How long a close looks for an instance that is in neither store. It stays
-/// under the shell's 5 s detach deadline (electron/pluginGui.ts) with room for
-/// the UI-thread hop of the plugin's own close.
+fn has_editor_record(instance_id: &str, state: &AppState) -> bool {
+    state
+        .plugin_windows
+        .lock()
+        .map(|windows| windows.get(instance_id).is_some())
+        .unwrap_or(false)
+}
+
+/// How long a close looks for an instance that is in neither store.
 const ATTACH_TRANSIT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
-fn is_in_a_plugin_store(instance_id: &str, state: &AppState) -> bool {
-    // A poisoned store cannot be waited out; the caller's own lookup reports it.
-    let command_owned = state
-        .plugins
+/// The shell's bound on one editor's detach, `DETACH_DEADLINE_MS` in
+/// electron/pluginGui.ts, mirrored here because the shell destroys the window
+/// when it runs out: a close still waiting by then un-parents the plugin's
+/// editor from a window that no longer exists.
+const SHELL_EDITOR_DETACH_DEADLINE: std::time::Duration = std::time::Duration::from_millis(5_000);
+
+const _: () = assert!(
+    ATTACH_TRANSIT_WAIT.as_millis() + EDITOR_UI_THREAD_DEADLINE.as_millis()
+        < SHELL_EDITOR_DETACH_DEADLINE.as_millis(),
+    "a close's wait for an attach and its hop to the shell's thread must both fit inside the \
+     shell's detach deadline"
+);
+
+/// The runtime behind an instance, from whichever store holds it: command-owned
+/// first, then engine-owned. An instance lives in exactly one of them.
+fn owning_runtime(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<Option<Arc<SharedHostedPlugin>>, PluginGuiError> {
+    if let Some(runtime) = command_owned_runtime(state, instance_id)? {
+        return Ok(Some(runtime));
+    }
+    let engine_plugins = state
+        .engine_plugins
         .lock()
-        .map(|plugins| plugins.contains_key(instance_id))
-        .unwrap_or(true);
-    command_owned
-        || state
-            .engine_plugins
-            .lock()
-            .map(|engine_plugins| engine_plugins.contains_key(instance_id))
-            .unwrap_or(true)
+        .map_err(PluginGuiError::lock("engine_plugins"))?;
+    Ok(engine_plugins
+        .get(instance_id)
+        .map(|instance| Arc::clone(&instance.runtime)))
 }
 
-/// Wait for an attach that is moving the instance between the stores.
+/// The instance's runtime, waiting out an attach that is moving it between the
+/// stores.
 ///
 /// An attach holds the instance's lifecycle lease for the whole move, and in the
 /// middle the instance is in neither store, so a close that looked then would
 /// skip the plugin's `close_gui` and let the shell destroy the window over an
-/// editor the plugin still holds. Acquiring the lease means the move is done.
-/// A lease still held at the bound is a load or unload, not an attach, which
-/// only try-locks and moves quickly; the close then proceeds as an unloaded
-/// instance's does. The lease is never held across the close itself.
-async fn wait_out_attach_transit(instance_id: &str, state: &AppState) {
-    if is_in_a_plugin_store(instance_id, state) {
-        return;
+/// editor the plugin still holds. The wait is taken at the lookup's miss itself,
+/// and the lookup repeated once after it: a presence check made before the
+/// lookup leaves a gap in which an attach can begin and the lookup still miss.
+/// Acquiring the lease means the move is done. A lease still held at the bound
+/// is a load or unload, not an attach, which only try-locks and moves quickly;
+/// the close then proceeds as an unloaded instance's does. The lease is never
+/// held across the close itself.
+async fn owning_runtime_after_attach_transit(
+    instance_id: &str,
+    state: &AppState,
+) -> Result<Option<Arc<SharedHostedPlugin>>, PluginGuiError> {
+    #[cfg(test)]
+    tests::reach_owner_lookup(instance_id);
+    if let Some(runtime) = owning_runtime(state, instance_id)? {
+        return Ok(Some(runtime));
     }
     let transit = tokio::time::timeout(ATTACH_TRANSIT_WAIT, lock_plugin_lifecycle(instance_id));
     drop(transit.await);
+    owning_runtime(state, instance_id)
 }
 
 /// Claim a recorded editor whose window the shell no longer has, and close the
@@ -1015,33 +1047,12 @@ async fn close_editor_and_window(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<(), PluginGuiError> {
-    wait_out_attach_transit(instance_id, state).await;
-
-    let command_owned = command_owned_runtime(state, instance_id)?;
-    if let Some(runtime) = &command_owned {
+    if let Some(runtime) = owning_runtime_after_attach_transit(instance_id, state).await? {
         runtime
-            .with_control(EDITOR_CONTROL_TIMEOUT, |plugin| {
-                lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
+            .with_control_on_ui_thread(EDITOR_CONTROL_TIMEOUT, windows_host, |plugin| {
+                plugin.close_gui()
             })
             .map_err(PluginGuiError::from)?;
-    }
-
-    if command_owned.is_none() {
-        let is_engine_owned = {
-            let engine_plugins = state
-                .engine_plugins
-                .lock()
-                .map_err(PluginGuiError::lock("engine_plugins"))?;
-            engine_plugins.contains_key(instance_id)
-        };
-
-        if is_engine_owned {
-            state
-                .with_engine_plugin_control(instance_id, |plugin| {
-                    lend_on_ui_thread(windows_host, plugin, |plugin| plugin.close_gui())
-                })
-                .map_err(PluginGuiError::from)?;
-        }
     }
 
     // Destroy the native window
@@ -1132,17 +1143,15 @@ fn close_command_owned_editor(
     runtime: &SharedHostedPlugin,
     editor_thread: &dyn PluginWindowHost,
 ) -> Result<(), PluginGuiError> {
-    let close = |plugin: &mut HostedRuntime| {
-        lend_on_ui_thread(editor_thread, plugin, |plugin| plugin.close_gui())
-    };
+    let close = |plugin: &mut HostedRuntime| plugin.close_gui();
 
     if editor_thread.is_ui_thread() {
         return runtime
-            .try_with_control(EDITOR_CONTROL_TIMEOUT, close)
+            .try_with_control_on_ui_thread(EDITOR_CONTROL_TIMEOUT, editor_thread, close)
             .map_err(PluginGuiError::from);
     }
     runtime
-        .with_control(EDITOR_CONTROL_TIMEOUT, close)
+        .with_control_on_ui_thread(EDITOR_CONTROL_TIMEOUT, editor_thread, close)
         .map_err(PluginGuiError::from)
 }
 
@@ -1160,17 +1169,15 @@ fn close_engine_owned_editor(
     editor_thread: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<(), PluginGuiError> {
-    let close = |plugin: &mut HostedRuntime| {
-        lend_on_ui_thread(editor_thread, plugin, |plugin| plugin.close_gui())
-    };
+    let close = |plugin: &mut HostedRuntime| plugin.close_gui();
 
     if editor_thread.is_ui_thread() {
         return state
-            .try_with_engine_plugin_control(instance_id, close)
+            .try_with_engine_plugin_on_ui_thread(instance_id, editor_thread, close)
             .map_err(PluginGuiError::from);
     }
     state
-        .with_engine_plugin_control(instance_id, close)
+        .with_engine_plugin_on_ui_thread(instance_id, editor_thread, close)
         .map_err(PluginGuiError::from)
 }
 
@@ -1327,6 +1334,37 @@ mod tests {
                 .lock()
                 .expect("event log")
                 .push((event.to_string(), payload));
+        }
+    }
+
+    /// What a test runs as a close reaches its lookup of one instance's owner.
+    type OwnerLookupInterleaving = (String, Box<dyn FnOnce() + Send>);
+
+    static BEFORE_OWNER_LOOKUP: Mutex<Option<OwnerLookupInterleaving>> = Mutex::new(None);
+
+    /// Run `other_side` once, the first time a close looks `instance_id` up.
+    fn interleave_with_owner_lookup(instance_id: &str, other_side: impl FnOnce() + Send + 'static) {
+        *BEFORE_OWNER_LOOKUP
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some((instance_id.to_string(), Box::new(other_side)));
+    }
+
+    pub(super) fn reach_owner_lookup(instance_id: &str) {
+        let other_side = {
+            let mut slot = BEFORE_OWNER_LOOKUP
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match slot.take() {
+                Some((at, other_side)) if at == instance_id => Some(other_side),
+                unmatched => {
+                    *slot = unmatched;
+                    None
+                }
+            }
+        };
+        if let Some(other_side) = other_side {
+            other_side();
         }
     }
 
@@ -1696,6 +1734,264 @@ mod tests {
         );
     }
 
+    /// Whether the audio thread could claim this instance right now: the access
+    /// seam `with_process` compare-exchanges against is free.
+    fn audio_seam_is_free(runtime: &SharedHostedPlugin) -> bool {
+        runtime.try_claim_control().is_some()
+    }
+
+    /// Runs `editor_call` with the shell's thread parked on the first task it
+    /// is handed, and reports whether the audio access seam was free while it
+    /// was parked there. The task is then released and the call's own answer
+    /// returned with that report.
+    fn seam_free_while_the_hop_is_parked<Answer: Send>(
+        windows: &DedicatedUiWindowHost,
+        runtime: &SharedHostedPlugin,
+        editor_call: impl FnOnce() -> Answer + Send,
+    ) -> (bool, Answer) {
+        let held = windows.hold_next_task();
+        std::thread::scope(|scope| {
+            let calling = scope.spawn(editor_call);
+            held.until_held();
+            let free = audio_seam_is_free(runtime);
+            held.release();
+            (
+                free,
+                calling.join().expect("the editor call should not panic"),
+            )
+        })
+    }
+
+    /// The defect of #7196 on the open path: the shell's thread has taken the
+    /// open but not run it, and the plugin's blocks must still be served — a
+    /// shell busy elsewhere delays the editor, never the audio.
+    #[test]
+    fn an_open_waiting_for_the_shell_thread_leaves_the_audio_seam_free() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "parked-open", true);
+        let runtime = engine_fixture_runtime(&state, "parked-open");
+        let windows = DedicatedUiWindowHost::start();
+
+        let (free, opened) = seam_free_while_the_hop_is_parked(&windows, &runtime, || {
+            crate::block_on_test(open_plugin_gui("parked-open".to_string(), &windows, &state))
+        });
+
+        assert!(
+            free,
+            "the audio thread must be able to claim the plugin while the open waits for the shell"
+        );
+        assert!(
+            opened
+                .expect("the open should succeed once the shell runs it")
+                .is_open
+        );
+    }
+
+    /// The close half of the same defect.
+    #[test]
+    fn a_close_waiting_for_the_shell_thread_leaves_the_audio_seam_free() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "parked-close", true);
+        let runtime = engine_fixture_runtime(&state, "parked-close");
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "parked-close".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        let (free, closed) = seam_free_while_the_hop_is_parked(&windows, &runtime, || {
+            crate::block_on_test(close_plugin_gui(
+                "parked-close".to_string(),
+                &windows,
+                &state,
+            ))
+        });
+
+        assert!(
+            free,
+            "the audio thread must be able to claim the plugin while the close waits for the shell"
+        );
+        closed.expect("the close should succeed once the shell runs it");
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the close still reaches the plugin on the shell's thread"
+        );
+    }
+
+    /// Race (a) of #7196. A presence check made before the lookup leaves a gap:
+    /// an attach that starts moving the instance in it makes the lookup miss,
+    /// and a close that took the check's "present" for an answer skipped the
+    /// plugin's `close_gui`. The wait belongs at the lookup's miss itself.
+    #[test]
+    fn an_attach_that_starts_as_the_close_looks_the_instance_up_is_waited_out() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "attach-at-lookup", true);
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "attach-at-lookup".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        let (at_lookup, reached_lookup) = std::sync::mpsc::channel::<()>();
+        let (moved, attach_moved) = std::sync::mpsc::channel::<()>();
+        interleave_with_owner_lookup("attach-at-lookup", move || {
+            at_lookup.send(()).expect("the test is listening");
+            attach_moved.recv().expect("the test starts the attach");
+        });
+        let gate = super::super::plugins::plugin_lifecycle_gate("attach-at-lookup");
+
+        let closed = std::thread::scope(|scope| {
+            let closing = scope.spawn(|| {
+                crate::block_on_test(close_plugin_gui(
+                    "attach-at-lookup".to_string(),
+                    &windows,
+                    &state,
+                ))
+            });
+            reached_lookup
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("the close must reach its lookup");
+
+            // The attach begins: the lease is taken and the instance leaves
+            // the store, after anything the close checked before its lookup.
+            let attach_lease = super::super::plugins::try_lock_plugin_lifecycle("attach-at-lookup")
+                .expect("nothing else holds the instance");
+            let in_transit = state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .remove("attach-at-lookup")
+                .expect("the fixture is engine-owned");
+            // The map, the attach's lease and its guard, and `gate` above.
+            let idle_holders = Arc::strong_count(&gate);
+            moved.send(()).expect("the close is parked at its lookup");
+
+            // A close parked on the lease holds two more clones of its gate; one
+            // that never waits finishes instead, and the assertion below says so.
+            while Arc::strong_count(&gate) < idle_holders + 2 && !closing.is_finished() {
+                std::thread::yield_now();
+            }
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .insert("attach-at-lookup".to_string(), in_transit);
+            drop(attach_lease);
+            closing.join().expect("the close thread should not panic")
+        });
+
+        closed.expect("the close should succeed once the move is done");
+        assert_eq!(
+            recorded_threads(&gui_threads),
+            [windows.thread_id, windows.thread_id],
+            "the plugin's editor must be closed, not skipped because the lookup missed"
+        );
+    }
+
+    /// Race (b) of #7196. An OS-close report claims the record and waits out an
+    /// attach; in the gap a reopen publishes a newer editor — possible because
+    /// the plugin had already ended the editor the report was for. The report's
+    /// late `close_gui` would close the editor now on screen.
+    #[test]
+    fn an_os_close_that_waited_out_an_attach_spares_the_editor_a_reopen_opened_meanwhile() {
+        let state = AppState::default();
+        let gui_threads =
+            insert_engine_owned_fixture_watching_gui_threads(&state, "reopen-in-gap", true);
+        let runtime = engine_fixture_runtime(&state, "reopen-in-gap");
+        let windows = DedicatedUiWindowHost::start();
+        crate::block_on_test(open_plugin_gui(
+            "reopen-in-gap".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+        let closed_label = state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .get("reopen-in-gap")
+            .cloned()
+            .expect("the open must have recorded a window");
+        // The plugin ends its own editor; the report for its window follows.
+        runtime
+            .with_control_on_ui_thread(EDITOR_CONTROL_TIMEOUT, &windows, |plugin| {
+                plugin.close_gui()
+            })
+            .expect("the fixture ends its editor");
+        windows.os_closed(&closed_label);
+
+        let attach_lease = super::super::plugins::try_lock_plugin_lifecycle("reopen-in-gap")
+            .expect("nothing else holds the instance");
+        let in_transit = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove("reopen-in-gap")
+            .expect("the fixture is engine-owned");
+        let gate = super::super::plugins::plugin_lifecycle_gate("reopen-in-gap");
+        let idle_holders = Arc::strong_count(&gate);
+        let events = RecordingEventSink::default();
+
+        std::thread::scope(|scope| {
+            let reporting = scope.spawn(|| {
+                crate::block_on_test(reset_plugin_gui_state_after_os_close(
+                    "reopen-in-gap",
+                    &closed_label,
+                    &windows,
+                    &state,
+                    &events,
+                ))
+            });
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while Arc::strong_count(&gate) < idle_holders + 2 {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the report never reached the lifecycle lease"
+                );
+                std::thread::yield_now();
+            }
+
+            // The attach finishes its move, and a reopen runs before the
+            // report's wait wakes.
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .insert("reopen-in-gap".to_string(), in_transit);
+            crate::block_on_test(open_plugin_gui(
+                "reopen-in-gap".to_string(),
+                &windows,
+                &state,
+            ))
+            .expect("the reopen opens the plugin's editor again");
+            drop(attach_lease);
+            reporting.join().expect("the report should not panic");
+        });
+
+        assert_eq!(
+            recorded_threads(&gui_threads).len(),
+            3,
+            "open, the plugin's own end, and the reopen — and no close of the reopened editor"
+        );
+        assert_ne!(
+            state
+                .plugin_windows
+                .lock()
+                .expect("plugin_windows lock")
+                .get("reopen-in-gap")
+                .map(String::as_str),
+            None,
+            "the reopened editor keeps its record"
+        );
+    }
+
     /// Runs `close` while an attach is mid-move, as the attach does it: the test
     /// holds the instance's lifecycle lease with the instance out of both
     /// stores. Returns once `close` has parked on the lease; the instance is then
@@ -1925,12 +2221,53 @@ mod tests {
             .build()
             .expect("test runtime should build");
         let _entered = runtime.enter();
-        let mut wait = std::pin::pin!(wait_out_attach_transit("poll-present", &state));
+        let mut wait = std::pin::pin!(owning_runtime_after_attach_transit("poll-present", &state));
         let mut context = std::task::Context::from_waker(std::task::Waker::noop());
 
         assert!(
             wait.as_mut().poll(&mut context).is_ready(),
             "an instance in a store must not be waited for"
+        );
+    }
+
+    /// The command-owned branch of the same poll: a dormant instance in its own
+    /// store is found at once, whoever holds its lease, and is the runtime the
+    /// close goes on to reach.
+    #[test]
+    fn the_transit_wait_is_ready_at_once_for_a_command_owned_instance_in_its_store() {
+        let state = AppState::default();
+        let dormant = PluginInstanceData::dormant_fixture(
+            ClapWrapper::new_engine_owned_command_fixture("Dormant Fixture", vec![], true).into(),
+        );
+        let expected = Arc::clone(&dormant.plugin);
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock")
+            .insert("poll-command-owned".to_string(), dormant);
+        let _other_holder = super::super::plugins::try_lock_plugin_lifecycle("poll-command-owned")
+            .expect("nothing else holds the instance");
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should build");
+        let _entered = runtime.enter();
+        let mut wait = std::pin::pin!(owning_runtime_after_attach_transit(
+            "poll-command-owned",
+            &state
+        ));
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+
+        let std::task::Poll::Ready(found) = wait.as_mut().poll(&mut context) else {
+            panic!("a command-owned instance in its store must not be waited for");
+        };
+        let found = found
+            .expect("the stores are readable")
+            .expect("the instance is found");
+        assert!(
+            Arc::ptr_eq(&found, &expected),
+            "the lookup must answer the command-owned store's runtime"
         );
     }
 
@@ -1955,7 +2292,7 @@ mod tests {
             .build()
             .expect("test runtime should build");
         let _entered = runtime.enter();
-        let mut wait = std::pin::pin!(wait_out_attach_transit("poll-absent", &state));
+        let mut wait = std::pin::pin!(owning_runtime_after_attach_transit("poll-absent", &state));
         let mut context = std::task::Context::from_waker(std::task::Waker::noop());
 
         assert!(

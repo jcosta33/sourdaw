@@ -62,6 +62,7 @@ fn drive(value: f64) -> HostParameterUpdate {
     HostParameterUpdate {
         param_id: DRIVE_PARAM_ID,
         value,
+        sample_offset: 0,
     }
 }
 
@@ -69,6 +70,7 @@ fn refuse() -> HostParameterUpdate {
     HostParameterUpdate {
         param_id: REFUSE_PARAM_ID,
         value: 1.0,
+        sample_offset: 0,
     }
 }
 
@@ -316,6 +318,37 @@ fn a_processor_correction_of_a_host_written_value_reaches_the_controller_and_obs
     assert_eq!(controller_value(&wrapper, DRIVE_PARAM_ID), kept);
 }
 
+/// An echo is the processor repeating the value the host ended the block on.
+/// The host stages the ceiling at the head and a value above it later; the
+/// processor keeps the ceiling, which equals an earlier staged point but not
+/// the last one, so it is the processor's own correction and is heard.
+#[test]
+fn a_correction_equal_to_an_earlier_staged_point_is_not_dropped_as_an_echo() {
+    let _hint = flush_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-output-ramp-correction");
+    let mut wrapper = emitter(&plugin);
+    observed(&wrapper);
+
+    let at_head = HostParameterUpdate {
+        sample_offset: 0,
+        ..drive(DRIVE_CEILING)
+    };
+    let past_ceiling = HostParameterUpdate {
+        sample_offset: 40,
+        ..drive(0.95)
+    };
+
+    process(&mut wrapper, &[], &[at_head, past_ceiling]);
+
+    assert!(
+        observed(&wrapper).contains(&PluginParameterEvent::value(
+            DRIVE_PARAM_ID,
+            held_as_f32(DRIVE_CEILING)
+        )),
+        "the processor's clamp of the ramp's last point is its own move"
+    );
+}
+
 /// The controller learns every value the processor reports, meter included,
 /// but only on the control path: the audio thread records them and raises the
 /// flush hint, and the drain hands them to `setParamNormalized`.
@@ -450,6 +483,7 @@ fn malformed() -> HostParameterUpdate {
     HostParameterUpdate {
         param_id: MALFORMED_PARAM_ID,
         value: 1.0,
+        sample_offset: 0,
     }
 }
 
@@ -512,6 +546,7 @@ fn a_refused_blocks_overflow_is_not_counted_as_dropped() {
     let flood = HostParameterUpdate {
         param_id: FLOOD_PARAM_ID,
         value: 1.0,
+        sample_offset: 0,
     };
     let mut captured = Vec::new();
 
