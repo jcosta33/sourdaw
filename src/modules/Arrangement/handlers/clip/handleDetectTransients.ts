@@ -124,15 +124,10 @@ function planTransientRows(clipId: string, result: DetectedSource) {
         }
         return [createWarpMarker(beat, beat, { origin: 'transient-auto', confidence: hit.confidence })];
     });
-    return {
-        preserved,
-        added,
-        replacement: {
-            ...existing,
-            originalTempo: referenceTempo,
-            markers: [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat),
-        },
-    };
+    const markers = [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat);
+    // A markerless result has no beats to anchor, so it keeps the stored tempo and stays a default state.
+    const originalTempo = markers.length > 0 ? referenceTempo : existing.originalTempo;
+    return { preserved, added, replacement: { ...existing, originalTempo, markers } };
 }
 
 /** Keep committed history rendering ahead of success feedback without waiting for a visible frame. */

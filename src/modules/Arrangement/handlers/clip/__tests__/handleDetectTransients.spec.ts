@@ -25,7 +25,7 @@ import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
-import { setWarpState } from '../../../stores/warpStates';
+import { removeWarpState, setWarpState } from '../../../stores/warpStates';
 import { handleDetectTransients, transientStateMatches } from '../handleDetectTransients';
 
 const mocks = vi.hoisted(() => ({ detect: vi.fn(), notice: vi.fn() }));
@@ -129,7 +129,10 @@ function prepareWorkerReply({ seed, actor, message, mutation }: PreparationReque
 type DetectedHit = { sampleOffset: number; confidence: number };
 const defaultHits: DetectedHit[] = [{ sampleOffset: 24000, confidence: 0.875 }];
 
-function startDetection(detected: { tempo: number; hits: DetectedHit[] } = { tempo: 120, hits: defaultHits }) {
+function startDetection(
+    detected: { tempo: number; hits: DetectedHit[] } = { tempo: 120, hits: defaultHits },
+    completeUnchanged = false
+) {
     const controller = new AbortController();
     const isCurrent = (): boolean => !controller.signal.aborted;
     type Consume = Parameters<typeof detectTransientsForClip>[3];
@@ -152,7 +155,7 @@ function startDetection(detected: { tempo: number; hits: DetectedHit[] } = { tem
                 tempo: detected.tempo,
                 hits: detected.hits,
                 isCurrent,
-                completeUnchanged: () => false,
+                completeUnchanged: () => completeUnchanged,
             },
             { signal: controller.signal, isCurrent, waitForFrame: async () => isCurrent() }
         ),
@@ -275,7 +278,21 @@ describe('Arrangement Detect admits private Worker preparations against current 
         ]);
     });
 
-    it('records the reference tempo in the undo snapshots and restores it to null', async () => {
+    it('completes a clip with no stored warp state and no hits without writing one', async () => {
+        removeWarpState('clip-1');
+        flushAutomergeStorageWrites();
+        const { transaction } = startDetection({ tempo: 120, hits: [] }, true);
+        try {
+            const result = await transaction.value;
+            expect(result?.status).toBe('no-write');
+            transaction.commit();
+        } finally {
+            transaction.abort();
+        }
+        expect(storedWarpState()).toBeUndefined();
+    });
+
+    it('carries the reference tempo in the undo snapshots: null before, the stamped tempo after', async () => {
         trackStore.trySet({
             tracks: [
                 TrackDummy.create({
