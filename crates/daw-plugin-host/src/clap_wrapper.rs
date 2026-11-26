@@ -200,6 +200,11 @@ pub struct ClapWrapper {
     /// still passed through: only a caller that needs every block processed
     /// (an offline print) refuses on it.
     processing_start_refused: bool,
+    /// Whether the refusal standing now has already raised the service hint.
+    /// Cleared when the start succeeds or the host stops wanting processing, so
+    /// each refusal episode raises it once; `processing_start_refused` is the
+    /// sticky record that one ever happened. Audio thread plain write.
+    start_refusal_signalled: bool,
     /// Whether that refusal has already been reported. A plugin that fails every
     /// block would otherwise print once per control visit for the rest of the
     /// session.
@@ -1383,6 +1388,7 @@ impl ClapWrapper {
             tail_mode_reported: false,
             process_refused: false,
             processing_start_refused: false,
+            start_refusal_signalled: false,
             process_refusal_reported: false,
             published_out_of_service: None,
             audio,
@@ -1436,6 +1442,7 @@ impl ClapWrapper {
             tail_mode_reported: false,
             process_refused: false,
             processing_start_refused: false,
+            start_refusal_signalled: false,
             process_refusal_reported: false,
             published_out_of_service: None,
             audio: AudioBusLayout::portless(),
@@ -1651,7 +1658,8 @@ impl ClapWrapper {
         // in it, so the gate is left in exactly that state.
         self.processing.request_start();
         self.processing.mark_stopped();
-        if !self.processing_start_refused {
+        if !self.start_refusal_signalled {
+            self.start_refusal_signalled = true;
             self.processing_start_refused = true;
             signal_pending_service_change();
         }
@@ -2845,9 +2853,10 @@ impl ClapWrapper {
             };
             if started {
                 self.processing.mark_started();
-                if self.processing_start_refused {
+                if self.start_refusal_signalled {
                     // A refused start has now succeeded: the slot is served
                     // again, and the control path publishes it.
+                    self.start_refusal_signalled = false;
                     signal_pending_service_change();
                 }
             }
@@ -2936,7 +2945,10 @@ impl ClapWrapper {
         if !self.processing.is_processing() {
             // Either the plugin refused to start, or a stop has been requested
             // and performed. Either way it must not be handed a block.
-            if self.processing.wants_processing() && !self.processing_start_refused {
+            if !self.processing.wants_processing() {
+                self.start_refusal_signalled = false;
+            } else if !self.start_refusal_signalled {
+                self.start_refusal_signalled = true;
                 self.processing_start_refused = true;
                 signal_pending_service_change();
             }
@@ -4193,7 +4205,7 @@ impl HostedPluginRuntime for ClapWrapper {
     }
 
     fn take_service_change(&mut self) -> Option<ServiceChange> {
-        // The latch never resets, so "out of service now" is the refusal still
+        // The latch is sticky, so "out of service now" is the refusal still
         // standing: the host wants processing and the plugin is not in it. A
         // requested stop is not a refusal.
         let refused_now = self.processing_start_refused
@@ -4753,6 +4765,7 @@ mod tests {
             tail_mode_reported: false,
             process_refused: false,
             processing_start_refused: false,
+            start_refusal_signalled: false,
             process_refusal_reported: false,
             published_out_of_service: None,
             audio,
@@ -6314,6 +6327,62 @@ mod tests {
         );
         assert_eq!(wrapper.take_service_change(), None);
         STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+    }
+
+    /// Each refusal episode is published once: a refusal, its recovery, a stop
+    /// and a second refused start raise the hint and publish out of service
+    /// again, and the blocks inside either episode add nothing.
+    #[test]
+    fn a_second_refusal_after_a_recovery_is_published_once_more() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        // SAFETY: as above.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+        crate::traits::take_pending_service_change_signal();
+
+        process_one_block(&mut wrapper);
+        assert!(crate::traits::take_pending_service_change_signal());
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+
+        STUB_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+        assert_eq!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::BackInService)
+        );
+        crate::traits::take_pending_service_change_signal();
+
+        wrapper.processing_gate().request_stop();
+        process_one_block(&mut wrapper);
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        wrapper.processing_gate().request_start();
+        process_one_block(&mut wrapper);
+        process_one_block(&mut wrapper);
+
+        assert!(
+            crate::traits::take_pending_service_change_signal(),
+            "a refusal after a recovery raises the service hint again"
+        );
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+        assert_eq!(wrapper.take_service_change(), None);
+        assert!(
+            !crate::traits::take_pending_service_change_signal(),
+            "the blocks inside one episode raise the hint once"
+        );
     }
 
     /// A stop requested after a refusal leaves the plugin unprocessed, which is

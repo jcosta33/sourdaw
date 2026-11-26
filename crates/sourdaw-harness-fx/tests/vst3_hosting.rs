@@ -21,9 +21,10 @@ use sourdaw_harness_fx::{
     ADDED_PARAM_ID, ADD_PARAMETER_PARAM_ID, GAIN_DEFAULT, GAIN_PARAM_ID, LATENCY_FRAMES,
     LEVEL_PARAM_ID, LOG_ACTIVATE, LOG_BUS_ARRANGEMENTS, LOG_BUS_INFO, LOG_DEACTIVATE,
     LOG_SETUP_PROCESSING, RESTART_FOREVER_PARAM_ID, SURROUND_OUTPUT_PARAM_ID,
-    VST3_MONO_COPY_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID, VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID,
-    VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID, VST3_RECONFIGURING_CLASS_ID,
-    VST3_RECONFIGURING_INSTRUMENT_CLASS_ID, VST3_START_REFUSED_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
+    VST3_ALTERNATING_START_CLASS_ID, VST3_MONO_COPY_CLASS_ID, VST3_PROCESSOR_TRUTH_CLASS_ID,
+    VST3_PROCESSOR_TRUTH_FAILING_CLASS_ID, VST3_PROCESSOR_TRUTH_LATE_START_CLASS_ID,
+    VST3_RECONFIGURING_CLASS_ID, VST3_RECONFIGURING_INSTRUMENT_CLASS_ID,
+    VST3_START_REFUSED_CLASS_ID, WIDEN_OUTPUT_PARAM_ID,
 };
 use std::sync::{Arc, Mutex};
 use support::InstalledPlugin;
@@ -621,6 +622,68 @@ fn a_refused_start_that_later_succeeds_is_published_back_in_service_once() {
         wrapper.take_service_change(),
         Some(ServiceChange::BackInService)
     );
+    assert_eq!(wrapper.take_service_change(), None);
+}
+
+/// A stop requested after a refusal leaves the plugin unprocessed, which is
+/// not the host taking it out of service.
+#[test]
+fn a_requested_stop_after_a_refused_start_is_not_out_of_service() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-start-refused-then-stopped");
+    let mut wrapper = plugin.vst3_class(&VST3_START_REFUSED_CLASS_ID, ProcessMode::Realtime);
+    let (left, right) = distinct_pair();
+
+    process(&mut wrapper, &left, &right);
+    assert!(matches!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::OutOfService { .. })
+    ));
+
+    wrapper.processing_gate().request_stop();
+    assert_eq!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::BackInService)
+    );
+    assert_eq!(wrapper.take_service_change(), None);
+}
+
+/// A refusal after a recovery is a new episode: it wakes the service visit and
+/// is published out of service again, once.
+#[test]
+fn a_second_refusal_after_a_recovery_is_published_once_more() {
+    let _hint = refusal_hint_guard();
+    let plugin = InstalledPlugin::create("vst3-second-refusal-service");
+    let mut wrapper = plugin.vst3_class(&VST3_ALTERNATING_START_CLASS_ID, ProcessMode::Realtime);
+    let (left, right) = distinct_pair();
+
+    process(&mut wrapper, &left, &right);
+    assert!(take_pending_service_change_signal());
+    assert!(matches!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::OutOfService { .. })
+    ));
+
+    process(&mut wrapper, &left, &right);
+    assert_eq!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::BackInService)
+    );
+    take_pending_service_change_signal();
+
+    wrapper.processing_gate().request_stop();
+    process(&mut wrapper, &left, &right);
+    wrapper.processing_gate().request_start();
+    process(&mut wrapper, &left, &right);
+
+    assert!(
+        take_pending_service_change_signal(),
+        "a refusal after a recovery wakes the service visit again"
+    );
+    assert!(matches!(
+        wrapper.take_service_change(),
+        Some(ServiceChange::OutOfService { .. })
+    ));
     assert_eq!(wrapper.take_service_change(), None);
 }
 

@@ -22,7 +22,7 @@ use crate::note_voice::NoteVoice;
 use crate::state::CHUNK_BYTES;
 use std::ffi::{c_char, c_void};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use vst3::Steinberg::Vst::{
     BusDirection, BusDirections_, BusInfo, BusInfo_::BusFlags_, BusTypes_, Event,
     Event_::EventTypes_, IAudioProcessor, IAudioProcessorTrait, IComponent, IComponentHandler,
@@ -68,12 +68,20 @@ const PROCESSOR_TRUTH_LATE_START_CLASS_NAME: &str = "Sourdaw Harness Fx Processo
 pub const VST3_INSTRUMENT_CLASS_ID: TUID = uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A8);
 const INSTRUMENT_CLASS_NAME: &str = "Sourdaw Harness Fx Instrument";
 
+/// The class id of the class that refuses every odd-numbered `setProcessing(1)`
+/// (the first, the third, ...) and accepts the even ones, so a host sees
+/// refusal episodes separated by recoveries.
+pub const VST3_ALTERNATING_START_CLASS_ID: TUID =
+    uid(0x5D0A_F0E5, 0x4A7C_4F1B, 0x9C3E_2B61, 0x7E0D_F4A9);
+const ALTERNATING_START_CLASS_NAME: &str = "Sourdaw Harness Fx Alternating Start";
+
 /// How one class departs from the plain effect.
 #[derive(Clone, Copy, Default)]
 struct Departures {
     fails_a_process_call: bool,
     refuses_to_start_processing: bool,
     refuses_first_processing_start: bool,
+    refuses_alternate_processing_starts: bool,
     controller_defers_to_processor: bool,
     instrument: bool,
 }
@@ -88,6 +96,10 @@ struct Vst3Echo {
     refuses_to_start_processing: bool,
     /// Set while the first `setProcessing(1)` is still to be refused.
     refusing_first_start: AtomicBool,
+    /// Whether every odd-numbered `setProcessing(1)` is refused, and how many
+    /// have been asked so far.
+    refuses_alternate_starts: bool,
+    start_requests: AtomicU32,
     /// Whether the controller refuses host writes and answers every read from
     /// the processor's own value, with `setProcessing` left at the SDK default.
     controller_defers_to_processor: bool,
@@ -109,6 +121,8 @@ impl Vst3Echo {
             process_calls: ProcessCalls::new(departures.fails_a_process_call),
             refuses_to_start_processing: departures.refuses_to_start_processing,
             refusing_first_start: AtomicBool::new(departures.refuses_first_processing_start),
+            refuses_alternate_starts: departures.refuses_alternate_processing_starts,
+            start_requests: AtomicU32::new(0),
             controller_defers_to_processor: departures.controller_defers_to_processor,
             instrument: departures.instrument,
             voice: NoteVoice::new(),
@@ -331,6 +345,12 @@ impl IAudioProcessorTrait for Vst3Echo {
             return kResultFalse;
         }
         if state != 0 && self.refusing_first_start.swap(false, Ordering::Relaxed) {
+            return kResultFalse;
+        }
+        if state != 0
+            && self.refuses_alternate_starts
+            && self.start_requests.fetch_add(1, Ordering::Relaxed) % 2 == 0
+        {
             return kResultFalse;
         }
         if self.controller_defers_to_processor {
@@ -749,6 +769,10 @@ fn class_entry(index: int32) -> Option<(TUID, &'static str)> {
             PROCESSOR_TRUTH_LATE_START_CLASS_NAME,
         )),
         6 => Some((VST3_INSTRUMENT_CLASS_ID, INSTRUMENT_CLASS_NAME)),
+        7 => Some((
+            VST3_ALTERNATING_START_CLASS_ID,
+            ALTERNATING_START_CLASS_NAME,
+        )),
         probe => crate::vst3_probe::class_at(probe - ECHO_CLASSES),
     }
 }
@@ -827,6 +851,11 @@ impl IPluginFactoryTrait for Factory {
                 refuses_first_processing_start: true,
                 ..Departures::default()
             }
+        } else if requested == VST3_ALTERNATING_START_CLASS_ID {
+            Departures {
+                refuses_alternate_processing_starts: true,
+                ..Departures::default()
+            }
         } else if requested == VST3_INSTRUMENT_CLASS_ID {
             Departures {
                 instrument: true,
@@ -879,7 +908,7 @@ impl IPluginFactory2Trait for Factory {
 }
 
 /// The number of [`Vst3Echo`] classes the factory lists before the probes.
-const ECHO_CLASSES: int32 = 7;
+const ECHO_CLASSES: int32 = 8;
 
 /// Answer a `createInstance` with the interface `iid` names on `instance`.
 ///
