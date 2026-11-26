@@ -1,4 +1,5 @@
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 
 import { describeAgentRunHardLimit } from '../../models/AgentResourceLimits';
 import { type AgentRun, type AgentRunWorkLease } from '../../models/AgentRun';
@@ -11,7 +12,8 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from '../agentWorkBudget';
 import { approvedProjectRevision } from '../approvedProjectRevision';
-import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
+import { getPlannedActionAffectedIdsWithOwners } from '../getPlannedActionAffectedIdsWithOwners';
+import { getProjectContext } from '../getProjectContext';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
 import { agentRunExecutionSettlement } from './agentRunExecutionSettlement';
@@ -48,10 +50,16 @@ function getProtectedAffectedIds(
     actions: readonly PendingAppActionConfirmation['actions'][number][],
     protectedTargets: readonly PendingAppActionConfirmation['protectedUnchanged'][number][]
 ): string[] {
+    if (protectedTargets.length === 0) {
+        return [];
+    }
+    const context = getProjectContext();
     const protectedIds = new Set(protectedTargets.map((target) => target.id));
     return [
         ...new Set(
-            actions.flatMap((action) => getPlannedActionAffectedIds(action)).filter((id) => protectedIds.has(id))
+            actions
+                .flatMap((action) => getPlannedActionAffectedIdsWithOwners(action, context))
+                .filter((id) => protectedIds.has(id))
         ),
     ];
 }
@@ -84,6 +92,12 @@ function getApprovalPreflightFailure(
     const protectionFailure = readApprovedProtectionFailure(confirmation);
     if (protectionFailure !== null) {
         return { reason: protectionFailure, stale: true };
+    }
+    if (approved.protectedUnchanged.length > 0 && agentProjectRepairStateStore.value) {
+        return {
+            reason: 'The project needs repair before the objects the batch targets can be checked against its protections.',
+            stale: true,
+        };
     }
     const protectedAffectedIds = getProtectedAffectedIds(confirmation.actions, approved.protectedUnchanged);
     if (protectedAffectedIds.length > 0) {
