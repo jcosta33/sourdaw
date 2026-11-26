@@ -1,6 +1,6 @@
 import { clarify } from '../../models/LastCommitRefusal';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { ORDINAL_WORDS } from '../agentReference/ordinalWords';
+import { ORDINAL_WORDS } from '../agentReference/positionWords';
 
 import { type LastCommitContinuation, type RetargetRequest } from './lastCommitOutcome';
 import { type AmbiguousTrack, readNamedTracks } from './readNamedTracks';

@@ -1885,6 +1885,9 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         ['mute Bobs Guitar', ["Bob's Guitar", 'Guitar'], "Bob's Guitar"],
         ['mute Lead, Lead', ['Lead', 'Lead Lead'], 'Lead Lead'],
         ['mute kick/snare/room', ['Kick', 'Snare', 'Kick/Snare', 'Kick Snare Room'], 'Kick Snare Room'],
+        ['mute kick', ['01 Kick', '02 Snare'], '01 Kick'],
+        ['mute kick two', ['Kick', 'Snare'], 'Kick'],
+        ['mute kick number 2', ['Kick', 'Snare'], 'Kick'],
     ])('resolves "%s" among %j to %s and no sibling', (prompt, names, picked) => {
         const project = tracksNamed(names);
         const pickedId = trackIdNamed(project, picked);
@@ -1929,6 +1932,10 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         'mute the second kick',
         'mute track2 kick',
         'mute kick 2',
+        'mute kick two',
+        'mute kick number 2',
+        'mute kick no. 2',
+        'set kick two volume to 75%',
     ])('never resolves "%s" to 01 Kick, whose index another figure-led word replaces', (prompt) => {
         const project = tracksNamed(['01 Kick', '02 Snare']);
 
@@ -1937,15 +1944,20 @@ describe('a name read by the words a user types for it (#5395, #5450)', () => {
         });
     });
 
-    it.each(['set kick volume to 50%', 'turn kick down 2 dB', 'set kick 50%', 'turn kick down by 2 dB'])(
-        'resolves "%s" to 01 Kick, whose figure carries a value unit',
-        (prompt) => {
-            const project = tracksNamed(['01 Kick', '02 Snare']);
-            const kickId = trackIdNamed(project, '01 Kick');
+    it.each([
+        'set kick volume to 50%',
+        'turn kick down 2 dB',
+        'set kick 50%',
+        'turn kick down by 2 dB',
+        'set kick 1.5 dB',
+        'set kick 3db',
+        'set kick -6db',
+    ])('resolves "%s" to 01 Kick, whose figure carries a value unit', (prompt) => {
+        const project = tracksNamed(['01 Kick', '02 Snare']);
+        const kickId = trackIdNamed(project, '01 Kick');
 
-            expect(resolveTrack(prompt, kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
-        }
-    );
+        expect(resolveTrack(prompt, kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
+    });
 
     it('resolves "bypass the Fix It EQ" to the device the user named Fix It EQ', () => {
         const project = namedTracksProject([

@@ -1,7 +1,7 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { getBestAgentReferenceNameRanges } from '../agentReference/getBestAgentReferenceNameRanges';
 import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
-import { ORDINAL_WORDS } from '../agentReference/ordinalWords';
+import { ORDINAL_WORDS } from '../agentReference/positionWords';
 
 /** Words a list of track names may hold besides the names themselves. */
 const TARGET_LIST_WORDS: ReadonlySet<string> = new Set(['the', 'and', '&', 'both', 'track', 'tracks']);

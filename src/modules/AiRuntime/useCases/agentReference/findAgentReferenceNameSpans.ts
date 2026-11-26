@@ -1,6 +1,7 @@
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
-import { ORDINAL_WORDS } from './ordinalWords';
+import { CARDINAL_WORDS, NUMBER_SIGN_WORDS, ORDINAL_WORDS } from './positionWords';
+import { refinementValueUnits } from './refinementValueUnits';
 
 /** A range of the original text, `end` exclusive. */
 export type AgentReferenceTextRange = { start: number; end: number };
@@ -65,8 +66,8 @@ const WORD_BEFORE = /([\p{L}\p{N}]+)[^\p{L}\p{N}]*$/u;
 /** The word opening the text past any punctuation or space before it, and what follows that word. */
 const WORD_AFTER = /^[^\p{L}\p{N}]*([\p{L}\p{N}]+)(.*)$/su;
 
-/** A value unit right after a figure, which makes the figure a value rather than a position: "50%", "2 dB". */
-const VALUE_UNIT = /^\s*(?:%|d\s?b(?![\p{L}\p{N}]))/u;
+/** A figure's digits and any decimal part: "50", "1.5". */
+const FIGURE = /^\p{N}+(?:\.\p{N}+)?/u;
 
 /**
  * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
@@ -405,14 +406,38 @@ function matchNameWords(
 }
 
 /**
- * Whether a word reads as a position or a number: it holds a figure ("02", "2nd", "track2") or is an
- * ordinal word ("second"), unless a value unit follows it ("50%", "2 dB").
+ * Whether the text opens with a value: a whole figure, decimal part included, with a percent or
+ * decibel unit after it, spaced or glued ("50%", "1.5 dB", "3db").
  */
-function readsAsPosition(word: string, rest: string): boolean {
-    if (ORDINAL_WORDS.includes(word)) {
+function opensWithValue(text: string): boolean {
+    const figure = FIGURE.exec(text);
+    return figure !== null && refinementValueUnits.percentOrDecibel(text.slice(figure[0].length));
+}
+
+/**
+ * Whether one word reads as a position or a number: it is an ordinal or a cardinal word ("second",
+ * "two"), or it holds a figure ("02", "2nd", "track2") that does not open a value ("50%", "3db").
+ */
+function readsAsPositionWord(word: string, rest: string): boolean {
+    if (ORDINAL_WORDS.includes(word) || CARDINAL_WORDS.includes(word)) {
         return true;
     }
-    return /\p{N}/u.test(word) && !VALUE_UNIT.test(rest);
+    return /\p{N}/u.test(word) && !opensWithValue(word + rest);
+}
+
+/**
+ * Whether a word reads as a position or a number on its own, or announces the one after it: "kick
+ * two", "kick number 2", "kick no. 2".
+ */
+function readsAsPosition(word: string, rest: string): boolean {
+    if (readsAsPositionWord(word, rest)) {
+        return true;
+    }
+    if (!NUMBER_SIGN_WORDS.includes(word)) {
+        return false;
+    }
+    const next = WORD_AFTER.exec(rest);
+    return next !== null && readsAsPositionWord(next[1] ?? '', next[2] ?? '');
 }
 
 /**

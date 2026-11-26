@@ -564,6 +564,7 @@ describe('a compiled selector the request authorizes still grounds', () => {
 });
 
 const UNAUTHORIZED_TRACK = 'Compiled target trackId is not authorized by the user request';
+const UNGROUNDED_TRACK = 'Target trackId is not grounded in the user request';
 const PROTECTED_TRACK = 'Compiled target trackId is protected or excluded';
 
 const mixVocals = createTrack({
@@ -2920,11 +2921,53 @@ describe('a figure-led word before the words of an indexed name replaces its ind
         'set the second kick volume to 75%',
         'set track2 kick volume to 75%',
         'set kick 2 volume to 75%',
+        'set kick two volume to 75%',
     ])('refuses a 01 Kick pick for "%s"', (prompt) => {
         const result = compileAndBridge(prompt, [setKick], [], indexed.context);
 
         expect(result.actions).toEqual([]);
         expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it.each(['mute kick two', 'mute kick number 2', 'mute kick no. 2'])('refuses a 01 Kick mute for "%s"', (prompt) => {
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('muteTrack', indexed.track('01 Kick'), { muted: true })],
+            [],
+            indexed.context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'muteTrack', reason: UNGROUNDED_TRACK });
+    });
+
+    it('grounds a 01 Kick mute for "mute kick", which states no figure', () => {
+        const result = compileAndBridge(
+            'mute kick',
+            [trackItem('muteTrack', indexed.track('01 Kick'), { muted: true })],
+            [],
+            indexed.context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
+    });
+
+    it.each([
+        ['set kick 50% volume', { gain: 0.5 }],
+        ['set kick 12.5% volume', { gain: 0.125 }],
+        ['set kick -1.5 dB volume', { gainDb: -1.5 }],
+        ['set kick -6db volume', { gainDb: -6 }],
+    ])('grounds a 01 Kick pick for "%s", whose figure right after the words carries a value unit', (prompt, args) => {
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', indexed.track('01 Kick'), args)],
+            [],
+            indexed.context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([indexed.track('01 Kick').id]);
     });
 
     it('grounds a 01 Kick pick for "set kick volume to 50%", whose figure carries a value unit', () => {
