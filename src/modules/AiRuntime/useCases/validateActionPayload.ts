@@ -1295,8 +1295,6 @@ const validators = {
         isOptionalOwn(param, 'endBeat', isNumber) &&
         (!isNumber(param.startBeat) || !isNumber(param.endBeat) || param.endBeat > param.startBeat),
 
-    // Comping
-
     // Macros + undo tree
     startMacroRecording: 'unchecked',
     stopMacroRecording: 'unchecked',

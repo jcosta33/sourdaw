@@ -53,11 +53,6 @@ function followsItsReverse(action: RestoreAction, context: HandlerValidationCont
     );
 }
 
-/**
- * Inverse and redo of `reverseClip`, guarded on the buffer the forward run produced.
- * Only ever dispatched from the undo engine (with `skipUndo`), so it is not itself
- * undoable.
- */
 function isGuardCurrent(action: RestoreAction, context?: HandlerValidationContext): boolean {
     const held = findClip(action.payload.clipId)?.audioBufferId;
     if (followsItsReverse(action, context)) {
@@ -66,6 +61,11 @@ function isGuardCurrent(action: RestoreAction, context?: HandlerValidationContex
     return held === action.payload.expectedAudioBufferId;
 }
 
+/**
+ * Inverse and redo of `reverseClip`, guarded on the buffer the forward run produced.
+ * Only ever dispatched from the undo engine (with `skipUndo`), so it is not itself
+ * undoable.
+ */
 export const handleRestoreReversedClip = createHandler<'restoreReversedClip'>({
     batchExecution: 'singleton',
     canReportConflict: true,

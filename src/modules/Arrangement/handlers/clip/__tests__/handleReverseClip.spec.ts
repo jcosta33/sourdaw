@@ -821,12 +821,32 @@ describe('handleReverseClip', () => {
             });
         }
 
+        beforeEach(() => {
+            // Only the clip's own buffer and another clip's are cached; the id this reverse mints is not.
+            mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                bufferId === 'buffer-1' || bufferId === 'foreign-buffer' ? { length: 32, sampleRate: 8 } : undefined
+            );
+        });
+
         it('admits an unlocked audio clip whose audio is loaded', () => {
             seed({});
 
             expect(handleReverseClip.validate?.(action, context)).toBe(true);
             expect(handleReverseClip.validationRefusalReason?.(action, context)).toBeNull();
         });
+
+        it.each(['buffer-1', 'foreign-buffer'])(
+            'refuses a supplied reversed buffer id %s that is already cached',
+            (id) => {
+                seed({});
+                const supplied = { ...action, payload: { clipId: 'c1', reversedBufferId: id } };
+
+                expect(handleReverseClip.validate?.(supplied, { actions: [supplied], actionIndex: 0 })).toBe(false);
+                expect(
+                    handleReverseClip.validationRefusalReason?.(supplied, { actions: [supplied], actionIndex: 0 })
+                ).toBe(`Audio buffer "${id}" already exists, so it cannot hold the reversed audio`);
+            }
+        );
 
         it.each([
             ['a clip that does not exist', null, {}, 'Clip "c1" does not exist'],

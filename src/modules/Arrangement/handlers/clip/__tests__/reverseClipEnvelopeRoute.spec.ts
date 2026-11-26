@@ -5,7 +5,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -64,13 +64,18 @@ function existsInProject(id: string): boolean {
     );
 }
 
-async function reverseThroughEnvelope(clipId: string, key: string) {
+/** Only buffers the cache holds are available, as in production preflight. */
+function cachedBufferIds(): string[] {
+    return ['loaded', 'foreign', 'unloaded'].filter((bufferId) => getCachedAudioBuffer({ bufferId }) !== null);
+}
+
+async function reverseThroughEnvelope(clipId: string, key: string, reversedBufferId?: string) {
     const baseRevision = captureProjectRevision();
     commandProjectRevisionPort.setProvider(() => baseRevision);
     commandBatchPreflightPort.setProvider(({ targetIds }) => ({
         audioGraphValid: true,
         availableAssetHashes: [],
-        availableAudioBufferIds: ['loaded', 'unloaded'],
+        availableAudioBufferIds: cachedBufferIds(),
         lockedRanges: [],
         projectId: `project-${key}`,
         projectInvariantsValid: true,
@@ -78,8 +83,12 @@ async function reverseThroughEnvelope(clipId: string, key: string) {
             targetIds.filter(existsInProject).map((targetId) => [targetId, `present:${targetId}`])
         ),
     }));
+    const payload: { clipId: string; reversedBufferId?: string } = { clipId };
+    if (reversedBufferId !== undefined) {
+        payload.reversedBufferId = reversedBufferId;
+    }
     const command = migrateLegacyAppActionToVersionedCommandEnvelope({
-        action: { type: 'reverseClip', payload: { clipId } },
+        action: { type: 'reverseClip', payload },
         normalizedProjectRevision: baseRevision,
     });
     const batch = compileVersionedCommandBatchEnvelope({
@@ -125,6 +134,7 @@ function seedProject(): void {
                         locked: true,
                     }),
                     ClipDummy.create({ id: 'unloaded', trackId: 'audio-1', audioBufferId: 'unloaded' }),
+                    ClipDummy.create({ id: 'other', trackId: 'audio-1', name: 'Other', audioBufferId: 'foreign' }),
                     ClipDummy.create({
                         id: 'looped',
                         trackId: 'audio-1',
@@ -182,6 +192,7 @@ describe('reverseClip through the versioned envelope route', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         cacheAudioBuffer({ buffer: createFakeBuffer(), bufferId: 'loaded' });
+        cacheAudioBuffer({ buffer: createFakeBuffer(), bufferId: 'foreign' });
         seedProject();
     });
 
@@ -212,9 +223,19 @@ describe('reverseClip through the versioned envelope route', () => {
         ['a locked clip', 'locked', 'conflicted', 'Clip "locked" is locked'],
         ['a clip on a frozen track', 'frozen-clip', 'conflicted', 'Track "frozen-audio" is frozen'],
         // Describe has no exact inverse for these, so the route refuses them before validation runs.
-        ['a MIDI clip', 'notes', 'rejected', 'Action is not compensable inside an atomic batch: reverseClip'],
+        [
+            'a MIDI clip, which has no compensable inverse',
+            'notes',
+            'rejected',
+            'Action is not compensable inside an atomic batch: reverseClip',
+        ],
+        [
+            'a looping clip, which has no compensable inverse',
+            'looped',
+            'rejected',
+            'Action is not compensable inside an atomic batch: reverseClip',
+        ],
         ['a clip whose audio is not loaded', 'unloaded', 'conflicted', 'The audio of clip "unloaded" is not loaded'],
-        ['a looping clip', 'looped', 'rejected', 'Action is not compensable inside an atomic batch: reverseClip'],
     ])('refuses to reverse %s and writes nothing', async (_name, clipId, status, reason) => {
         const before = JSON.stringify(trackStore.value);
 
@@ -223,4 +244,24 @@ describe('reverseClip through the versioned envelope route', () => {
         expect(outcomeOf(result)).toEqual({ status, reason: expect.stringContaining(reason) });
         expect(JSON.stringify(trackStore.value)).toBe(before);
     });
+
+    it.each([
+        ['the clip’s own buffer', 'verse', 'loaded'],
+        ['another clip’s buffer', 'verse', 'foreign'],
+    ])(
+        'refuses a supplied reversed buffer id naming %s, leaving the cache and clip unchanged',
+        async (_name, clipId, bufferId) => {
+            const cachedBefore = getCachedAudioBuffer({ bufferId });
+            const clipBefore = JSON.stringify(readClip(clipId));
+
+            const result = await reverseThroughEnvelope(clipId, `supplied-${bufferId}`, bufferId);
+
+            expect(outcomeOf(result)).toEqual({
+                status: 'conflicted',
+                reason: expect.stringContaining(`Audio buffer "${bufferId}" already exists`),
+            });
+            expect(getCachedAudioBuffer({ bufferId })).toBe(cachedBefore);
+            expect(JSON.stringify(readClip(clipId))).toBe(clipBefore);
+        }
+    );
 });

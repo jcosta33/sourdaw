@@ -54,6 +54,9 @@ function findRefusal(action: CreateAction): string | null {
     if (!Number.isFinite(startBeat) || startBeat < 0) {
         return 'The start beat must be a finite, non-negative beat';
     }
+    if (targetClipId === '') {
+        return 'The instance clip ID must not be empty';
+    }
     const source = findSourceClip(sourceClipId);
     if (!source) {
         return `Clip "${sourceClipId}" does not exist`;

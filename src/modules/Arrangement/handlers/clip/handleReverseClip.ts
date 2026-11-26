@@ -77,11 +77,20 @@ function findRefusal(action: Extract<AppAction, { type: 'reverseClip' }>): strin
     if (owner.frozen === true) {
         return `Track "${owner.id}" is frozen`;
     }
-    if (!getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
-        return `The audio of clip "${clipId}" is not loaded`;
+    return findAudioRefusal(clip, action.payload.reversedBufferId);
+}
+
+function findAudioRefusal(clip: Clip, reversedBufferId: string | undefined): string | null {
+    if (!clip.audioBufferId || !getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
+        return `The audio of clip "${clip.id}" is not loaded`;
+    }
+    // The reverse caches its mirrored audio under this id, so an id already cached, the clip's own among
+    // them, would overwrite audio another clip or this undo still needs.
+    if (reversedBufferId !== undefined && getCachedAudioBuffer({ bufferId: reversedBufferId })) {
+        return `Audio buffer "${reversedBufferId}" already exists, so it cannot hold the reversed audio`;
     }
     if (resolveReversedSource(clip).audioSource === null) {
-        return `Clip "${clipId}" cannot be mirrored while it loops; bounce it to audio first`;
+        return `Clip "${clip.id}" cannot be mirrored while it loops; bounce it to audio first`;
     }
     return null;
 }

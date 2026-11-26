@@ -194,6 +194,10 @@ describe('clipStrategy', () => {
     });
 
     describe('pattern instance and reverse commands', () => {
+        const PATTERN_INSTANCE_REASON =
+            'Expected one existing MIDI clip, one existing unfrozen MIDI track, and a finite non-negative startBeat';
+        const DETACH_REASON = 'Expected only an available unlocked clipId';
+        const REVERSE_REASON = 'Expected only an available unlocked audio clipId on an unfrozen track';
         const lockedContext: ProjectContext = {
             ...projectContext,
             tracks: projectContext.tracks.map((track) => ({
@@ -241,7 +245,11 @@ describe('clipStrategy', () => {
                 { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 0, targetClipId: 'forced' },
             ],
         ])('createPatternInstance refuses %s', (_name, args) => {
-            expect(bridge('createPatternInstance', args)).toHaveProperty('reason', expect.any(String));
+            expect(bridge('createPatternInstance', args)).toEqual({
+                index: 0,
+                name: 'createPatternInstance',
+                reason: PATTERN_INSTANCE_REASON,
+            });
         });
 
         it('createPatternInstance refuses a frozen destination track', () => {
@@ -251,19 +259,19 @@ describe('clipStrategy', () => {
                     { sourceClipId: 'clip-midi-a', targetTrackId: 'track-midi', startBeat: 0 },
                     frozenContext
                 )
-            ).toHaveProperty('reason', expect.any(String));
+            ).toEqual({ index: 0, name: 'createPatternInstance', reason: PATTERN_INSTANCE_REASON });
         });
 
         it.each([
-            ['detachPatternInstance', { clipId: 'ghost' }, projectContext],
-            ['detachPatternInstance', { clipId: 'clip-midi-b' }, lockedContext],
-            ['detachPatternInstance', { clipId: 'clip-midi-a', extra: true }, projectContext],
-            ['reverseClip', { clipId: 'ghost' }, projectContext],
-            ['reverseClip', { clipId: 'clip-midi-a' }, projectContext],
-            ['reverseClip', { clipId: 'clip-audio-a' }, frozenContext],
-            ['reverseClip', { clipId: 'clip-audio-a', reversedBufferId: 'forced' }, projectContext],
-        ])('%s refuses %j', (name, args, context) => {
-            expect(bridge(name, args, context)).toHaveProperty('reason', expect.any(String));
+            ['detachPatternInstance', { clipId: 'ghost' }, projectContext, DETACH_REASON],
+            ['detachPatternInstance', { clipId: 'clip-midi-b' }, lockedContext, DETACH_REASON],
+            ['detachPatternInstance', { clipId: 'clip-midi-a', extra: true }, projectContext, DETACH_REASON],
+            ['reverseClip', { clipId: 'ghost' }, projectContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-midi-a' }, projectContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-audio-a' }, frozenContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-audio-a', reversedBufferId: 'forced' }, projectContext, REVERSE_REASON],
+        ])('%s refuses %j', (name, args, context, reason) => {
+            expect(bridge(name, args, context)).toEqual({ index: 0, name, reason });
         });
     });
 
