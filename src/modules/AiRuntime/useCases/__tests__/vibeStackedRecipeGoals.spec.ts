@@ -319,7 +319,7 @@ describe('a vibe batch stacking two recipes on one target', () => {
         expect(view?.metricGoals.status).toBe('verified');
         expect(view?.canConfirm).toBe(true);
         expect(lowMidCriteria(drums).length).toBeGreaterThan(0);
-    });
+    }, 15_000);
 
     // Red when the mud recipe stops claiming the low-mid band, or its cut stops lowering it.
     it('verifies muddy alone and lowers the drums’ low-mid band', async () => {

@@ -18,7 +18,7 @@ import {
     readPreparedOwner,
     requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
-} from '../stores/preparedAudioBufferOwnership';
+} from '../transformers/audioBufferPersistenceIdentity';
 
 import type { SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
 

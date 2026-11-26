@@ -1,82 +1,120 @@
+import { subgraphPrintInputsMatch, subscribeSubgraphPrintInputStores } from '#/modules/AudioEngine/useCases';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../services/computeTrackHash';
-import { trackStore, type TrackStoreState } from '../../stores/trackStore';
+import { type Track, trackStore } from '../../stores/trackStore';
 
-let isEvaluating = false;
-let prevState: TrackStoreState | null = null;
+import { digestFreezePrintInput } from './digestFreezePrintInput';
+import { readLiveFreezePrintInput } from './readLiveFreezePrintInput';
+import { type FreezePrintInput } from './selectFreezePrintInput';
+
+function markStale(trackId: string): void {
+    updateTrack(trackId, (time) => ({
+        ...time,
+        freezeState: { ...time.freezeState, status: 'stale' },
+    }));
+}
 
 /**
- * Subscribes to track changes to detect when a frozen track's content
- * is modified, transitioning its state to 'stale'.
+ * A buffer baked under older freeze rules is wrong in ways no downstream fix reaches: it was cut
+ * short by a tail the device declarations never sized, and it has this track's fader and pan
+ * position printed into it, which playback then applies a second time. Re-rendering is the only
+ * remedy, so it is stale, the state the UI already offers a re-freeze from, whatever its sources.
+ */
+function bakedUnderOlderRules(track: Track): boolean {
+    return (track.freezeState.renderSettings?.bakeVersion ?? 0) < FREEZE_BAKE_VERSION;
+}
+
+/**
+ * Re-evaluates every frozen track whenever a store its render reads is written (the tracks, MIDI
+ * rows, automation, sidechain routes, VCA groups, takes, clip gain envelopes, adjustment layers and
+ * modulators), and marks a track stale once the input its freeze prints no longer has the
+ * signature the take was rendered from.
+ *
+ * Change detection is by reference: a frozen track's print input is reselected on each write, and
+ * only digested when it reads some value other than the ones last seen. A first sighting (a
+ * freshly loaded or freshly frozen track) records what it reads and digests nothing, so a freeze
+ * signed under older rules stays frozen until one of its sources changes.
+ *
+ * Evaluation is synchronous. A write it causes, or any write that lands while it runs, asks for one
+ * more pass after it rather than being dropped.
  *
  * Conforms to R8: Staleness Detection.
  */
 export function initStalenessDetection(): () => void {
-    prevState = trackStore.value; // capture initial state
+    const seen = new Map<string, FreezePrintInput>();
+    let evaluating = false;
+    let passRequested = false;
 
-    const unsubscribe = trackStore.subscribe((state) => {
-        void (async () => {
-            if (isEvaluating || !state || !prevState) {
-                prevState = state;
-                return;
+    function evaluateTrack(track: Track): void {
+        if (bakedUnderOlderRules(track)) {
+            markStale(track.id);
+            return;
+        }
+        const input = readLiveFreezePrintInput(track.id);
+        if (!input) {
+            return;
+        }
+        const previous = seen.get(track.id);
+        seen.set(track.id, input);
+        if (previous === undefined || subgraphPrintInputsMatch(previous, input)) {
+            return;
+        }
+        if (digestFreezePrintInput(input) !== track.freezeState.sourceContentHash) {
+            markStale(track.id);
+        }
+    }
+
+    function runPass(): void {
+        const frozenTracks = (trackStore.value?.tracks ?? []).filter((track) => track.freezeState.status === 'frozen');
+        const frozenIds = new Set(frozenTracks.map((track) => track.id));
+        for (const trackId of seen.keys()) {
+            if (!frozenIds.has(trackId)) {
+                seen.delete(trackId);
             }
+        }
+        for (const track of frozenTracks) {
+            evaluateTrack(track);
+        }
+    }
 
-            isEvaluating = true;
-            const previous = prevState;
-            prevState = state;
+    function takePassRequest(): boolean {
+        const requested = passRequested;
+        passRequested = false;
+        return requested;
+    }
 
-            try {
-                for (const track of state.tracks) {
-                    if (track.freezeState.status !== 'frozen') {
-                        continue;
-                    }
+    function evaluate(): void {
+        if (evaluating) {
+            passRequested = true;
+            return;
+        }
+        evaluating = true;
+        try {
+            do {
+                runPass();
+            } while (takePassRequest());
+        } finally {
+            evaluating = false;
+        }
+    }
 
-                    // A buffer baked under older freeze rules is wrong in ways
-                    // no downstream fix reaches: it was cut short by a tail the
-                    // device declarations never sized, and it has this track's
-                    // fader and pan position printed into it, which playback
-                    // then applies a second time. Re-rendering is the only
-                    // remedy, so it is marked stale — the state the UI already
-                    // offers a re-freeze from — regardless of whether its
-                    // content changed.
-                    //
-                    // Deliberately checked before the predecessor lookup, since
-                    // it reads nothing from the predecessor. Below that guard it
-                    // never fired on the load projection, where every track is
-                    // new and therefore skipped — so a user who opened a project
-                    // and pressed play straight away heard the legacy buffer
-                    // with fader and pan applied twice, until some later
-                    // unrelated store update happened to mark it.
-                    if ((track.freezeState.renderSettings?.bakeVersion ?? 0) < FREEZE_BAKE_VERSION) {
-                        updateTrack(track.id, (time) => ({
-                            ...time,
-                            freezeState: { ...time.freezeState, status: 'stale' },
-                        }));
-                        continue;
-                    }
+    for (const track of trackStore.value?.tracks ?? []) {
+        if (track.freezeState.status !== 'frozen') {
+            continue;
+        }
+        const input = readLiveFreezePrintInput(track.id);
+        if (input) {
+            seen.set(track.id, input);
+        }
+    }
 
-                    const prevTrack = previous.tracks.find((time) => time.id === track.id);
-                    if (!prevTrack) {
-                        continue;
-                    }
+    const unsubscribe = subscribeSubgraphPrintInputStores(evaluate);
 
-                    if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
-                        const hash = await computeTrackHash(track.clips, track.devices);
-                        if (hash !== track.freezeState.sourceContentHash) {
-                            updateTrack(track.id, (time) => ({
-                                ...time,
-                                freezeState: { ...time.freezeState, status: 'stale' },
-                            }));
-                        }
-                    }
-                }
-            } finally {
-                isEvaluating = false;
-            }
-        })();
-    });
-
-    return unsubscribe;
+    // Unsubscribing is what stops evaluation: no write reaches `evaluate` after it. A pass already
+    // running finishes, but against cleared state it can only record first sightings.
+    return () => {
+        seen.clear();
+        unsubscribe();
+    };
 }
