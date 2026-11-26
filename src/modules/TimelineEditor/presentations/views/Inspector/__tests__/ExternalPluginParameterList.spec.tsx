@@ -492,6 +492,20 @@ describe('ExternalPluginParameterList', () => {
         expect(screen.getByText('0.750')).toBeInTheDocument();
     });
 
+    it('never asks the plugin for the text of a non-finite value', async () => {
+        mockFormat.mockResolvedValue(null);
+        seed([parameter({ id: 7, name: 'Cutoff', value: Number.NaN, displayText: null })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        for (let flush = 0; flush < 5; flush++) {
+            await act(async () => {
+                await Promise.resolve();
+            });
+        }
+
+        expect(mockFormat).not.toHaveBeenCalled();
+    });
+
     it('disables a read-only parameter and says why', () => {
         seed([
             parameter({ id: 8, name: 'Meter', isReadOnly: true }),
@@ -813,6 +827,34 @@ describe('ExternalPluginParameterList', () => {
             expect(slider).toHaveValue('0.75');
             expect(slider).toHaveAttribute('aria-valuetext', 'Following automation');
             expect(within(screen.getByTestId('external-parameter-7')).getByText('0.750')).toBeInTheDocument();
+        });
+
+        it('asks no text while following and asks once for the settled value when following ends', async () => {
+            mockFormat.mockImplementation((_instanceId, _paramId, value) => Promise.resolve(`${String(value)} dB`));
+            seedAutomated();
+            setPlaying(true);
+            render(<ExternalPluginParameterList device={device} />);
+            // Mounting asks for the snapshot's own value before any lane value is delivered.
+            mockFormat.mockClear();
+
+            for (const [timestamp, applied] of [
+                [0, 0.5],
+                [50, 0.75],
+                [100, 0.6],
+            ] as const) {
+                mockReadApplied.mockReturnValue(applied);
+                runFrame(timestamp);
+                await act(async () => {
+                    await Promise.resolve();
+                });
+            }
+            expect(screen.getByRole('slider', { name: 'Decay' })).toHaveValue('0.6');
+            expect(mockFormat.mock.calls.filter(([, paramId]) => paramId === 7)).toEqual([]);
+
+            setPlaying(false);
+
+            expect(await screen.findByText('0.6 dB')).toBeInTheDocument();
+            expect(mockFormat.mock.calls.filter(([, paramId]) => paramId === 7)).toEqual([[INSTANCE_ID, 7, 0.6]]);
         });
 
         it('does not read or move a row that is scrolled out of view', () => {

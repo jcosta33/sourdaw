@@ -145,10 +145,20 @@ const ParameterRow = ({
     // The snapshot's text describes the snapshot's value. Any other shown value (a pending edit,
     // a followed lane, a value just patched in) asks the plugin, one question in flight at a time:
     // the answer for a value no longer shown is dropped by the check above and the next question
-    // is for the value shown now. A null answer is remembered, so a value is asked once.
+    // is for the value shown now. Only the latest answer is kept, so a null answer stops a repeat
+    // question for the value still shown, while a value shown again after another is asked again.
+    // A followed lane moves every frame and a non-finite value never matches its answer, so neither asks.
+    // The visible number moves with the lane; announcing every step would flood a screen reader.
+    const followingAnnounced = followed.following && pendingValue === null;
     const askingRef = useRef(false);
     useEffect(() => {
-        if (snapshotTextIsCurrent || answer?.value === value || askingRef.current) {
+        if (
+            snapshotTextIsCurrent ||
+            followingAnnounced ||
+            !Number.isFinite(value) ||
+            answer?.value === value ||
+            askingRef.current
+        ) {
             return;
         }
         askingRef.current = true;
@@ -156,10 +166,8 @@ const ParameterRow = ({
             askingRef.current = false;
             setAnswer({ value, text });
         });
-    }, [snapshotTextIsCurrent, answer, value, instanceId, row.id]);
+    }, [snapshotTextIsCurrent, followingAnnounced, answer, value, instanceId, row.id]);
 
-    // The visible number moves with the lane; announcing every step would flood a screen reader.
-    const followingAnnounced = followed.following && pendingValue === null;
     const readOnlyDescriptionId = useId();
     const describedBy =
         [automated ? automatedDescriptionId : null, row.readOnly ? readOnlyDescriptionId : null]

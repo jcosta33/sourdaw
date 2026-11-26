@@ -3872,6 +3872,7 @@ fn update_parameter_cache_after_enqueue(
         .find(|parameter| parameter.id == param_id)
     {
         parameter.value = value;
+        parameter.display_text = None;
     }
 
     Ok(())
@@ -12336,6 +12337,18 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(parameters[0].value, 0.75);
+    }
+
+    #[test]
+    fn update_parameter_cache_after_enqueue_drops_the_text_of_the_replaced_value() {
+        let mut parameters = vec![plugin_parameter(7, 1.0)];
+        parameters[0].display_text = Some("1.00 dB".to_string());
+
+        let result = update_parameter_cache_after_enqueue(&mut parameters, 7, 0.5, Ok(()));
+
+        assert!(result.is_ok());
+        assert_eq!(parameters[0].value, 0.5);
+        assert_eq!(parameters[0].display_text, None);
     }
 
     #[test]
