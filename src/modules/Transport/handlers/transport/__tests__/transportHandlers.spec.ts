@@ -194,7 +194,7 @@ describe('Transport Handlers', () => {
     it('handleToggleCountIn delegates to use case', () => {
         transportStore.set({ ...defaultTransportState, countInEnabled: false });
 
-        void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: undefined });
+        void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: { enabled: true } });
         void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: { enabled: false, expectedEnabled: true } });
 
         expect(mocks.setCountInEnabled).toHaveBeenNthCalledWith(1, { enabled: true, expectedEnabled: undefined });
@@ -209,7 +209,7 @@ describe('Transport Handlers', () => {
     it('handleTogglePreRoll delegates to use case', () => {
         transportStore.set({ ...defaultTransportState, preRollEnabled: true });
 
-        void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: undefined });
+        void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: { enabled: false } });
         void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: { enabled: true, expectedEnabled: false } });
 
         expect(mocks.setPreRollEnabled).toHaveBeenNthCalledWith(1, { enabled: false, expectedEnabled: undefined });

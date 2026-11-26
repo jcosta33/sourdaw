@@ -1,7 +1,5 @@
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { clampTransportBars } from './clampTransportBars';
-
 type Setting = 'countIn' | 'preRoll';
 
 function priorActions(context: HandlerValidationContext | undefined): readonly AppAction[] {
@@ -23,7 +21,7 @@ export function projectEnabledThroughPriorBatchActions(
     let projected = live;
     for (const action of priorActions(context)) {
         if (action.type === toggleType) {
-            projected = action.payload?.enabled ?? !projected;
+            projected = action.payload.enabled;
         }
     }
     return projected;
@@ -38,7 +36,7 @@ export function projectBarsThroughPriorBatchActions(
     let projected = live;
     for (const action of priorActions(context)) {
         if (action.type === barsType) {
-            projected = clampTransportBars(action.payload.bars);
+            projected = action.payload.bars;
         }
     }
     return projected;

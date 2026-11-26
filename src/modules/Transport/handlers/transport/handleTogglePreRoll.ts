@@ -9,29 +9,23 @@ const NO_TRANSPORT_REASON = 'Transport state is not available';
 
 export const handleTogglePreRoll = createHandler<'togglePreRoll'>({
     // Only a restore guarded by the state it expects can be replayed after divergence.
-    canReapplyAfterDivergence: (action) => action.payload?.expectedEnabled !== undefined,
+    canReapplyAfterDivergence: (action) => action.payload.expectedEnabled !== undefined,
     // Conflicts when `expectedEnabled` no longer matches the live pre-roll; proven by the `canReportConflict` registry honesty spec.
     canReportConflict: true,
     validate: () => getTransportState() !== null,
     validationRefusalReason: () => (getTransportState() === null ? NO_TRANSPORT_REASON : null),
     execute: (action) => {
-        const state = getTransportState();
-        if (!state) {
+        if (!getTransportState()) {
             return { status: 'no-write' };
         }
         return setPreRollEnabled({
-            enabled: action.payload?.enabled ?? !state.preRollEnabled,
-            expectedEnabled: action.payload?.expectedEnabled,
+            enabled: action.payload.enabled,
+            expectedEnabled: action.payload.expectedEnabled,
         });
     },
-    // A bare toggle always changes the state; an explicit state changes nothing when it already holds.
     isNoop: (action) => {
         const state = getTransportState();
-        if (!state) {
-            return true;
-        }
-        const enabled = action.payload?.enabled;
-        return enabled !== undefined && state.preRollEnabled === enabled;
+        return !state || state.preRollEnabled === action.payload.enabled;
     },
     describe: (action, context) => {
         const live = getTransportState()?.preRollEnabled;
@@ -40,7 +34,7 @@ export const handleTogglePreRoll = createHandler<'togglePreRoll'>({
         }
         // Both legs name the state they expect, so a later edit conflicts instead of being overwritten.
         const previous = projectEnabledThroughPriorBatchActions('preRoll', live, context);
-        const next = action.payload?.enabled ?? !previous;
+        const next = action.payload.enabled;
         return {
             label: next ? 'Enable pre-roll' : 'Disable pre-roll',
             inverseAction: { type: 'togglePreRoll', payload: { enabled: previous, expectedEnabled: next } },

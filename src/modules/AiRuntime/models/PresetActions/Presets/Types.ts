@@ -14,6 +14,8 @@ export type PresetContext = {
     /** Transport state a toggle preset negates; absent when the builder does not know it. */
     loopEnabled?: boolean;
     metronomeEnabled?: boolean;
+    countInEnabled?: boolean;
+    preRollEnabled?: boolean;
 };
 
 // ── Preset definition ───────────────────────────────────────────────────

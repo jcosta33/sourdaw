@@ -191,7 +191,7 @@ export const TransportControls = ({
         dispatchTransportAction({ type: 'setPunchEnabled', payload: { enabled: !punchInEnabled } });
     };
     const toggleCountIn = (): void => {
-        dispatchTransportAction({ type: 'toggleCountIn' });
+        dispatchTransportAction({ type: 'toggleCountIn', payload: { enabled: !countInEnabled } });
     };
     const cycleCountInBars = (): void => {
         let next: number;

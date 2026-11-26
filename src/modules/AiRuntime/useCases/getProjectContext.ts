@@ -158,6 +158,8 @@ export function getProjectContext(): ProjectContext {
         punchInBeat: transportState?.punchInBeat ?? 0,
         punchOutBeat: transportState?.punchOutBeat ?? 16,
         metronomeEnabled: transportState?.metronomeEnabled ?? false,
+        countInEnabled: transportState?.countInEnabled ?? false,
+        preRollEnabled: transportState?.preRollEnabled ?? false,
         metronomeVolume: transportState?.metronomeVolume ?? 0.5,
         metronomeVolumeDb: toLevelDb(transportState?.metronomeVolume ?? 0.5),
         masterGain: (transportState?.masterGain ?? 80) / 100,

@@ -12,7 +12,7 @@ import { handleTogglePreRoll } from '../handleTogglePreRoll';
 type FlagSuite<Action extends AppAction> = {
     type: Action['type'];
     handler: SuiteHandler<Action>;
-    make: (payload?: { enabled?: boolean; expectedEnabled?: boolean }) => Action;
+    make: (payload: { enabled: boolean; expectedEnabled?: boolean }) => Action;
     key: 'countInEnabled' | 'preRollEnabled';
 };
 
@@ -53,15 +53,6 @@ function flagSuite<Action extends AppAction>({ type, handler, make: action, key 
             expect(transportStore.value?.[key]).toBe(true);
         });
 
-        it('still flips the current state when no state is stated, as the transport bar does', async () => {
-            expect(handler.isNoop?.(action())).toBe(false);
-
-            await handler.execute(action());
-            expect(transportStore.value?.[key]).toBe(true);
-            await handler.execute(action());
-            expect(transportStore.value?.[key]).toBe(false);
-        });
-
         it('describes a guarded inverse and redo for an explicit state', () => {
             const forward = action({ enabled: true });
 
@@ -71,9 +62,9 @@ function flagSuite<Action extends AppAction>({ type, handler, make: action, key 
             });
         });
 
-        it('describes the inverse of a bare toggle from the state it will flip', () => {
+        it('describes the inverse from the live state the stated state replaces', () => {
             transportStore.set({ ...defaultTransportState, [key]: true });
-            const forward = action();
+            const forward = action({ enabled: false });
 
             expect(handler.describe(forward, batchOf([forward], 0))).toMatchObject({
                 inverseAction: { type, payload: { enabled: true, expectedEnabled: false } },
@@ -88,13 +79,6 @@ function flagSuite<Action extends AppAction>({ type, handler, make: action, key 
 
             expect(handler.describe(second, batchOf(batch, 1))).toMatchObject({
                 inverseAction: { type, payload: { enabled: true, expectedEnabled: false } },
-            });
-
-            const bareFirst = action();
-            const bareSecond = action();
-            expect(handler.describe(bareSecond, batchOf([bareFirst, bareSecond], 1))).toMatchObject({
-                inverseAction: { type, payload: { enabled: true, expectedEnabled: false } },
-                redoAction: { type, payload: { enabled: false, expectedEnabled: true } },
             });
         });
 
@@ -152,16 +136,23 @@ function barsSuite<Action extends AppAction>({ type, handler, make: action, key,
             });
         });
 
-        it('records the bars actually written when the request is out of range', async () => {
-            const forward = action(20);
-            const description = handler.describe(forward, batchOf([forward], 0));
+        it.each([2.5, 0, 9, 20, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+            'refuses %s bars, naming the range, on every route',
+            (bars) => {
+                const forward = action(bars);
 
-            expect(description).toMatchObject({
-                inverseAction: { type, payload: { bars: initial, expectedBars: 8 } },
-                redoAction: { type, payload: { bars: 8, expectedBars: initial } },
-            });
-            await handler.execute(forward);
-            expect(transportStore.value?.[key]).toBe(8);
+                expect(handler.validate?.(forward, batchOf([forward], 0))).toBe(false);
+                expect(handler.validationRefusalReason?.(forward, batchOf([forward], 0))).toBe(
+                    'Bars must be a whole number from 1 to 8'
+                );
+            }
+        );
+
+        it.each([1, 4, 8])('admits %s bars, the edges and middle of the range', (bars) => {
+            const forward = action(bars);
+
+            expect(handler.validate?.(forward, batchOf([forward], 0))).toBe(true);
+            expect(handler.validationRefusalReason?.(forward, batchOf([forward], 0))).toBeNull();
         });
 
         it('describes a later action of a batch from what the earlier one leaves', () => {
@@ -192,7 +183,6 @@ function barsSuite<Action extends AppAction>({ type, handler, make: action, key,
         it('refuses without transport state', () => {
             transportStore.set(null);
             const forward = action(3);
-
             expect(handler.validate?.(forward, batchOf([forward], 0))).toBe(false);
             expect(handler.validationRefusalReason?.(forward, batchOf([forward], 0))).toBe(
                 'Transport state is not available'

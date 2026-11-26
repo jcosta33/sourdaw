@@ -175,11 +175,14 @@ describe('TransportControls', () => {
             expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         });
 
-        it('dispatches a bare toggleCountIn action from the count-in button', () => {
+        it('dispatches an explicit toggleCountIn state from the count-in button', () => {
             renderWithTooltip(<TransportControls {...defaultProps} />);
             fireEvent.click(screen.getByLabelText('Count-in'));
             expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1);
-            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleCountIn' });
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+                type: 'toggleCountIn',
+                payload: { enabled: true },
+            });
         });
     });
 
@@ -218,7 +221,10 @@ describe('TransportControls', () => {
                 type: 'setPunchEnabled',
                 payload: { enabled: true },
             });
-            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleCountIn' });
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+                type: 'toggleCountIn',
+                payload: { enabled: false },
+            });
             expect(mocks.setMetronomeVolume).toHaveBeenCalled();
             expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
                 type: 'setCountInBars',

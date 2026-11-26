@@ -128,8 +128,8 @@ export type TransportAppAction =
     | { type: 'togglePunch'; payload?: undefined }
     | {
           type: 'toggleCountIn';
-          /** `enabled` sets that state; omitted, the action flips the current one. `expectedEnabled` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
-          payload?: { enabled?: boolean; expectedEnabled?: boolean };
+          /** `enabled` is the wanted state. `expectedEnabled` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
+          payload: { enabled: boolean; expectedEnabled?: boolean };
       }
     | {
           type: 'setCountInBars';
@@ -138,8 +138,8 @@ export type TransportAppAction =
       }
     | {
           type: 'togglePreRoll';
-          /** `enabled` sets that state; omitted, the action flips the current one. `expectedEnabled` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
-          payload?: { enabled?: boolean; expectedEnabled?: boolean };
+          /** `enabled` is the wanted state. `expectedEnabled` is the internal compare-and-swap guard that AiRuntime payload validation rejects. */
+          payload: { enabled: boolean; expectedEnabled?: boolean };
       }
     | {
           type: 'setPreRollBars';

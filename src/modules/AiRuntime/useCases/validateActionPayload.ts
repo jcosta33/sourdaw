@@ -751,9 +751,9 @@ const validators = {
     stopPlayback: hasNoPayload,
     toggleRecording: 'unchecked',
     toggleCountIn: (param): param is PayloadOf<'toggleCountIn'> =>
-        hasNoPayload(param) || (isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean'),
+        isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     togglePreRoll: (param): param is PayloadOf<'togglePreRoll'> =>
-        hasNoPayload(param) || (isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean'),
+        isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     setPunchIn: hasValidPunchInBeat,
     setPunchOut: hasValidPunchOutBeat,
     setCountInBars: (param): param is PayloadOf<'setCountInBars'> =>
