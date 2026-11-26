@@ -3,10 +3,12 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { OBJECTIVE_METRIC_LABELS } from '../../objectiveMetricProjection';
 import {
+    CLAUSE_SUBJECT,
     DETERMINER,
     KEEP_VERBS,
     MASK_GLYPH,
     POSSESSIVE_DETERMINER,
+    PREDICATE_WORD,
     SUBORDINATOR,
     THE,
 } from '../../perceptualConstraints/constraintClauseWords';
@@ -48,6 +50,12 @@ import { getClauseIntentVocabulary } from './getClauseIntentVocabulary';
 import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { isGenericDeviceIntent } from './isGenericDeviceIntent';
+import {
+    DEVICE_CONTROL_WORDS,
+    LEVEL_CARRIER_VERBS,
+    LEVEL_NOUN_PREPOSITIONS,
+    SONG_SECTION_NOUNS,
+} from './levelClauseWords';
 import { LEVEL_DESTINATION_NOUNS } from './levelDestinationNouns';
 import { MASKED_REFERENCE_PATTERN } from './maskProjectReferences';
 import { namesOnlyNonTrackObject } from './namesOnlyNonTrackObject';
@@ -56,15 +64,6 @@ import { CAUSE_OPENER_WORDS, REASON_OPENER_WORDS, SUBJECT_PURPOSE_OPENER_WORDS }
 import { STRICT_COURTESY_CLAUSES } from './strictCourtesyClauses';
 
 type GroundingCatalogEntry = ReturnType<typeof getExecutableAppActionGroundingCatalog>[number];
-
-/**
- * Verbs that open a level whose own phrase follows the target: "make Drums 3 dB quieter". "Set" is one
- * too, read with the verbs that set any value.
- */
-const LEVEL_CARRIER_VERBS: readonly string[] = ['make'];
-
-/** The prepositions that join a level noun to the object it belongs to: "the volume on the Drums". */
-const LEVEL_NOUN_PREPOSITIONS: ReadonlySet<string> = new Set(['of', 'on', 'for']);
 
 const ARTICLE = words(Array.from(ARTICLES));
 
@@ -98,6 +97,27 @@ const LEVEL_CLAUSE_OWN_WORDS: ReadonlySet<string> = new Set([...LEVEL_CONTROL_WO
 
 /** A unit of musical time a reason may name: "because it only needs two bars". */
 const MUSICAL_TIME_PATTERN = new RegExp(String.raw`\b(?:${BAR_WORD}|${BEAT_WORD})\b`, 'iu');
+
+/** The words of the measured metrics' names beside the level's own nouns: "peak", "loudness", "crest". */
+const METRIC_NAME_WORDS: ReadonlySet<string> = new Set(
+    splitPhraseWords(Object.values(OBJECTIVE_METRIC_LABELS)).filter((word) => !LEVEL_CONTROL_WORDS.includes(word))
+);
+
+/**
+ * A word that opens a clause of its own after the figure: a predicate, a subordinator or a subject
+ * ("was too much", "sounds good", "when the chorus hits").
+ */
+const CLAUSE_OPENING_WORD_PATTERN = new RegExp(
+    String.raw`^(?:${PREDICATE_WORD}|${SUBORDINATOR}|${CLAUSE_SUBJECT})$`,
+    'iu'
+);
+
+/** The word each comparison opens on, which compares the level with something only where a comparison reads it. */
+const COMPARISON_OPENING_WORDS: ReadonlySet<string> = new Set(
+    [...OBJECT_COMPARISON_PHRASES, ...CURRENT_LEVEL_COMPARISON_PHRASES].flatMap((phrase) =>
+        normalizePromptText(phrase).split(' ').slice(0, 1)
+    )
+);
 
 /**
  * Where a comparison against another project object opens after the words it qualifies: "... down
@@ -176,8 +196,20 @@ function readSpan(clause: LevelClause, span: ReadSpan, context: ProjectContext):
     return readWords(clause.text.slice(span.start, span.end), true);
 }
 
-/** The words and whole references of `clause.masked[from, to)`, in order. */
+/**
+ * The words and whole references of `clause.masked[from, to)`, in order, a kind or mix noun right after a
+ * reference read as part of it ("the Vocals track", "the Drums mix"), since it names that same track.
+ */
 function readTokens(clause: LevelClause, from: number, to: number, context: ProjectContext): ClauseToken[] {
+    const tokens = readSpanTokens(clause, from, to, context);
+    return tokens.filter(
+        (token, index) =>
+            !(token.kind === 'word' && tokens[index - 1]?.kind === 'reference' && namesReferencedTrack(token))
+    );
+}
+
+/** The words and whole references of `clause.masked[from, to)`, in order, each as written. */
+function readSpanTokens(clause: LevelClause, from: number, to: number, context: ProjectContext): ClauseToken[] {
     const { masked } = clause;
     const tokens: ClauseToken[] = [];
     let cursor = from;
@@ -222,7 +254,7 @@ function getLevelClauseWords(entry: GroundingCatalogEntry, masked: string): Read
 }
 
 /** A word as written and, where it reads as a plural, its singular: "buses" as "buses" and "bus". */
-function getNumberForms(word: string): string[] {
+function withSingularForm(word: string): string[] {
     const singular = getSingularForm(word);
     if (singular === null) {
         return [word];
@@ -232,7 +264,7 @@ function getNumberForms(word: string): string[] {
 
 /** A kind of track, one or several: "the Strings track", "the bass tracks". */
 function isTrackKindNoun(word: string): boolean {
-    return getNumberForms(word).some((form) => TRACK_KIND_NOUNS.has(form));
+    return withSingularForm(word).some((form) => TRACK_KIND_NOUNS.has(form));
 }
 
 function isLevelNoun(token: ClauseToken | undefined): boolean {
@@ -245,21 +277,48 @@ function isLevelWord(word: string, levelWords: ReadonlySet<string>): boolean {
 }
 
 /**
- * Whether a word before the figure is the level's own: one of its words, a preposition joining a level
- * noun to the target it belongs to ("the volume on the Drums"), or a kind or mix noun after a reference
- * ("the Strings track", "the Drums mix"). Each joins the target slot, so none is read after the figure,
- * which names none.
+ * Whether a word before the figure is the level's own where the clause masks no reference: one of its
+ * words, or a preposition joining a level noun to the target it belongs to ("the volume of the vocal").
  */
-function isHeadLevelWord(
-    token: ClauseWord,
-    previous: ClauseToken | undefined,
-    levelWords: ReadonlySet<string>
-): boolean {
-    const { word } = token;
+function isHeadLevelWord(word: string, previous: ClauseToken | undefined, levelWords: ReadonlySet<string>): boolean {
+    return isLevelWord(word, levelWords) || (LEVEL_NOUN_PREPOSITIONS.has(word) && isLevelNoun(previous));
+}
+
+/**
+ * Whether a word names something other than how the level moves: a project object its name hides ("mix"
+ * beside a Mix parameter), a kind of object or a destination ("clip", "send", "band", "master"), a mixer
+ * control other than the level ("pan"), a measured metric ("peak") or a device's own control
+ * ("threshold"). The level nouns name the fader itself, whatever object shares their name.
+ */
+function namesOtherThanLevel(token: ClauseWord): boolean {
+    if (LEVEL_CONTROL_WORDS.includes(token.word)) {
+        return false;
+    }
+    if (token.inName) {
+        return true;
+    }
+    return withSingularForm(token.word).some(
+        (form) =>
+            KIND_NOUNS.has(form) ||
+            LEVEL_DESTINATION_NOUNS.includes(form) ||
+            CONTROL_WORDS.has(form) ||
+            METRIC_NAME_WORDS.has(form) ||
+            DEVICE_CONTROL_WORDS.includes(form)
+    );
+}
+
+/**
+ * Whether a word after the figure opens a clause or a comparison of its own that no reader read ("was too
+ * much", "when the chorus hits", "like the snare"). A word the level itself states ("to", "by", "as
+ * well") opens none.
+ */
+function opensUnreadClause(word: string, levelWords: ReadonlySet<string>): boolean {
+    if (levelWords.has(word)) {
+        return false;
+    }
     return (
-        isLevelWord(word, levelWords) ||
-        (LEVEL_NOUN_PREPOSITIONS.has(word) && isLevelNoun(previous)) ||
-        (previous?.kind === 'reference' && namesReferencedTrack(token))
+        COMPARISON_OPENING_WORDS.has(word) ||
+        withSingularForm(word).some((form) => CLAUSE_OPENING_WORD_PATTERN.test(form))
     );
 }
 
@@ -275,19 +334,56 @@ function namesReferencedTrack(token: ClauseWord): boolean {
 }
 
 /**
- * Whether the words before the figure are the level's own words around one target slot. The slot is
- * every masked reference the clause holds, or, where it holds none, one run of other words a reference
- * reading may still resolve ("raise the vocal by 2 dB" for a track called Vocals). Any other word
- * ("peak", "threshold", "only") may name another control or narrow the level, so the clause is not read.
+ * Whether the words before the figure lead to one target. Where the clause masks one reference, that
+ * reference is the target and any other word reads as how the level is asked for ("bump Drums up",
+ * "I'd like you to lower Drums", "turn Drums down gently") unless it names something other than the
+ * level ("the Drums clip", "Drums threshold", "on the send"); a second reference names a second object.
  * One closing phrase after the target is read as it is after the figure ("lower Drums in the mix by 3 dB").
  */
 function readsLevelHead(headTokens: readonly ClauseToken[], levelWords: ReadonlySet<string>): boolean {
     const tokens = withoutClosingPhraseAfterTarget(headTokens);
-    const namesReference = tokens.some((token) => token.kind === 'reference');
+    if (!tokens.some((token) => token.kind === 'reference')) {
+        return readsUnmaskedSlot(tokens, levelWords);
+    }
+    return (
+        holdsOneTarget(tokens) &&
+        !extendsTargetName(tokens, levelWords) &&
+        tokens.every((token) => token.kind === 'reference' || !namesOtherThanLevel(token))
+    );
+}
+
+/**
+ * Whether a word written right before the target may be the start of a name the project does not hold
+ * ("lower Acoustic Bass by 3 dB" where only Bass exists): a word neither the level states nor a
+ * determiner. Such a target names an object no reference resolves, so the clause is not read.
+ */
+function extendsTargetName(tokens: readonly ClauseToken[], levelWords: ReadonlySet<string>): boolean {
+    const before = tokens[tokens.findIndex((token) => token.kind === 'reference') - 1];
+    return before?.kind === 'word' && !isLevelWord(before.word, levelWords) && !DETERMINER_PATTERN.test(before.word);
+}
+
+/**
+ * Whether the references of a head are one target: a single reference, or references only list
+ * punctuation separates ("Bass & Drums", "Bass / Drums"). A word between two references ("Drums on
+ * Reverb") makes the second a second object.
+ */
+function holdsOneTarget(tokens: readonly ClauseToken[]): boolean {
+    const first = tokens.findIndex((token) => token.kind === 'reference');
+    const last = tokens.findLastIndex((token) => token.kind === 'reference');
+    return tokens.slice(first, last + 1).every((token) => token.kind === 'reference');
+}
+
+/**
+ * Whether a head that masks no reference is the level's own words around one run of other words, the
+ * slot a reference reading may still resolve ("raise the vocal by 2 dB" for a track called Vocals). With
+ * no reference to say which words are the target, a second run ("raise the vocal on the snare") may name
+ * a second object, so the clause is not read.
+ */
+function readsUnmaskedSlot(tokens: readonly ClauseToken[], levelWords: ReadonlySet<string>): boolean {
     let slotRuns = 0;
     let previousIsSlot = false;
     for (const [index, token] of tokens.entries()) {
-        if (token.kind === 'reference' || isHeadLevelWord(token, tokens[index - 1], levelWords)) {
+        if (token.kind === 'word' && isHeadLevelWord(token.word, tokens[index - 1], levelWords)) {
             previousIsSlot = false;
             continue;
         }
@@ -296,7 +392,7 @@ function readsLevelHead(headTokens: readonly ClauseToken[], levelWords: Readonly
         }
         previousIsSlot = true;
     }
-    return namesReference ? slotRuns === 0 : slotRuns <= 1;
+    return slotRuns <= 1;
 }
 
 /** Whether the words of `phrase` start at `index` of the tokens. */
@@ -352,10 +448,49 @@ function withoutClosingWords(tokens: readonly ClauseToken[]): readonly ClauseTok
     return withoutEndingPhrase(withoutEndingPhrase(beforeCourtesy, CLOSING_PHRASE_WORDS), COURTESY_PHRASE_WORDS);
 }
 
-/** Whether the words after the figure are only the level's own words and a closing phrase, naming no object. */
+/**
+ * Whether the words after the figure, up to where a reason, constraint, comparison or protection takes
+ * over, say only how the level is asked for ("thanks a lot", "right now", "or so"): no reference, no
+ * word naming something other than the level, and no clause or comparison of their own.
+ */
 function readsLevelTail(tokens: readonly ClauseToken[], levelWords: ReadonlySet<string>): boolean {
-    const read = withoutClosingWords(tokens);
-    return read.every((token) => token.kind === 'word' && isLevelWord(token.word, levelWords));
+    return withoutClosingWords(tokens).every(
+        (token) => token.kind === 'word' && !namesOtherThanLevel(token) && !opensUnreadClause(token.word, levelWords)
+    );
+}
+
+/**
+ * Whether a stretch of the clause states a figure, a unit of musical time or a range of the song: "at
+ * 200 Hz", "for 2 bars", "in Verse 2". Any of them says what the level is for or where it applies.
+ */
+function statesValueOrStretch(clause: LevelClause, span: ReadSpan, context: ProjectContext): boolean {
+    const masked = clause.masked.slice(span.start, span.end);
+    return (
+        findPromptNumbers(masked).length > 0 ||
+        MUSICAL_TIME_PATTERN.test(masked) ||
+        findRangePhrases(clause.text.slice(span.start, span.end), context).length > 0
+    );
+}
+
+/**
+ * The words that name a stretch of the song: a kind of section ("the chorus") and each word of the
+ * project's own section and marker names ("the big moment"), less the words the level clause states
+ * itself, so a section called "Build Up" never claims "turn Drums up".
+ */
+function getStretchWords(context: ProjectContext, levelWords: ReadonlySet<string>): ReadonlySet<string> {
+    const sectionNames = context.sections?.map((section) => section.name) ?? [];
+    const markerNames = context.markers?.map((marker) => marker.name) ?? [];
+    const placeNames = [...sectionNames, ...markerNames];
+    return new Set(
+        [...SONG_SECTION_NOUNS, ...splitPhraseWords(placeNames)].filter(
+            (word) => word.length > 0 && !levelWords.has(word)
+        )
+    );
+}
+
+/** Whether a word names a stretch of the song rather than how the level moves. */
+function namesStretchOfSong(token: ClauseToken, stretchWords: ReadonlySet<string>): boolean {
+    return token.kind === 'word' && withSingularForm(token.word).some((form) => stretchWords.has(form));
 }
 
 /** Where the figure's unit ends, or null for a number stated in no decibel unit. */
@@ -403,7 +538,7 @@ function namesOtherControl(masked: string): boolean {
         (token) =>
             token.kind === 'word' &&
             !LEVEL_CONTROL_WORDS.includes(token.word) &&
-            getNumberForms(token.word).some((form) => CONTROL_WORDS.has(form))
+            withSingularForm(token.word).some((form) => CONTROL_WORDS.has(form))
     );
 }
 
@@ -413,12 +548,9 @@ function namesOtherControl(masked: string): boolean {
  * buried").
  */
 function namesNothingButTracks(clause: LevelClause, span: ReadSpan, context: ProjectContext): boolean {
-    const masked = clause.masked.slice(span.start, span.end);
     return (
-        findPromptNumbers(masked).length === 0 &&
-        !namesOtherControl(masked) &&
-        !MUSICAL_TIME_PATTERN.test(masked) &&
-        findRangePhrases(clause.text.slice(span.start, span.end), context).length === 0 &&
+        !statesValueOrStretch(clause, span, context) &&
+        !namesOtherControl(clause.masked.slice(span.start, span.end)) &&
         findReferences(clause, span.start, span.end, context).every(
             (reference) => !namesOnlyNonTrackObject(clause.text.slice(reference.start, reference.end), context)
         )
@@ -458,7 +590,7 @@ function namesLevelDestination(token: ClauseToken): boolean {
     if (token.kind === 'reference') {
         return true;
     }
-    return getNumberForms(token.word).some((form) => KIND_NOUNS.has(form) || LEVEL_DESTINATION_NOUNS.includes(form));
+    return withSingularForm(token.word).some((form) => KIND_NOUNS.has(form) || LEVEL_DESTINATION_NOUNS.includes(form));
 }
 
 /**
@@ -542,7 +674,7 @@ function findObjectComparisonStart(clause: LevelClause, tailStart: number, conte
     if (object === undefined) {
         return null;
     }
-    const after = readTokens(clause, object.end, clause.masked.length, context);
+    const [, ...after] = readTokens(clause, object.start, clause.masked.length, context);
     return withoutClosingWords(after).length === 0 ? start : null;
 }
 
@@ -565,7 +697,7 @@ function findClosingEnd(clause: LevelClause, tailStart: number, context: Project
         findBoundary(CURRENT_LEVEL_COMPARISON_PATTERN, masked, tailStart),
         findProtectionStart(masked, tailStart),
     ];
-    return Math.min(masked.length, ...boundaries.filter((start) => start !== null));
+    return Math.min(masked.length, ...boundaries.filter((start): start is number => start !== null));
 }
 
 /** Where each range phrase before the figure opens, for an action that declares a range. */
@@ -587,6 +719,8 @@ function findHeadEnd(input: {
     headStart: number;
 }): number {
     const { clause, context, figureIndex, headStart } = input;
+    // A protection opening on the head's first word ("keep Drums at -6 dB") is the whole clause's, never
+    // one after the level's words, so only one opening past that word ends the head.
     const openings = [findProtectionStart(clause.masked.slice(0, figureIndex), headStart + 1)];
     if (input.closesOnRange) {
         openings.push(...findHeadRangeStarts(clause, figureIndex, context));
@@ -595,15 +729,17 @@ function findHeadEnd(input: {
 }
 
 /**
- * Whether a clause stating a decibel figure reads as one level change of this action and nothing else,
- * in one shape: an optional polite carrier, the level's own words around one target slot, one decibel
- * figure the level lands on or moves by (beside the figures it starts `from`), and after it nothing but
- * the level's own words, a closing phrase, a trailing range phrase where the action declares one
- * (`closesOnRange`), a stated reason that names nothing but tracks, a measured constraint, a comparison
- * or a protection. Any other figure inside what the clause reads is a word outside the level's own and
- * refuses it, while a constraint's "-1 dBTP" lies past what it reads and is the metric reader's. A
- * clause stating no decibel figure is no decibel level clause, so this reader passes it through and
- * leaves it to the readers of its own shape.
+ * Whether a clause stating a decibel figure reads as one level change of this action and nothing else:
+ * one target, one decibel figure the level lands on or moves by (beside the figures it starts `from`),
+ * and around them any words that say how the level is asked for. A word before or after the target and
+ * figure is allowed unless it names an object or a control: a project reference other than the target, a
+ * kind of object or a destination ("the send", "the low band", "the master"), a control or parameter, a
+ * second figure, musical time or a stretch of the song. After the figure, a closing phrase, a trailing
+ * range phrase where the action declares one (`closesOnRange`), a stated reason that names nothing but
+ * tracks, a measured constraint, a comparison or a protection ends what the clause reads, while a clause
+ * or comparison no reader reads refuses it. A constraint's "-1 dBTP" lies past what it reads and is the
+ * metric reader's. A clause stating no decibel figure is no decibel level clause, so this reader passes
+ * it through and leaves it to the readers of its own shape.
  *
  * Every masked reference is the slot, so one whose whole text names a clip, device, parameter or VCA
  * group and no track names that object, never a fader.
@@ -636,21 +772,49 @@ export function readsAsLevelClause(input: {
         headStart,
     });
     const readClause = { ...clause, masked };
-    const tailEnd = findClosingEnd(readClause, tailStart, context);
-    const levelWords = getLevelClauseWords(entry, masked);
-    const headTokens = readTokens(
-        { ...clause, masked: withoutSourceFigures(masked, sources) },
-        headStart,
-        headEnd,
-        context
-    );
     return (
         sources.every((source) => source.index < figure.index) &&
+        readsHeadAndTail({
+            context,
+            head: {
+                clause: { ...clause, masked: withoutSourceFigures(masked, sources) },
+                start: headStart,
+                end: headEnd,
+            },
+            levelWords: getLevelClauseWords(entry, masked),
+            tail: { clause: readClause, start: tailStart, end: findClosingEnd(readClause, tailStart, context) },
+        })
+    );
+}
+
+/** One stretch of a level clause, read from the clause it belongs to. */
+type ClauseStretch = ReadSpan & { clause: LevelClause };
+
+/**
+ * Whether the words before and after the target and figure say only how the level is asked for: no
+ * second figure, musical time or stretch of the song in either, the head leading to one target, and the
+ * tail naming nothing other than the level.
+ */
+function readsHeadAndTail(input: {
+    context: ProjectContext;
+    head: ClauseStretch;
+    levelWords: ReadonlySet<string>;
+    tail: ClauseStretch;
+}): boolean {
+    const { context, head, levelWords, tail } = input;
+    const headTokens = readTokens(head.clause, head.start, head.end, context);
+    const tailTokens = readTokens(tail.clause, tail.start, tail.end, context);
+    const stretchWords = getStretchWords(context, levelWords);
+    return (
+        !statesValueOrStretch(head.clause, head, context) &&
+        !statesValueOrStretch(tail.clause, tail, context) &&
+        ![...headTokens, ...tailTokens].some((token) => namesStretchOfSong(token, stretchWords)) &&
         readsLevelHead(headTokens, levelWords) &&
-        readsLevelTail(readTokens(readClause, tailStart, tailEnd, context), levelWords) &&
+        readsLevelTail(tailTokens, levelWords) &&
         headTokens.every(
             (token) =>
-                token.kind === 'word' || !namesOnlyNonTrackObject(clause.text.slice(token.start, token.end), context)
+                token.kind === 'word' ||
+                !namesOnlyNonTrackObject(head.clause.text.slice(token.start, token.end), context)
         )
     );
 }

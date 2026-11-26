@@ -1464,6 +1464,8 @@ describe('supported named prohibitions protect rather than state their object', 
         'turn Vocals down 3 dB compared with the Keys',
         'turn Vocals down 3 dB like Keys in the mix',
         'turn Vocals down 3 dB so the Keys sit better',
+        'turn Vocals down 3 dB so the Keys track sits better',
+        'turn Vocals down 3 dB like the Keys track',
     ])('grounds the named Vocals selector in "%s"', (prompt) => {
         const value = prompt.startsWith('set') ? { gain: 0.75 } : { deltaDb: -3 };
         const result = compileMix(prompt, [trackItem('setTrackGain', mixVocals, value)]);

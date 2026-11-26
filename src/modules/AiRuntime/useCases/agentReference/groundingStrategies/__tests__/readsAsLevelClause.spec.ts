@@ -62,6 +62,7 @@ const context: ProjectContext = {
         { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
         { id: 'section-verse-2', name: 'Verse 2', startBeat: 16, endBeat: 32 },
     ],
+    markers: [{ id: 'marker-big-moment', name: 'Big Moment', beat: 48 }],
     tracks: [
         createTrack('track-drums', 'Drums'),
         createTrack('track-bass', 'Bass', [riffTake]),
@@ -142,6 +143,22 @@ describe('readsAsLevelClause', () => {
         ['a closing phrase between the target and the figure', 'Lower Drums overall by 3 dB', 'setTrackGain'],
         ['a closing phrase and courtesy after it', 'Lower Drums by 3 dB overall thanks', 'setTrackGain'],
         ['a closing phrase naming who asks and courtesy after it', 'Lower Drums by 3 dB for me please', 'setTrackGain'],
+        ['a lead verb and its direction around the target', 'bump Drums up 2 dB', 'setTrackGain'],
+        ['a lead verb whose target has an article', 'take the Drums down 3 dB', 'setTrackGain'],
+        ['a lead verb that pulls the level down', 'pull Drums down 3 dB', 'setTrackGain'],
+        ['a lead verb that nudges the level', 'nudge Drums down 3 dB', 'setTrackGain'],
+        ['a manner word between the direction and the figure', 'turn Drums down gently by 3 dB', 'setTrackGain'],
+        ['an opener stating who asks', "I'd like you to lower Drums by 3 dB", 'setTrackGain'],
+        ['a greeting before the request', 'hey, lower Drums by 3 dB', 'setTrackGain'],
+        ['courtesy of several words after the figure', 'lower Drums by 3 dB thanks a lot', 'setTrackGain'],
+        ['when the change is wanted after the figure', 'lower Drums by 3 dB right now', 'setTrackGain'],
+        [
+            'a kind noun after a track a subject opener names',
+            'turn Drums down 3 dB so the Vocals track sits better',
+            'setTrackGain',
+        ],
+        ['a kind noun after the compared track', 'turn Drums down 3 dB like the Keys track', 'setTrackGain'],
+        ['targets only list punctuation separates', 'turn down Bass & Drums by 3 dB', 'setTrackGain'],
     ])('reads %s: "%s"', (_rule, prompt, actionType) => {
         expect(reads(prompt, actionType)).toBe(true);
     });
@@ -180,6 +197,14 @@ describe('readsAsLevelClause', () => {
         ['a figure after the compared object', 'turn Drums down 3 dB relative to Keys at -12 dB'],
         ['a stretch of the song between the target and the figure', 'Lower Drums in the chorus by 3 dB'],
         ['a control between the target and the figure', 'Lower Drums on the send by 3 dB'],
+        ['a second track between the target and the figure', 'lower Drums on Reverb by 3 dB'],
+        ['a device control between the target and the figure', 'put Drums threshold at -6 dB'],
+        ['a measured metric after the figure', 'set Drums to -6 dB peak'],
+        ['a clause of its own after the figure', 'lower Drums by 3 dB was too much'],
+        ['a comparison against an object no reference names', 'lower Drums by 3 dB like the snare'],
+        ['a word of a marker name between the target and the figure', 'lower Drums at the big moment by 3 dB'],
+        ['musical time after the figure', 'lower Drums by 3 dB for 2 bars'],
+        ['a word right before the target that may start a name no track holds', 'lower Acoustic Drums by 3 dB'],
     ])('refuses %s: "%s"', (_rule, prompt) => {
         expect(reads(prompt)).toBe(false);
     });
