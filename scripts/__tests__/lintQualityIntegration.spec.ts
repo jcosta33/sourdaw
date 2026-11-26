@@ -4,10 +4,11 @@ import { basename, join, relative, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseQualityReport, QUALITY_BUDGET, QUALITY_CONFIG, reconcileQualityBudget } from '../lintQualityBudget';
+import { parseQualityReport, QUALITY_BUDGET, reconcileQualityBudget } from '../lintQualityBudget';
 import { buildQualityLintArgv } from '../runLint';
 
 const root = resolve(import.meta.dirname, '../..');
+const ternaryFixConfig = 'scripts/lint/oxlint-ternary-fix.json';
 
 function isolateTypeScriptProject(directory: string, parent: string, files: string[]) {
     writeFileSync(
@@ -885,7 +886,7 @@ console.log(JSON.stringify(effects));
                         'exec',
                         'oxlint',
                         '--config',
-                        QUALITY_CONFIG,
+                        ternaryFixConfig,
                         '--disable-nested-config',
                         '--threads=2',
                         '--fix',
@@ -982,7 +983,9 @@ export function asserted(choice: boolean, value: unknown) {
     return value;
 }
 
-console.log(JSON.stringify([select(true), select(false), redundant(3), required(4), asserted(false, 'a'), effects]));
+export const boxed = [new Boolean(false), new String('track'), new Number(0)];
+const output = [select(true), select(false), redundant(3), required(4), asserted(false, 'a'), effects];
+console.log(JSON.stringify([Boolean(boxed[0]), ...output]));
 `;
             isolateTypeScriptProject(directory, 'tsconfig.app.json', ['target.ts', 'neighbor.ts']);
             writeFileSync(target, source);
@@ -1014,6 +1017,7 @@ console.log(JSON.stringify([select(true), select(false), redundant(3), required(
 
             const runtime = execute(process.execPath, [target]);
             expect(JSON.parse(runtime)).toEqual([
+                true,
                 3,
                 10,
                 3,
@@ -1040,7 +1044,14 @@ console.log(JSON.stringify([select(true), select(false), redundant(3), required(
                 const report = parseQualityReport(
                     execute(
                         oxlint,
-                        [...buildQualityLintArgv([]).slice(2), '--allow=no-else-return', '--fix', target],
+                        [
+                            `--config=${ternaryFixConfig}`,
+                            '--disable-nested-config',
+                            '--threads=2',
+                            '--format=json',
+                            '--fix',
+                            target,
+                        ],
                         1
                     ),
                     root
@@ -1050,7 +1061,6 @@ console.log(JSON.stringify([select(true), select(false), redundant(3), required(
                     'sourdaw-craft/no-complex-ternary-branch',
                     'sourdaw-craft/no-complex-ternary-branch',
                     'sourdaw-craft/no-control-flow-ternary',
-                    'typescript/no-non-null-assertion',
                 ]);
             };
             const format = () => execute(resolve(root, 'node_modules/.bin/prettier'), ['--write', target]);

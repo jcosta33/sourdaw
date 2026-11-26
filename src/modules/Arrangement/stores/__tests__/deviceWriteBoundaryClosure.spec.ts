@@ -83,7 +83,8 @@ const BUILT_IN_USE_CASE_ROOTS = [
 const SINK_DEFINITIONS: Record<SinkFamily, SinkDefinition> = {
     'persistence-runtime': {
         // Bare identifiers intentionally catch imports, property aliases, and calls.
-        pattern: /\b(?:persistDeviceParam|persistDevicePatch|updateDeviceParam|updateDevicePatch)\b/g,
+        pattern:
+            /\b(?:persistDeviceParam|persistDevicePatch|updateDeviceParam|updateDeviceParameters|updateDevicePatch)\b/g,
         includes: includeAllPaths,
     },
     'strip-add': {
@@ -181,13 +182,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // built-in the native session carries, reached only from the guard-listed
         // automation tick path. Engine-only, reaches no document (#3893).
         'src/modules/AudioEngine/useCases/deviceControls/holdWebFallbackDeviceParam.ts': 1,
-        // Count provenance: measured 2 in code — the function declaration plus
-        // its one `audioEngine.updateDeviceParam` call, the single door every
-        // device-param write reaches the DSP through, where the declared-range
-        // law binds.
-        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 2,
+        // The single-parameter and ordered batch doors each declare their
+        // runtime entry point. Both share the clamped Web Audio writer below.
+        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 1,
+        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParameters.ts': 1,
         'src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts': 2,
-        'src/modules/AudioEngine/useCases/index.ts': 4,
+        // The scalar Web Audio call moved from updateDeviceParam into this helper.
+        'src/modules/AudioEngine/useCases/deviceControls/writeWebDeviceParam.ts': 1,
+        // The batch adds one named export and one matching module specifier.
+        'src/modules/AudioEngine/useCases/index.ts': 6,
         // Count provenance: pre-#597 this file scored 2 — a doc-comment mention
         // plus the single canonical updateDeviceParam call site. #597
         // (canonicalize device targets) rewrote the doc comment, and #609
@@ -237,12 +240,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // a sink in this family at all — the reason a census that counts sinks
         // could not see the defect.
         // 'src/modules/Crumbs/useCases/voiceStacking.ts': removed (0),
-        // Count provenance: measured 5, was 4. The fifth is the flush-side
-        // persist of the algorithm a `style` write derives, written after
-        // `style` so the record's insertion order matches `CRUST_PATCH_PRECEDENCE`,
-        // with no engine push for it.
-        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 5,
+        // The frame flush persists the algorithm derived from style. Presets
+        // replay through the separate sink after the owning command commits.
+        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 3,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
+        // The batch import and its single call replay the committed preset.
+        'src/modules/Crust/useCases/crustParamBridge/syncCrustPresetRuntime.ts': 2,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
         // import and its single call site. The panel's true-peak reset has to
         // reach the engine as well as the store: Crust's engine holds the
@@ -320,7 +323,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // parameter write now reaches the DSP through instead of the worklet
         // bridge directly, so a natively carried Proof hears the same write.
         'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 2,
-        'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 2,
         // Count provenance: new file entry, measured 2 — the `updateDevicePatch`
         // import and its single call sending the five `chain_order_{n}` keys as
         // one patch, so a natively carried Proof's module order matches a panel
@@ -328,7 +330,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/sendProofChainOrder.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
-        'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
         // Count provenance: measured 2 in code — the `updateDeviceParam`
         // import plus the single canonical call on the tick path (#746/#760
         // slew snap + a-rate gain/pan scheduling restructured around it); the
@@ -341,7 +342,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Read the family name carefully: 'persistence-runtime' is a *combined*
         // family. Its pattern counts both the CRDT persistence identifiers
         // (`persistDeviceParam`, `persistDevicePatch`) and the runtime engine ones
-        // (`updateDeviceParam`, `updateDevicePatch`). A hit in this family
+        // (`updateDeviceParam`, `updateDeviceParameters`, `updateDevicePatch`). A hit in this family
         // therefore does NOT by itself mean a write reached the document — check
         // which identifier matched before reading it as one.
         //
@@ -760,8 +761,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // engine, which is not the worklet that renders. The commit reaches the
         // worklet, and project truth, through `setDeviceParameter`.
         'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 3,
-        'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts': 1,
-        'src/modules/Crust/presentations/views/CrustPanel.tsx': 3,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 1,
         // Count provenance: measured 3 each — loader identifier import,
         // module-specifier string and call. These adapters delegate the actual
@@ -798,7 +797,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 4,
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
-        'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
+        // The committed selection applies its decoded patch through the runtime bridge.
+        'src/modules/Proof/useCases/proofParamBridge/syncProofPatchSelection.ts': 3,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
         // `setPadParamImmediate` naming one of the two pad-param entry points
         // that call this transform. `toPadStoreUpdate` is a pure function from
@@ -1223,7 +1223,6 @@ const DEVICE_DATA_COUNTS = {
         // `executeAppAction` — the migration it calls is a pure function that
         // returns its input untouched when nothing applies.
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
-        'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
         // The explicit parameter map and shorthand returned device chain are both
         // part of the owning store write.
@@ -1441,7 +1440,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts',
-    'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts',
+    'src/modules/Crust/useCases/readCrustFactoryPresetTarget.ts',
     'src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts',
     'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts',
     // Preparation guards before optimistic feedback; the Arrangement owner
@@ -1462,9 +1461,9 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Levain/useCases/commitLevainIdentity.ts',
     'src/modules/Levain/useCases/levainParamBridge/helpers.ts',
     'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts',
+    'src/modules/Proof/useCases/readProofPatchSelectionOwner.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts',
     'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts',
-    'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts',
     'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts',
     'src/modules/Toaster/useCases/setPadParamImmediate.ts',
     'src/modules/Toaster/useCases/loadToasterKit.ts',
@@ -2649,6 +2648,14 @@ describe('device write boundary closure', () => {
             name: 'an aliased persistence/runtime writer',
             path: 'src/modules/Unexpected/newRuntimeWriter.ts',
             source: 'const { updateDeviceParam: write } = dependencies; write("t", "d", "p", 1);',
+        },
+        {
+            name: 'an aliased batch runtime writer',
+            path: 'src/modules/Unexpected/newBatchedRuntimeWriter.ts',
+            source: [
+                "import { updateDeviceParameters as write } from '#/modules/AudioEngine/useCases';",
+                'write("t", "d", [["gain", 1]]);',
+            ].join('\n'),
         },
         {
             name: 'a strip-add writer',

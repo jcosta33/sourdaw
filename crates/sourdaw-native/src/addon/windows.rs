@@ -39,28 +39,18 @@ use crate::host::plugin_window::{
     PluginWindowError, PluginWindowHost,
 };
 use crate::host::ui_thread::{
-    call_on_ui_thread, PostedUiThread, UiThread, UiThreadError, UiThreadTask,
+    call_on_ui_thread, call_on_ui_thread_within, PostedUiThread, UiThread, UiThreadError,
+    UiThreadTask, EDITOR_UI_THREAD_DEADLINE,
 };
 
 /// How long one JS round trip may take before the operation fails.
 ///
 /// Generous because the main thread may be mid-layout; bounded because a shell
-/// that never answers must fail the open, not park a worker forever.
+/// that never answers must fail the open, not park a worker forever. Much longer
+/// than [`EDITOR_UI_THREAD_DEADLINE`], and the difference is the point: these
+/// wait for a JS answer the main thread will get to, while an editor hop is
+/// waited on holding a plugin's control gate the main thread may be blocked on.
 const WINDOW_HOST_DEADLINE: Duration = Duration::from_secs(10);
-
-/// How long a worker waits for the main thread to run one editor call.
-///
-/// Much shorter than the round trips above, and the difference is the point.
-/// Those wait for a JS answer the main thread will get to; this one is waited on
-/// while holding a plugin's control gate, and the main thread may be blocked on
-/// that very gate — the one cycle the ordering rules in
-/// [`crate::host::ui_thread`] cannot rule out. What ends it is this side giving
-/// up, so the bound is chosen against what is waiting behind it: two seconds is
-/// the control timeout every editor command already spends, so a hop can never
-/// outlast the claim it runs inside, and the assertion below keeps it clear of
-/// the deadline at which the shell stops waiting for a graceful exit and kills
-/// every plugin mid-flight.
-const EDITOR_UI_THREAD_DEADLINE: Duration = Duration::from_secs(2);
 
 const _: () = assert!(
     EDITOR_UI_THREAD_DEADLINE.as_millis() * 2
@@ -227,6 +217,14 @@ impl UiThread for JsUiThread {
     }
 
     fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> std::result::Result<(), UiThreadError> {
+        self.run_on_ui_thread_within(task, EDITOR_UI_THREAD_DEADLINE)
+    }
+
+    fn run_on_ui_thread_within(
+        &self,
+        task: &Arc<UiThreadTask>,
+        deadline: Duration,
+    ) -> std::result::Result<(), UiThreadError> {
         if self.is_ui_thread() {
             // Unreachable through `call_on_ui_thread`, which runs the work in
             // place instead. Refused rather than queued because the pump cannot
@@ -236,7 +234,7 @@ impl UiThread for JsUiThread {
             ));
         }
 
-        self.posted.post_and_wait(task, || {
+        self.posted.post_and_wait_within(task, deadline, || {
             let status = self.pump.call((), ThreadsafeFunctionCallMode::NonBlocking);
             if status != Status::Ok {
                 return Err(UiThreadError::Shell(format!(
@@ -292,6 +290,14 @@ impl UiThread for JsWindowHost {
 
     fn run_on_ui_thread(&self, task: &Arc<UiThreadTask>) -> std::result::Result<(), UiThreadError> {
         self.ui.run_on_ui_thread(task)
+    }
+
+    fn run_on_ui_thread_within(
+        &self,
+        task: &Arc<UiThreadTask>,
+        deadline: Duration,
+    ) -> std::result::Result<(), UiThreadError> {
+        self.ui.run_on_ui_thread_within(task, deadline)
     }
 
     fn run_posted_releases(&self) {
@@ -568,5 +574,14 @@ impl PluginEditorWindow for JsEditorWindow {
 
     fn run_on_ui_thread(&self, work: Box<dyn FnOnce() + Send>) -> std::result::Result<(), String> {
         call_on_ui_thread(self.ui.as_ref(), work).map_err(|error| error.to_string())
+    }
+
+    fn run_on_ui_thread_within(
+        &self,
+        work: Box<dyn FnOnce() + Send>,
+        deadline: Duration,
+    ) -> std::result::Result<(), String> {
+        call_on_ui_thread_within(self.ui.as_ref(), deadline, work)
+            .map_err(|error| error.to_string())
     }
 }

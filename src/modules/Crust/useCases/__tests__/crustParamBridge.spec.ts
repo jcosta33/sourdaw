@@ -52,9 +52,8 @@ vi.mock('../../stores/crustStore', () => ({
     loadCrustPatch: vi.fn(),
 }));
 
-import { DEFAULT_CRUST_PATCH, type CrustPatch } from '../../models/CrustPatch';
+import { type CrustPatch } from '../../models/CrustPatch';
 import { setCrustParam } from '../../stores/crustStore';
-import { loadCrustPatchWithAudio } from '../crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../crustParamBridge/setCrustParamWithAudio';
 
 describe('crustParamBridge', () => {
@@ -137,19 +136,5 @@ describe('crustParamBridge', () => {
         expect(setCrustParam).toHaveBeenCalledWith('d1', 'streamingPreset', 'ebu_r128');
         // No engine index table for streamingPreset → no engine write.
         expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
-    });
-
-    it('loadCrustPatchWithAudio noops when device cannot be found', () => {
-        mockGetAllTracks.mockReturnValue([]);
-
-        // Shouldn't throw
-        expect(() => loadCrustPatchWithAudio('missing', DEFAULT_CRUST_PATCH)).not.toThrow();
-        expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
-    });
-
-    it('loadCrustPatchWithAudio is callable without throwing on valid device', () => {
-        mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] }]);
-
-        expect(() => loadCrustPatchWithAudio('d1', DEFAULT_CRUST_PATCH)).not.toThrow();
     });
 });

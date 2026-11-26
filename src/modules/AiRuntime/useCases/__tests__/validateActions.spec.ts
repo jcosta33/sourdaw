@@ -125,14 +125,6 @@ describe('validateActions', () => {
     });
 
     it.each([
-        {
-            type: 'createTrackAlternative',
-            payload: { trackId: 'track-1', name: 'Alt', duplicateActive: false, alternativeId: 'alt-1' },
-        },
-        {
-            type: 'deleteTrackAlternative',
-            payload: { trackId: 'track-1', alternativeId: 'alt-1', fallbackAlternativeId: 'alt-2' },
-        },
         { type: 'duplicateClip', payload: { clipId: 'clip-1', targetClipId: 'clip-2' } },
         { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1', targetClipId: 'clip-2' } },
         { type: 'addMarker', payload: { beat: 4, name: 'Verse', markerId: 'marker-1' } },

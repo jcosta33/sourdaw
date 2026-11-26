@@ -3,7 +3,7 @@ import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } fr
 import { isEngineHostedPluginDeviceType } from '../../repositories/deviceStrategy/isEngineHostedPluginDeviceType';
 import { type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
 
-import { readHostedPluginTail } from './hostedPluginTail';
+import { type HostedTailSamplesByInstanceId, readHostedPluginTail } from './hostedPluginTail';
 
 type DeviceChainEntry = {
     id: string;
@@ -25,20 +25,24 @@ export type ProjectDeviceTailsInput = {
      */
     tailForDeviceType: (deviceType: string) => TailDeclarationLike | undefined;
     /**
-     * The tail a hosted plugin instance reported about itself. A hosted device
-     * declares none by type — every one spells `external-plugin` — so its tail
-     * is its instance's. Defaults to the live report PluginHost records.
+     * The tail each hosted plugin instance reported about itself, as PluginHost
+     * records it. A hosted device declares none by type — every one spells
+     * `external-plugin` — so its tail is its instance's. Passed in so the caller
+     * that subscribes to the store hands over exactly what it rendered from.
      */
-    tailForHostedInstance?: (externalInstanceId: string) => TailDeclarationLike | undefined;
+    hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId;
+    /** The rate those frames are in: the running engine's, or `null` when none runs. */
+    engineSampleRate: number | null;
 };
 
 function deviceTail(
     device: DeviceChainEntry,
     tailForDeviceType: ProjectDeviceTailsInput['tailForDeviceType'],
-    tailForHostedInstance: NonNullable<ProjectDeviceTailsInput['tailForHostedInstance']>
+    hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId,
+    engineSampleRate: number | null
 ): TailDeclarationLike | undefined {
     if (isEngineHostedPluginDeviceType(device.type) && device.externalInstanceId !== undefined) {
-        return tailForHostedInstance(device.externalInstanceId);
+        return readHostedPluginTail(device.externalInstanceId, hostedTailSamplesByInstanceId, engineSampleRate);
     }
     return tailForDeviceType(device.type);
 }
@@ -67,7 +71,8 @@ export function projectDeviceTails({
     devices,
     automationLanes = [],
     tailForDeviceType,
-    tailForHostedInstance = readHostedPluginTail,
+    hostedTailSamplesByInstanceId,
+    engineSampleRate,
 }: ProjectDeviceTailsInput) {
     const projected = devices.map((device) => ({
         id: device.id,
@@ -75,7 +80,7 @@ export function projectDeviceTails({
         parameterValues: device.parameterValues,
         deviceState: device.deviceState,
         bypassed: device.bypassed,
-        tail: deviceTail(device, tailForDeviceType, tailForHostedInstance),
+        tail: deviceTail(device, tailForDeviceType, hostedTailSamplesByInstanceId, engineSampleRate),
     }));
 
     const automatedParameterIds = projected.map(() => new Set<string>());
