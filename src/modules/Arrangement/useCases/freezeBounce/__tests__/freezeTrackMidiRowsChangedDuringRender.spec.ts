@@ -29,7 +29,6 @@ import {
 } from '#/modules/Project/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { addClip, getArrangementHandlers, setArrangementEventBus } from '../../index';
@@ -43,11 +42,6 @@ registerSupportingServicePorts();
 // can land inside the window.
 vi.mock('../renderOffline', () => ({ renderTrackOffline: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-
-vi.mock('../../../services/computeTrackHash', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../../services/computeTrackHash')>();
-    return { computeTrackHash: vi.fn(original.computeTrackHash) };
-});
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -117,7 +111,6 @@ beforeEach(async () => {
     vi.mocked(renderTrackOffline).mockReset();
     vi.mocked(notifyUser).mockReset();
     vi.mocked(cacheAudioBuffer).mockClear();
-    vi.mocked(computeTrackHash).mockClear();
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('freeze midi rows changed during render test');
     removeCrdtDoc('root');
@@ -277,77 +270,46 @@ describe('a freeze whose controller rows change during the render', () => {
     });
 });
 
-describe('a freeze whose notes change while the digest is pending', () => {
-    it('refuses the take when a note the render read is gone by the commit', async () => {
-        const realHash = (
-            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
-                '../../../services/computeTrackHash'
-            )
-        ).computeTrackHash;
+describe('a freeze whose notes change and change back during the render', () => {
+    it('renders the notes it captured and commits the take once they are back', async () => {
         const original = midiStore.value!.notesByClipId[CLIP_ID]!;
-        vi.mocked(computeTrackHash).mockImplementationOnce(async (clips, devices) => {
-            const hash = await realHash(clips, devices);
-            const state = midiStore.value!;
+        let notesTheRenderRead: string[] = [];
+        vi.mocked(renderTrackOffline).mockImplementationOnce(async (_track, _start, _end, options) => {
             midiStore.set({
-                ...state,
+                ...midiStore.value!,
                 notesByClipId: {
                     [CLIP_ID]: [
                         ...original,
-                        { id: 'hash-window-note', pitch: 72, startBeat: 1, duration: 1, velocity: 80 },
+                        { id: 'render-window-note', pitch: 72, startBeat: 1, duration: 1, velocity: 80 },
                     ],
                 },
             });
-            return hash;
-        });
-
-        const entered = Promise.withResolvers<void>();
-        const resume = Promise.withResolvers<void>();
-        let notesTheRenderRead: string[] = [];
-        vi.mocked(renderTrackOffline).mockImplementationOnce(async (_track, _start, _end, options) => {
-            // The real render reads the MIDI store when it starts, after the digest.
-            notesTheRenderRead = (midiStore.value?.notesByClipId[CLIP_ID] ?? []).map((note) => note.id);
+            // The real render reads the notes from the capture it is handed, never the store.
+            notesTheRenderRead = (options?.captured?.source.project.midi?.notesByClipId[CLIP_ID] ?? []).map(
+                (note) => note.id
+            );
             options?.onScheduled?.({ scheduledNotes: 1, scheduledBuffers: [], withheldDeviceTypes: [] });
-            entered.resolve();
-            await resume.promise;
+            midiStore.set({ ...midiStore.value!, notesByClipId: { [CLIP_ID]: original } });
             return renderedBuffer();
         });
 
-        const freezing = executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
-        await entered.promise;
-        expect(notesTheRenderRead).toEqual(['first-note', 'hash-window-note']);
-        midiStore.set({ ...midiStore.value!, notesByClipId: { [CLIP_ID]: original } });
-        resume.resolve();
-        await freezing;
+        await executeAppAction({ type: 'freezeTrack', payload: { trackId: TRACK_ID } });
 
-        expect(findTrack().frozen).toBe(false);
-        expect(cacheAudioBuffer).not.toHaveBeenCalled();
-        expect(notifyUser).toHaveBeenCalledWith(CHANGED_MESSAGE, 'error');
+        expect(notesTheRenderRead).toEqual(['first-note']);
+        expect(findTrack().frozen).toBe(true);
+        expect(cacheAudioBuffer).toHaveBeenCalledTimes(1);
     });
 });
 
-describe('a row written after the source check resolves', () => {
-    it('refuses the take when a CC row lands between the source check and the commit', async () => {
-        const realHash = (
-            await vi.importActual<typeof import('../../../services/computeTrackHash')>(
-                '../../../services/computeTrackHash'
-            )
-        ).computeTrackHash;
-        let hashCalls = 0;
-        let sourceCheckResolved = false;
-        vi.mocked(computeTrackHash).mockImplementation(async (clips, devices) => {
-            hashCalls += 1;
-            const hash = await realHash(clips, devices);
-            // The first digest is the freeze's own, the second is the check before the render, the
-            // third is the commit-time source check's last call.
-            sourceCheckResolved = hashCalls === 3;
-            return hash;
-        });
-        // The first project read after the source check resolves is the current-task check that
-        // precedes the commit; a row written there lands after every await of the freeze.
+describe('a row written after the render resolves', () => {
+    it('refuses the take when a CC row lands between the render and the commit', async () => {
+        let renderResolved = false;
+        // The first project read after the render resolves is the current-task check that
+        // precedes the source check; a row written there lands after every await of the freeze.
         const readProject = Object.getOwnPropertyDescriptor(projectStore, 'value')!.get!;
         const projectRead = vi.spyOn(projectStore, 'value', 'get').mockImplementation(() => {
-            if (sourceCheckResolved) {
-                sourceCheckResolved = false;
+            if (renderResolved) {
+                renderResolved = false;
                 midiStore.set({
                     ...midiStore.value!,
                     ccByClipId: { [CLIP_ID]: [{ id: 'late-cc', controller: 1, value: 5, beat: 0, channel: 0 }] },
@@ -357,10 +319,11 @@ describe('a row written after the source check resolves', () => {
         });
 
         try {
-            await freezeWhile(() => undefined);
+            await freezeWhile(() => {
+                renderResolved = true;
+            });
         } finally {
             projectRead.mockRestore();
-            vi.mocked(computeTrackHash).mockImplementation(realHash);
         }
 
         expect(midiStore.value?.ccByClipId[CLIP_ID]?.map((row) => row.id)).toEqual(['late-cc']);

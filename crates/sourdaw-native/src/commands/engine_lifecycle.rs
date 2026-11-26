@@ -44,7 +44,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::plugin_window::PluginWindowHost;
-use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{locked_or_poisoned, AppState, EnginePluginInstanceData};
 
 use super::crumbs::{self, CrumbsState};
@@ -316,10 +315,11 @@ fn retire_engine_owned_plugins(
 /// forget the window that held it.
 ///
 /// The same pair `unload_plugin_runtime` performs, reached through the same
-/// helpers rather than re-derived: `with_unload_control` takes the runtime's
-/// control seam without asking the lifecycle for permission — the instance is
-/// on its way out — and [`lend_on_ui_thread`] is what carries the call to the
-/// thread the format binds it to. A refusal is logged and the retire carries
+/// helper rather than re-derived: `with_unload_control_on_ui_thread` takes the
+/// runtime's control gate without asking the lifecycle for permission — the
+/// instance is on its way out — and carries the call to the thread the format
+/// binds it to, claiming the access seam only once it has landed there. A
+/// refusal is logged and the retire carries
 /// on, because a third-party editor must not be able to keep a dead engine in
 /// its slot.
 fn close_editor_before_retiring(
@@ -328,11 +328,11 @@ fn close_editor_before_retiring(
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
 ) {
-    if let Err(error) = runtime.with_unload_control(EDITOR_CLOSE_TIMEOUT, |plugin| {
-        lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
-            plugin.close_gui()
-        })
-    }) {
+    if let Err(error) = runtime.with_unload_control_on_ui_thread(
+        EDITOR_CLOSE_TIMEOUT,
+        editor_thread(windows_host),
+        |plugin| plugin.close_gui(),
+    ) {
         eprintln!("[Plugin] GUI cleanup failed during engine retire: {error}");
     }
 

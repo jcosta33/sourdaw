@@ -130,7 +130,7 @@ describe('createGrinderNode', () => {
             trackId: 'track-1',
             deviceId: 'grinder-1',
             deviceType: 'grinder',
-            parameterIds: ['unmapped-param'],
+            parameterIds: ['cabIrSlot'],
         });
         const initialization = postMessage.mock.calls.find(
             (call) => (call[0] as { command?: string }).command === 'initialize-fallback-control'
@@ -142,7 +142,8 @@ describe('createGrinderNode', () => {
                 trackId: 'track-1',
                 deviceId: 'grinder-1',
                 deviceType: 'grinder',
-                parameterIds: ['unmapped-param', 'bypass'],
+                parameterIds: ['cabIrSlot', 'bypass'],
+                allowUncapturedImmediate: true,
             },
             correlation: { workletGeneration: expect.any(Number) },
         });
@@ -200,16 +201,16 @@ describe('createGrinderNode', () => {
             trackId: 'track-1',
             deviceId: 'grinder-1',
             deviceType: 'grinder',
-            parameterIds: ['unmapped-param'],
+            parameterIds: ['cabIrSlot'],
         });
         postMessage.mockClear();
         // Inject a real AudioParam-backed slot so setParam takes the
         // `node.parameters.get(name)` path (setTargetAtTime) instead of the
         // message-port coalescing path.
         const setTarget = vi.fn();
-        (node.workletNode.parameters as Map<string, unknown>).set('drive', { setTargetAtTime: setTarget });
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime: setTarget });
 
-        node.setParam('drive', 0.7);
+        node.setParam('gain', 0.7);
 
         expect(setTarget).toHaveBeenCalledWith(0.7, 0, 0.01);
         // The message-port path was NOT taken.
@@ -223,13 +224,13 @@ describe('createGrinderNode', () => {
             trackId: 'track-1',
             deviceId: 'grinder-1',
             deviceType: 'grinder',
-            parameterIds: ['drive'],
+            parameterIds: ['gain'],
         });
         const setTarget = vi.fn();
-        (node.workletNode.parameters as Map<string, unknown>).set('drive', { setTargetAtTime: setTarget });
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime: setTarget });
 
-        node.setParam('drive', 0.7, 96_000);
-        node.setParam('drive', 0.2, 48_000);
+        node.setParam('gain', 0.7, 96_000);
+        node.setParam('gain', 0.2, 48_000);
 
         expect(setTarget).toHaveBeenNthCalledWith(1, 0.7, 2, 0.01);
         expect(setTarget).toHaveBeenNthCalledWith(2, 0.2, 1.5, 0.01);
@@ -239,10 +240,10 @@ describe('createGrinderNode', () => {
         const node = await createGrinderNode(makeCtx());
         postMessage.mockClear();
         const setTarget = vi.fn();
-        (node.workletNode.parameters as Map<string, unknown>).set('drive', { setTargetAtTime: setTarget });
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime: setTarget });
 
-        node.setParam('drive', Number.NaN);
-        node.setParam('drive', Number.POSITIVE_INFINITY);
+        node.setParam('gain', Number.NaN);
+        node.setParam('gain', Number.POSITIVE_INFINITY);
 
         expect(setTarget).not.toHaveBeenCalled();
         expect(postMessage).not.toHaveBeenCalled();
@@ -332,12 +333,12 @@ describe('createGrinderNode', () => {
             trackId: 'track-1',
             deviceId: 'grinder-1',
             deviceType: 'grinder',
-            parameterIds: ['latency-control'],
+            parameterIds: ['cabIrSlot'],
         });
         expect(telemetryAllocator.allocateSlot).toHaveReturnedWith(null);
         postMessage.mockClear();
 
-        node.setParam('latency-control', 0.5, 48_000);
+        node.setParam('cabIrSlot', 0.5, 48_000);
 
         expect(postMessage).not.toHaveBeenCalled();
     });
@@ -486,10 +487,15 @@ describe('createGrinderNode', () => {
         const cancelRaf = vi.fn();
         vi.stubGlobal('cancelAnimationFrame', cancelRaf);
 
-        const node = await createGrinderNode(makeCtx());
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['cabIrSlot'],
+        });
         node.onMeterData(vi.fn()); // schedules a meter poll (meterRafId = 10)
         node.onMeterData(vi.fn()); // cancels 10, reschedules (meterRafId = 11)
-        node.setParam('unmapped-param', 0.5); // queues a param flush (paramFlushRafId = 12)
+        node.setParam('cabIrSlot', 0.5); // queues a param flush (paramFlushRafId = 12)
 
         node.destroy();
 
@@ -522,11 +528,11 @@ describe('createGrinderNode', () => {
             trackId: 'track-1',
             deviceId: 'grinder-1',
             deviceType: 'grinder',
-            parameterIds: ['unmapped-param'],
+            parameterIds: ['cabIrSlot'],
         });
         postMessage.mockClear();
 
-        node.setParam('unmapped-param', 0.42);
+        node.setParam('cabIrSlot', 0.42);
 
         expect(postMessage).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -536,7 +542,7 @@ describe('createGrinderNode', () => {
                     trackId: 'track-1',
                     deviceId: 'grinder-1',
                     deviceType: 'grinder',
-                    parameterId: 'unmapped-param',
+                    parameterId: 'cabIrSlot',
                 },
                 value: 0.42,
                 scheduling: { targetFrame: null, deadlineFrame: null },
@@ -616,7 +622,7 @@ describe('GrinderNode setParam coalescing', () => {
             trackId: 'track-1',
             deviceId: 'grinder-1',
             deviceType: 'grinder',
-            parameterIds: ['drive', 'tone'],
+            parameterIds: ['preOverdriveDrive', 'preOverdriveTone'],
         });
     }
 
@@ -625,9 +631,9 @@ describe('GrinderNode setParam coalescing', () => {
         postMessage.mockClear(); // ignore the init post
 
         // A rapid sweep: many setParam calls within one frame.
-        node.setParam('drive', 0.1);
-        node.setParam('drive', 0.4);
-        node.setParam('drive', 0.9);
+        node.setParam('preOverdriveDrive', 0.1);
+        node.setParam('preOverdriveDrive', 0.4);
+        node.setParam('preOverdriveDrive', 0.9);
 
         // Nothing posted yet — buffered until the frame flush.
         const paramPostsBeforeFrame = postMessage.mock.calls.filter(
@@ -650,7 +656,7 @@ describe('GrinderNode setParam coalescing', () => {
                     trackId: 'track-1',
                     deviceId: 'grinder-1',
                     deviceType: 'grinder',
-                    parameterId: 'drive',
+                    parameterId: 'preOverdriveDrive',
                 },
                 value: 0.9,
                 scheduling: { targetFrame: null, deadlineFrame: null },
@@ -669,8 +675,9 @@ describe('GrinderNode setParam coalescing', () => {
         const node = await makeNode();
         postMessage.mockClear();
 
-        node.setParam('drive', 0.2, 1_024);
-        node.setParam('drive', 0.8, 2_048);
+        node.setParam('preOverdriveDrive', 0.2, 1_024);
+        node.setParam('preOverdriveDrive', 0.8, 2_048);
+        node.setParam('ampModel', 4, 3_072); // Known but not captured: scheduled admission remains closed.
 
         const scheduledPostsBeforeFrame = postMessage.mock.calls.filter(
             (call) => (call[0] as { command?: string }).command === 'set-fallback-param'
@@ -708,9 +715,9 @@ describe('GrinderNode setParam coalescing', () => {
         const node = await makeNode();
         postMessage.mockClear();
 
-        node.setParam('drive', 0.5);
-        node.setParam('tone', 0.2);
-        node.setParam('drive', 0.7);
+        node.setParam('preOverdriveDrive', 0.5);
+        node.setParam('preOverdriveTone', 0.2);
+        node.setParam('preOverdriveDrive', 0.7);
 
         flushFrame();
 
@@ -718,10 +725,16 @@ describe('GrinderNode setParam coalescing', () => {
             .filter((c) => (c[0] as { command?: string })?.command === 'set-fallback-param')
             .map((c) => c[0]);
         expect(paramPosts).toContainEqual(
-            expect.objectContaining({ target: expect.objectContaining({ parameterId: 'drive' }), value: 0.7 })
+            expect.objectContaining({
+                target: expect.objectContaining({ parameterId: 'preOverdriveDrive' }),
+                value: 0.7,
+            })
         );
         expect(paramPosts).toContainEqual(
-            expect.objectContaining({ target: expect.objectContaining({ parameterId: 'tone' }), value: 0.2 })
+            expect.objectContaining({
+                target: expect.objectContaining({ parameterId: 'preOverdriveTone' }),
+                value: 0.2,
+            })
         );
         expect(paramPosts.length).toBe(2);
     });

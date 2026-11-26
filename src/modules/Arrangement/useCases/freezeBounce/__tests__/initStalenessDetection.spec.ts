@@ -2,17 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
+import { type Track } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores/trackStore';
+import { digestFreezePrintInput } from '../digestFreezePrintInput';
 import { initStalenessDetection } from '../initStalenessDetection';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: vi.fn(),
 }));
 
-vi.mock('../../../services/computeTrackHash', () => ({
-    computeTrackHash: vi.fn().mockResolvedValue('mock-hash'),
+vi.mock('../digestFreezePrintInput', () => ({
+    digestFreezePrintInput: vi.fn().mockReturnValue('mock-hash'),
 }));
 
 /**
@@ -45,7 +46,7 @@ describe('initStalenessDetection', () => {
     it('does nothing if no tracks are frozen', async () => {
         const unsub = initStalenessDetection();
         trackStore.set({
-            tracks: [{ id: 't1', freezeState: { status: 'unfrozen' }, clips: [] } as any],
+            tracks: [{ id: 't1', sends: [], freezeState: { status: 'unfrozen' }, clips: [] } as any],
             selectedTrackId: null,
         });
 
@@ -64,6 +65,7 @@ describe('initStalenessDetection', () => {
         // later fix, only by rendering again.
         const legacyFrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: {
                 status: 'frozen',
                 sourceContentHash: 'mock-hash',
@@ -78,7 +80,7 @@ describe('initStalenessDetection', () => {
         trackStore.set({ tracks: [{ ...legacyFrozenTrack } as any], selectedTrackId: null });
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(digestFreezePrintInput).not.toHaveBeenCalled();
         const call = vi.mocked(updateTrack).mock.calls[0];
         if (!call) {
             throw new Error('expected the legacy buffer to be marked stale');
@@ -91,6 +93,7 @@ describe('initStalenessDetection', () => {
     it('leaves a buffer baked under the current freeze rules alone', async () => {
         const currentFrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: {
                 status: 'frozen',
                 sourceContentHash: 'mock-hash',
@@ -120,6 +123,7 @@ describe('initStalenessDetection', () => {
 
         const legacyFrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: {
                 status: 'frozen',
                 sourceContentHash: 'mock-hash',
@@ -146,6 +150,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -160,13 +165,14 @@ describe('initStalenessDetection', () => {
 
         const unsub = initStalenessDetection();
 
-        vi.mocked(computeTrackHash).mockResolvedValue('new-hash');
+        vi.mocked(digestFreezePrintInput).mockReturnValue('new-hash');
 
         // Mutate the clips array reference to trigger detection
         trackStore.set({
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -181,7 +187,7 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).toHaveBeenCalled();
+        expect(digestFreezePrintInput).toHaveBeenCalled();
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
 
         const call = vi.mocked(updateTrack).mock.calls[0];
@@ -204,6 +210,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'same-hash',
@@ -218,13 +225,14 @@ describe('initStalenessDetection', () => {
 
         const unsub = initStalenessDetection();
 
-        vi.mocked(computeTrackHash).mockResolvedValue('same-hash');
+        vi.mocked(digestFreezePrintInput).mockReturnValue('same-hash');
 
         // Mutate the clips array reference
         trackStore.set({
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'same-hash',
@@ -239,7 +247,7 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).toHaveBeenCalled();
+        expect(digestFreezePrintInput).toHaveBeenCalled();
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
     });
@@ -253,6 +261,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -267,7 +276,7 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(digestFreezePrintInput).not.toHaveBeenCalled();
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
     });
@@ -277,6 +286,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -290,13 +300,14 @@ describe('initStalenessDetection', () => {
         });
 
         const unsub = initStalenessDetection();
-        vi.mocked(computeTrackHash).mockResolvedValue('new-hash');
+        vi.mocked(digestFreezePrintInput).mockReturnValue('new-hash');
 
         // Same clips reference, but a new devices array reference.
         trackStore.set({
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -311,7 +322,7 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).toHaveBeenCalled();
+        expect(digestFreezePrintInput).toHaveBeenCalled();
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         unsub();
     });
@@ -321,6 +332,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -339,7 +351,7 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(digestFreezePrintInput).not.toHaveBeenCalled();
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
     });
@@ -354,6 +366,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
+                    sends: [],
                     freezeState: {
                         status: 'frozen',
                         sourceContentHash: 'old-hash',
@@ -368,7 +381,7 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(digestFreezePrintInput).not.toHaveBeenCalled();
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
     });
@@ -378,6 +391,7 @@ describe('initStalenessDetection', () => {
         // frozen-status guard short-circuits before any hashing.
         const unfrozenTrack = {
             id: 't1',
+            sends: [],
             freezeState: { status: 'unfrozen' },
             clips: [{}] as never[],
             devices: [] as never[],
@@ -393,23 +407,27 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(digestFreezePrintInput).not.toHaveBeenCalled();
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
     });
 
-    it('does not recompute the hash when a frozen track clips and devices refs are unchanged', async () => {
+    it('does not digest a frozen track rebuilt around the same field values', async () => {
+        // A write to another track rebuilds this one's object, but keeps each field's reference.
         const sharedClips = [] as never[];
         const sharedDevices = [] as never[];
+        const sharedFreezeState = {
+            status: 'frozen',
+            sourceContentHash: 'old-hash',
+            renderSettings: CURRENT_RENDER_SETTINGS,
+        };
+        const sharedSends: Track['sends'] = [];
         trackStore.set({
             tracks: [
                 {
                     id: 't1',
-                    freezeState: {
-                        status: 'frozen',
-                        sourceContentHash: 'old-hash',
-                        renderSettings: CURRENT_RENDER_SETTINGS,
-                    },
+                    sends: sharedSends,
+                    freezeState: sharedFreezeState,
                     clips: sharedClips,
                     devices: sharedDevices,
                 } as any,
@@ -418,16 +436,13 @@ describe('initStalenessDetection', () => {
         });
         const unsub = initStalenessDetection();
 
-        // Re-set carrying the SAME array references → no ref change → no hash.
+        // Re-set carrying the SAME field references → no ref change → no digest.
         trackStore.set({
             tracks: [
                 {
                     id: 't1',
-                    freezeState: {
-                        status: 'frozen',
-                        sourceContentHash: 'old-hash',
-                        renderSettings: CURRENT_RENDER_SETTINGS,
-                    },
+                    sends: sharedSends,
+                    freezeState: sharedFreezeState,
                     clips: sharedClips,
                     devices: sharedDevices,
                 } as any,
@@ -437,7 +452,7 @@ describe('initStalenessDetection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(digestFreezePrintInput).not.toHaveBeenCalled();
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
     });
