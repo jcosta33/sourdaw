@@ -507,17 +507,21 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // findToasterNodeOnStrip.ts is absent on purpose: measured 0. It is the
         // id-scoping half, shared by every caller, and names neither sink.
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
-        // Count provenance: measured 1 in code — the single `setParam` call on
-        // the flush path, unchanged. The flush scopes by `deviceId` but
-        // deliberately does *not* gate on `ready`: the placeholder controller
-        // for a loading Toaster buffers `setParam` into `pendingParams` and the
-        // loader replays it, so skipping a not-ready node here would discard kit
-        // edits made during load instead of deferring them.
-        'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 1,
+        // The kit bridge owns one runtime scalar sink for queued kit edits,
+        // acquired Master previews, and committed Master reconciliation. The
+        // queued path still admits loading placeholders; captured previews keep
+        // their original worklet and native carrier.
+        'src/modules/Toaster/useCases/toasterParamBridge/writeToasterKitScalar.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
     },
     'load-compile-hydration': {
+        // The broad compile matcher also counts this pure project patch builder:
+        // its declaration and the handler's import and call construct a sparse
+        // chunk preserving siblings. They do not load or write an audio runtime;
+        // the handler commits through the existing device patch action boundary.
+        'src/modules/Toaster/models/ToasterMasterGainPatch.ts': 1,
+        'src/modules/Toaster/handlers/handleSetToasterMasterGain.ts': 2,
         'src/app/bootstrap.ts': 1,
         // Count provenance: the AC-011 preflight calls the pure topology
         // compiler for the live and isolated project projections. These three
@@ -1469,7 +1473,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Toaster/useCases/loadToasterKit.ts',
     'src/modules/Toaster/useCases/toasterSubscriber.ts',
     'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts',
-    'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts',
+    'src/modules/Toaster/useCases/toasterParamBridge/writeToasterKitScalar.ts',
     'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts',

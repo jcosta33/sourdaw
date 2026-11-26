@@ -3,10 +3,10 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { type ToasterKit } from '../../models/ToasterKit';
 import { updateKit } from '../../stores/toasterStore';
-import { writeToasterParamsNatively } from '../writeToasterParamsNatively';
 
 import { findToasterNodeOnStrip } from './findToasterNodeOnStrip';
 import { kitPending } from './toasterKitParamQueue';
+import { writeToasterKitScalar } from './writeToasterKitScalar';
 
 const KIT_PARAM_MAP = {
     swing: 'swing',
@@ -45,15 +45,13 @@ function flushKitParam(cacheKey: string): void {
     // (AudioEngine/engine/wasmDeviceRegistry.ts). Skipping a not-ready node
     // here would discard every kit edit made during load rather than defer it.
     const deviceNode = findToasterNodeOnStrip({ strip, deviceId: entry.deviceId });
-    if (deviceNode?.toasterControls) {
-        deviceNode.toasterControls.setParam(entry.paramName, entry.value);
-    }
-    // `paramName` is already the engine's own spelling, which is the vocabulary
-    // the native body takes.
-    writeToasterParamsNatively({
+    writeToasterKitScalar({
         trackId: target.trackId,
         deviceId: entry.deviceId,
-        messages: [{ type: 'param', name: entry.paramName, value: entry.value }],
+        controls: deviceNode?.toasterControls ?? null,
+        name: entry.paramName,
+        value: entry.value,
+        native: { kind: 'addressed' },
     });
 }
 

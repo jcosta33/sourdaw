@@ -6,10 +6,10 @@ import { fromToasterKitState } from '../models/ToasterKitState';
 import { discardPendingToasterKitUpdates, loadKit, toasterStore } from '../stores/toasterStore';
 
 import { getToasterControls } from './getToasterControls';
-import { writeToasterParamsNatively } from './writeToasterParamsNatively';
 import { loadToasterKitPreset } from './loadToasterKit';
 import { observePublishedToasterKit } from './observePublishedToasterKit';
 import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
+import { writeToasterKitScalar } from './toasterParamBridge/writeToasterKitScalar';
 
 export function reconcileToasterKitFromProject(
     deviceId: string,
@@ -41,11 +41,13 @@ export function reconcileToasterKitFromProject(
         jsonValuesEqual({ ...state.kit, masterGain: kit.masterGain }, kit)
     ) {
         loadKit(deviceId, kit);
-        getToasterControls(deviceId)?.setParam('master_gain', kit.masterGain);
-        writeToasterParamsNatively({
+        writeToasterKitScalar({
             trackId: target.trackId,
             deviceId,
-            messages: [{ type: 'param', name: 'master_gain', value: kit.masterGain }],
+            controls: getToasterControls(deviceId),
+            name: 'master_gain',
+            value: kit.masterGain,
+            native: { kind: 'addressed' },
         });
         return;
     }

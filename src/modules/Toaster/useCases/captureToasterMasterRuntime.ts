@@ -6,6 +6,7 @@ import { getSettledProjectIdentity } from '#/modules/Project/stores';
 import { captureToasterDeviceLifetime } from '../stores/toasterStore';
 
 import { findToasterNodeOnStrip } from './toasterParamBridge/findToasterNodeOnStrip';
+import { writeToasterKitScalar } from './toasterParamBridge/writeToasterKitScalar';
 
 /** Capture the runtime a Master gesture started on; never retarget its samples. */
 export function captureToasterMasterRuntime(deviceId: string): {
@@ -40,8 +41,14 @@ export function captureToasterMasterRuntime(deviceId: string): {
         isCurrent,
         setGain: (value) => {
             if (!isCurrent()) return;
-            controls.setParam('master_gain', value);
-            writeNative?.({ master_gain: value });
+            writeToasterKitScalar({
+                trackId: target.trackId,
+                deviceId,
+                controls,
+                name: 'master_gain',
+                value,
+                native: { kind: 'captured', write: writeNative },
+            });
         },
     };
 }
