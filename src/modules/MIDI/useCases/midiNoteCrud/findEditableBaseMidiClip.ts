@@ -1,12 +1,25 @@
-import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 
-function clipCannotBeEdited(clip: NonNullable<typeof trackStore.value>['tracks'][number]['clips'][number]): boolean {
+function clipCannotBeEdited(clip: Clip): boolean {
     return (
         clip.type !== 'midi' ||
         !!clip.locked ||
         !!clip.loopEnabled ||
         !!clip.isLinkedInstance ||
         clip.parentClipId !== undefined
+    );
+}
+
+function hasConflictingTake(trackId: string, clip: Clip): boolean {
+    const lanes = takeLaneStore.value?.lanes ?? [];
+    return lanes.some(
+        (lane) =>
+            lane.trackId === trackId &&
+            lane.takes.some(
+                (take) =>
+                    take.clipId === clip.id ||
+                    (take.midiSource !== undefined && take.startBeat < clip.endBeat && take.endBeat > clip.startBeat)
+            )
     );
 }
 
@@ -24,17 +37,7 @@ export function findEditableBaseMidiClip(clipId: string, trackId: string) {
         target.track.frozen ||
         clipCannotBeEdited(target.clip) ||
         clips.some(({ clip }) => clip.parentClipId === clipId) ||
-        takeLaneStore.value?.lanes.some(
-            (lane) =>
-                lane.trackId === trackId &&
-                lane.takes.some(
-                    (take) =>
-                        take.clipId === clipId ||
-                        (take.midiSource !== undefined &&
-                            take.startBeat < target.clip.endBeat &&
-                            take.endBeat > target.clip.startBeat)
-                )
-        )
+        hasConflictingTake(trackId, target.clip)
     ) {
         return null;
     }

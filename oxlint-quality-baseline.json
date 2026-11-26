@@ -14886,9 +14886,6 @@
     "src/modules/MIDI/useCases/midiNoteTransforms/getRestoreMidiClipNotesStatus.ts": {
         "eslint/complexity": {
             "count": 1
-        },
-        "eslint/max-lines-per-function": {
-            "count": 1
         }
     },
     "src/modules/MIDI/useCases/midiNoteTransforms/joinNotes.ts": {

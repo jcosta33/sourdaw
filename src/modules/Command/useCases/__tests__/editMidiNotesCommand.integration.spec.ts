@@ -156,6 +156,45 @@ function compile(actions: readonly AppAction[]) {
     return { ...compiled, commands };
 }
 
+function adoptBaseNotesAsTake() {
+    const takeLaneState = {
+        lanes: [
+            {
+                id: 'motif-takes',
+                trackId: TRACK_ID,
+                takes: [
+                    {
+                        id: 'motif-take',
+                        clipId: CLIP_ID,
+                        name: 'Take 1',
+                        startBeat: 16,
+                        endBeat: 24,
+                        selected: true,
+                    },
+                ],
+                activeCompRegions: [{ takeId: 'motif-take', startBeat: 16, endBeat: 24 }],
+            },
+        ],
+    };
+    takeLaneStore.set(takeLaneState);
+    flushAutomergeStorageWrites();
+    const readDurableTakeLanes = () => getCrdtDoc<{ takeLanes?: typeof takeLaneState }>('root')?.takeLanes;
+    expect(readDurableTakeLanes()).toEqual(takeLaneState);
+    return { takeLaneState, readDurableTakeLanes };
+}
+
+function expectAdoptedTakePreserved(
+    take: ReturnType<typeof adoptBaseNotesAsTake>,
+    expectedNotes: EditMidiNotesPayload['guard']['expectedNotes'],
+    history: typeof undoStore.value
+): void {
+    expect(clipNotes()).toEqual(expectedNotes);
+    expect(midiStore.value?.notesByClipId[CLIP_ID]).toEqual(expectedNotes);
+    expect(take.readDurableTakeLanes()).toEqual(take.takeLaneState);
+    expect(takeLaneStore.value).toEqual(take.takeLaneState);
+    expect(undoStore.value).toEqual(history);
+}
+
 describe('selective MIDI command on Automerge project truth', () => {
     beforeEach(() => {
         Container.clear();
@@ -308,58 +347,33 @@ describe('selective MIDI command on Automerge project truth', () => {
         expect(trackStore.value).toEqual(before);
     });
 
-    it.each(['undo', 'redo'] as const)('refuses selective %s after a take adopts the base notes', async (direction) => {
+    it('refuses selective undo after a take adopts the base notes', async () => {
         const edit = editAction([{ type: 'patch', noteId: PHRASE.id, patch: { pitch: 63 } }]);
         expect(await executeAppActionBatch([edit])).toMatchObject({ status: 'committed' });
         const edited = [OPENING, { ...PHRASE, pitch: 63 }, FILLER, TAIL];
         expect(clipNotes()).toEqual(edited);
-        if (direction === 'redo') {
-            await expect(undo()).resolves.toEqual({ headConsumed: true });
-            expect(clipNotes()).toEqual(MOTIF);
-        }
 
-        const takeLaneState = {
-            lanes: [
-                {
-                    id: 'motif-takes',
-                    trackId: TRACK_ID,
-                    takes: [
-                        {
-                            id: 'motif-take',
-                            clipId: CLIP_ID,
-                            name: 'Take 1',
-                            startBeat: 16,
-                            endBeat: 24,
-                            selected: true,
-                        },
-                    ],
-                    activeCompRegions: [{ takeId: 'motif-take', startBeat: 16, endBeat: 24 }],
-                },
-            ],
-        };
-        takeLaneStore.set(takeLaneState);
-        flushAutomergeStorageWrites();
-
+        const take = adoptBaseNotesAsTake();
         const history = structuredClone(undoStore.value);
-        expect(history).toMatchObject(
-            direction === 'undo'
-                ? { past: [expect.any(Object)], future: [] }
-                : { past: [], future: [expect.any(Object)] }
-        );
-        const readDurableTakeLanes = () => getCrdtDoc<{ takeLanes?: typeof takeLaneState }>('root')?.takeLanes;
-        expect(readDurableTakeLanes()).toEqual(takeLaneState);
+        expect(history).toMatchObject({ past: [expect.any(Object)], future: [] });
 
-        if (direction === 'undo') {
-            await expect(undo()).resolves.toEqual({ headConsumed: false });
-        } else {
-            await redo();
-        }
-        const expectedNotes = direction === 'undo' ? edited : MOTIF;
-        expect(clipNotes()).toEqual(expectedNotes);
-        expect(midiStore.value?.notesByClipId[CLIP_ID]).toEqual(expectedNotes);
-        expect(readDurableTakeLanes()).toEqual(takeLaneState);
-        expect(takeLaneStore.value).toEqual(takeLaneState);
-        expect(undoStore.value).toEqual(history);
+        await expect(undo()).resolves.toEqual({ headConsumed: false });
+        expectAdoptedTakePreserved(take, edited, history);
+    });
+
+    it('refuses selective redo after a take adopts the base notes', async () => {
+        const edit = editAction([{ type: 'patch', noteId: PHRASE.id, patch: { pitch: 63 } }]);
+        expect(await executeAppActionBatch([edit])).toMatchObject({ status: 'committed' });
+        expect(clipNotes()).toEqual([OPENING, { ...PHRASE, pitch: 63 }, FILLER, TAIL]);
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(clipNotes()).toEqual(MOTIF);
+
+        const take = adoptBaseNotesAsTake();
+        const history = structuredClone(undoStore.value);
+        expect(history).toMatchObject({ past: [], future: [expect.any(Object)] });
+
+        await redo();
+        expectAdoptedTakePreserved(take, MOTIF, history);
     });
 
     it('takes its exact before-image from ordered add, edit and restore predecessors', async () => {
