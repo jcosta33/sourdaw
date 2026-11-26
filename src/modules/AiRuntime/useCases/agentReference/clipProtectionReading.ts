@@ -45,6 +45,10 @@ const courtesyOpeningPattern = new RegExp(
 const referenceSeparatorPattern = /,\s*(?:and\b\s*)?|\s+and\s+/giu;
 const clipNounPattern = /\bclips?\b/iu;
 
+function projectClips(context: ProjectContext): ProjectClip[] {
+    return context.tracks.flatMap((track) => track.clips);
+}
+
 /** A list member's text and where it stands in the request. */
 export type ReferenceMember = Range & { text: string };
 type ProtectedReferenceParse = {
@@ -144,7 +148,7 @@ function blankObjectNames(maskedText: string, prompt: string, context: ProjectCo
 
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
-    const clips = context.tracks.flatMap((track) => track.clips);
+    const clips = projectClips(context);
     const references: ProtectedReferenceParse['references'] = [];
     let complete = !emptyProtectionPattern.test(quoteScan.maskedText);
     const completeVerbStarts = new Set<number>();
@@ -296,7 +300,7 @@ function readClipProtection(
     prompt: string,
     context: ProjectContext
 ): ExplicitClipProtection & { unresolvedMembers: ReferenceMember[] } {
-    const clips = context.tracks.flatMap((track) => track.clips);
+    const clips = projectClips(context);
     const parsedReferences = getProtectedReferenceTexts(prompt, context);
     const protectedIds = new Set<string>();
     const unresolvedMembers: ReferenceMember[] = [];
@@ -344,17 +348,13 @@ function readClipProtection(
     };
 }
 
-/** Whether a text speaks of a clip: by the clip noun, or by naming or selecting a project clip. */
-function namesClip(text: string, context: ProjectContext): boolean {
-    const clips = context.tracks.flatMap((track) => track.clips);
-    return (
-        clipNounPattern.test(scanPromptQuotedText(text).maskedText) ||
-        resolveProtectedClipIds(text, clips, context).length > 0
-    );
+/** Whether a text, outside its quotations, names the clip kind ("the Missing clip punchy"). */
+function statesClipNoun(text: string): boolean {
+    return clipNounPattern.test(scanPromptQuotedText(text).maskedText);
 }
 
 /**
  * One reading of a request's explicit clip protections and exclusions, shared by the callers that
  * read its protected clips and completeness and the one that reads which members did not resolve.
  */
-export const clipProtectionReading = { read: readClipProtection, namesClip } as const;
+export const clipProtectionReading = { read: readClipProtection, statesClipNoun } as const;

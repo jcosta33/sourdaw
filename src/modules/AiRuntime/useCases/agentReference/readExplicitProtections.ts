@@ -17,7 +17,7 @@ import {
     type ProtectableObjectName,
     type Token,
 } from './protectionObjectForms';
-import { protectsNothing } from './protectsNothing';
+import { type BoundMember, protectsNothing, type SelectionMember, type SlotReading } from './protectsNothing';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { readRequestTargetTrackIds } from './readRequestTargetTrackIds';
 import { readRoleFamilyProtection } from './readRoleFamilyProtection';
@@ -170,25 +170,6 @@ function readMember(input: MemberInput): MemberReading {
     return { kind: 'ignore' };
 }
 
-type SelectionMember = {
-    phrase: string;
-    scope: 'any' | 'track';
-    controls: string[];
-    pronoun: boolean;
-    anaphoric: boolean;
-};
-/** `byName` is false for a role family, which names its tracks by role rather than by track name. */
-type BoundMember = { trackIds: string[]; controls: string[]; byName: boolean };
-type SlotReading = {
-    complete: boolean;
-    uniqueTrackOwners: boolean;
-    unreadContinuations: Range[];
-    unresolved: string[];
-    selection: SelectionMember[];
-    bound: BoundMember[];
-    /** Controls the slot lists with no owner ("except for the fader"). */
-    controls: string[];
-};
 type MemberRange = Range & { afterThen: boolean; resetsOwner: boolean };
 type SlotMemberState = {
     reading: SlotReading;
@@ -392,6 +373,7 @@ function readSlotMembers(input: {
     const reading: SlotReading = {
         complete: true,
         uniqueTrackOwners: true,
+        nonTrackReferences: readNonTrackReferences(slot, references, context),
         unreadContinuations: [],
         unresolved: [],
         selection: [],
@@ -417,6 +399,19 @@ function readSlotMembers(input: {
     }
     reading.controls.push(...state.pendingControls);
     return reading;
+}
+
+/** The project references a slot states that name no track and no VCA group of tracks (a device, a section, a lane). */
+function readNonTrackReferences(slot: Slot, references: readonly NamedRange[], context: ProjectContext): Range[] {
+    const trackIds = new Set(context.tracks.map((track) => track.id));
+    const groupIds = new Set(
+        (context.vcaGroups ?? []).filter((group) => group.trackIds.length > 0).map(({ id }) => id)
+    );
+    const namesTracks = (id: string) => trackIds.has(id) || groupIds.has(id);
+    const stated = references.filter((reference) => reference.start >= slot.start && reference.end <= slot.end);
+    return stated
+        .filter((reference) => !Array.from(reference.denotes).some(namesTracks))
+        .map(({ start, end }) => ({ start, end }));
 }
 
 /** Gives an owner naming a control the controls listed before it, and returns it when later controls may join it. */
