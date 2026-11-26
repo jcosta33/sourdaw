@@ -129,6 +129,78 @@ describe('an answer about a recipe whose compressor states the Auto Makeup switc
     });
 });
 
+function recipeAnswerText(
+    role: string,
+    descriptor: string,
+    expectedId: string,
+    windows: Record<string, { minimum: number; maximum: number }> = {}
+): string {
+    const read = discoveryRead('recipe', null, role, { descriptors: [descriptor], presetTerms: [] });
+    if (read.source.kind !== 'recipe') {
+        throw new Error('Discovery fixture must be a recipe.');
+    }
+    const candidate = read.source.value.candidates.find((entry) => entry.id === expectedId);
+    if (candidate === undefined) {
+        throw new Error(`Discovery fixture must hold ${expectedId}.`);
+    }
+    const adjusted = {
+        ...candidate,
+        steps: candidate.steps.map((step) => ({
+            ...step,
+            parameters: step.parameters.map((parameter) => ({ ...parameter, ...windows[parameter.paramId] })),
+        })),
+    };
+    const value = { ...read.source.value, candidates: [adjusted] };
+    const answer = accepted(
+        compose(
+            [{ kind: 'recipe', callId: 'recipe', recipeId: expectedId }],
+            [{ receipt: read.receipt, source: { kind: 'recipe', value } }]
+        )
+    );
+    return answer.text;
+}
+
+describe('an answer about a recipe whose windows need their own precision and labels', () => {
+    it('keeps a window below the second decimal from reading as zero', () => {
+        const text = recipeAnswerText('drums', 'controlled', 'drums-controlled-gate');
+
+        expect(text).toContain('“Attack” 0.0002–0.01 “s”');
+        expect(text).not.toContain('“Attack” 0–0.01');
+    });
+
+    it('keeps distinct window ends distinct beyond two decimals', () => {
+        const text = recipeAnswerText('drums', 'controlled', 'drums-controlled-gate', {
+            attack: { minimum: 0.121, maximum: 0.124 },
+        });
+
+        expect(text).toContain('“Attack” 0.121–0.124 “s”');
+    });
+
+    it('states a choice window by its option label from the descriptor', () => {
+        const text = recipeAnswerText('bass', 'tight', 'bass-tight');
+
+        expect(text).toContain('“Type” “Highpass”;');
+        expect(text).not.toContain('“Type” 1–1');
+    });
+
+    it('states a choice window spanning two options by both labels', () => {
+        const text = recipeAnswerText('bass', 'tight', 'bass-tight', {
+            'filter-type': { minimum: 0, maximum: 1 },
+        });
+
+        expect(text).toContain('“Type” “Lowpass”–“Highpass”;');
+    });
+
+    it('leaves an ordinary window at two decimals', () => {
+        const text = recipeAnswerText('drums', 'controlled', 'drums-controlled-gate', {
+            hold: { minimum: 0.021, maximum: 0.1 },
+        });
+
+        expect(text).toContain('“Threshold” -55–-30 “dB”; ');
+        expect(text).toContain('“Hold” 0.02–0.1 “s”');
+    });
+});
+
 describe('an answer about a factory preset that names no perceptual descriptor', () => {
     it('says the recipe carries no descriptor and never claims it describes one', () => {
         const read = discoveryRead('recipe', VOCAL_ID, null, { descriptors: [], presetTerms: ['slapback'] });
