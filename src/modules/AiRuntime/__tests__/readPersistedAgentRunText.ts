@@ -1,6 +1,6 @@
 import { stringify } from 'superjson';
 
-import { createAgentRunLocalStorage } from '../stores/agentRunStore';
+import { createAgentRunLocalStorage } from '../stores/agentRunLocalStorage';
 
 /**
  * What a reload of the agent run store reads, as the single superjson text the store once kept

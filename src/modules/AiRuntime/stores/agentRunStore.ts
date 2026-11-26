@@ -1,9 +1,4 @@
 import { createStore } from '#/infra/store/createStore';
-import { type LocalStorageAdapter } from '#/infra/store/storage/createLocalStorage';
-import {
-    createPartitionedLocalStorage,
-    type LocalStoragePartition,
-} from '#/infra/store/storage/createPartitionedLocalStorage';
 import { deepFreeze } from '#/utils/deepFreeze';
 
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
@@ -66,6 +61,8 @@ import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePrepared
 import { readAgentRunAudibleImpact } from '../validators/readAgentRunAudibleImpact';
 import { readPerceptualConstraintReading } from '../validators/readPerceptualConstraintReading';
 import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan';
+
+import { createAgentRunLocalStorage } from './agentRunLocalStorage';
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
@@ -2212,24 +2209,6 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
         ...(pendingEffectRecoveryLedger.length > 0 ? { pendingEffectRecoveryLedger } : {}),
         ...(preparedStemImportRecoveryLedger.length > 0 ? { preparedStemImportRecoveryLedger } : {}),
     };
-}
-
-const agentRunPartition: LocalStoragePartition<AgentRunState, Omit<AgentRunState, 'runs'>, AgentRun> = {
-    split: ({ runs, ...index }) => ({ index, parts: runs }),
-    join: (index, runs) => ({ ...index, runs }),
-    identify: (run) => run.runId,
-};
-
-/** The backing store for agent runs: one key per run beside an index, read as a reload reads it. */
-export function createAgentRunLocalStorage(): LocalStorageAdapter<AgentRunState> {
-    return createPartitionedLocalStorage({
-        legacyKey: 'sourdaw-agent-runs',
-        indexKey: 'sourdaw-agent-runs:index',
-        partKeyPrefix: 'sourdaw-agent-runs:run:',
-        partition: agentRunPartition,
-        preserveSanitizedSourceWhen: (value) =>
-            isRecord(value) && 'schemaVersion' in value && value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION,
-    });
 }
 
 export const agentRunStore = createStore<AgentRunState>({
