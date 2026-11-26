@@ -57,7 +57,11 @@ import {
     type AgentPromptClass,
     type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
-import { type AgentPlanProposal } from '../models/AgentRun';
+import {
+    type AgentPlanProposal,
+    type AgentRunAudiblePrediction,
+    type AgentRunPlanAudibleImpact,
+} from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
@@ -1803,10 +1807,64 @@ function expectedGoal(goal: CorpusMeasuredGoal) {
     };
 }
 
+/** What a persisted prediction states of its goal, the fields a request's own words and its oracle fix. */
+function predictionStatement(prediction: AgentRunAudiblePrediction) {
+    return {
+        metric: prediction.metricId,
+        band: prediction.band,
+        relation: prediction.relation,
+        targetIds: prediction.targetIds,
+        referenceTargetIds: prediction.referenceTargetIds,
+        range: prediction.range,
+    };
+}
+
+/**
+ * The range the case's scripted measurement covers, as the fixture's section of that name. Read from the
+ * corpus turn and the fixture, never from the claim under test.
+ */
+function measuredPreviewRange(testCase: CorpusCase) {
+    const turn = testCase.providerTurns.find((candidate) => candidate.kind === 'measure-preview');
+    const section = (context.sections ?? []).find(
+        (candidate) => candidate.name.toLowerCase() === turn?.rangeName.toLowerCase()
+    );
+    if (section === undefined) {
+        throw new Error(`Case ${testCase.id} measures a range the fixture holds no section for.`);
+    }
+    return { startBeat: section.startBeat, endBeat: section.endBeat, sectionId: section.id };
+}
+
+/**
+ * The audible claim the run persisted for a perceptual or comparative case's plan agrees with its
+ * sealed oracle: a `predicted` claim of the class's kind holding exactly one prediction per oracle goal,
+ * in the claim's own form, over the range the case measures. The claim is read from the run in the run
+ * store, where production wrote it, so the oracle never passes through the deriver. A failing claim
+ * fails the case by name.
+ */
+function assertPlannedClaimAgreesWithOracle(
+    testCase: CorpusCase,
+    goals: readonly CorpusMeasuredGoal[],
+    claim: AgentRunPlanAudibleImpact | undefined
+): void {
+    expect(claim?.status, `Case ${testCase.id} persisted no predicted audible claim for its goals`).toBe('predicted');
+    if (claim?.status !== 'predicted') {
+        return;
+    }
+    const kind = testCase.promptClass === 'comparative-by-measurement' ? 'comparative' : 'perceptual';
+    expect(claim.kind, `Case ${testCase.id} claims a ${claim.kind} result for a ${kind} request`).toBe(kind);
+    const range = measuredPreviewRange(testCase);
+    expect(
+        claim.predictions.map((prediction) => predictionStatement(prediction)),
+        `Case ${testCase.id} persisted an audible claim that disagrees with its oracle goals`
+    ).toEqual(goals.map((goal) => ({ ...expectedGoal(goal), metric: goal.metric, range })));
+}
+
 /**
  * The measurement a perceptual or comparative card rests on (AC-021): the planned batch carries a
  * measured preview, its goals are exactly the oracle's, and the batch the card would hold admits
  * every one of them against that preview — so Confirm would be admitted, not refused as unverified.
+ * The plan this materializes also persists the audible claim those goals predict, which must agree
+ * with the oracle on its own.
  */
 async function measuredGoalsHold(input: {
     testCase: CorpusCase;
@@ -1837,6 +1895,11 @@ async function measuredGoalsHold(input: {
         await materialized.completion;
         return false;
     }
+    assertPlannedClaimAgreesWithOracle(
+        input.testCase,
+        input.goals,
+        agentRunLifecycle.get(runId)?.plan?.expectedImpact.audible
+    );
     const compiled = materialized.compiledActionExecution;
     const state = metricGoalStateCodec(compiled.metricGoalState);
     const observedGoals = (state?.authorities ?? []).flatMap((authority) =>
@@ -2400,6 +2463,9 @@ const BRIEF_PATH = 'root.projectMeta.productionBrief';
 /** The project field a confirmed vibe batch writes: the tracks, within which only its own may change. */
 const VIBE_BATCH_PATH = 'root.tracks.tracks';
 
+/** The id prefix of a goal that states the request's own constraint, which every batch of the run restates. */
+const REQUEST_CONSTRAINT_GOAL_PREFIX = 'constraint:';
+
 type VibeCard = NonNullable<ReturnType<typeof getPendingActionConfirmation>>;
 
 /**
@@ -2460,6 +2526,70 @@ function soleVibeCard(id: string, step: string): VibeCard {
         throw new Error(`Case ${id} lost its pending card at ${step}.`);
     }
     return card;
+}
+
+/**
+ * A vibe batch's audible claim, read from the run's plan as persisted with its card, is a `predicted`
+ * claim bound to that batch. A vibe oracle states no measured goals, so the expectation comes from what
+ * the spec pins for the batch: its card's commands name the tracks the batch acts on, and the batch's
+ * goal state holds the goals frozen for it. The claim holds exactly one prediction per perceptual goal
+ * in that state, in order, each stating the goal's metric, band, targets, reference targets, range and
+ * relation; it predicts for every track the card's commands act on (and may add a guard's goal on a
+ * track the batch leaves unedited, never one on a protected track); and every goal belongs to this
+ * batch's own schedule slot, so a claim of another batch never stands in.
+ */
+function assertVibeBatchClaim(input: {
+    id: string;
+    step: string;
+    card: VibeCard;
+    batchNumber: number;
+    protectedIds: readonly string[];
+}): void {
+    const { id, step, card, batchNumber } = input;
+    const claim = agentRunLifecycle.get(card.runId)?.plan?.expectedImpact.audible;
+    expect(claim?.status, `Case ${id} ${step} persisted no predicted audible claim`).toBe('predicted');
+    if (claim?.status !== 'predicted') {
+        return;
+    }
+    expect(claim.kind, `Case ${id} ${step} claims a ${claim.kind} result for a vibe request`).toBe('perceptual');
+    const goals = (metricGoalStateCodec(card.approvalSnapshot.metricGoalState)?.authorities ?? [])
+        .filter((authority) => authority.kind === 'perceptual')
+        .flatMap((authority) => authority.goals);
+    expect(
+        claim.predictions.map((prediction) => predictionStatement(prediction)),
+        `Case ${id} ${step} persisted an audible claim that disagrees with its batch's goals`
+    ).toEqual(
+        goals.map((goal) =>
+            predictionStatement({
+                ...goal,
+                outcome: null,
+            })
+        )
+    );
+    expect(claim.predictions.length, `Case ${id} ${step} predicts nothing`).toBeGreaterThan(0);
+    const predictedTargets = new Set(claim.predictions.flatMap((prediction) => prediction.targetIds));
+    for (const trackId of cardTrackIds(card)) {
+        expect(
+            predictedTargets.has(trackId),
+            `Case ${id} ${step} predicts nothing for ${trackId}, which its card edits`
+        ).toBe(true);
+    }
+    for (const trackId of input.protectedIds) {
+        expect(predictedTargets.has(trackId), `Case ${id} ${step} predicts a result for protected ${trackId}`).toBe(
+            false
+        );
+    }
+    const batchPrefix = `vibe:vibe-batch-${String(batchNumber)}:`;
+    for (const prediction of claim.predictions) {
+        expect(
+            prediction.goalId.startsWith(batchPrefix) || prediction.goalId.startsWith(REQUEST_CONSTRAINT_GOAL_PREFIX),
+            `Case ${id} ${step} predicts a goal of another batch: ${prediction.goalId}`
+        ).toBe(true);
+    }
+    expect(
+        claim.predictions.some((prediction) => prediction.goalId.startsWith(batchPrefix)),
+        `Case ${id} ${step} predicts no goal of its own batch`
+    ).toBe(true);
 }
 
 /**
@@ -2655,6 +2785,13 @@ async function runVibeRunCase(
         for (const [index, batch] of vibeRun.batches.entries()) {
             const step = `batch ${String(index + 2)} of ${String(total)}`;
             const card = soleVibeCard(testCase.id, step);
+            assertVibeBatchClaim({
+                id: testCase.id,
+                step,
+                card,
+                batchNumber: index + 1,
+                protectedIds: invariants.protectedIds,
+            });
             assertProposalInvariants(testCase.id, card.actions, invariants);
             matches.push(
                 isDeepStrictEqual(card.approvalSnapshot.batchPosition, { index: index + 2, total }),
