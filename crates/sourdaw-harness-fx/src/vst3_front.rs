@@ -349,7 +349,10 @@ impl IAudioProcessorTrait for Vst3Echo {
         }
         if state != 0
             && self.refuses_alternate_starts
-            && self.start_requests.fetch_add(1, Ordering::Relaxed) % 2 == 0
+            && self
+                .start_requests
+                .fetch_add(1, Ordering::Relaxed)
+                .is_multiple_of(2)
         {
             return kResultFalse;
         }

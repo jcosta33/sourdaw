@@ -1331,7 +1331,9 @@ describe('live plugin state across an app-initiated teardown', () => {
                 await activateAndEdit(SAVED_CHUNK);
                 const message = 'Out of service: it refused to start processing.';
                 externalPluginServiceMessages.set(INSTANCE_ID, message);
-                onTestFinished(() => externalPluginServiceMessages.delete(INSTANCE_ID));
+                onTestFinished(() => {
+                    externalPluginServiceMessages.delete(INSTANCE_ID);
+                });
 
                 await timeOutThenRejectUnload();
 
