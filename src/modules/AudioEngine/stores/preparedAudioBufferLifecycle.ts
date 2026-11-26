@@ -1,4 +1,12 @@
 import {
+    readPreparedOwner,
+    requiresPromotionReconciliation,
+    type PreparedAudioBufferMetadata,
+    type PreparedAudioBufferOwner,
+    type PreparedSerializedAudioBuffer,
+} from '../transformers/audioBufferPersistenceIdentity';
+
+import {
     finalizedOwner,
     isValidPreparedAudioBufferPair,
     PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY,
@@ -7,15 +15,10 @@ import {
     promotedOwner,
     readPreparedAudioRecoveryMetadata,
     readPreparedAudioRecoveryRecord,
-    readPreparedOwner,
-    requiresPromotionReconciliation,
     serializedBuffersEqual,
     temporaryOwner,
-    type PreparedAudioBufferMetadata,
-    type PreparedAudioBufferOwner,
     type PreparedAudioBufferRecoveryMetadata,
     type PreparedAudioBufferRecoveryRecord,
-    type PreparedSerializedAudioBuffer,
 } from './preparedAudioBufferOwnership';
 import {
     createPreparedAudioBufferPersistenceAttempts,

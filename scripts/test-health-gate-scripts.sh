@@ -1171,6 +1171,8 @@ const continueOnErrorStepPins = new Set([
     'nightly.ymldesktop-measureUpload the premium editor proof record',
     'nightly.ymldesktop-measureProve premium editor workspace in the packaged app',
     'nightly.ymldesktop-measureUpload the premium editor workspace proof record',
+    'nightly.ymldesktop-measureObserve Grand Boule output audition in the packaged app',
+    'nightly.ymldesktop-measureUpload the Grand Boule output audition record',
 ]);
 const isSetupNodeCacheStep = (step) =>
     typeof step?.uses === 'string' &&

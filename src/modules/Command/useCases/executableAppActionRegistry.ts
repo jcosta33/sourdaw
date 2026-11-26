@@ -1812,7 +1812,8 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setLoopEnabled',
         risk: 'bounded-reversible',
-        description: 'Enable or disable the project loop.',
+        description:
+            "Enable or disable the project loop; enabling with no valid loop region sets the region to the arrangement's clips, or one bar.",
         intentPhrases: [
             'enable loop',
             'enable the loop',
