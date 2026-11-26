@@ -10,6 +10,9 @@ export type ChordEvent = {
     duration: number; // in beats
 };
 
+/** The shortest chord a track holds, in beats; shorter values are refused, not clamped. */
+export const MIN_CHORD_DURATION_BEATS = 0.25;
+
 export const ROOT_NAMES = NOTE_NAMES;
 
 export function formatChordName(event: ChordEvent): string {

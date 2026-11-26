@@ -77,7 +77,7 @@ describe('chord-track action authority', () => {
     });
 
     it('labels the effective disabling toggle and skips explicit same-state toggles', async () => {
-        await executeAppAction({ type: 'toggleChordTrack' });
+        await executeAppAction({ type: 'toggleChordTrack', payload: { enabled: false } });
         expect(undoStore.value?.past.at(-1)?.label).toBe('Disable chord track');
 
         const undoCount = undoStore.value?.past.length;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../stores/chordTrackStore', () => ({
+vi.mock('../../../stores/chordTrackStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/chordTrackStore')>()),
     chordTrackStore: {
         get value() {
             return mockValue;
@@ -9,7 +10,6 @@ vi.mock('../../../stores/chordTrackStore', () => ({
             mockValue = state;
         }),
     },
-    defaultChordTrackState: { enabled: false, events: [] },
 }));
 
 import { type AppAction } from '#/utils/handlerContract';
@@ -324,6 +324,11 @@ describe('chord track restores', () => {
     it('admits only a well-formed snapshot pair into the session replay', () => {
         const valid = { expected: THREE_CHORDS, replacement: { enabled: false, events: [] } };
         expect(handleRestoreChordTrackState.validateSessionActionArguments?.(valid)).toBe(true);
+        const shortestChord = {
+            expected: THREE_CHORDS,
+            replacement: { enabled: true, events: [{ id: 'x', beat: 0, root: 0, quality: 'major', duration: 0.25 }] },
+        };
+        expect(handleRestoreChordTrackState.validateSessionActionArguments?.(shortestChord)).toBe(true);
         for (const invalid of [
             { expected: THREE_CHORDS },
             { expected: THREE_CHORDS, replacement: { enabled: 'yes', events: [] } },
@@ -340,6 +345,13 @@ describe('chord track restores', () => {
                 replacement: {
                     enabled: true,
                     events: [{ id: 'x', beat: 0, root: 0, quality: 'toString', duration: 4 }],
+                },
+            },
+            {
+                expected: THREE_CHORDS,
+                replacement: {
+                    enabled: true,
+                    events: [{ id: 'x', beat: 0, root: 0, quality: 'major', duration: 0.1 }],
                 },
             },
         ]) {

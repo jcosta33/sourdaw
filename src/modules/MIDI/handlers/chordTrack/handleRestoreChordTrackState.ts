@@ -7,10 +7,10 @@ import {
 } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
-import { chordTrackStore, type ChordTrackState } from '../../stores/chordTrackStore';
+import { chordTrackStore, isChordTrackState, type ChordTrackState } from '../../stores/chordTrackStore';
 import { cloneChordTrackState } from '../../transformers/cloneChordTrackState';
+import { findChordEventArgumentRefusal } from '../../transformers/findChordEventArgumentRefusal';
 import { type ChordMutationAction, isChordTrackEditAction } from '../../transformers/isChordTrackEditAction';
-import { isChordTrackState } from '../../transformers/isChordTrackState';
 import { projectChordTrackAction } from '../../transformers/projectChordTrackAction';
 import { moveChordEvent } from '../../useCases/chordTrack/moveChordEvent';
 import { projectChordTrackThroughActions } from '../../useCases/chordTrack/projectChordTrackState';
@@ -58,6 +58,10 @@ export function findChordTrackRefusal(action: ChordMutationAction, context: Hand
     }
     if (action.type !== 'addChordEvent') {
         return null;
+    }
+    const argumentRefusal = findChordEventArgumentRefusal(action.payload);
+    if (argumentRefusal !== null) {
+        return argumentRefusal;
     }
     const state = projectLiveState(live, context);
     if (action.payload.eventId !== undefined && state.events.some((event) => event.id === action.payload.eventId)) {

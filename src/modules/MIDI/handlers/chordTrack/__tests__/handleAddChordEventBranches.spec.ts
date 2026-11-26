@@ -29,44 +29,19 @@ describe('handleAddChordEvent — execute sanitization', () => {
         expect(mockedAdd).toHaveBeenCalledWith(4, 5, 'minor', 2, 'e1');
     });
 
-    it('defaults invalid quality to major', async () => {
-        await handleAddChordEvent.execute({
-            type: 'addChordEvent',
-            payload: { eventId: 'e1', beat: 0, root: 0, quality: 'nonexistent', duration: 4 },
-        });
-        expect(mockedAdd).toHaveBeenCalledWith(0, 0, 'major', 4, 'e1');
-    });
-
-    it('clamps root to 0-11 with rounding', async () => {
-        await handleAddChordEvent.execute({
-            type: 'addChordEvent',
-            payload: { eventId: 'e1', beat: 0, root: 15, quality: 'major', duration: 4 },
-        });
-        expect(mockedAdd).toHaveBeenCalledWith(0, 11, 'major', 4, 'e1');
-    });
-
-    it('clamps negative root to 0', async () => {
-        await handleAddChordEvent.execute({
-            type: 'addChordEvent',
-            payload: { eventId: 'e1', beat: 0, root: -3, quality: 'major', duration: 4 },
-        });
-        expect(mockedAdd).toHaveBeenCalledWith(0, 0, 'major', 4, 'e1');
-    });
-
-    it('rounds fractional root', async () => {
-        await handleAddChordEvent.execute({
-            type: 'addChordEvent',
-            payload: { eventId: 'e1', beat: 0, root: 5.7, quality: 'major', duration: 4 },
-        });
-        expect(mockedAdd).toHaveBeenCalledWith(0, 6, 'major', 4, 'e1');
-    });
-
-    it('floors negative beat to 0', async () => {
-        await handleAddChordEvent.execute({
-            type: 'addChordEvent',
-            payload: { eventId: 'e1', beat: -5, root: 0, quality: 'major', duration: 4 },
-        });
-        expect(mockedAdd).toHaveBeenCalledWith(0, 0, 'major', 4, 'e1');
+    it.each([
+        { label: 'an unknown quality', payload: { beat: 0, root: 0, quality: 'nonexistent', duration: 4 } },
+        { label: 'a root above 11', payload: { beat: 0, root: 15, quality: 'major', duration: 4 } },
+        { label: 'a negative root', payload: { beat: 0, root: -3, quality: 'major', duration: 4 } },
+        { label: 'a fractional root', payload: { beat: 0, root: 5.7, quality: 'major', duration: 4 } },
+        { label: 'a negative beat', payload: { beat: -5, root: 0, quality: 'major', duration: 4 } },
+        { label: 'a non-finite beat', payload: { beat: Number.NaN, root: 0, quality: 'major', duration: 4 } },
+        { label: 'a duration below the minimum', payload: { beat: 0, root: 0, quality: 'major', duration: 0.1 } },
+    ])('refuses $label instead of substituting a value', async ({ payload }) => {
+        await expect(
+            Promise.resolve().then(() => handleAddChordEvent.execute({ type: 'addChordEvent', payload }))
+        ).rejects.toThrow();
+        expect(mockedAdd).not.toHaveBeenCalled();
     });
 
     it('defaults duration to 4 when omitted', async () => {

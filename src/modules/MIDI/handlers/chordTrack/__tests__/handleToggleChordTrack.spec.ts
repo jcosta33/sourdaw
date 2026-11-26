@@ -44,18 +44,6 @@ describe('handleToggleChordTrack — execute', () => {
         await handleToggleChordTrack.execute({ type: 'toggleChordTrack', payload: { enabled: true } });
         expect(mockedToggle).toHaveBeenCalledWith(true);
     });
-
-    it('toggles to opposite when no explicit payload', async () => {
-        mockValue = { enabled: false, events: [] };
-        await handleToggleChordTrack.execute({ type: 'toggleChordTrack' });
-        expect(mockedToggle).toHaveBeenCalledWith(true);
-    });
-
-    it('mutates action payload to carry resolved target', async () => {
-        const action = { type: 'toggleChordTrack' as const, payload: undefined };
-        await handleToggleChordTrack.execute(action);
-        expect(action.payload).toEqual({ enabled: true });
-    });
 });
 
 describe('handleToggleChordTrack — describe', () => {

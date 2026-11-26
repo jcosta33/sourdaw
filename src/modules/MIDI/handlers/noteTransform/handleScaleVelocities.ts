@@ -16,6 +16,21 @@ function transformNotes(action: ScaleVelocitiesAction, notes: readonly MidiNote[
     return mapMidiVelocitiesByCurve({ notes, curve, minVelocity, maxVelocity });
 }
 
+function findVelocityRangeRefusal(action: ScaleVelocitiesAction): string | null {
+    const { minVelocity = 1, maxVelocity = 127 } = action.payload;
+    return minVelocity > maxVelocity ? `minVelocity ${minVelocity} must not exceed maxVelocity ${maxVelocity}` : null;
+}
+
+function findScaleVelocitiesRefusal(action: ScaleVelocitiesAction, context?: HandlerValidationContext): string | null {
+    const rangeRefusal = findVelocityRangeRefusal(action);
+    if (rangeRefusal !== null) {
+        return rangeRefusal;
+    }
+    return getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) === null
+        ? `Clip "${action.payload.clipId}" is not a writable MIDI clip`
+        : null;
+}
+
 function prepareScaleVelocities(action: ScaleVelocitiesAction, context?: HandlerValidationContext) {
     return prepareMidiNoteTransformUndo({
         context,
@@ -27,7 +42,10 @@ function prepareScaleVelocities(action: ScaleVelocitiesAction, context?: Handler
 
 export const handleScaleVelocities = createHandler<'scaleVelocities'>({
     execute: (action) => {
-        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+        if (
+            findVelocityRangeRefusal(action) !== null ||
+            !getWritableMidiClipReplayGuardForBatch(action.payload.clipId)
+        ) {
             return { status: 'conflict' };
         }
         const written = scaleVelocities(
@@ -38,7 +56,8 @@ export const handleScaleVelocities = createHandler<'scaleVelocities'>({
         );
         return { status: written ? 'written' : 'no-write' };
     },
-    validate: (action, context) => getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) !== null,
+    validate: (action, context) => findScaleVelocitiesRefusal(action, context) === null,
+    validationRefusalReason: findScaleVelocitiesRefusal,
     describe: (action, context) => prepareScaleVelocities(action, context).description,
     isNoop: (action) => prepareScaleVelocities(action).isNoop,
     validateSessionEntry: (entry) => {

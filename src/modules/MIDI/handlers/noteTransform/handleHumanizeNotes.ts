@@ -11,6 +11,23 @@ import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
 type HumanizeNotesAction = Extract<AppAction, { type: 'humanizeNotes' }>;
 
+function isUnitAmount(value: number): boolean {
+    return Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function findHumanizeRefusal(action: HumanizeNotesAction, context?: HandlerValidationContext): string | null {
+    const { amount, velocityAmount } = action.payload;
+    if (!isUnitAmount(amount)) {
+        return `amount must be from 0 through 1, got ${String(amount)}`;
+    }
+    if (velocityAmount !== undefined && !isUnitAmount(velocityAmount)) {
+        return `velocityAmount must be from 0 through 1, got ${String(velocityAmount)}`;
+    }
+    return getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) === null
+        ? `Clip "${action.payload.clipId}" is not a writable MIDI clip`
+        : null;
+}
+
 function prepareHumanizeNotes(action: HumanizeNotesAction, context?: HandlerValidationContext) {
     // describe runs before execute, so the seed is minted here when absent and
     // captured into the payload — execute then draws with the same seed and
@@ -51,7 +68,8 @@ export const handleHumanizeNotes = createHandler<'humanizeNotes'>({
         action.payload.seed = usedSeed;
         return { status: 'written' };
     },
-    validate: (action, context) => getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) !== null,
+    validate: (action, context) => findHumanizeRefusal(action, context) === null,
+    validationRefusalReason: findHumanizeRefusal,
     describe: (action, context) => prepareHumanizeNotes(action, context).description,
     isNoop: (action) => prepareHumanizeNotes(action).isNoop,
     validateSessionEntry: (entry) => {

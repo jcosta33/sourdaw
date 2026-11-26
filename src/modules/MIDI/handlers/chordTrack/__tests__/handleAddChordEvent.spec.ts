@@ -22,12 +22,13 @@ describe('handleAddChordEvent', () => {
         expect(mocks.addChordEvent).toHaveBeenCalledWith(4, 0, 'minor', 8, 'chord-test');
     });
 
-    it('falls back to default quality if invalid', () => {
-        void handleAddChordEvent.execute({
-            type: 'addChordEvent',
-            payload: { beat: 0, root: 2, quality: 'garbage', eventId: 'chord-test' },
-        });
-
-        expect(mocks.addChordEvent).toHaveBeenCalledWith(0, 2, 'major', 4, 'chord-test');
+    it('refuses an unknown quality instead of substituting major', () => {
+        expect(() =>
+            handleAddChordEvent.execute({
+                type: 'addChordEvent',
+                payload: { beat: 0, root: 2, quality: 'garbage', eventId: 'chord-test' },
+            })
+        ).toThrow('not a known chord quality');
+        expect(mocks.addChordEvent).not.toHaveBeenCalled();
     });
 });

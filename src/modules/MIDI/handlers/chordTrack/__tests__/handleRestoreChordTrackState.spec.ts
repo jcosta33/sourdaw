@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../stores/chordTrackStore', () => ({
+vi.mock('../../../stores/chordTrackStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/chordTrackStore')>()),
     chordTrackStore: {
         get value() {
             return mockValue;
@@ -9,7 +10,6 @@ vi.mock('../../../stores/chordTrackStore', () => ({
             mockValue = state;
         }),
     },
-    defaultChordTrackState: { enabled: false, events: [] },
 }));
 
 vi.mock('../../../useCases/chordTrack/moveChordEvent', () => ({
@@ -204,26 +204,18 @@ describe('isChordTrackMutationNoop', () => {
 });
 
 describe('projectState — addChordEvent validation', () => {
-    it('clamps root to 0-11', () => {
+    it.each([
+        { label: 'a root above 11', root: 15, quality: 'major' },
+        { label: 'an unknown quality', root: 0, quality: 'invalid' },
+    ])('projects an add with $label to the unchanged track, as the write refuses it', ({ root, quality }) => {
         setState({ enabled: false, events: [] });
         const result = describeChordTrackMutation(
-            { type: 'addChordEvent', payload: { eventId: 'e1', beat: 0, root: 15, quality: 'major', duration: 4 } },
+            { type: 'addChordEvent', payload: { eventId: 'e1', beat: 0, root, quality, duration: 4 } },
             'Add'
         );
         const projected = (result.inverseAction as unknown as { payload: { expected: ChordTrackState } }).payload
             .expected;
-        expect(projected.events[0]?.root).toBeLessThanOrEqual(11);
-    });
-
-    it('defaults quality to major when invalid', () => {
-        setState({ enabled: false, events: [] });
-        const result = describeChordTrackMutation(
-            { type: 'addChordEvent', payload: { eventId: 'e1', beat: 0, root: 0, quality: 'invalid', duration: 4 } },
-            'Add'
-        );
-        const projected = (result.inverseAction as unknown as { payload: { expected: ChordTrackState } }).payload
-            .expected;
-        expect(projected.events[0]?.quality).toBe('major');
+        expect(projected.events).toEqual([]);
     });
 
     it('sorts events by beat after adding', () => {

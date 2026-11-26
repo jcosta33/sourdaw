@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { type ChordType, CHORD_TYPES } from '../../models/ChordTypes';
+import { findChordEventArgumentRefusal } from '../../transformers/findChordEventArgumentRefusal';
 import { addChordEvent } from '../../useCases/chordTrack/addChordEvent';
 
 import {
@@ -25,11 +26,19 @@ function ensureEventId(action: AddChordEventAction): string {
 
 export const handleAddChordEvent = createHandler<'addChordEvent'>({
     execute: (alpha) => {
-        const quality: ChordType = isChordType(alpha.payload.quality) ? alpha.payload.quality : 'major';
-        const root = Math.max(0, Math.min(11, Math.round(alpha.payload.root)));
-        const beat = Math.max(0, alpha.payload.beat);
-        const duration = alpha.payload.duration ?? 4;
-        addChordEvent(beat, root, quality, duration, ensureEventId(alpha));
+        // A lone dispatch is not validated first, so refuse here rather than store a value the track rejects.
+        const refusal = findChordEventArgumentRefusal(alpha.payload);
+        const { quality } = alpha.payload;
+        if (refusal !== null || !isChordType(quality)) {
+            throw new Error(refusal ?? `Chord quality "${quality}" is not a known chord quality`);
+        }
+        addChordEvent(
+            alpha.payload.beat,
+            alpha.payload.root,
+            quality,
+            alpha.payload.duration ?? 4,
+            ensureEventId(alpha)
+        );
     },
     describe: (alpha, context) => {
         ensureEventId(alpha);
