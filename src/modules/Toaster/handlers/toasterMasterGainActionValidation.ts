@@ -31,20 +31,32 @@ function isMasterCapture(value: unknown): value is ToasterMasterGainCapture {
     );
 }
 
+function hasDistinctDeviceIds(deviceIds: unknown, deviceId: string): boolean {
+    return (
+        Array.isArray(deviceIds) &&
+        Array.from(deviceIds).every(isNonemptyString) &&
+        new Set(deviceIds).size === deviceIds.length &&
+        deviceIds.includes(deviceId)
+    );
+}
+
+function hasDistinctMasterCaptures(payload: Record<string, unknown>): boolean {
+    return (
+        isMasterCapture(payload.before) &&
+        isMasterCapture(payload.after) &&
+        (payload.before.kind === 'value' || payload.after.kind === 'value') &&
+        !valuesEqual(payload.before, payload.after)
+    );
+}
+
 export function validToasterMasterGainAction(payload: unknown): payload is ToasterMasterGainAction['payload'] {
     return (
         isRecord(payload) &&
         Object.keys(payload).length === 5 &&
         isNonemptyString(payload.deviceId) &&
         isNonemptyString(payload.trackId) &&
-        Array.isArray(payload.deviceIds) &&
-        Array.from(payload.deviceIds).every(isNonemptyString) &&
-        new Set(payload.deviceIds).size === payload.deviceIds.length &&
-        payload.deviceIds.includes(payload.deviceId) &&
-        isMasterCapture(payload.before) &&
-        isMasterCapture(payload.after) &&
-        (payload.before.kind === 'value' || payload.after.kind === 'value') &&
-        !valuesEqual(payload.before, payload.after)
+        hasDistinctDeviceIds(payload.deviceIds, payload.deviceId) &&
+        hasDistinctMasterCaptures(payload)
     );
 }
 

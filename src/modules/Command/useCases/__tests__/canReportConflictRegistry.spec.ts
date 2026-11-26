@@ -675,6 +675,13 @@ async function createDivergedRelinkSourceAction(edit: 'source' | 'owner'): Promi
     return inverse;
 }
 
+function getToasterConflictState(actionType: 'setToasterFactoryKit' | 'setToasterMasterGain', side: 'before' | 'peer') {
+    if (actionType === 'setToasterFactoryKit') {
+        return getToasterPresetDeviceState(side === 'before' ? '909-punchy' : 'trap-heavy');
+    }
+    return { version: 1, data: { kit: { masterGain: side === 'before' ? 0.4 : 0.8 } } };
+}
+
 function createToasterConflictFixture(actionType: 'setToasterFactoryKit' | 'setToasterMasterGain'): DivergedFixture {
     type ToasterRoot = { tracks: { tracks: Track[] } };
     let verifyNonEffects: (() => void) | undefined;
@@ -695,14 +702,8 @@ function createToasterConflictFixture(actionType: 'setToasterFactoryKit' | 'setT
             const deviceId = 'toaster-conflict';
             const trackId = 'toaster-owner';
             const rawDevice = () => getCrdtDoc<ToasterRoot>('root')?.tracks.tracks[0]?.devices[0];
-            const before =
-                actionType === 'setToasterFactoryKit'
-                    ? getToasterPresetDeviceState('909-punchy')
-                    : { version: 1, data: { kit: { masterGain: 0.4 } } };
-            const peer =
-                actionType === 'setToasterFactoryKit'
-                    ? getToasterPresetDeviceState('trap-heavy')
-                    : { version: 1, data: { kit: { masterGain: 0.8 } } };
+            const before = getToasterConflictState(actionType, 'before');
+            const peer = getToasterConflictState(actionType, 'peer');
             if (!before || !peer) {
                 throw new Error('Expected both factory kits');
             }
@@ -728,13 +729,15 @@ function createToasterConflictFixture(actionType: 'setToasterFactoryKit' | 'setT
             expect(rawDevice()?.deviceState).toEqual(before);
 
             const owner = { trackId, deviceId, deviceIds: [deviceId] };
-            const inverse: AppAction =
-                actionType === 'setToasterFactoryKit'
-                    ? { type: actionType, payload: { ...owner, label: 'Load Rye 909', before, after: null } }
-                    : {
-                          type: actionType,
-                          payload: { ...owner, before: { kind: 'value', value: 0.4 }, after: { kind: 'missing-gain' } },
-                      };
+            let inverse: AppAction;
+            if (actionType === 'setToasterFactoryKit') {
+                inverse = { type: actionType, payload: { ...owner, label: 'Load Rye 909', before, after: null } };
+            } else {
+                inverse = {
+                    type: actionType,
+                    payload: { ...owner, before: { kind: 'value', value: 0.4 }, after: { kind: 'missing-gain' } },
+                };
+            }
             expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
             mutateCrdtDoc<ToasterRoot>({
                 id: 'root',

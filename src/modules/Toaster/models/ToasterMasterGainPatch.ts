@@ -43,22 +43,23 @@ export function readToasterMasterGainState(chunk: Chunk | null): CurrentMaster |
         return { chunk, kit, capture: { kind: 'missing-gain' } };
     }
     const value = kit.masterGain;
-    return typeof value === 'number' && Number.isFinite(value)
-        ? { chunk, kit, capture: { kind: 'value', value } }
-        : null;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return null;
+    }
+    return { chunk, kit, capture: { kind: 'value', value } };
 }
 
 function matchesMasterCapture(current: ToasterMasterGainCapture, expected: ToasterMasterGainCapture): boolean {
-    switch (expected.kind) {
-        case 'value':
-            return current.kind === 'value' && current.value === expected.value;
-        case 'missing-chunk':
-            return current.kind !== 'value';
-        case 'missing-kit':
-            return current.kind === 'missing-kit' || current.kind === 'missing-gain';
-        case 'missing-gain':
-            return current.kind === 'missing-gain';
+    if (expected.kind === 'value') {
+        return current.kind === 'value' && current.value === expected.value;
     }
+    if (expected.kind === 'missing-chunk') {
+        return current.kind !== 'value';
+    }
+    if (expected.kind === 'missing-kit') {
+        return current.kind === 'missing-kit' || current.kind === 'missing-gain';
+    }
+    return current.kind === expected.kind;
 }
 
 /** Preserve siblings the current project holds, even when replaying an older edit. */
@@ -82,17 +83,15 @@ export function compileToasterMasterGainPatch(
         return null;
     }
 
-    const withoutGain = { ...kit };
-    delete withoutGain.masterGain;
+    const { masterGain: _masterGain, ...withoutGain } = kit;
     if (after.kind === 'missing-gain' || Object.keys(withoutGain).length > 0) {
         return { nextChunk: { ...chunk, data: { ...chunk.data, kit: withoutGain } } };
     }
-    const withoutKit = { ...chunk.data };
-    delete withoutKit.kit;
+    const { kit: _kit, ...withoutKit } = chunk.data;
+    if (after.kind !== 'missing-chunk' || Object.keys(withoutKit).length > 0) {
+        return { nextChunk: { ...chunk, data: withoutKit } };
+    }
     return {
-        nextChunk:
-            after.kind === 'missing-chunk' && Object.keys(withoutKit).length === 0
-                ? null
-                : { ...chunk, data: withoutKit },
+        nextChunk: null,
     };
 }

@@ -16,6 +16,13 @@ import {
 type Admission = NonNullable<ReturnType<typeof captureDevicePatchCommitValidation>>;
 const admissions = new WeakMap<ToasterMasterGainAction, Admission>();
 
+function writePlannedChange(
+    patch: NonNullable<ReturnType<typeof plan>>,
+    proof: ReturnType<Admission['start']> | null | undefined
+): boolean {
+    return applyDevicePatchState(patch) && (!proof || proof.captureWrittenState(patch.next));
+}
+
 function plan(action: ToasterMasterGainAction, context?: HandlerValidationContext) {
     if (!validToasterMasterGainAction(action.payload) || (context && context.actions.length !== 1)) {
         return null;
@@ -75,7 +82,7 @@ export const handleSetToasterMasterGain = createHandler<'setToasterMasterGain'>(
         }
         let validationTransferred = false;
         try {
-            if (!applyDevicePatchState(patch) || (proof && !proof.captureWrittenState(patch.next))) {
+            if (!writePlannedChange(patch, proof)) {
                 return { status: 'conflict' };
             }
             validationTransferred = true;
