@@ -8,8 +8,8 @@ import { discardPendingToasterKitUpdates, loadKit, toasterStore } from '../store
 import { getToasterControls } from './getToasterControls';
 import { loadToasterKitPreset } from './loadToasterKit';
 import { observePublishedToasterKit } from './observePublishedToasterKit';
-import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
 import { writeToasterKitScalar } from './toasterParamBridge/writeToasterKitScalar';
+import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
 
 export function reconcileToasterKitFromProject(
     deviceId: string,

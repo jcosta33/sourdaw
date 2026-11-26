@@ -60,11 +60,11 @@ import { setToasterKitParam } from '../../useCases/toasterParamBridge/setToaster
 import { setToasterPadParam } from '../../useCases/toasterParamBridge/setToasterPadParam';
 import { trigger16Level } from '../../useCases/trigger16Level';
 import { triggerToasterPad } from '../../useCases/triggerPad';
-import { MasterKnob } from './MasterKnob';
-
 import { PadGrid } from '../components/PadGrid';
 import { PadMixer } from '../components/PadMixer';
 import { StepSequencer } from '../components/StepSequencer';
+
+import { MasterKnob } from './MasterKnob';
 
 const SectionCard = ({
     title,

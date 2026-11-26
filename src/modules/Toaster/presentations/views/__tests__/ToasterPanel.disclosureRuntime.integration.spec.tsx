@@ -1,23 +1,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { createEventBus } from '#/infra/events/createEventBus';
-import { leaveSession } from '#/modules/Collaboration/useCases';
-import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
-import {
-    setNotificationEventBus,
-    type NotifyPayload,
-    type ConfirmPayload,
-    type PromptPayload,
-} from '#/utils/Notification/notificationEventBus';
 import { initDeviceStateReconciliation } from '#/app/initDeviceStateReconciliation';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { leaveSession } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -30,13 +23,20 @@ import {
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import {
+    setNotificationEventBus,
+    type NotifyPayload,
+    type ConfirmPayload,
+    type PromptPayload,
+} from '#/utils/Notification/notificationEventBus';
 
 import { createDefaultKit } from '../../../models/ToasterKit';
 import { fromToasterKitState, toToasterKitState } from '../../../models/ToasterKitState';
 import { registerToasterDevice, resetToasterDeviceLifecycleState, toasterStore } from '../../../stores/toasterStore';
+import { getToasterHandlers } from '../../../useCases/getToasterHandlers';
 import { initToasterKitPersistence } from '../../../useCases/initToasterKitPersistence';
 import { activeNoteRepeatSessions } from '../../../useCases/noteRepeatState';
-import { getToasterHandlers } from '../../../useCases/getToasterHandlers';
 import { stopSequencer } from '../../../useCases/stopSequencer';
 import { ToasterPanel } from '../ToasterPanel';
 

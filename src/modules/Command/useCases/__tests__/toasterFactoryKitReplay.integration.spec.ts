@@ -28,13 +28,13 @@ import {
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 import { type AppAction } from '#/utils/handlerContract';
-import { isRecord } from '#/utils/structuralEquality';
 import {
     type ConfirmPayload,
     type NotifyPayload,
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
