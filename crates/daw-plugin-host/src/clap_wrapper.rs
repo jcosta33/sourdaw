@@ -7890,7 +7890,9 @@ mod tests {
         // SAFETY: `clap_param_info` is integers, floats, char arrays and a raw
         // pointer, for all of which all-zero bytes are valid.
         let mut parameter: clap_param_info = unsafe { mem::zeroed() };
-        let (id, name, flags, max_value) = if index == 0 {
+        // The stepped parameter's range is -2..2, so its step count (4) is the
+        // span, which neither its maximum nor its minimum alone gives.
+        let (id, name, flags, min_value, max_value) = if index == 0 {
             (
                 21,
                 b"Shape",
@@ -7898,17 +7900,18 @@ mod tests {
                     | CLAP_PARAM_IS_STEPPED
                     | CLAP_PARAM_IS_ENUM
                     | CLAP_PARAM_IS_READONLY,
-                4.0,
+                -2.0,
+                2.0,
             )
         } else {
-            (22, b"Level", CLAP_PARAM_IS_AUTOMATABLE, 1.0)
+            (22, b"Level", CLAP_PARAM_IS_AUTOMATABLE, 0.0, 1.0)
         };
         for (slot, byte) in parameter.name.iter_mut().zip(name) {
             *slot = *byte as std::os::raw::c_char;
         }
         parameter.id = id;
         parameter.flags = flags;
-        parameter.min_value = 0.0;
+        parameter.min_value = min_value;
         parameter.max_value = max_value;
         // SAFETY: non-null (checked above); the host passes a live, writable out-param.
         unsafe { *info = parameter };
@@ -7925,7 +7928,8 @@ mod tests {
         true
     }
 
-    /// Answers text for the stepped parameter only; the other refuses.
+    /// Answers text for the stepped parameter; the other refuses, after writing
+    /// text anyway, so only the refusal itself can keep that text from the host.
     unsafe extern "C" fn text_parameter_value_to_text(
         _plugin: *const clap_plugin,
         id: u32,
@@ -7933,16 +7937,17 @@ mod tests {
         out_buffer: *mut std::os::raw::c_char,
         out_buffer_capacity: u32,
     ) -> bool {
-        if id != 21 {
-            return false;
-        }
-        let text = format!("Saw {value}\0");
+        let text = if id == 21 {
+            format!("Saw {value}\0")
+        } else {
+            format!("Refused {value}\0")
+        };
         assert!(text.len() <= out_buffer_capacity as usize);
         for (offset, byte) in text.bytes().enumerate() {
             // SAFETY: `offset` is within the capacity the host passed (asserted above).
             unsafe { *out_buffer.add(offset) = byte as std::os::raw::c_char };
         }
-        true
+        id == 21
     }
 
     static TEXT_PARAMETERS: clap_plugin_params = clap_plugin_params {

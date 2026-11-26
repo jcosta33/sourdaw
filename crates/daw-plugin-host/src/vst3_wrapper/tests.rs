@@ -1161,7 +1161,13 @@ macro_rules! fake_controller_impls {
                 value_normalized: ParamValue,
                 string: *mut [TChar; 128],
             ) -> tresult {
-                if id != GAIN_PARAM || string.is_null() {
+                if string.is_null() {
+                    return kResultFalse;
+                }
+                if id != GAIN_PARAM {
+                    // Refuses after writing text, so only the result keeps it from the host.
+                    // SAFETY: `string` is non-null (checked above) and the host's writable String128.
+                    write_tchar(unsafe { &mut *string }, "Refused");
                     return kResultFalse;
                 }
                 // SAFETY: `string` is non-null (checked above) and the host's writable String128.

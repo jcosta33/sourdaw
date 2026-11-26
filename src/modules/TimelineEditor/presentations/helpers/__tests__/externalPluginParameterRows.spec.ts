@@ -28,7 +28,7 @@ describe('buildExternalPluginParameterRows', () => {
     it.each([
         { name: 'a step count of 1 is a toggle', overrides: { stepCount: 1 }, kind: 'toggle' },
         { name: 'a step count above 1 is stepped', overrides: { stepCount: 3 }, kind: 'stepped' },
-        { name: 'a list with no step count is stepped', overrides: { isList: true }, kind: 'stepped' },
+        { name: 'a list with no step count is continuous', overrides: { isList: true }, kind: 'continuous' },
         {
             name: 'a list with a step count of 1 is a toggle',
             overrides: { stepCount: 1, isList: true },
@@ -44,10 +44,27 @@ describe('buildExternalPluginParameterRows', () => {
         const rows = buildExternalPluginParameterRows([
             parameter({ id: 1, maxValue: 1, stepCount: 4 }),
             parameter({ id: 2, maxValue: 7, stepCount: 7 }),
-            parameter({ id: 3, maxValue: 7, isList: true }),
+            parameter({ id: 3, maxValue: 7, stepCount: 7, isList: true }),
             parameter({ id: 4, minValue: 20, maxValue: 20020 }),
         ]);
         expect(rows.map((row) => row.step)).toEqual([0.25, 1, 1, 20]);
+    });
+
+    it('lets a 0..1 list with no step count reach values between its ends', () => {
+        const [row] = buildExternalPluginParameterRows([parameter({ id: 1, isList: true })]);
+
+        expect(row?.kind).toBe('continuous');
+        expect(row?.step).toBeLessThan(1);
+    });
+
+    it('shows a normalized stepped value as its step index and a plain stepped value rounded', () => {
+        const normalized = buildExternalPluginParameterRows([parameter({ id: 1, value: 3 / 7, stepCount: 7 })], {
+            valuesAreNormalized: true,
+        });
+        const plain = buildExternalPluginParameterRows([parameter({ id: 2, value: 3, maxValue: 7, stepCount: 7 })]);
+
+        expect(normalized[0]?.valueText).toBe('3');
+        expect(plain[0]?.valueText).toBe('3');
     });
 
     it('carries the read-only flag so the control can be disabled', () => {

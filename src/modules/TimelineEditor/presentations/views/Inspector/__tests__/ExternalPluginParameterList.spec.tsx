@@ -252,7 +252,9 @@ describe('ExternalPluginParameterList', () => {
             frameCallbacks.delete(id);
         });
         mockFormat.mockReset();
-        mockFormat.mockResolvedValue(null);
+        // Every row with no snapshot text asks; an unanswered ask keeps rows that do not read the
+        // answer from updating state outside act.
+        mockFormat.mockReturnValue(new Promise<string | null>(() => {}));
         mockEdit.mockReset();
         mockEdit.mockResolvedValue();
         mockHasRestoreFailure.mockReset();
@@ -466,6 +468,28 @@ describe('ExternalPluginParameterList', () => {
         expect(screen.getByText('1.20 kHz')).toBeInTheDocument();
         expect(screen.getByRole('slider', { name: 'Cutoff' })).toHaveAttribute('aria-valuetext', '1.20 kHz');
         expect(mockFormat).not.toHaveBeenCalled();
+    });
+
+    it('asks the plugin for the text of a value that mounts with none, as after an edit and a remount', async () => {
+        mockFormat.mockResolvedValue('0.75 kHz');
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.75, displayText: null })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        expect(await screen.findByText('0.75 kHz')).toBeInTheDocument();
+        expect(mockFormat).toHaveBeenCalledWith(INSTANCE_ID, 7, 0.75);
+    });
+
+    it('asks once for a value the plugin has no text for', async () => {
+        mockFormat.mockResolvedValue(null);
+        seed([parameter({ id: 7, name: 'Cutoff', value: 0.75, displayText: null })]);
+        render(<ExternalPluginParameterList device={device} />);
+
+        await waitFor(() => expect(mockFormat).toHaveBeenCalledTimes(1));
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(mockFormat).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('0.750')).toBeInTheDocument();
     });
 
     it('disables a read-only parameter and says why', () => {

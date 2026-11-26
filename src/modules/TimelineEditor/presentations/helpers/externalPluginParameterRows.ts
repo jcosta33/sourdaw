@@ -12,6 +12,10 @@ export type ExternalPluginParameterRow = {
     max: number;
     step: number;
     kind: ExternalPluginParameterControlKind;
+    /** The number of steps the plugin declares; 0 when it declares none. */
+    stepCount: number;
+    /** The host reports `value` normalized to 0..1, so a stepped value is shown as its step index. */
+    valuesAreNormalized: boolean;
     /** The unit shown beside the value; empty when the plugin declares none or the value is normalized. */
     unit: string;
     /** The plugin's own text for `value`, or the plain number when it offers none. */
@@ -28,7 +32,7 @@ function classify(parameter: ExternalPluginParameter): ExternalPluginParameterCo
     if (parameter.stepCount === 1) {
         return 'toggle';
     }
-    if (parameter.stepCount > 1 || parameter.isList) {
+    if (parameter.stepCount > 1) {
         return 'stepped';
     }
     return 'continuous';
@@ -40,7 +44,7 @@ function stepFor(parameter: ExternalPluginParameter, kind: ExternalPluginParamet
     if (kind === 'continuous') {
         return span / CONTINUOUS_STEPS;
     }
-    return parameter.stepCount > 0 ? span / parameter.stepCount : 1;
+    return span / parameter.stepCount;
 }
 
 /** A wider range needs fewer decimals to tell neighbouring settings apart. */
@@ -65,12 +69,18 @@ function formatNumber(value: number, kind: ExternalPluginParameterControlKind, s
     return value.toFixed(fractionDigitsForSpan(span));
 }
 
-/** A value of this row as a plain number, with the unit the row carries when it has one. */
+/**
+ * A value of this row as a plain number, with the unit the row carries when it has one. A normalized
+ * stepped value is shown as its step index; rounding the 0..1 value itself would show 0 or 1.
+ */
 export function formatExternalPluginParameterValue(
-    row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'unit'>,
+    row: Pick<ExternalPluginParameterRow, 'kind' | 'min' | 'max' | 'unit' | 'stepCount' | 'valuesAreNormalized'>,
     value: number
 ): string {
-    const text = formatNumber(value, row.kind, row.max - row.min);
+    const steppedNormalized = row.valuesAreNormalized && row.kind !== 'continuous' && row.stepCount > 0;
+    const text = steppedNormalized
+        ? String(Math.round(value * row.stepCount))
+        : formatNumber(value, row.kind, row.max - row.min);
     return row.unit === '' ? text : `${text} ${row.unit}`;
 }
 
@@ -96,6 +106,8 @@ export function buildExternalPluginParameterRows(
             max: parameter.maxValue,
             step: stepFor(parameter, kind),
             kind,
+            stepCount: parameter.stepCount,
+            valuesAreNormalized: options.valuesAreNormalized,
             unit: options.valuesAreNormalized ? '' : parameter.unit,
             displayText: parameter.displayText,
             readOnly: parameter.isReadOnly,

@@ -145,15 +145,10 @@ const ParameterRow = ({
     // The snapshot's text describes the snapshot's value. Any other shown value (a pending edit,
     // a followed lane, a value just patched in) asks the plugin, one question in flight at a time:
     // the answer for a value no longer shown is dropped by the check above and the next question
-    // is for the value shown now. A plugin that gave no text at mount is not asked about that value.
-    const noTextAtMountRef = useRef(row.displayText === null);
-    const mountValueRef = useRef(row.value);
+    // is for the value shown now. A null answer is remembered, so a value is asked once.
     const askingRef = useRef(false);
     useEffect(() => {
         if (snapshotTextIsCurrent || answer?.value === value || askingRef.current) {
-            return;
-        }
-        if (noTextAtMountRef.current && value === mountValueRef.current) {
             return;
         }
         askingRef.current = true;

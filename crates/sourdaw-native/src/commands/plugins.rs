@@ -214,6 +214,10 @@ pub(crate) enum PluginCommandError {
     NoEngineInstance {
         instance_id: String,
     },
+    /// A renderer value that is not a number a plugin can be asked about.
+    NonFiniteValue {
+        value: f64,
+    },
 }
 
 impl PluginCommandError {
@@ -337,6 +341,9 @@ impl fmt::Display for PluginCommandError {
             Self::NoInstance { instance_id } => write!(f, "No plugin instance: {instance_id}"),
             Self::NoEngineInstance { instance_id } => {
                 write!(f, "No engine plugin for instance {instance_id}")
+            }
+            Self::NonFiniteValue { value } => {
+                write!(f, "Cannot ask a plugin for the text of a non-finite value: {value}")
             }
         }
     }
@@ -4035,6 +4042,9 @@ fn read_plugin_parameter_text(
     value: f64,
     state: &AppState,
 ) -> Result<Option<String>, PluginCommandError> {
+    if !value.is_finite() {
+        return Err(PluginCommandError::NonFiniteValue { value });
+    }
     if let Some(runtime) = dormant_plugin_runtime(state, instance_id)? {
         return runtime
             .with_control(std::time::Duration::from_secs(2), |plugin| {
@@ -4850,6 +4860,27 @@ mod tests {
 
         assert_eq!(text.as_deref(), Some("1.20 kHz"));
         assert_eq!(none, None);
+    }
+
+    #[test]
+    fn format_plugin_parameter_value_refuses_a_non_finite_value() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "instance-value-text-nan", Vec::new());
+
+        for value in [f64::NAN, f64::INFINITY] {
+            let error = crate::block_on_test(format_plugin_parameter_value(
+                PluginInstanceId("instance-value-text-nan".to_string()),
+                7,
+                value,
+                &state,
+            ))
+            .expect_err("a non-finite value has no text to give");
+
+            assert!(
+                error.contains("non-finite value"),
+                "the refusal names a non-finite value: {error}"
+            );
+        }
     }
 
     #[test]
