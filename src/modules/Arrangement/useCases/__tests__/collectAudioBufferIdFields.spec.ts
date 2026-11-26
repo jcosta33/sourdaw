@@ -31,6 +31,33 @@ describe('collectAudioBufferIdFields', () => {
         ]);
     });
 
+    describe('a reverse entry', () => {
+        const forward = { type: 'reverseClip', payload: { clipId: 'clip', reversedBufferId: 'reversed-buffer' } };
+        const inverse = {
+            type: 'restoreReversedClip',
+            payload: { clipId: 'clip', expectedAudioBufferId: 'reversed-buffer', audioBufferId: 'source-buffer' },
+        };
+        const redo = {
+            type: 'restoreReversedClip',
+            payload: { clipId: 'clip', expectedAudioBufferId: 'source-buffer', audioBufferId: 'reversed-buffer' },
+        };
+
+        it.each([
+            ['forward action', forward, ['reversed-buffer']],
+            ['inverse', inverse, ['reversed-buffer', 'source-buffer']],
+            ['redo', redo, ['reversed-buffer', 'source-buffer']],
+        ])('names the buffers its %s needs', (_leg, action, expected) => {
+            expect(collectAudioBufferIdFields(action).toSorted()).toEqual(expected);
+        });
+
+        it('keeps both the original and the reversed buffer owned by the entry', () => {
+            expect(collectAudioBufferIdFields([forward, inverse, redo]).toSorted()).toEqual([
+                'reversed-buffer',
+                'source-buffer',
+            ]);
+        });
+    });
+
     it('reads codec-encoded entries alongside plain ones', () => {
         const encoded = {
             type: 'object',

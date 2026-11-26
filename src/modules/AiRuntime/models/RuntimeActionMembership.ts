@@ -206,7 +206,7 @@ const runtimeActionMembershipByActionType = {
     connectPush: true,
     createAdjustmentLayer: true,
     addAdjustmentRegion: true,
-    createCompGroup: true,
+    createCompGroup: false,
     createPatternInstance: true,
     createProjectVersion: false,
     createVcaGroup: true,

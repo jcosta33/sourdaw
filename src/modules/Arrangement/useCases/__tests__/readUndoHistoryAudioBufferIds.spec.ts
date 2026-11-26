@@ -139,6 +139,29 @@ describe('readUndoHistoryAudioBufferIds', () => {
         expect(readUndoHistoryAudioBufferIds()).toEqual(new Set());
     });
 
+    it('keeps the original and the reversed buffer of a reverse on either stack', () => {
+        const restore = (expected: string, restored: string): AppAction => ({
+            type: 'restoreReversedClip',
+            payload: { clipId: 'clip', expectedAudioBufferId: expected, audioBufferId: restored, name: 'Verse' },
+        });
+        const entry: UndoHistoryEntry = {
+            id: 'reverse',
+            label: 'Reverse clip',
+            timestamp: 0,
+            source: 'manual',
+            kind: 'action',
+            action: { type: 'reverseClip', payload: { clipId: 'clip', reversedBufferId: 'reversed-buffer' } },
+            inverseAction: restore('reversed-buffer', 'source-buffer'),
+            redoAction: restore('source-buffer', 'reversed-buffer'),
+        };
+
+        undoHistoryStore.set({ past: [entry], future: [] });
+        expect(readUndoHistoryAudioBufferIds()).toEqual(new Set(['reversed-buffer', 'source-buffer']));
+
+        undoHistoryStore.set({ past: [], future: [entry] });
+        expect(readUndoHistoryAudioBufferIds()).toEqual(new Set(['reversed-buffer', 'source-buffer']));
+    });
+
     it('drops an entry’s ids once the entry leaves the history', () => {
         undoHistoryStore.set({
             past: [removeClipEntry('kept', 'buf-kept')],

@@ -220,7 +220,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     connectPush: neverInvalidates,
     createAdjustmentLayer: neverInvalidates,
     addAdjustmentRegion: neverInvalidates,
-    createCompGroup: neverInvalidates,
     createPatternInstance: neverInvalidates,
     createVcaGroup: neverInvalidates,
     deleteMacro: neverInvalidates,

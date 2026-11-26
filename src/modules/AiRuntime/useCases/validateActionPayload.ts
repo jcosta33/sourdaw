@@ -1296,7 +1296,6 @@ const validators = {
         (!isNumber(param.startBeat) || !isNumber(param.endBeat) || param.endBeat > param.startBeat),
 
     // Comping
-    createCompGroup: 'unchecked',
 
     // Macros + undo tree
     startMacroRecording: 'unchecked',

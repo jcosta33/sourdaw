@@ -299,7 +299,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     connectPush: noVcaTargets,
     createAdjustmentLayer: noVcaTargets,
     addAdjustmentRegion: noVcaTargets,
-    createCompGroup: noVcaTargets,
     createPatternInstance: noVcaTargets,
     createVcaGroup: allTracksExist,
     deleteMacro: noVcaTargets,

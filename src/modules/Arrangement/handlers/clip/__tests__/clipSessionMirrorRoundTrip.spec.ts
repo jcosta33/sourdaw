@@ -101,6 +101,7 @@ import { captureTrackRemovalSnapshot } from '../../../useCases/captureTrackRemov
 import { projectClipReplayPrefix } from '../../../useCases/clipEditing/projectClipReplayPrefix';
 import { takeLaneSelection } from '../../../useCases/comping/takeLaneSelection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { readUndoHistoryAudioBufferIds } from '../../../useCases/readUndoHistoryAudioBufferIds';
 import { resolveTakeMedia } from '../../../useCases/resolveTakeMedia';
 import { hitTestClipEdge } from '../../../useCases/timelineInteractions/hitTestClipEdge';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
@@ -2386,6 +2387,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             );
 
             reloadSavedProject();
+            // The restored history still owns both buffers, so the cache keeps the PCM an undo or redo needs.
+            expect(readUndoHistoryAudioBufferIds()).toEqual(new Set(['verse-source', reversedBufferId]));
             expect((await undo()).headConsumed).toBe(true);
             expect(clipNamed('verse')).toMatchObject({
                 name: 'Verse',

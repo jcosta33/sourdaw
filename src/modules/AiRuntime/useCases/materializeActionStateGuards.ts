@@ -254,7 +254,6 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     toggleControlRoomMono: passThrough,
     toggleControlRoomDim: passThrough,
     switchMonitor: passThrough,
-    createCompGroup: passThrough,
     togglePunchRecording: passThrough,
     toggleLoopRecord: passThrough,
     triggerScene: passThrough,

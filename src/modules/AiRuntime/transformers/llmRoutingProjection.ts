@@ -325,7 +325,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     connectPush: unchangedContext,
     createAdjustmentLayer: unchangedContext,
     addAdjustmentRegion: unchangedContext,
-    createCompGroup: unchangedContext,
     createPatternInstance: unchangedContext,
     createVcaGroup: unchangedContext,
     deleteMacro: unchangedContext,

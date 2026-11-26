@@ -395,13 +395,6 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
     },
     {
         kind: 'interim-unsupported',
-        category: 'clip',
-        packet: RUNTIME_ACTION_PACKET,
-        reason: 'A comp group lives only in a session store that no project save, undo session or view reads, so its creation has no saved state a reloaded undo could restore and no effect an agent could show; the command is registered once comp groups are project state.',
-        actionTypes: ['createCompGroup'],
-    },
-    {
-        kind: 'interim-unsupported',
         category: 'midi',
         packet: RUNTIME_ACTION_PACKET,
         reason: 'MIDI edits with no executable descriptor yet.',

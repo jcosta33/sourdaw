@@ -202,7 +202,6 @@ const deviceBatchTargetByActionType: DeviceBatchTargetLookup = {
     connectPush: noDeviceBatchTarget,
     createAdjustmentLayer: noDeviceBatchTarget,
     addAdjustmentRegion: noDeviceBatchTarget,
-    createCompGroup: noDeviceBatchTarget,
     createPatternInstance: noDeviceBatchTarget,
     createVcaGroup: noDeviceBatchTarget,
     deleteMacro: noDeviceBatchTarget,

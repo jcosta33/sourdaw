@@ -338,7 +338,6 @@ const mutationKeysByActionType: MutationKeyLookup = {
     connectPush: noKeys,
     createAdjustmentLayer: noKeys,
     addAdjustmentRegion: noKeys,
-    createCompGroup: noKeys,
     createPatternInstance: noKeys,
     createVcaGroup: createVcaGroupKeys,
     deleteMacro: noKeys,

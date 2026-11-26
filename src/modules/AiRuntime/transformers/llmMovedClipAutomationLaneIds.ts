@@ -184,7 +184,6 @@ export const movedClipAutomationLaneIdsByActionType: MovedAutomationLaneLookup =
     connectPush: noMovedAutomationLanes,
     createAdjustmentLayer: noMovedAutomationLanes,
     addAdjustmentRegion: noMovedAutomationLanes,
-    createCompGroup: noMovedAutomationLanes,
     createPatternInstance: noMovedAutomationLanes,
     createVcaGroup: noMovedAutomationLanes,
     deleteMacro: noMovedAutomationLanes,

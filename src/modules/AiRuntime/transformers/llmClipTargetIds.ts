@@ -216,7 +216,6 @@ const clipTargetIdsByActionType: ClipTargetLookup = {
     connectPush: noClipTargets,
     createAdjustmentLayer: noClipTargets,
     addAdjustmentRegion: noClipTargets,
-    createCompGroup: noClipTargets,
     createPatternInstance: (action) => [action.payload.sourceClipId],
     createVcaGroup: noClipTargets,
     deleteMacro: noClipTargets,

@@ -200,7 +200,6 @@ export const splitDuplicateSubjectsByActionType: SplitDuplicateLookup = {
     connectPush: noSplitDuplicateSubjects,
     createAdjustmentLayer: noSplitDuplicateSubjects,
     addAdjustmentRegion: noSplitDuplicateSubjects,
-    createCompGroup: noSplitDuplicateSubjects,
     createPatternInstance: noSplitDuplicateSubjects,
     createVcaGroup: noSplitDuplicateSubjects,
     deleteMacro: noSplitDuplicateSubjects,
