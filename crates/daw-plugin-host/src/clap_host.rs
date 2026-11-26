@@ -226,6 +226,11 @@ impl HostCallbackState {
         }
     }
 
+    /// Whether a latency change is pending, without consuming it.
+    pub fn is_latency_dirty(&self) -> bool {
+        self.latency_dirty.load(Ordering::Acquire)
+    }
+
     /// Atomically read-and-clear the latency-dirty flag. Returns `true` if a
     /// latency change was pending since the last call.
     pub fn take_latency_dirty(&self) -> bool {
@@ -393,6 +398,12 @@ impl HostCallbackState {
     /// it lands on the editor about to open.
     pub fn discard_editor_window_asks(&self) {
         let _ = self.take_editor_window_asks();
+    }
+
+    /// Whether the plugin asked for an editor size no one has applied yet.
+    /// Reads without clearing.
+    pub fn has_pending_editor_resize(&self) -> bool {
+        self.pending_editor_resize.load(Ordering::Acquire) != 0
     }
 
     /// Whether the plugin has asked anything of its editor window that no one

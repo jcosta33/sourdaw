@@ -7,7 +7,7 @@ import {
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
-import { defaultExternalPluginTailState, externalPluginTailStore } from '../../stores/externalPluginTailStore';
+import { resetExternalPluginTails } from '../../stores/externalPluginTailStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -16,6 +16,7 @@ import {
     externalPluginActivationTasks,
 } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
+import { externalPluginServiceMessages } from './externalPluginServiceMessages';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -45,6 +46,8 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
     clearExternalPluginParameterReadState();
     // So do the tails they reported.
-    externalPluginTailStore.set(defaultExternalPluginTailState);
+    resetExternalPluginTails();
     tailRevisionsDuringLoad.clear();
+    // And the out-of-service messages written to their slots.
+    externalPluginServiceMessages.clear();
 }

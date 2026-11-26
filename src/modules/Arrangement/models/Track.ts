@@ -41,7 +41,7 @@ export type FreezeState = {
      * Seconds of plugin-delay compensation the track carried when the buffer
      * was baked. Frozen playback must shift by *this* value, not by the live
      * chain's current latency: the buffer bypasses the device chain, and a
-     * plugin latency change does not mark the track stale (`computeTrackHash`
+     * plugin latency change does not mark the track stale (`digestFreezePrintInput`
      * sees no clip/device change), so compensating against the current chain
      * drifts silently and never self-corrects (FX-4 residual).
      */

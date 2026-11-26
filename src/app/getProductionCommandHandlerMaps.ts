@@ -12,6 +12,7 @@ import { getMacroHandlers, getUndoRedoHandlers, getUndoTreeHandlers } from '#/mo
 import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers } from '#/modules/ControlSurface/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
+import { getCrustHandlers } from '#/modules/Crust/useCases';
 import { getCvGateHandlers } from '#/modules/CvGate/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { getFermenterHandlers } from '#/modules/Fermenter/useCases';
@@ -28,6 +29,7 @@ import {
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
+import { getProofHandlers } from '#/modules/Proof/useCases';
 import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
 import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSampleLibraryHandlers } from '#/modules/SampleLibrary/useCases';
@@ -76,7 +78,9 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getGrandBouleHandlers(),
         getLevainHandlers(),
         getToasterHandlers(),
+        getCrustHandlers(),
         getGlutenHandlers(),
+        getProofHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
         getRaveHandlers(),

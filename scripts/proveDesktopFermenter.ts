@@ -36,6 +36,11 @@ import {
     type FermenterDrive,
     type FermenterObservation,
 } from './desktopFermenterEvidence.ts';
+import {
+    auditionFailure,
+    freshAuditionObservations,
+    type AuditionObservations,
+} from './desktopGrandBouleAuditionEvidence.ts';
 import { digestPayloadComponents, payloadRelativePaths } from './desktopLatencyRecord.ts';
 
 const APP_PATH = 'release/desktop/mac-arm64/Sourdaw.app';
@@ -44,7 +49,8 @@ const COMMIT = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
 const RUN_NUMBER = /^[1-9][0-9]{0,19}$/u;
 const MAX_RECEIPT_BYTES = 1024;
-const USAGE = 'Expected either --capture --receipt PATH or [--family | --workspace] --receipt PATH --json PATH';
+const USAGE =
+    'Expected either --capture --receipt PATH or [--family | --workspace | --audition] --receipt PATH --json PATH';
 
 type RunIdentity = { sourceSha: string; runId: string; runAttempt: string };
 type Digests = { payloadSha256: string; executableSha256: string };
@@ -65,6 +71,7 @@ type FailureCode =
     | 'observations-incomplete'
     | NonNullable<ReturnType<typeof familyFailure>>
     | NonNullable<ReturnType<typeof workspaceFailure>>
+    | NonNullable<ReturnType<typeof auditionFailure>>
     | 'checkout-changed'
     | 'bundle-changed'
     | 'driver-failed';
@@ -378,6 +385,33 @@ export async function runEditorWorkspaceProof(
     return { ...record, scope: 'packaged-premium-editor-workspace', observations };
 }
 
+type AuditionRecord = BoundRecord & {
+    scope: 'packaged-grand-boule-output-audition';
+    observations: AuditionObservations;
+};
+export async function runGrandBouleAuditionProof(
+    options: Options,
+    env: NodeJS.ProcessEnv,
+    ports: { hostSupported: boolean; drive: (binary: string, observations: AuditionObservations) => Promise<void> }
+): Promise<AuditionRecord> {
+    const observations = freshAuditionObservations();
+    const record = await runBoundObservation(options, env, ports.hostSupported, async (binary) => {
+        await ports.drive(binary, observations);
+        const failure = auditionFailure(observations);
+        if (failure) {
+            throw new FermenterProofError(failure);
+        }
+    });
+    const result: AuditionRecord = { ...record, scope: 'packaged-grand-boule-output-audition', observations };
+    if (
+        record.failureCode === 'capture-unavailable' ||
+        (record.failureCode === 'driver-failed' && observations.unavailable !== null)
+    ) {
+        result.verdict = 'not-run';
+    }
+    return result;
+}
+
 /** Publish a fully written private file under its final name, without overwriting prior evidence. */
 function writeFinalJson(path: string, value: object): void {
     const directory = mkdtempSync(join(dirname(path), '.fermenter-'));
@@ -401,13 +435,18 @@ async function main(): Promise<number> {
             capture: { type: 'boolean' },
             family: { type: 'boolean' },
             workspace: { type: 'boolean' },
+            audition: { type: 'boolean' },
             receipt: { type: 'string' },
             json: { type: 'string' },
         },
     });
     const checkout = process.cwd();
-    const { capture, family, workspace, receipt, json } = values;
-    if (!receipt || (family && workspace) || (capture && (family || workspace || json !== undefined))) {
+    const { capture, family, workspace, audition, receipt, json } = values;
+    if (
+        !receipt ||
+        [family, workspace, audition].filter(Boolean).length > 1 ||
+        (capture && (family || workspace || audition || json !== undefined))
+    ) {
         throw new TypeError(USAGE);
     }
     const options = { checkout, app: join(checkout, APP_PATH), receipt };
@@ -420,8 +459,16 @@ async function main(): Promise<number> {
     if (!json) {
         throw new TypeError(USAGE);
     }
-    let record: FamilyRecord | ProofRecord | WorkspaceRecord;
-    if (workspace) {
+    let record: FamilyRecord | ProofRecord | WorkspaceRecord | AuditionRecord;
+    if (audition) {
+        record = await runGrandBouleAuditionProof(options, process.env, {
+            hostSupported,
+            async drive(binary, observations) {
+                const { driveDesktopGrandBouleAudition } = await import('./desktopGrandBouleAuditionDrive.ts');
+                await driveDesktopGrandBouleAudition(binary, observations);
+            },
+        });
+    } else if (workspace) {
         record = await runEditorWorkspaceProof(options, process.env, {
             hostSupported,
             async drive(binary, observations) {
@@ -448,7 +495,9 @@ async function main(): Promise<number> {
     }
     writeFinalJson(json, record);
     let label = 'Fermenter';
-    if (workspace) {
+    if (audition) {
+        label = 'Grand Boule output audition';
+    } else if (workspace) {
         label = 'Premium editor workspace';
     } else if (family) {
         label = 'Premium editor family';

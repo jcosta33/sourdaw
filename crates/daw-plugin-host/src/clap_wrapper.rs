@@ -61,10 +61,10 @@ use crate::scanner::{
     category_from_clap_features, clap_library_path, owned_feature_list, ScanError,
 };
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorClosed, EditorVisibility, EditorWindowAsks,
-    EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    PluginError, PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
-    MAX_MIDI_EVENTS_PER_BLOCK,
+    signal_pending_process_refusal, signal_pending_service_change, AudioPlugin, EditorClosed,
+    EditorVisibility, EditorWindowAsks, EditorWindowResizer, HostMidiEvent, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, PluginError, PluginHostRequestNotifier, ProcessMode,
+    ProcessingGate, ServiceChange, SharedEditorWindow, MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -204,6 +204,9 @@ pub struct ClapWrapper {
     /// block would otherwise print once per control visit for the rest of the
     /// session.
     process_refusal_reported: bool,
+    /// The out-of-service reason this wrapper last answered `take_service_change`
+    /// with, so a state it already published is not published again.
+    published_out_of_service: Option<String>,
     /// The plugin's declared audio port layout and the preallocated buffers
     /// that honour it. Replaces a hardcoded stereo pair that ignored the
     /// declaration entirely.
@@ -223,6 +226,10 @@ pub struct ClapWrapper {
     midi_scratch: Vec<clap_event_note>,
     /// Preallocated parameter event scratch list. Cleared + refilled each block, never reallocated.
     parameter_scratch: Vec<clap_event_param_value>,
+    /// The block's input list in time order, as indexes into the two scratch
+    /// lists above (see [`merge_event_order`]). Preallocated at both lists'
+    /// capacities together; cleared and refilled each block, never reallocated.
+    event_order_scratch: Vec<u32>,
     /// Where the plugin's *own* parameter events land — the mirror of
     /// `parameter_scratch`, which carries host writes the other way.
     ///
@@ -1377,12 +1384,14 @@ impl ClapWrapper {
             process_refused: false,
             processing_start_refused: false,
             process_refusal_reported: false,
+            published_out_of_service: None,
             audio,
             is_instrument,
             accepts_note_events,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
@@ -1428,12 +1437,14 @@ impl ClapWrapper {
             process_refused: false,
             processing_start_refused: false,
             process_refusal_reported: false,
+            published_out_of_service: None,
             audio: AudioBusLayout::portless(),
             is_instrument: false,
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             command_fixture: Some(EngineOwnedCommandFixture {
                 state,
@@ -1627,6 +1638,23 @@ impl ClapWrapper {
     #[doc(hidden)]
     pub fn latch_engine_owned_command_fixture_process_refusal(&mut self) {
         self.latch_process_refusal();
+    }
+
+    /// Latch a refused start of processing on a fixture, exactly as the audio
+    /// thread does: the wrapper's own flag, and the process-wide service hint.
+    /// A fixture has no plugin to refuse `start_processing`, so this is the only
+    /// way a downstream host can drive the visit that publishes it.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn latch_engine_owned_command_fixture_processing_start_refusal(&mut self) {
+        // A refusal stands while the host wants processing and the plugin is not
+        // in it, so the gate is left in exactly that state.
+        self.processing.request_start();
+        self.processing.mark_stopped();
+        if !self.processing_start_refused {
+            self.processing_start_refused = true;
+            signal_pending_service_change();
+        }
     }
 
     /// Whether the recorded failure has already been said out loud. Read back to
@@ -2143,6 +2171,15 @@ impl ClapWrapper {
         self.editor_window.clone()
     }
 
+    /// The window a pending `request_resize` is applied in, leaving the size
+    /// recorded. Control path only; no plugin call.
+    pub fn editor_window_with_pending_resize(&self) -> Option<SharedEditorWindow> {
+        if !self.host_state.has_pending_editor_resize() {
+            return None;
+        }
+        self.editor_window.clone()
+    }
+
     /// Take what the plugin asked of its editor window, with the window to
     /// answer it through. Control path only; no plugin call.
     ///
@@ -2615,6 +2652,12 @@ impl ClapWrapper {
     /// RT-safe: reuses preallocated MIDI and parameter scratch vectors. Values beyond
     /// the fixed capacities are ignored by this block; the engine-side pending queue
     /// is sized to this same bound, so accepted parameter updates fit here.
+    ///
+    /// Each update's `sample_offset` becomes its event's `time`, and the plugin
+    /// reads parameter values and notes as one list in non-decreasing time, as
+    /// CLAP requires of `in_events`. Both slices arrive in non-decreasing time
+    /// already; at one time a parameter value is listed ahead of a note, so a
+    /// note sounds with the value written for its own sample.
     pub fn process_with_midi_and_parameters(
         &mut self,
         inputs: &[&[f32]],
@@ -2643,7 +2686,7 @@ impl ClapWrapper {
             self.parameter_scratch.push(clap_event_param_value {
                 header: clap_event_header {
                     size: mem::size_of::<clap_event_param_value>() as u32,
-                    time: 0,
+                    time: update.sample_offset,
                     space_id: CLAP_CORE_EVENT_SPACE_ID,
                     type_: CLAP_EVENT_PARAM_VALUE,
                     flags: 0,
@@ -2657,6 +2700,11 @@ impl ClapWrapper {
                 value: update.value,
             });
         }
+        merge_event_order(
+            &mut self.event_order_scratch,
+            &self.parameter_scratch,
+            &self.midi_scratch,
+        );
 
         // Raw pointer into the scratch vec — safe because process_audio_internal
         // does not touch event scratch (it only uses input_scratch/output_scratch/plugin).
@@ -2664,12 +2712,16 @@ impl ClapWrapper {
         let midi_events_count = self.midi_scratch.len() as u32;
         let parameter_events_ptr: *const clap_event_param_value = self.parameter_scratch.as_ptr();
         let parameter_events_count = self.parameter_scratch.len() as u32;
+        let event_order_ptr: *const u32 = self.event_order_scratch.as_ptr();
 
         struct EventListCtx {
             midi_events: *const clap_event_note,
             midi_count: u32,
             parameter_events: *const clap_event_param_value,
             parameter_count: u32,
+            /// `midi_count + parameter_count` entries, each naming an event by
+            /// the unmerged index: parameters first, then notes.
+            order: *const u32,
         }
 
         unsafe extern "C" fn event_list_size(list: *const clap_input_events) -> u32 {
@@ -2693,7 +2745,21 @@ impl ClapWrapper {
             let ctx = unsafe { (*list).ctx } as *const EventListCtx;
             // SAFETY: that list's `ctx` is the stack `EventListCtx` below, which
             // outlives the `process` call.
-            if index < unsafe { (*ctx).parameter_count } {
+            let parameter_count = unsafe { (*ctx).parameter_count };
+            // SAFETY: as above — the live stack `EventListCtx`.
+            let midi_count = unsafe { (*ctx).midi_count };
+            if index >= parameter_count + midi_count {
+                return ptr::null();
+            }
+            // SAFETY: as above — the live stack `EventListCtx`.
+            let order = unsafe { (*ctx).order };
+            // SAFETY: `order` is `event_order_scratch.as_ptr()`, filled with
+            // exactly `parameter_count + midi_count` entries, and `index` is below that.
+            let entry = unsafe { order.add(index as usize) };
+            // SAFETY: `entry` points at an initialised element of
+            // `event_order_scratch`, untouched while `process` runs.
+            let index = unsafe { *entry };
+            if index < parameter_count {
                 // SAFETY: as above — the live stack `EventListCtx`.
                 let parameter_events = unsafe { (*ctx).parameter_events };
                 // SAFETY: `parameter_events` is `parameter_scratch.as_ptr()` with
@@ -2704,10 +2770,8 @@ impl ClapWrapper {
                 return unsafe { &(*event).header as *const clap_event_header };
             }
 
-            // SAFETY: as above — the live stack `EventListCtx`.
-            let midi_index = index - unsafe { (*ctx).parameter_count };
-            // SAFETY: as above — the live stack `EventListCtx`.
-            if midi_index >= unsafe { (*ctx).midi_count } {
+            let midi_index = index - parameter_count;
+            if midi_index >= midi_count {
                 return ptr::null();
             }
             // SAFETY: as above — the live stack `EventListCtx`.
@@ -2725,6 +2789,7 @@ impl ClapWrapper {
             midi_count: midi_events_count,
             parameter_events: parameter_events_ptr,
             parameter_count: parameter_events_count,
+            order: event_order_ptr,
         };
         let input_events = clap_input_events {
             ctx: &mut ctx as *mut EventListCtx as *mut c_void,
@@ -2780,6 +2845,11 @@ impl ClapWrapper {
             };
             if started {
                 self.processing.mark_started();
+                if self.processing_start_refused {
+                    // A refused start has now succeeded: the slot is served
+                    // again, and the control path publishes it.
+                    signal_pending_service_change();
+                }
             }
             return;
         }
@@ -2866,8 +2936,9 @@ impl ClapWrapper {
         if !self.processing.is_processing() {
             // Either the plugin refused to start, or a stop has been requested
             // and performed. Either way it must not be handed a block.
-            if self.processing.wants_processing() {
+            if self.processing.wants_processing() && !self.processing_start_refused {
                 self.processing_start_refused = true;
+                signal_pending_service_change();
             }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
@@ -3310,6 +3381,39 @@ fn empty_transport_event() -> clap_event_transport {
     transport
 }
 
+/// Refill `order` with the block's input list in non-decreasing time: a stable
+/// merge of the parameter values and the notes, each already in time order,
+/// naming an event by its unmerged index — parameter `i` as `i`, note `j` as
+/// `parameters.len() + j`. At one time the parameter value goes first, so a
+/// note sounds with the value written for its own sample. `order` was reserved
+/// at both lists' capacities together, so the pushes never reallocate.
+fn merge_event_order(
+    order: &mut Vec<u32>,
+    parameters: &[clap_event_param_value],
+    notes: &[clap_event_note],
+) {
+    order.clear();
+    let (mut parameter, mut note) = (0, 0);
+    while parameter < parameters.len() || note < notes.len() {
+        let parameter_first = note == notes.len()
+            || (parameter < parameters.len()
+                && parameters[parameter].header.time <= notes[note].header.time);
+        if parameter_first {
+            order.push(parameter as u32);
+            parameter += 1;
+        } else {
+            order.push((parameters.len() + note) as u32);
+            note += 1;
+        }
+    }
+}
+
+/// An empty merge-order scratch reserved for a full block of parameter values
+/// and notes, so `merge_event_order` never grows it on the audio thread.
+fn event_order_scratch() -> Vec<u32> {
+    Vec::with_capacity(MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK)
+}
+
 /// Refill the block's note scratch from the host's events.
 ///
 /// Each event's `frame_offset` becomes the CLAP header's `time`, which is what
@@ -3566,6 +3670,12 @@ impl ClapWrapper {
         }
 
         Ok(self.latency_samples())
+    }
+
+    /// Whether the plugin has flagged a latency change not yet polled. Reads
+    /// the host's flag only; the plugin is not called.
+    pub fn has_pending_latency_change(&self) -> bool {
+        self.host_state.is_latency_dirty()
     }
 
     /// If the plugin flagged a latency change (via `clap_host_latency.changed()`
@@ -3916,6 +4026,10 @@ impl AudioPlugin for ClapWrapper {
         ClapWrapper::editor_window_with_pending_asks(self)
     }
 
+    fn editor_window_with_pending_resize(&self) -> Option<SharedEditorWindow> {
+        ClapWrapper::editor_window_with_pending_resize(self)
+    }
+
     fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
         ClapWrapper::take_editor_window_asks(self)
     }
@@ -4076,6 +4190,26 @@ impl HostedPluginRuntime for ClapWrapper {
 
     fn has_passed_a_block_unprocessed(&self) -> bool {
         self.processing_start_refused
+    }
+
+    fn take_service_change(&mut self) -> Option<ServiceChange> {
+        // The latch never resets, so "out of service now" is the refusal still
+        // standing: the host wants processing and the plugin is not in it. A
+        // requested stop is not a refusal.
+        let refused_now = self.processing_start_refused
+            && self.processing.wants_processing()
+            && !self.processing.is_processing();
+        let current = refused_now.then(|| {
+            // The refused-start path always hands the engine's input back
+            // (`copy_inputs_to_outputs`), instrument or not.
+            format!(
+                "'{}' refused to start processing; its blocks pass through unprocessed",
+                self.name
+            )
+        });
+        let change = ServiceChange::between(&self.published_out_of_service, &current)?;
+        self.published_out_of_service = current;
+        Some(change)
     }
 }
 
@@ -4369,6 +4503,7 @@ mod tests {
             .map(|param_id| HostParameterUpdate {
                 param_id: 1_000 + param_id,
                 value: 0.5,
+                sample_offset: 0,
             })
             .collect();
 
@@ -4380,6 +4515,85 @@ mod tests {
             .collect();
         expected.extend(expected_notes(&notes));
         assert_eq!(*read_events(), expected);
+    }
+
+    /// A parameter update's sample offset becomes its header's `time`, and
+    /// parameter values and notes are merged into one list in non-decreasing
+    /// time, as CLAP requires of `in_events`. At one time a parameter value is
+    /// read ahead of a note, so a note sounds with the value written for its
+    /// own sample. Two points for one parameter both reach the plugin, in order.
+    #[test]
+    fn parameter_values_and_notes_reach_the_plugin_merged_in_time_order() {
+        let _guard = event_read_test_guard();
+        let mut wrapper = event_reading_wrapper();
+        let notes = [
+            host_note(60, 100, 0, true, 10),
+            host_note(60, 0, 0, false, 100),
+        ];
+        let updates = [
+            HostParameterUpdate {
+                param_id: 4,
+                value: 0.2,
+                sample_offset: 10,
+            },
+            HostParameterUpdate {
+                param_id: 4,
+                value: 0.8,
+                sample_offset: 200,
+            },
+        ];
+
+        process_events(&mut wrapper, &notes, &updates);
+
+        assert_eq!(
+            *read_events(),
+            vec![
+                (CLAP_EVENT_PARAM_VALUE, 10, 4),
+                (CLAP_EVENT_NOTE_ON, 10, 60),
+                (CLAP_EVENT_NOTE_OFF, 100, 60),
+                (CLAP_EVENT_PARAM_VALUE, 200, 4),
+            ]
+        );
+    }
+
+    /// Merging a full block of parameter values and notes into one time-ordered
+    /// list fills the order scratch to its bound, and it was reserved when the
+    /// wrapper was built: the block allocates nothing. Measured with the
+    /// crate's per-thread counting allocator over the first `process` call.
+    /// Mutation: build the wrapper with a zero-capacity `event_order_scratch`
+    /// — the merge allocates on the audio thread.
+    #[test]
+    fn a_full_merged_block_performs_no_heap_allocation() {
+        let _guard = event_read_test_guard();
+        let mut wrapper = event_reading_wrapper();
+        let notes = full_block_of_notes();
+        let updates: Vec<HostParameterUpdate> = (0..MAX_PARAMETER_EVENTS as u32)
+            .map(|param_id| HostParameterUpdate {
+                param_id: 1_000 + param_id,
+                value: 0.5,
+                sample_offset: (param_id * 3) % 256,
+            })
+            .collect();
+        // The stub's own log grows with the events it reads; reserving it here
+        // keeps that growth out of the count without a warm-up block, which
+        // would also grow the order scratch and hide an unreserved one.
+        read_events().reserve(MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK);
+
+        let before = crate::allocation_counter::allocation_count();
+        process_events(&mut wrapper, &notes, &updates);
+        let after = crate::allocation_counter::allocation_count();
+
+        assert_eq!(
+            read_events().len(),
+            MAX_PARAMETER_EVENTS + MAX_MIDI_EVENTS_PER_BLOCK,
+            "the measured block was not the full one"
+        );
+        assert_eq!(
+            after - before,
+            0,
+            "the merged block allocated {} times",
+            after - before
+        );
     }
 
     // ── Latency query + change notification (PH-4) ──────────────────────
@@ -4540,6 +4754,7 @@ mod tests {
             process_refused: false,
             processing_start_refused: false,
             process_refusal_reported: false,
+            published_out_of_service: None,
             audio,
             // Derived from the stub's own descriptor, the way the loader
             // derives it, so a stub declaring `instrument` is hosted exactly as
@@ -4551,6 +4766,7 @@ mod tests {
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI_EVENTS_PER_BLOCK),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            event_order_scratch: event_order_scratch(),
             parameter_events: Arc::new(PluginParameterEventQueue::default()),
             #[cfg(feature = "engine-owned-command-fixture")]
             command_fixture: None,
@@ -6047,6 +6263,128 @@ mod tests {
             0,
             "no fallback was needed while the audio thread was still pumping"
         );
+    }
+
+    /// Whether the stub below accepts `start_processing`; a test flips it to model
+    /// a plugin that refuses once and then accepts.
+    static STUB_START_ACCEPTS: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    unsafe extern "C" fn stub_start_processing_refusing(_plugin: *const clap_plugin) -> bool {
+        STUB_START_ACCEPTS.load(Ordering::Relaxed)
+    }
+
+    /// A refused start publishes out of service once; the start that later
+    /// succeeds raises the hint and publishes back in service once. A requested
+    /// stop after a refusal is not out of service.
+    #[test]
+    fn a_refused_start_that_later_succeeds_is_published_back_in_service_once() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        // SAFETY: `clap_plugin` is raw pointers and `Option` fn pointers, for which
+        // all-zero bytes are null and `None`.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+        crate::traits::take_pending_service_change_signal();
+
+        process_one_block(&mut wrapper);
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+        assert_eq!(wrapper.take_service_change(), None);
+        crate::traits::take_pending_service_change_signal();
+
+        STUB_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+        assert!(
+            crate::traits::take_pending_service_change_signal(),
+            "the start that succeeds after a refusal raises the service hint"
+        );
+        assert_eq!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::BackInService)
+        );
+        assert_eq!(wrapper.take_service_change(), None);
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+    }
+
+    /// A stop requested after a refusal leaves the plugin unprocessed, which is
+    /// not the host taking it out of service.
+    #[test]
+    fn a_requested_stop_after_a_refused_start_is_not_out_of_service() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        // SAFETY: as above.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+
+        process_one_block(&mut wrapper);
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+
+        wrapper.processing_gate().request_stop();
+        assert_eq!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::BackInService)
+        );
+    }
+
+    /// A plugin that answers `start_processing` with false is taken out of
+    /// service by the block that finds it so: the audio thread raises the
+    /// service hint on that transition, and the control path then publishes the
+    /// reason once.
+    #[test]
+    fn a_plugin_refusing_to_start_processing_raises_the_service_hint_and_is_published_once() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        // SAFETY: `clap_plugin` is raw pointers and `Option` fn pointers, for which
+        // all-zero bytes are null and `None`.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+        crate::traits::take_pending_service_change_signal();
+
+        process_one_block(&mut wrapper);
+
+        assert!(
+            crate::traits::take_pending_service_change_signal(),
+            "the refused start raises the service hint"
+        );
+        process_one_block(&mut wrapper);
+        assert!(
+            !crate::traits::take_pending_service_change_signal(),
+            "a refusal already latched raises nothing again"
+        );
+        let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
+            panic!("a refused start is published as out of service");
+        };
+        assert!(
+            reason.ends_with("refused to start processing; its blocks pass through unprocessed"),
+            "{reason}"
+        );
+        assert_eq!(wrapper.take_service_change(), None);
     }
 
     /// The claim the rest of this section only approximates: both transitions
@@ -8243,6 +8581,7 @@ mod tests {
                 &[HostParameterUpdate {
                     param_id: 8,
                     value: 0.44,
+                    sample_offset: 0,
                 }],
             );
 
@@ -8290,6 +8629,7 @@ mod tests {
                 &[HostParameterUpdate {
                     param_id: 8,
                     value: 0.44,
+                    sample_offset: 0,
                 }],
             );
 
@@ -8322,7 +8662,9 @@ mod tests {
     // "the plugin failed to process, and the output buffers are in an undefined
     // state". A host that discards the answer plays those buffers.
 
-    use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
+    use crate::traits::{
+        take_pending_process_refusal_signal, ServiceChange, PROCESS_REFUSAL_HINT_TEST_LOCK,
+    };
     use clap_sys::process::{
         CLAP_PROCESS_CONTINUE, CLAP_PROCESS_CONTINUE_IF_NOT_QUIET, CLAP_PROCESS_SLEEP,
         CLAP_PROCESS_TAIL,
@@ -8557,6 +8899,31 @@ mod tests {
             wrapper.process_refused,
             "the portless path reads the status too"
         );
+    }
+
+    /// A refused start is published to the slot once, naming the plugin and what
+    /// happens to its blocks. The wake is covered where the transition is
+    /// raised on the audio path and in `sourdaw-native`'s drain tick.
+    #[test]
+    fn a_refused_start_is_published_as_a_service_change_once() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+        assert_eq!(wrapper.take_service_change(), None);
+
+        wrapper.processing_start_refused = true;
+        wrapper.processing_gate().request_start();
+
+        let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
+            panic!("a refused start is published as out of service");
+        };
+        assert!(
+            reason.ends_with("refused to start processing; its blocks pass through unprocessed"),
+            "{reason}"
+        );
+        assert_eq!(wrapper.take_service_change(), None);
     }
 
     /// The audio thread may not print, so it latches the failure and raises the

@@ -398,6 +398,7 @@ fn live_runtime(fx: &InstalledFx, format: Format, descriptor_id: &str) -> Hosted
         &[HostParameterUpdate {
             param_id: GAIN_PARAM_ID,
             value: LIVE_GAIN,
+            sample_offset: 0,
         }],
     );
     runtime
@@ -851,43 +852,47 @@ fn a_dry_track_lands_aligned_with_an_offline_vst3_instances_latency() {
 // ── (c) Automation reaches the offline instance ─────────────────────────
 
 fn a_hosted_parameter_write_mid_render_moves_the_offline_instance_in(format: Format) {
-    const WRITE_FRAME: usize = 8_192;
+    // Two points inside one render block, neither on its head: the whole path
+    // — mapping, engine stamp, bridge queue, wrapper, plugin — has to carry
+    // each one to its own sample for the print to match.
+    const BLOCK_HEAD: usize = 8_192;
+    const FIRST_WRITE: usize = BLOCK_HEAD + 10;
+    const SECOND_WRITE: usize = BLOCK_HEAD + 200;
     let fx = InstalledFx::create(&format!("automation-{format:?}"));
     let (state, _live) = state_with_live_fx(&fx, format);
     let ui = RecordingUiThread::start();
     let seams = fx.seams();
     let dc_track = |devices: Value| vec![strip("t1", devices), clip("t1", "dc", 0, FRAMES)];
-    let write = json!({ "kind": "write-device-parameter",
-        "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d-fx",
-                    "parameterId": GAIN_PARAM_ID.to_string() },
-        "write": { "shape": "step", "value": 1.0, "time": WRITE_FRAME as f64 / EXPORT_RATE } });
+    let write = |value: f64, frame: usize| {
+        json!({ "kind": "write-device-parameter",
+            "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d-fx",
+                        "parameterId": GAIN_PARAM_ID.to_string() },
+            "write": { "shape": "step", "value": value, "time": frame as f64 / EXPORT_RATE } })
+    };
 
     let dry = render(batch(dc_track(json!([]))), &state, &ui, &seams, None).expect("renders");
     let mut automated = dc_track(json!([fx_device()]));
-    automated.push(write);
+    automated.push(write(1.0, FIRST_WRITE));
+    automated.push(write(0.5, SECOND_WRITE));
     let print = render(batch(automated), &state, &ui, &seams, None).expect("renders");
 
-    // The write lands at the head of the block holding its frame — block
-    // granular today (#6560) — and the offline block grid puts that block's
-    // head on the write frame itself.
-    assert_eq!(WRITE_FRAME % daw_engine::offline::OFFLINE_BLOCK_FRAMES, 0);
-    let expected = through_the_effect(&dry, |frame| {
-        if frame < WRITE_FRAME {
-            LIVE_GAIN as f32
-        } else {
-            1.0
-        }
+    assert_eq!(BLOCK_HEAD % daw_engine::offline::OFFLINE_BLOCK_FRAMES, 0);
+    const { assert!(SECOND_WRITE < BLOCK_HEAD + daw_engine::offline::OFFLINE_BLOCK_FRAMES) };
+    let expected = through_the_effect(&dry, |frame| match frame {
+        frame if frame < FIRST_WRITE => LIVE_GAIN as f32,
+        frame if frame < SECOND_WRITE => 1.0,
+        _ => 0.5,
     });
     assert_frames_equal(&print, &expected);
 }
 
 #[test]
-fn a_hosted_parameter_write_mid_render_moves_an_offline_clap_instance_from_its_landing_block() {
+fn a_hosted_parameter_write_mid_render_moves_an_offline_clap_instance_on_its_sample() {
     a_hosted_parameter_write_mid_render_moves_the_offline_instance_in(Format::Clap);
 }
 
 #[test]
-fn a_hosted_parameter_write_mid_render_moves_an_offline_vst3_instance_from_its_landing_block() {
+fn a_hosted_parameter_write_mid_render_moves_an_offline_vst3_instance_on_its_sample() {
     a_hosted_parameter_write_mid_render_moves_the_offline_instance_in(Format::Vst3);
 }
 
@@ -1279,6 +1284,36 @@ fn a_plugin_under_an_ungranted_folder_is_refused_by_the_offline_re_vet() {
         refusal.contains("'d-fx'")
             && refusal.contains("'Sourdaw Harness Fx'")
             && refusal.contains("Unauthorized plugin scan path"),
+        "{refusal}"
+    );
+}
+
+/// An instance live-loaded before a scan quarantined its binary is not
+/// rebuilt offline from that binary: the export is refused by name.
+#[test]
+fn a_plugin_quarantined_after_its_live_load_refuses_the_render_by_name() {
+    let fx = InstalledFx::create("quarantined-after-load");
+    let (state, _live) = state_with_live_fx(&fx, Format::Clap);
+    state.plugin_registry_store.quarantine_failure(
+        fx.path(Format::Clap),
+        "Plugin scan helper timed out".to_string(),
+        1,
+    );
+    let ui = RecordingUiThread::start();
+
+    let refusal = render(
+        batch(impulse_track(json!([fx_device()]))),
+        &state,
+        &ui,
+        &fx.seams(),
+        None,
+    )
+    .expect_err("a quarantined binary is never printed through");
+
+    assert!(
+        refusal.contains("'d-fx'")
+            && refusal.contains("'Sourdaw Harness Fx'")
+            && refusal.contains("a plugin scan quarantined it (Plugin scan helper timed out)"),
         "{refusal}"
     );
 }

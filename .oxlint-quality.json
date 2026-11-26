@@ -70,9 +70,23 @@
                     { "max": 80, "skipBlankLines": true, "skipComments": true, "IIFEs": true }
                 ],
                 "max-params": ["error", { "max": 4 }],
+                "no-new-wrappers": "error",
                 "sourdaw-craft/no-positional-boolean-flags": "error",
                 "typescript/no-non-null-assertion": "error",
                 "unicorn/no-invalid-remove-event-listener": "error"
+            }
+        },
+        {
+            "files": ["src/{app,helpers,infra,routes,utils}/**/*.{ts,tsx}"],
+            "excludeFiles": [
+                "**/*.d.ts",
+                "**/*.{spec,test,mock}.{ts,tsx}",
+                "**/setupTests.ts",
+                "**/__tests__/**",
+                "src/**/testing/**"
+            ],
+            "rules": {
+                "eslint/no-lonely-if": "error"
             }
         },
         {

@@ -6654,6 +6654,494 @@
                     "maxCommands": 10
                 }
             }
+        },
+        {
+            "id": "AC067-HO-MULTI-4",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "make the chorus hit harder",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Kick", "Snare"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-punchy",
+                            "targetName": "Kick",
+                            "rangeName": "Chorus"
+                        },
+                        {
+                            "recipeId": "drums-punchy",
+                            "targetName": "Snare",
+                            "rangeName": "Chorus"
+                        }
+                    ]
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-1",
+                    "recipeId": "drums-punchy",
+                    "targetName": "Kick",
+                    "role": "drums"
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-2",
+                    "recipeId": "drums-punchy",
+                    "targetName": "Snare",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Kick", "Snare"],
+                    "rangeName": "Chorus",
+                    "metrics": ["transientDensity"],
+                    "recipeCallIds": ["expansion-1", "expansion-2"]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Kick", "Snare"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "deviceType": "builtin-compressor"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-auto-makeup",
+                            "value": 1
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-threshold",
+                            "value": -16
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-attack",
+                            "value": 25
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-release",
+                            "value": 90
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-makeup",
+                            "value": 4.5
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deviceType": "builtin-compressor"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-auto-makeup",
+                            "value": 1
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-threshold",
+                            "value": -16
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-attack",
+                            "value": 25
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-release",
+                            "value": 90
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-makeup",
+                            "value": 4.5
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "transientDensity",
+                        "relation": "hold",
+                        "target": "Kick"
+                    },
+                    {
+                        "metric": "transientDensity",
+                        "relation": "hold",
+                        "target": "Snare"
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "comp-attack", "comp-auto-makeup", "comp-makeup", "comp-release", "comp-threshold", "track-snare"],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 12
+                }
+            }
+        },
+        {
+            "id": "AC067-HO-MULTI-5",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "polish the low end",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Kick", "Snare"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-warm",
+                            "targetName": "Kick",
+                            "rangeName": "Verse"
+                        },
+                        {
+                            "recipeId": "drums-warm",
+                            "targetName": "Snare",
+                            "rangeName": "Verse"
+                        }
+                    ]
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-1",
+                    "recipeId": "drums-warm",
+                    "targetName": "Kick",
+                    "role": "drums"
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-2",
+                    "recipeId": "drums-warm",
+                    "targetName": "Snare",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Kick", "Snare"],
+                    "rangeName": "Verse",
+                    "metrics": ["frequencyBandEnergy", "spectralCentroid"],
+                    "recipeCallIds": ["expansion-1", "expansion-2"]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Kick", "Snare"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": 3
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-freq",
+                            "value": 10000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": -2
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": 3
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-freq",
+                            "value": 10000
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-high-gain",
+                            "value": -2
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "increase",
+                        "target": "Kick"
+                    },
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "decrease",
+                        "target": "Kick"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "increase",
+                        "target": "Snare"
+                    },
+                    {
+                        "metric": "spectralCentroid",
+                        "relation": "decrease",
+                        "target": "Snare"
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "eq-high-freq", "eq-high-gain", "eq-low-gain", "track-snare"],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 8
+                }
+            }
+        },
+        {
+            "id": "AC067-HO-MULTI-6",
+            "promptClass": "perceptual-multi-target",
+            "class": "execute-exact",
+            "prompt": "tighten up the drums",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "perceptual",
+                    "targets": ["Kick", "Snare"],
+                    "objectives": [
+                        {
+                            "recipeId": "drums-tight",
+                            "targetName": "Kick",
+                            "rangeName": "Intro"
+                        },
+                        {
+                            "recipeId": "drums-tight",
+                            "targetName": "Snare",
+                            "rangeName": "Intro"
+                        }
+                    ]
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-1",
+                    "recipeId": "drums-tight",
+                    "targetName": "Kick",
+                    "role": "drums"
+                },
+                {
+                    "kind": "expand",
+                    "id": "expansion-2",
+                    "recipeId": "drums-tight",
+                    "targetName": "Snare",
+                    "role": "drums"
+                },
+                {
+                    "kind": "measure-preview",
+                    "id": "preview",
+                    "targets": ["Kick", "Snare"],
+                    "rangeName": "Intro",
+                    "metrics": ["frequencyBandEnergy"],
+                    "recipeCallIds": ["expansion-1", "expansion-2"]
+                },
+                {
+                    "kind": "propose-compiled",
+                    "compiledCallIds": ["preview"],
+                    "targets": ["Kick", "Snare"]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "deviceType": "builtin-compressor"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-auto-makeup",
+                            "value": 1
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-threshold",
+                            "value": -18
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-ratio",
+                            "value": 5
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-release",
+                            "value": 75
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 80
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": -2
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deviceType": "builtin-compressor"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-auto-makeup",
+                            "value": 1
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-threshold",
+                            "value": -18
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-ratio",
+                            "value": 5
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-release",
+                            "value": 75
+                        }
+                    },
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-freq",
+                            "value": 80
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": -2
+                        }
+                    }
+                ],
+                "measuredGoals": [
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "decrease",
+                        "target": "Kick"
+                    },
+                    {
+                        "metric": "frequencyBandEnergy",
+                        "band": "bass",
+                        "relation": "decrease",
+                        "target": "Snare"
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "comp-auto-makeup", "comp-ratio", "comp-release", "comp-threshold", "eq-low-freq", "eq-low-gain", "track-snare"],
+                    "protectedIds": ["track-drum-bus", "track-reverb-bus"],
+                    "maxCommands": 16
+                }
+            }
         }
     ]
 }

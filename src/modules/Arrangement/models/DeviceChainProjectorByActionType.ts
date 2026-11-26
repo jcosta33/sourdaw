@@ -117,7 +117,9 @@ export const deviceChainProjectorByActionType: {
     setToasterFactoryKit: (action, devices) => projectToasterFactoryKit(devices, action),
     setBacteriaFactoryPatch: (action, devices) =>
         projectFactoryPatch(devices, { ...action.payload, deviceType: DEVICE_TYPE_IDS.bacteria }),
+    setCrustFactoryPreset: null,
     setGlutenFactoryPreset: null,
+    setProofPatchSelection: null,
     createBus: null,
     createFolder: null,
     setSend: null,

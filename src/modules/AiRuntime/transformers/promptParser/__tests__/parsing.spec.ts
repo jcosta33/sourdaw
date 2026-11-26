@@ -109,7 +109,7 @@ describe('promptParser parsing', () => {
             }
         );
 
-        it('does not execute a colliding exact alias by registry order', () => {
+        it('does not run a clipboard phrase as a duplicate', () => {
             const context = {
                 selectedTrackId: 'track-1',
                 selectedClipId: 'clip-1',
