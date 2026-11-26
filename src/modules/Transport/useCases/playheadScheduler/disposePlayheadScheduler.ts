@@ -3,8 +3,8 @@ import { clearAppliedModulationValues } from '#/modules/Automation/useCases';
 
 import { forgetStoredControllerEngagements } from '../../services/storedControllerEngagement';
 import { playheadClockRef, releasePlayheadClockHold } from '../../stores/playheadClockRef';
-import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { clearAppliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
+import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
