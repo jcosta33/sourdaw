@@ -34,10 +34,43 @@ type Gesture = {
     cancelled: boolean;
     reacquirable?: boolean;
     committed: boolean;
+    supersededByPreset?: boolean;
     pending?: Promise<void>;
     settled: boolean;
 };
 type Scope = { deviceId: string; sequence: number; disposed: boolean; gestures: Map<Key, Gesture> };
+
+const mountedScopes = new Set<Scope>();
+const stagedPresets = new Map<object, { deviceId: string; ownsProjection: () => boolean }>();
+
+export const crustPresetPreviewAuthority = {
+    stage(action: object, deviceId: string, ownsProjection: () => boolean): void {
+        stagedPresets.set(action, { deviceId, ownsProjection });
+    },
+    release(action: object): void {
+        stagedPresets.delete(action);
+    },
+    discard(deviceId: string): void {
+        for (const scope of mountedScopes) {
+            if (scope.deviceId !== deviceId) {
+                continue;
+            }
+            for (const gesture of scope.gestures.values()) {
+                if (gesture.settled) {
+                    continue;
+                }
+                gesture.cancelled = true;
+                gesture.supersededByPreset = true;
+                if (!gesture.pending) {
+                    const failure = retire(scope, gesture, false);
+                    if (failure) {
+                        notifySettlementFailure(failure.errors, 'Crust preview cleanup failed');
+                    }
+                }
+            }
+        }
+    },
+};
 
 function readTarget(gesture: Gesture, baseline = true) {
     if (!gesture.project.isCurrent() || captureProjectRootIdentity() !== gesture.root) {
@@ -122,7 +155,7 @@ function retire(
     gesture.settled = true;
     const errors: unknown[] = [];
     try {
-        if (flushRecording) {
+        if (flushRecording && !gesture.supersededByPreset) {
             gesture.recording.release();
         } else {
             gesture.recording.discard();
@@ -131,7 +164,7 @@ function retire(
         errors.push(error);
     }
     try {
-        if (restore) {
+        if (restore && !gesture.supersededByPreset) {
             restorePreview(scope, gesture);
         }
     } catch (error) {
@@ -405,7 +438,14 @@ function change(scope: Scope, key: Key, value: number, transient = false, record
 /** One mounted panel owns numeric previews; project truth changes only at a physical terminal. */
 export function createCrustParameterGesture(deviceId: string) {
     const scope: Scope = { deviceId, sequence: 0, disposed: false, gestures: new Map() };
+    mountedScopes.add(scope);
     const unsubscribe = trackStore.subscribe(() => {
+        // A staged preset may still abort. Its committed effect owns preview retirement and ordered replay.
+        for (const stage of stagedPresets.values()) {
+            if (stage.deviceId === deviceId && stage.ownsProjection()) {
+                return;
+            }
+        }
         for (const gesture of scope.gestures.values()) {
             if (!gesture.pending && !readTarget(gesture)) {
                 cancel(scope, gesture);
@@ -441,6 +481,7 @@ export function createCrustParameterGesture(deviceId: string) {
         },
         dispose: () => {
             scope.disposed = true;
+            mountedScopes.delete(scope);
             unsubscribe();
             for (const gesture of scope.gestures.values()) {
                 if (!gesture.pending) {

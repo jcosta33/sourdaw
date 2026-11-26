@@ -1,5 +1,5 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
-import { getFactoryDrumKitByIndex, isDrumDevice } from '#/modules/AudioEngine/useCases';
+import { getFactoryDrumKitByIndex, isDrumDevice, isToasterDevice } from '#/modules/AudioEngine/useCases';
 
 import {
     CANONICAL_TRACK_ROLES,
@@ -383,7 +383,7 @@ function authoredRole(input: RoleInput): CanonicalTrackRoleProjection | null {
 }
 
 function storedVoices(device: Device): Array<{ pitch: number; family: CanonicalTrackRole | null }> | null {
-    if (device.type === 'toaster') {
+    if (isToasterDevice(device.type)) {
         const metadata = storedDrumVoices.read('getCanonicalTrackRole').voicesOf(device.deviceState);
         return metadata.status === 'known' ? metadata.voices : null;
     }
