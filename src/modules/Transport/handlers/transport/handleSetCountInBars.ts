@@ -11,7 +11,11 @@ export const handleSetCountInBars = createHandler<'setCountInBars'>({
     canReapplyAfterDivergence: (alpha) => alpha.payload.expectedBars !== undefined,
     validate: () => getTransportState() !== null,
     validationRefusalReason: () => (getTransportState() === null ? 'Transport state is not available' : null),
-    execute: (alpha) => setCountInBars(alpha.payload.bars, alpha.payload.expectedBars),
+    // A written change reports nothing, as an unconditional write always has; only a refusal reports a status.
+    execute: (alpha) => {
+        const result = setCountInBars(alpha.payload.bars, alpha.payload.expectedBars);
+        return result.status === 'written' ? undefined : result;
+    },
     isNoop: (alpha) => getTransportState()?.countInBars === clampTransportBars(alpha.payload.bars),
     describe: (alpha, context) => {
         const live = getTransportState()?.countInBars;

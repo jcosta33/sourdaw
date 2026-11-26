@@ -185,7 +185,7 @@ function barsSuite<Action extends AppAction>({ type, handler, make: action, key,
         it('applies a restore whose expected bars still hold', async () => {
             transportStore.set({ ...defaultTransportState, [key]: 4 });
 
-            expect(await handler.execute(action(initial, 4))).toEqual({ status: 'written' });
+            expect(await handler.execute(action(initial, 4))).toBeUndefined();
             expect(transportStore.value?.[key]).toBe(initial);
         });
 
