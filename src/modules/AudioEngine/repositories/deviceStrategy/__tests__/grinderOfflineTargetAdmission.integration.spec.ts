@@ -71,6 +71,7 @@ describe('saved Grinder parameter admission into the offline control target', ()
                 [key, 0.7],
                 ['neuralCustomOutputTrim', 0.2],
                 ['y'.repeat(128), 0.4],
+                ['ampModel', 4],
             ] as const) {
                 await executeAppAction({
                     type: 'setDeviceParameter',
@@ -82,6 +83,7 @@ describe('saved Grinder parameter admission into the offline control target', ()
                 [key]: 0.7,
                 neuralCustomOutputTrim: 0.2,
                 ['y'.repeat(128)]: 0.4,
+                ampModel: 4,
             });
             if (!savedDevice) {
                 throw new Error('The parameter command did not preserve its device');
@@ -111,7 +113,7 @@ describe('saved Grinder parameter admission into the offline control target', ()
 
             expect(grinderSetParamCalls).toEqual([
                 { name: 'neuralCustomOutputTrim', value: 0.2 },
-                { name: 'y'.repeat(128), value: 0.4 },
+                { name: 'ampModel', value: 4 },
             ]);
             expect(postMessage).toHaveBeenCalledWith({
                 schemaVersion: 1,
@@ -120,7 +122,8 @@ describe('saved Grinder parameter admission into the offline control target', ()
                     trackId: 'offline-grinder-track',
                     deviceId: 'grinder-1',
                     deviceType: 'grinder',
-                    parameterIds: ['neuralCustomOutputTrim', 'y'.repeat(128), 'bypass'],
+                    parameterIds: ['neuralCustomOutputTrim', 'ampModel', 'bypass'],
+                    allowUncapturedImmediate: false,
                 },
                 correlation: { workletGeneration: expect.any(Number) },
             });

@@ -83,12 +83,16 @@ directive that explains it.
 The stock type-aware generic rule reports parameters that establish no type relationship.
 The quality pass counts `no-else-return` findings when a preceding branch already returns on every
 path. It allows `else if` chains and keeps `else` branches that prevent fall-through.
+The product pilot also reports direct calls to the global `Boolean`, `String`, and
+`Number` constructors with `new`. Oxlint 1.93 can turn these objects into primitives
+in direct fix mode, which changes truthiness or runtime type. Both `pnpm lint` and
+`pnpm lint:fix` run the quality pass in check mode.
 
-To convert control-flow ternaries in one file, run Oxlint directly from the repository
-root with no implicit `oxlint-suppressions.json`.
+To convert control-flow ternaries in one handwritten TypeScript file, run Oxlint from
+the repository root with the fixer configuration and no implicit `oxlint-suppressions.json`.
 
 ```sh
-pnpm exec oxlint --config .oxlint-quality.json --disable-nested-config --allow=no-else-return --fix path/to/file.ts
+pnpm exec oxlint --config scripts/lint/oxlint-ternary-fix.json --disable-nested-config --fix path/to/file.ts
 ```
 
 The fixer handles semicolon-terminated ternaries directly in function bodies and

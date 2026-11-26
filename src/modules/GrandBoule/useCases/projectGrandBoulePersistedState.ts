@@ -14,5 +14,5 @@ import { findGrandBouleDevice } from './findGrandBouleDevice';
  * comparing like-for-like projections.
  */
 export function projectGrandBoulePersistedState(deviceId: string): GrandBoulePersistedState {
-    return readGrandBouleDeviceState(findGrandBouleDevice(deviceId)?.deviceState);
+    return readGrandBouleDeviceState(findGrandBouleDevice(deviceId)?.device.deviceState);
 }

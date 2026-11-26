@@ -802,6 +802,7 @@ vi.mock('#/modules/ProjectVersioning/useCases', () => ({
 vi.mock('#/modules/Proof/stores', () => ({ updateProofMeters: noop, clearProofMeters: noop }));
 
 vi.mock('#/modules/Proof/useCases', () => ({
+    getProofHandlers: sentinelHandlers('Proof'),
     registerProofDevice: noop,
     unregisterProofDevice: noop,
     syncFullPatch: noop,
@@ -1091,6 +1092,7 @@ describe('bootstrap', () => {
         'Levain',
         'Toaster',
         'Gluten',
+        'Proof',
         'NodeView',
         'WebMidiInput',
         'Rave',

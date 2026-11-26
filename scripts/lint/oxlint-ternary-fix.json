@@ -1,0 +1,17 @@
+{
+    "$schema": "../../node_modules/oxlint/configuration_schema.json",
+    "jsPlugins": ["../oxlintCraft/plugin.mjs"],
+    "categories": {
+        "correctness": "off",
+        "suspicious": "off",
+        "pedantic": "off",
+        "perf": "off",
+        "style": "off",
+        "restriction": "off",
+        "nursery": "off"
+    },
+    "rules": {
+        "sourdaw-craft/no-control-flow-ternary": "error",
+        "sourdaw-craft/no-complex-ternary-branch": "error"
+    }
+}
