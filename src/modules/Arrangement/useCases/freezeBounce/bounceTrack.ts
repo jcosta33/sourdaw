@@ -125,6 +125,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
             includeAutomation: options.includeAutomation,
             normalization: options.normalization,
             autoTail: options.tailHandling === 'auto',
+            cropPrintedLatency: true,
         });
     } catch (error) {
         notifyUser(error instanceof Error ? error.message : String(error), 'error');

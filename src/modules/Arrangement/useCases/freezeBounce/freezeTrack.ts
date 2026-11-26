@@ -6,6 +6,7 @@ import {
     engineSampleRateOf,
     getCompensationDelay,
     getDeviceChainTailSeconds,
+    getPrintedLatencyShift,
 } from '#/modules/AudioEngine/useCases';
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
@@ -167,10 +168,16 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }
 
         const { startBeat, endBeat } = getFreezeRenderSpan(track.clips);
+        // The buffer keeps the delay it prints at its head (replay depends on it), so the content
+        // runs that long past the region end. Without the render reaching that far, the last
+        // compensation window of the take is cut. The figure is exact when every device prints, and
+        // an upper bound when one is withheld, which only leaves silence at the end. It counts as
+        // tail: the frames the buffer holds past the clip content.
+        const renderedTailSeconds = tailSeconds + getPrintedLatencyShift(trackId);
 
         let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
         const renderedBuffer = await renderTrackOffline(freezeRender.target, startBeat, endBeat, {
-            tailSeconds,
+            tailSeconds: renderedTailSeconds,
             captured: freezeRender,
             onScheduled: (tally) => {
                 scheduleTally = tally;
@@ -277,7 +284,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
                         // duration; converting it through tempo twice was what let
                         // the recorded number describe a different length than the
                         // one on disk.
-                        tailLengthSeconds: tailSeconds,
+                        tailLengthSeconds: renderedTailSeconds,
                         bakeVersion: FREEZE_BAKE_VERSION,
                     },
                     renderedAt,

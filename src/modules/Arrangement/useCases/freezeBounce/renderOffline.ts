@@ -57,6 +57,13 @@ export type RenderOfflineOptions = {
      */
     targetMixer?: 'bake' | 'keepLive';
     /**
+     * Whether the buffer is put back on the timeline: it keeps the length the region and tail ask
+     * for, with the delay latency compensation adds cropped from its head and the content that
+     * delay pushed past the end printed. Bounce sets it because it places the buffer at the region
+     * start. Freeze leaves it off because its buffer is replayed with that delay at the head.
+     */
+    cropPrintedLatency?: boolean;
+    /**
      * Where a dropped-device warning from the offline chain goes. Defaults to
      * the user-facing notification channel, and that default is the point.
      *
@@ -137,6 +144,7 @@ export async function renderTrackOffline(
         endBeat,
         tailSeconds: options?.autoTail ? AUTO_TAIL_SECONDS : (options?.tailSeconds ?? 0),
         targetMixer: options?.targetMixer ?? 'bake',
+        cropPrintedLatency: options?.cropPrintedLatency,
         includeInserts: options?.includeInserts ?? true,
         includeAutomation: options?.includeAutomation ?? true,
         includeSends: options?.includeSends ?? true,

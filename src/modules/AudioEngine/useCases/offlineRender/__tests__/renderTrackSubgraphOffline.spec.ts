@@ -20,6 +20,8 @@ import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSin
 import { type AudioDeviceStrategy } from '../../../repositories/deviceStrategy/setupDeviceStrategies';
 import { UnsupportedDeviceTypeError } from '../../../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
+import { clearAllReportedLatency } from '../../latencyCompensation/compensation/externalLatencyRegistry';
+import { reportLatency } from '../../latencyCompensation/compensation/reportLatency';
 import { builtinSynthVoice } from '../../scheduling/builtinSynthVoice';
 import { type OfflineRenderProjectSource } from '../OfflineRenderSource';
 import { renderTrackSubgraphOffline } from '../renderTrackSubgraphOffline';
@@ -786,6 +788,124 @@ describe('renderTrackSubgraphOffline', () => {
 
         expect(buffer).toBeNull();
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
+    describe('content that latency compensation delays past the region end', () => {
+        const LATENCY_SECONDS = 0.25;
+        const SHIFT_FRAMES = Math.round(LATENCY_SECONDS * SAMPLE_RATE);
+        // Beats 0-4 at 120 bpm are 2 s. The note runs 1.85-1.95 s, ending 0.05 s before the region end,
+        // so held back 250 ms it lands wholly past that end.
+        const REGION_FRAMES = 2 * SAMPLE_RATE;
+        const NOTE_START_FRAME = Math.round(1.85 * SAMPLE_RATE);
+        const NOTE_END_FRAME = Math.round(1.95 * SAMPLE_RATE);
+        const target = TrackDummy.create({
+            id: 'track-1',
+            kind: 'midi',
+            clips: [midiClip()],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
+        });
+
+        beforeEach(async () => {
+            // Another strip reports 250 ms, so the target is held back by that much to meet it.
+            reportLatency('deepest-device', LATENCY_SECONDS * 1000);
+            const deepest = TrackDummy.create({
+                id: 'deepest',
+                devices: [
+                    { id: 'deepest-device', name: 'Deepest', type: 'knead', bypassed: false, parameterValues: {} },
+                ],
+            });
+            trackStore.set({ tracks: [target, deepest], selectedTrackId: null, ghostClips: [] });
+            const { midiStore } = await import('#/modules/MIDI/stores');
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-1': [{ id: 'late', pitch: 69, startBeat: 3.7, duration: 0.2, velocity: 100 }],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+        });
+
+        afterEach(() => {
+            clearAllReportedLatency();
+        });
+
+        function soundingFrames(buffer: AudioBuffer): { first: number; last: number } {
+            const data = buffer.getChannelData(0);
+            let first = -1;
+            let last = -1;
+            for (let frame = 0; frame < data.length; frame++) {
+                if (data[frame] !== 0) {
+                    first = first === -1 ? frame : first;
+                    last = frame;
+                }
+            }
+            return { first, last };
+        }
+
+        it('prints the delayed note and crops the delay from the head when the caller puts the print on the timeline', async () => {
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+                cropPrintedLatency: true,
+            });
+
+            // The length the region asks for, with the note on its own frame, not 250 ms late.
+            expect(buffer!.length).toBe(REGION_FRAMES);
+            expect(soundingFrames(buffer!)).toEqual({ first: NOTE_START_FRAME, last: NOTE_END_FRAME - 1 });
+            expect(createdContexts[0]!.length).toBe(REGION_FRAMES + SHIFT_FRAMES);
+        });
+
+        it('keeps the delayed note out of a render that keeps its base span, as before', async () => {
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            expect(buffer!.length).toBe(REGION_FRAMES);
+            expect(createdContexts[0]!.length).toBe(REGION_FRAMES);
+            expect(soundingFrames(buffer!)).toEqual({ first: -1, last: -1 });
+        });
+
+        it('keeps the printed delay at the head when the caller widens the span itself, as freeze does', async () => {
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+                tailSeconds: LATENCY_SECONDS,
+            });
+
+            expect(buffer!.length).toBe(REGION_FRAMES + SHIFT_FRAMES);
+            expect(soundingFrames(buffer!)).toEqual({
+                first: NOTE_START_FRAME + SHIFT_FRAMES,
+                last: NOTE_END_FRAME + SHIFT_FRAMES - 1,
+            });
+        });
+
+        it('crops a region that starts after beat 0 by the delay as well as its history', async () => {
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 2,
+                endBeat: 4,
+                cropPrintedLatency: true,
+            });
+
+            // Beats 2-4 are one second, starting 1 s in; the note runs 0.85-0.95 s into it.
+            expect(buffer!.length).toBe(SAMPLE_RATE);
+            expect(soundingFrames(buffer!)).toEqual({
+                first: NOTE_START_FRAME - SAMPLE_RATE,
+                last: NOTE_END_FRAME - SAMPLE_RATE - 1,
+            });
+        });
     });
 
     describe('VCA group levels in a freeze/bounce render', () => {

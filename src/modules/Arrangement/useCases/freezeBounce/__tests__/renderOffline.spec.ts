@@ -298,6 +298,17 @@ describe('renderTrackOffline', () => {
         });
     });
 
+    it("hands the caller's choice to put the print on the timeline to the render, and asks for none by default", async () => {
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+
+        await renderTrackOffline(track, 0, 4);
+        await renderTrackOffline(track, 0, 4, { cropPrintedLatency: true });
+
+        expect(mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0].cropPrintedLatency).toBeFalsy();
+        expect(mocks.renderTrackSubgraphOffline.mock.calls[1]?.[0].cropPrintedLatency).toBe(true);
+    });
+
     it('asks for an auto-tail render and trims the trailing silence off it', async () => {
         const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
         mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };

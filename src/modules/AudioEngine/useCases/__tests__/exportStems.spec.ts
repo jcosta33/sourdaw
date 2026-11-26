@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { createAppError } from '#/infra/errors/createAppError';
+import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 import {
     projectPpqEndpoints,
     restoreTimelineMapSnapshot,
@@ -10,6 +11,8 @@ import {
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
+import { clearAllReportedLatency } from '../latencyCompensation/compensation/externalLatencyRegistry';
+import { reportLatency } from '../latencyCompensation/compensation/reportLatency';
 import { acquireRenderLock } from '../offlineRender/acquireRenderLock';
 import { cancelExport } from '../offlineRender/exportCancellation';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
@@ -1671,6 +1674,121 @@ describe('exportStems — option parsing, validation & control flow', () => {
                     last: [renderedFrameCount - 1, renderedFrameCount - 1],
                 },
             ]);
+        });
+
+        describe('with latency compensation', () => {
+            // A strip that reports 250 ms sets the session depth. `keys` plays straight to the output,
+            // so it is held back 250 ms; `bassline` feeds a bus that adds 100 ms, so it is held back 150.
+            const bassline = { ...stemTrack, id: 'bassline' };
+            // Field-identical replica of Arrangement's track fixture: foreign fixtures have no compliant
+            // cross-module path.
+            const storeTrack = (id: string, outputId: string, devices: Device[]): Track => ({
+                id,
+                name: id,
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                color: '#ff0000',
+                clips: [],
+                devices,
+                sends: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+                parentId: null,
+                collapsed: false,
+                inputMonitoring: 'auto',
+                hidden: false,
+                disabled: false,
+                height: 80,
+                outputId,
+                automationMode: 'read',
+                groupId: null,
+                soloSafe: false,
+                notes: '',
+                inputId: null,
+                activeAlternativeId: 'alt-1',
+                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+                vcaGroupId: null,
+                midiOutputTrackId: null,
+                followChordTrack: false,
+                midiFx: [],
+            });
+            const latentDevice = (id: string): Device => ({
+                id,
+                name: id,
+                type: 'knead',
+                bypassed: false,
+                parameterValues: {},
+            });
+
+            beforeEach(() => {
+                reportLatency('deepest-device', 250);
+                reportLatency('bus-device', 100);
+                trackStore.set({
+                    tracks: [
+                        storeTrack('keys', 'hw_out', []),
+                        storeTrack('bassline', 'bus', []),
+                        storeTrack('bus', 'hw_out', [latentDevice('bus-device')]),
+                        storeTrack('deepest', 'hw_out', [latentDevice('deepest-device')]),
+                    ],
+                    selectedTrackId: null,
+                    ghostClips: [],
+                });
+                const resolveWithRegion = offlineRenderMocks.resolveRenderContext.getMockImplementation()!;
+                offlineRenderMocks.resolveRenderContext.mockImplementation((input: { durationBeats: number }) => ({
+                    ...resolveWithRegion(input),
+                    tracks: { selectedTrackId: null, tracks: [stemTrack, bassline] },
+                }));
+            });
+
+            afterEach(() => {
+                clearAllReportedLatency();
+                trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+            });
+
+            it('prints the delayed content in full and puts each stem back on the timeline at its own delay', async () => {
+                const stems = await exportStems(region);
+
+                const baseFrameCount = regionStartFrame() + 1_426_122;
+                const keysShift = Math.round(0.25 * region.sampleRate);
+                const basslineShift = Math.round(0.15 * region.sampleRate);
+                // Each stem renders as far past its end as its own delay, so nothing in its last window is cut.
+                expect(renderedFrameCounts).toEqual([baseFrameCount + keysShift, baseFrameCount + basslineShift]);
+                for (const [trackId, shift] of [
+                    ['keys', keysShift],
+                    ['bassline', basslineShift],
+                ] as const) {
+                    const stem = stems.get(trackId)!;
+                    // The length the region asks for, its first frame the region start, and the last frame
+                    // the render's last: the content the delay pushed past the end is inside.
+                    expect(stem.length).toBe(1_426_122);
+                    for (const channel of [0, 1]) {
+                        const samples = stem.getChannelData(channel);
+                        expect(samples[0]).toBe(regionStartFrame() + shift);
+                        expect(samples[stem.length - 1]).toBe(baseFrameCount + shift - 1);
+                    }
+                }
+            });
+
+            it('crops a streamed stem by its own delay too', async () => {
+                const firstFrames = new Map<string, number>();
+                const onStem = vi.fn((trackId: string, source: Pick<AudioBuffer, 'length' | 'getChannelData'>) => {
+                    firstFrames.set(trackId, source.getChannelData(0)[0]!);
+                    return Promise.resolve();
+                });
+
+                await exportStems({ ...region, onStem });
+
+                expect(firstFrames).toEqual(
+                    new Map([
+                        ['keys', regionStartFrame() + Math.round(0.25 * region.sampleRate)],
+                        ['bassline', regionStartFrame() + Math.round(0.15 * region.sampleRate)],
+                    ])
+                );
+            });
         });
     });
 });

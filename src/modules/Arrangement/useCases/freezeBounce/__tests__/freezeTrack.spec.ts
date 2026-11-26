@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
+import {
+    cacheAudioBuffer,
+    clearReportedLatency,
+    getCompensationDelay,
+    reportLatency,
+} from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
@@ -187,6 +192,58 @@ describe('freezeTrack', () => {
             expect.objectContaining({ tailSeconds: 0, targetMixer: 'keepLive' })
         );
         expect(didWrite).toBe(true);
+    });
+
+    it("renders as far past the clips as the delay compensation adds, and records it as the buffer's tail", async () => {
+        // Another strip reports 250 ms, so this track is held back 250 ms to meet it and its print
+        // carries that delay at the head; the render has to run that much longer to keep the end.
+        reportLatency('deep-device', 250);
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    sends: [],
+                    kind: 'audio',
+                    outputId: 'master',
+                    clips: [{ startBeat: 2, endBeat: 6 }],
+                    devices: [],
+                    freezeState: { status: 'unfrozen' },
+                } as any,
+                {
+                    id: 'deep',
+                    sends: [],
+                    kind: 'audio',
+                    outputId: 'master',
+                    clips: [],
+                    devices: [{ id: 'deep-device', type: 'knead', bypassed: false }],
+                    freezeState: { status: 'unfrozen' },
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+        vi.mocked(renderTrackOffline).mockResolvedValue({
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
+            duration: 1,
+            getChannelData: vi.fn(() => new Float32Array(44100)),
+            sampleRate: 44100,
+            length: 44100,
+            numberOfChannels: 2,
+        });
+
+        try {
+            await freezeTrack('t1');
+
+            const options = vi.mocked(renderTrackOffline).mock.calls.at(-1)?.[3];
+            expect(options?.tailSeconds).toBeCloseTo(0.25, 10);
+            // The delay stays at the buffer's head, which replay and the pin depend on.
+            expect(options?.cropPrintedLatency).toBeFalsy();
+            const frozen = vi.mocked(updateTrack).mock.calls.at(-1)![1](trackStore.value!.tracks[0]!).freezeState;
+            expect(frozen.renderSettings?.tailLengthSeconds).toBeCloseTo(0.25, 10);
+            expect(frozen.compensationSeconds).toBe(0);
+        } finally {
+            clearReportedLatency('deep-device');
+        }
     });
 
     it('does not publish a completed render after another project becomes active', async () => {
