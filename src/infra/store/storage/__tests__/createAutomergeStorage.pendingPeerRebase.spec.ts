@@ -31,6 +31,7 @@ function createDocumentPort(initial: RootDocument) {
     return {
         port,
         readEntries: (): Record<string, Entry> => structuredClone((doc.slot as EntrySlot).entries),
+        readSlot: (): unknown => structuredClone(doc.slot),
         readMappingIds: (): string[] => (doc.mappings as { mappings: Mapping[] }).mappings.map(({ id }) => id).sort(),
         /** A collaborator's change arriving in the shared document. */
         applyPeerChange: (changeFn: (draft: RootDocument) => void): void => {
@@ -123,6 +124,51 @@ describe('createAutomergeStorage rebasing a pending write over a peer change', (
         flushAutomergeStorageWrites();
         expect(document.readEntries()).toEqual(expected);
         expect(readEntries(storage)).toEqual(expected);
+    });
+
+    it('keeps a pending add when the merge holds a peer row the store sanitizer drops', () => {
+        const { document, storage } = openPendingWrite({ A: entry(1) }, { B: entry(2) });
+        storage.registerInboundProjector?.(({ value }) => {
+            if (value === null) {
+                return value;
+            }
+            const valid = Object.entries(value.entries).filter(([, row]) => typeof row.tempo === 'number');
+            return { entries: Object.fromEntries(valid) };
+        });
+
+        document.applyPeerChange((draft) => {
+            (draft.slot as { entries: Record<string, unknown> }).entries.malformed = { tempo: 'not a tempo' };
+        });
+        storage.hydrate?.();
+
+        expect(readEntries(storage)).toEqual({ A: entry(1), B: entry(2) });
+        flushAutomergeStorageWrites();
+        expect(document.readEntries()).toMatchObject({ A: entry(1), B: entry(2) });
+        expect(readEntries(storage)).toEqual({ A: entry(1), B: entry(2) });
+    });
+
+    it('keeps absent an optional field a peer removes that the pending write left untouched', () => {
+        const document = createDocumentPort({ slot: { entries: { A: entry(1) }, note: 'peer note' } });
+        configureAutomergeStoragePort(document.port);
+        const storage = createAutomergeStorage<EntrySlot & { note?: string }>('root', 'slot', {
+            hydrateMissing: () => ({ entries: {} }),
+        });
+        storage.hydrate?.();
+        const current = storage.get();
+        if (!current) {
+            throw new Error('Expected the store to hold a value');
+        }
+        storage.set({ ...current, entries: { ...current.entries, B: entry(2) } });
+
+        document.applyPeerChange((draft) => {
+            delete (draft.slot as { note?: string }).note;
+        });
+        storage.hydrate?.();
+
+        expect(storage.get()?.note).toBeUndefined();
+        flushAutomergeStorageWrites();
+        expect(document.readSlot()).toEqual({ entries: { A: entry(1), B: entry(2) } });
+        expect(storage.get()).toEqual({ entries: { A: entry(1), B: entry(2) } });
     });
 
     it('merges rows by identity in a slot whose durable fields are narrowed by toCrdt', () => {

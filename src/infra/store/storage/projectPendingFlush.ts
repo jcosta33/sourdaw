@@ -2,10 +2,12 @@ import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresenc
 
 type ProjectPendingFlushInput<TData> = {
     key: string;
-    /** The write's base, its pending value and the decoded document authority. */
-    baseValue: TData & object;
+    /** The write's base (null when unknown), its pending value and the decoded document authority. */
+    baseValue: TData | null;
     pendingValue: TData & object;
     authorityValue: TData & object;
+    /** False when the flush does not run the ordinary reconcile over one slot value. */
+    replayable: boolean;
     /** The slot's durable fields, the ones its flush writes. */
     toDurable: (value: TData) => Partial<TData>;
     identityByField: CrdtEntityIdentityByField | undefined;
@@ -27,15 +29,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * and the store must show what the document will hold rather than a value the
  * flush then contradicts.
  *
+ * Null when the flush cannot be replayed here: an unknown base, a slot whose
+ * mutation hook owns its encoding, or several slot values whose conflict the
+ * flush resolves across values it never sees.
+ *
  * The merge runs on decoded values, not raw slot bytes, so the result is the
  * undecoded combination of two edits. A combination the store's inbound
  * sanitizer rejects therefore still reaches the caller's guard unsanitized,
- * and the caller drops the merge for the document, as it does for its field
- * rebase. Fields outside the durable set are runtime state and come from the
- * document, also as the field rebase does.
+ * and the caller treats the write as one it cannot replay. Fields outside the
+ * durable set are runtime state and come from the document, as the field
+ * rebase does.
  */
-export function projectPendingFlush<TData>(input: ProjectPendingFlushInput<TData>): TData {
+export function projectPendingFlush<TData>(input: ProjectPendingFlushInput<TData>): TData | null {
     const { key, baseValue, pendingValue, authorityValue, toDurable } = input;
+    if (!input.replayable || baseValue === null || typeof baseValue !== 'object') {
+        return null;
+    }
     const durableAuthority = toDurable(authorityValue);
     const slotCopy: Record<string, unknown> = { [key]: structuredClone(durableAuthority) };
     reconcileCrdtSlot({
@@ -48,7 +57,7 @@ export function projectPendingFlush<TData>(input: ProjectPendingFlushInput<TData
     });
     const merged = slotCopy[key];
     if (!isRecord(merged)) {
-        return authorityValue;
+        return null;
     }
     const durableFields = new Set([...Object.keys(toDurable(pendingValue)), ...Object.keys(durableAuthority)]);
     const removedFields: Record<string, undefined> = {};
