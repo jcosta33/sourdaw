@@ -4038,8 +4038,8 @@ describe('the card a constraint criterion is shown on', () => {
         expect(content).not.toContain('Not measured:');
     });
 
-    function criterionTexts(prompt: string): string[] {
-        const compiled = compile(prompt, [setParameter('vocal-trim', 'gain-level', -1)]);
+    function criterionTexts(prompt: string, options: CompileOptions = {}): string[] {
+        const compiled = compile(prompt, [setParameter('vocal-trim', 'gain-level', -1)], options);
         if (compiled.agentApproval === null) {
             throw new Error('Expected a confirmation approval.');
         }
@@ -4101,6 +4101,36 @@ describe('the card a constraint criterion is shown on', () => {
         ],
     ])('states the tolerance and unit of the hold or bound under "%s"', (prompt, text) => {
         expect(criterionTexts(prompt)).toEqual([expect.stringMatching(text)]);
+    });
+
+    it('lists one loudness bound per track when a refinement restates the protection naming the tracks in another order', () => {
+        const first = "Lower the trim but don't make the vocal and bass louder";
+        const refinement = "Lower the trim but don't make the bass and vocal louder";
+        const card = compile(first, [setParameter('vocal-trim', 'gain-level', -1)]);
+        const texts = criterionTexts(refinement, {
+            metricGoalState: card.metricGoalState,
+            recordedConstraints: compilePerceptualConstraints(first, getProjectContext()),
+        });
+        expect(texts).toEqual([
+            expect.stringMatching(
+                /^Constraint “don't make the vocal and bass louder”: integrated loudness on “Vocal”/u
+            ),
+            expect.stringMatching(/^Constraint “don't make the vocal and bass louder”: integrated loudness on “Bass”/u),
+        ]);
+    });
+
+    it("joins no second hold when a refinement words the card's protection differently over the same tracks, none recorded", () => {
+        const card = compile("Lower the trim but don't make the vocal and bass louder", [
+            setParameter('vocal-trim', 'gain-level', -1),
+        ]);
+        const texts = criterionTexts("Lower the trim but don't make the bass and vocal louder", {
+            metricGoalState: card.metricGoalState,
+        });
+        expect(texts).toHaveLength(2);
+        expect(texts).toEqual([
+            expect.stringContaining('integrated loudness on “Vocal”'),
+            expect.stringContaining('integrated loudness on “Bass”'),
+        ]);
     });
 
     it('quotes a clause nothing measures and says so, with no empty subject', () => {
