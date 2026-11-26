@@ -33,6 +33,8 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getSidechainTargetCapability: (await importOriginal<typeof import('#/modules/AudioEngine/useCases')>())
         .getSidechainTargetCapability,
+    isMidiTransformDevice: (await importOriginal<typeof import('#/modules/AudioEngine/useCases')>())
+        .isMidiTransformDevice,
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

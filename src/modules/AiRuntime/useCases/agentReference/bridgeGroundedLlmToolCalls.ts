@@ -85,6 +85,7 @@ import { type BoundRefinementValue, type RefinementClause } from './bindRefineme
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
+import { clipProtectionReading } from './clipProtectionReading';
 import {
     getSpentCreationBudgetReason,
     SPENT_CREATION_BUDGET_INFIX,
@@ -170,7 +171,7 @@ import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
 import { proposalProtection } from './proposalProtection';
 import { protectionObjectForms } from './protectionObjectForms';
-import { readExplicitProtections } from './readExplicitProtections';
+import { inertProtectionClauses, readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
@@ -7469,7 +7470,7 @@ function refuseWhenProtectionIsUnresolved(
     }
     // A protection binding any clip is a clip protection, so every member it lists must name an object.
     // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
-    const clipProtection = readClipProtection(input.prompt, context, protections, input.midiToneProtectionPrompt);
+    const clipProtection = readClipProtection(input, protections);
     const unnamedMembers =
         clipProtection.clips.length > 0
             ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
@@ -7501,22 +7502,33 @@ function refuseWhenProtectionIsUnresolved(
 
 /**
  * The clips a request's explicit protections and exclusions keep, whether every member resolved, and
- * the text that reading was taken from. A resolved track clause is blanked and the request read again
- * only when the whole request does not parse completely, since removing a following track clause can
- * extend an earlier exclusion; the blanked text keeps every offset of the request.
+ * the text that reading was taken from. The clauses the track reader classifies are blanked and the
+ * request read again only when the whole request does not parse completely, since removing a following
+ * track clause can extend an earlier exclusion: a resolved track clause, and a protection clause the
+ * track reader reads as protecting nothing (`protectsNothing`) that names no clip, by the clip noun or by
+ * a clip's name or close name ("keep the Kick level punchy"). The blanked text keeps every offset of the request.
  */
 function readClipProtection(
-    originalPrompt: string,
-    context: ProjectContext,
-    trackProtections: ReturnType<typeof readExplicitProtections>,
-    midiToneProtectionPrompt?: string
+    input: Pick<
+        BridgeGroundedLlmToolCallsInput,
+        'prompt' | 'context' | 'midiNoteEditClipId' | 'midiToneProtectionPrompt'
+    >,
+    trackProtections: ReturnType<typeof readExplicitProtections>
 ): ReturnType<typeof getExplicitClipProtection> & { read: string } {
-    const prompt = midiToneProtectionPrompt ?? originalPrompt;
+    const { context, midiNoteEditClipId } = input;
+    const prompt = input.midiToneProtectionPrompt ?? input.prompt;
     const clipProtection = getExplicitClipProtection(prompt, context);
     if (clipProtection.complete) {
         return { ...clipProtection, read: prompt };
     }
-    const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+    // MIDI may blank an otherwise unresolved tone clause only after validating its standing receipt.
+    const inertClauses =
+        midiNoteEditClipId === undefined
+            ? inertProtectionClauses
+                  .read(prompt, context)
+                  .filter(({ start, end }) => !clipProtectionReading.namesClip(prompt.slice(start, end), context))
+            : [];
+    const clipPrompt = [...trackProtections.resolvedTrackClauses, ...inertClauses].reduce(
         (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
         prompt
     );
@@ -7586,7 +7598,10 @@ function bridgeWithoutReferencedLevelPhrases(input: BridgeGroundedLlmToolCallsIn
 }
 
 function bridgeUnrefinedLlmToolCalls(
-    {
+    input: BridgeGroundedLlmToolCallsInput,
+    catalog: GroundingCatalog
+): BridgeGroundedLlmToolCallsResult {
+    const {
         calls,
         context,
         markerSignatures = [],
@@ -7597,11 +7612,8 @@ function bridgeUnrefinedLlmToolCalls(
         projectRevision,
         workflowCapabilityId,
         creativeAuthority,
-        midiToneProtectionPrompt,
         requestProtections,
-    }: BridgeGroundedLlmToolCallsInput,
-    catalog: GroundingCatalog
-): BridgeGroundedLlmToolCallsResult {
+    } = input;
     const transformCompilations = transformProof?.compilations ?? [];
     const transformCalls = materializeTransformToolCalls(transformCompilations);
     if (
@@ -7631,7 +7643,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            complete = readClipProtection(prompt, context, trackProtections, midiToneProtectionPrompt).complete;
+            complete = readClipProtection(input, trackProtections).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));
