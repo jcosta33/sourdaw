@@ -17,7 +17,8 @@ function initializeControlGeneration(processor: Awaited<ReturnType<typeof create
                 trackId: 'track-1',
                 deviceId: 'grinder-1',
                 deviceType: 'grinder',
-                parameterIds: ['sag', 'bypass'],
+                parameterIds: ['sagAmount', 'bypass'],
+                allowUncapturedImmediate: false,
             },
             correlation: { workletGeneration: 7 },
         },
@@ -32,7 +33,7 @@ function fallbackControl(overrides: Record<string, unknown> = {}): Record<string
             trackId: 'track-1',
             deviceId: 'grinder-1',
             deviceType: 'grinder',
-            parameterId: 'sag',
+            parameterId: 'sagAmount',
         },
         value: 0.5,
         correlation: { workletGeneration: 7, controlSequence: 1 },
@@ -52,12 +53,75 @@ describe('GrinderProcessor fallback-control protocol', () => {
         initializeControlGeneration(processor);
         vi.mocked(processor.port.postMessage).mockClear();
 
-        processor.port.onmessage?.({ data: { type: 'param', name: 'sag', value: 0.5 } });
+        processor.port.onmessage?.({ data: { type: 'param', name: 'sagAmount', value: 0.5 } });
         processor.port.onmessage?.({ data: { type: 'param', name: 'bypass', value: 1 } });
         processor.port.onmessage?.({ data: { schemaVersion: 1, command: 'set-fallback-param' } });
 
         expect(grinderSetParamCalls).toEqual([]);
         expect(processor.port.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('rejects forged unknown ids even when an initialization declares them', async () => {
+        const processor = await createReadyGrinderProcessor();
+        processor.port.onmessage?.({
+            data: {
+                schemaVersion: 1,
+                command: 'initialize-fallback-control',
+                target: {
+                    trackId: 'track-1',
+                    deviceId: 'grinder-1',
+                    deviceType: 'grinder',
+                    parameterIds: ['sagAmount', 'metadata'],
+                    allowUncapturedImmediate: true,
+                },
+                correlation: { workletGeneration: 7 },
+            },
+        });
+        processor.port.onmessage?.({ data: fallbackControl() });
+        expect(grinderSetParamCalls).toEqual([]);
+        initializeControlGeneration(processor);
+        processor.port.onmessage?.({
+            data: fallbackControl({
+                target: {
+                    trackId: 'track-1',
+                    deviceId: 'grinder-1',
+                    deviceType: 'grinder',
+                    parameterId: 'metadata',
+                },
+            }),
+        });
+        processor.port.onmessage?.({ data: fallbackControl() });
+        expect(grinderSetParamCalls).toEqual([{ name: 'sagAmount', value: 0.5 }]);
+    });
+
+    it('allows an uncaptured known control only immediately in a live initialization', async () => {
+        const processor = await createReadyGrinderProcessor();
+        processor.port.onmessage?.({
+            data: {
+                schemaVersion: 1,
+                command: 'initialize-fallback-control',
+                target: {
+                    trackId: 'track-1',
+                    deviceId: 'grinder-1',
+                    deviceType: 'grinder',
+                    parameterIds: ['bypass'],
+                    allowUncapturedImmediate: true,
+                },
+                correlation: { workletGeneration: 7 },
+            },
+        });
+        const target = { trackId: 'track-1', deviceId: 'grinder-1', deviceType: 'grinder', parameterId: 'ampModel' };
+        processor.port.onmessage?.({
+            data: fallbackControl({ target, scheduling: { targetFrame: 1001, deadlineFrame: 1100 } }),
+        });
+        processor.port.onmessage?.({ data: fallbackControl({ target }) });
+        processor.port.onmessage?.({
+            data: fallbackControl({
+                target: { ...target, parameterId: 'neuralModelSlot' },
+                correlation: { workletGeneration: 7, controlSequence: 2 },
+            }),
+        });
+        expect(grinderSetParamCalls).toEqual([{ name: 'ampModel', value: 0.5 }]);
     });
 
     it('resets the ready WASM instance on a reset message', async () => {
@@ -89,7 +153,7 @@ describe('GrinderProcessor fallback-control protocol', () => {
                     trackId: 'other-track',
                     deviceId: 'grinder-1',
                     deviceType: 'grinder',
-                    parameterId: 'sag',
+                    parameterId: 'sagAmount',
                 },
                 correlation: { workletGeneration: 7, controlSequence: 2 },
             }),
@@ -140,7 +204,7 @@ describe('GrinderProcessor fallback-control protocol', () => {
             data: fallbackControl({ correlation: { workletGeneration: 7, controlSequence: 0 } }),
         });
 
-        expect(grinderSetParamCalls).toEqual([{ name: 'sag', value: 0.5 }]);
+        expect(grinderSetParamCalls).toEqual([{ name: 'sagAmount', value: 0.5 }]);
         expect(processor.port.postMessage).not.toHaveBeenCalled();
     });
 
@@ -163,7 +227,7 @@ describe('GrinderProcessor fallback-control protocol', () => {
         const output = [new Float32Array(4), new Float32Array(4)];
         processor.process([input], [output], {});
 
-        expect(grinderSetParamCalls).toEqual([{ name: 'sag', value: 0.5 }]);
+        expect(grinderSetParamCalls).toEqual([{ name: 'sagAmount', value: 0.5 }]);
         expect(processor.port.postMessage).not.toHaveBeenCalled();
     });
 });

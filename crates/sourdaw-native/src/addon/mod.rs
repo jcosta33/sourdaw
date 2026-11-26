@@ -299,7 +299,8 @@ impl SourdawNative {
             windows.as_ref(),
             &self.singletons.app_state,
             &*self.singletons.events,
-        );
+        )
+        .await;
     }
 
     /// Run the process-exit cascade: cancel every offline render and wait for

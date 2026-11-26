@@ -44,6 +44,13 @@ type AudioDurabilityReceipt = {
     release: () => void;
 };
 
+function ensureSaveAudioBuffersDurable(
+    ids: readonly string[],
+    scope?: Parameters<typeof ensureCachedAudioBuffersDurable>[1]
+) {
+    return ensureCachedAudioBuffersDurable(ids, scope, { preferWorkerRead: true });
+}
+
 let latestSave: Promise<boolean> | undefined;
 
 function assertProjectSnapshotAuthority(): void {
@@ -406,7 +413,7 @@ async function persistProjectSnapshot(
         let preflightReceipt: AudioDurabilityReceipt | undefined;
         try {
             assertSnapshotContinuation();
-            const preflight = await ensureCachedAudioBuffersDurable(built.requiredAudioBufferIds);
+            const preflight = await ensureSaveAudioBuffersDurable(built.requiredAudioBufferIds);
             if (preflight.status !== 'durable') {
                 throw new Error('[saveProject] Required audio PCM could not be made durable');
             }
@@ -423,7 +430,7 @@ async function persistProjectSnapshot(
                     assertSnapshotContinuation(admittedPreflightReceipt);
                     admittedPreflightReceipt.release();
                     preflightReceipt = undefined;
-                    const lockedDurability = ensureCachedAudioBuffersDurable(built.requiredAudioBufferIds, scope);
+                    const lockedDurability = ensureSaveAudioBuffersDurable(built.requiredAudioBufferIds, scope);
                     const audioDurability = await lockedDurability;
                     if (audioDurability.status !== 'durable') {
                         throw new Error('[saveProject] Required audio PCM could not be made durable');
