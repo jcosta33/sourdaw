@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { protectsNothing, type SlotReading } from '../protectsNothing';
+import { protectsNothing } from '../protectsNothing';
 import { type Slot } from '../readProtectionSlots';
+import { type SlotReading } from '../SlotReading';
 
 type Members = Parameters<typeof protectsNothing>[2];
 

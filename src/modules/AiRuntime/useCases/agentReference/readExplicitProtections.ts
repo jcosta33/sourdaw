@@ -17,12 +17,13 @@ import {
     type ProtectableObjectName,
     type Token,
 } from './protectionObjectForms';
-import { type BoundMember, protectsNothing, type SelectionMember, type SlotReading } from './protectsNothing';
+import { protectsNothing } from './protectsNothing';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { readRequestTargetTrackIds } from './readRequestTargetTrackIds';
 import { readRoleFamilyProtection } from './readRoleFamilyProtection';
 import { refinementRequestReading } from './refinementRequestReading';
 import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
+import { type BoundMember, type SelectionMember, type SlotReading } from './SlotReading';
 
 /**
  * An explicit protection is a preservation clause ("leave Keys alone", "with Bass unchanged", "Keys
@@ -370,17 +371,17 @@ function readSlotMembers(input: {
     familyTrackIds: FamilyTrackIds;
 }): SlotReading {
     const { prompt, blanked, masked, slot, references, context, objects, familyTrackIds } = input;
+    const trackIds = new Set(context.tracks.map((track) => track.id));
     const reading: SlotReading = {
         complete: true,
         uniqueTrackOwners: true,
-        nonTrackReferences: readNonTrackReferences(slot, references, context),
+        nonTrackReferences: readNonTrackReferences(slot, references, trackIds, context),
         unreadContinuations: [],
         unresolved: [],
         selection: [],
         bound: [],
         controls: [],
     };
-    const trackIds = new Set(context.tracks.map((track) => track.id));
     const bounds = readMemberRanges(masked, slot);
     // Controls listed before their owner ("the fader and pan of Vocals") wait for it; ones after an owner that
     // names a control ("the Vocals pan and fader") join it. An owner protected whole never narrows to them.
@@ -401,9 +402,13 @@ function readSlotMembers(input: {
     return reading;
 }
 
-/** The project references a slot states that name no track and no VCA group of tracks (a device, a section, a lane). */
-function readNonTrackReferences(slot: Slot, references: readonly NamedRange[], context: ProjectContext): Range[] {
-    const trackIds = new Set(context.tracks.map((track) => track.id));
+/** The project references a slot states that name something other than tracks and VCA groups with members. */
+function readNonTrackReferences(
+    slot: Slot,
+    references: readonly NamedRange[],
+    trackIds: ReadonlySet<string>,
+    context: ProjectContext
+): Range[] {
     const groupIds = new Set(
         (context.vcaGroups ?? []).filter((group) => group.trackIds.length > 0).map(({ id }) => id)
     );
