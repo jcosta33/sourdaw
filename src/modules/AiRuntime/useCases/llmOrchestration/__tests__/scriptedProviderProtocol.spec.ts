@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 
+import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateAnthropicToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { getApplicationOwnedToolSchemas } from '../../getApplicationOwnedToolSchemas';
+import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import {
     VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME,
     VIBE_BATCH_VALUE_TOOLS,
@@ -174,16 +176,23 @@ function openAiResponse(call: ProviderCall, turn: number): Record<string, unknow
     };
 }
 
-async function runScriptedLoop(input: { transport: 'anthropic' | 'openai-compatible' }) {
+type ScriptedLoopInput = {
+    transport: 'anthropic' | 'openai-compatible';
+    toolSchemas?: readonly ToolSchema[];
+    loop?: Partial<Parameters<typeof runApplicationOwnedToolLoop>[0]>;
+};
+
+async function runScriptedLoop(input: ScriptedLoopInput) {
     const controller = new AbortController();
     return runApplicationOwnedToolLoop({
         loopId: `scripted-${input.transport}`,
         terminalToolNames: new Set(['command.batch.propose']),
+        ...input.loop,
         requestTurn: async ({ history, budgetNote, directive }) => {
             const common = {
                 systemPrompt: 'Plan only through application-owned tools.',
                 userMessage: 'Mute the named track.',
-                toolSchemas: getApplicationOwnedToolSchemas(),
+                toolSchemas: input.toolSchemas ?? getApplicationOwnedToolSchemas(),
                 maxOutputTokens: 128,
                 directive,
                 history,
@@ -313,6 +322,118 @@ describe('scripted provider protocol through the application-owned planning loop
             expect(refusals).toEqual([]);
         }
     );
+    describe('a fixture that skips a mandatory planning step', () => {
+        const INTAKE: ProviderCall = { id: 'scripted-intake', name: 'selectCreativeInterpretation', arguments: {} };
+        const MEASURE_OPPORTUNITY = {
+            authorityId: 'authority-1',
+            callId: INTAKE.id,
+            turn: 1,
+            revision: 'revision-1',
+            required: true,
+            available: true,
+        };
+        const PROPOSAL: ProviderCall = {
+            id: 'scripted-proposal',
+            name: 'command.batch.propose',
+            arguments: { commands: [{ name: 'muteTrack', arguments: { trackId: 'track-1' } }] },
+        };
+
+        function reply(transport: Transport, calls: readonly ProviderCall[]) {
+            return calls.map((call, index) => scriptedReply(transport, call, index + 1));
+        }
+
+        // Red when the loop stops witnessing a perceptual request whose measurement step was skipped:
+        // the proposal would then complete as if verified.
+        it.each(['anthropic', 'openai-compatible'] as const)(
+            '%s leaves a perceptual proposal unverified, witnessed by measurement-not-requested, when analysis.measure is skipped',
+            async (transport) => {
+                const execute = vi.fn();
+                installStrictResponses(
+                    transport,
+                    reply(transport, [INTAKE, PROVIDER_CALLS[0]!, PROVIDER_CALLS[1]!, PROPOSAL])
+                );
+
+                const result = await runScriptedLoop({
+                    transport,
+                    toolSchemas: getPlanningProviderToolSchemas(),
+                    loop: {
+                        interpretation: {
+                            toolName: 'selectCreativeInterpretation',
+                            admit: () => ({ status: 'admitted', receipt: { data: {}, summary: 'Admitted.' } }),
+                        },
+                        readMeasurementOpportunity: () => MEASURE_OPPORTUNITY,
+                        measurement: {
+                            toolName: 'analysis.measure',
+                            companionToolNames: ['analysis.compareReference'],
+                            revision: 'revision-1',
+                            execute,
+                        },
+                    },
+                });
+
+                expect(result).toMatchObject({ status: 'complete', turns: 4, toolCalls: [{ id: PROPOSAL.id }] });
+                expect(result).not.toHaveProperty('terminalMeasurementSettlement');
+                expect(execute).not.toHaveBeenCalled();
+                expect(result.receipts.at(-1)).toMatchObject({
+                    toolName: 'analysis.measure',
+                    turn: 4,
+                    status: 'failure',
+                    error: { code: 'measurement-not-requested' },
+                });
+            }
+        );
+
+        // Red when a proposal adopting a recipe expansion no turn produced is accepted.
+        it.each(['anthropic', 'openai-compatible'] as const)(
+            '%s refuses a proposal that adopts a recipe expansion the fixture never requested',
+            async (transport) => {
+                const adopting: ProviderCall = {
+                    ...PROPOSAL,
+                    id: 'scripted-adopting-proposal',
+                    arguments: { commands: [], compiledCallIds: ['scripted-recipe-expand'] },
+                };
+                const { requests } = installStrictResponses(
+                    transport,
+                    reply(transport, [PROVIDER_CALLS[0]!, adopting])
+                );
+
+                const result = await runScriptedLoop({ transport });
+
+                expect(result).toMatchObject({
+                    status: 'rejected',
+                    reason: 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion, or measured preview.',
+                    turns: 2,
+                });
+                expect(result).not.toHaveProperty('toolCalls');
+                expect(requests).toHaveLength(2);
+            }
+        );
+
+        // Red when a run whose provider never proposes completes: the forced final turn must end rejected.
+        it.each(['anthropic', 'openai-compatible'] as const)(
+            '%s ends the loop rejected when the provider keeps reading and never proposes on the forced final turn',
+            async (transport) => {
+                const lateRead: ProviderCall = {
+                    id: 'scripted-late-read',
+                    name: 'agent.command-index.search',
+                    arguments: { intent: 'solo track' },
+                };
+                const { requests } = installStrictResponses(transport, [
+                    ...reply(transport, [PROVIDER_CALLS[0]!, PROVIDER_CALLS[1]!, lateRead]),
+                ]);
+
+                const result = await runScriptedLoop({ transport, loop: { limits: { maxTurns: 3 } } });
+
+                expect(result).toMatchObject({
+                    status: 'rejected',
+                    reason: 'Provider returned a tool outside the required application tool-loop set.',
+                    turns: 3,
+                });
+                expect(result).not.toHaveProperty('toolCalls');
+                expect(requests).toHaveLength(3);
+            }
+        );
+    });
 });
 
 type Transport = 'anthropic' | 'openai-compatible';
