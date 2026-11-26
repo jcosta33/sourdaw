@@ -36,6 +36,12 @@ describe('handleDisableTrack', () => {
         expect(mocks.disableTrack).toHaveBeenCalledWith('t1', true);
     });
 
+    it('executes disableTrack with disabled false to enable', () => {
+        void handleDisableTrack.execute(disableAction('t1', false));
+
+        expect(mocks.disableTrack).toHaveBeenCalledWith('t1', false);
+    });
+
     it('provides a description reflecting disabled state', () => {
         expect(handleDisableTrack.describe(disableAction('t1', true)).label).toBe('Disable track');
         expect(handleDisableTrack.describe(disableAction('t1', false)).label).toBe('Enable track');
@@ -67,7 +73,27 @@ describe('handleDisableTrack', () => {
 
         it('disables and enables a frozen track, since a freeze leaves the activation alone', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', disabled: false, frozen: true }] });
-            const action = disableAction('t1', true);
+            const disable = disableAction('t1', true);
+            const enable = disableAction('t1', false);
+
+            expect(handleDisableTrack.validate?.(disable, { actions: [disable], actionIndex: 0 })).toBe(true);
+            expect(handleDisableTrack.validate?.(enable, { actions: [enable], actionIndex: 0 })).toBe(true);
+        });
+
+        it('refuses to disable the master track, with its reason', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master', disabled: false }] });
+            const action = disableAction('master', true);
+            const batch = { actions: [action], actionIndex: 0 };
+
+            expect(handleDisableTrack.validate?.(action, batch)).toBe(false);
+            expect(handleDisableTrack.validationRefusalReason?.(action, batch)).toBe(
+                'The master track cannot be disabled'
+            );
+        });
+
+        it('enables a master track a saved project holds disabled', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master', disabled: true }] });
+            const action = disableAction('master', false);
 
             expect(handleDisableTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
         });

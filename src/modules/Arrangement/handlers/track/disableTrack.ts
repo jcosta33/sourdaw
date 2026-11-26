@@ -10,8 +10,14 @@ import { describeMissingTrack, readPlannedDisplayTrack } from './readPlannedDisp
 type DisableTrackAction = Extract<AppAction, { type: 'disableTrack' }>;
 
 function findRefusal(action: DisableTrackAction, context: HandlerValidationContext): string | null {
-    if (readPlannedDisplayTrack(action.payload.trackId, context) === null) {
+    const track = readPlannedDisplayTrack(action.payload.trackId, context);
+    if (track === null) {
         return describeMissingTrack(action.payload.trackId);
+    }
+    // The master is the project's one output bus. Only a disable is refused: a master a saved project
+    // holds disabled can still be enabled.
+    if (track.kind === 'master' && action.payload.disabled) {
+        return 'The master track cannot be disabled';
     }
     return null;
 }
