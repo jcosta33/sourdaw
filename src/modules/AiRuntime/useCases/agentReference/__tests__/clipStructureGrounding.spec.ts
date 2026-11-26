@@ -111,6 +111,32 @@ describe('clip structure commands grounded from their documented prompts', () =>
         expect(result.rejections).toHaveLength(1);
     });
 
+    it.each([
+        [
+            'a pattern instance prompt naming another track',
+            'createPatternInstance',
+            { ...instance, targetTrackId: 'track-lead' },
+            PROMPT,
+        ],
+        [
+            'a reverse prompt naming Verse with the id of Hook',
+            'reverseClip',
+            { clipId: 'clip-hook' },
+            'reverse the Verse clip',
+        ],
+        [
+            'a detach prompt naming Hook with the id of Verse',
+            'detachPatternInstance',
+            { clipId: 'clip-verse' },
+            'detach pattern instance Hook',
+        ],
+    ])('refuses %s', (_name, callName, args, prompt) => {
+        const result = ground(callName, args, prompt);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(1);
+    });
+
     it('grounds detaching a pattern instance named in the prompt', () => {
         const result = ground('detachPatternInstance', { clipId: 'clip-hook' }, 'detach pattern instance Hook');
 

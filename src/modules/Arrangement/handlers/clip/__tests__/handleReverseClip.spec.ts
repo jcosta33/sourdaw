@@ -835,6 +835,17 @@ describe('handleReverseClip', () => {
             expect(handleReverseClip.validationRefusalReason?.(action, context)).toBeNull();
         });
 
+        it.each(['', '   '])('refuses a blank supplied reversed buffer id %j', (id) => {
+            seed({});
+            const supplied = { ...action, payload: { clipId: 'c1', reversedBufferId: id } };
+            const batch = { actions: [supplied], actionIndex: 0 };
+
+            expect(handleReverseClip.validate?.(supplied, batch)).toBe(false);
+            expect(handleReverseClip.validationRefusalReason?.(supplied, batch)).toBe(
+                'The reversed buffer ID must not be blank'
+            );
+        });
+
         it.each(['buffer-1', 'foreign-buffer'])(
             'refuses a supplied reversed buffer id %s that is already cached',
             (id) => {

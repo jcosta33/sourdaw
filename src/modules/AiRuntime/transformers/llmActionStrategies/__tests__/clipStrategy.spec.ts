@@ -205,6 +205,13 @@ describe('clipStrategy', () => {
                 clips: track.clips.map((clip) => (clip.id === 'clip-midi-b' ? { ...clip, locked: true } : clip)),
             })),
         };
+        const lockedAudioContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-audio-a' ? { ...clip, locked: true } : clip)),
+            })),
+        };
         const frozenContext: ProjectContext = {
             ...projectContext,
             tracks: projectContext.tracks.map((track) => ({ ...track, frozen: true })),
@@ -269,6 +276,7 @@ describe('clipStrategy', () => {
             ['reverseClip', { clipId: 'ghost' }, projectContext, REVERSE_REASON],
             ['reverseClip', { clipId: 'clip-midi-a' }, projectContext, REVERSE_REASON],
             ['reverseClip', { clipId: 'clip-audio-a' }, frozenContext, REVERSE_REASON],
+            ['reverseClip', { clipId: 'clip-audio-a' }, lockedAudioContext, REVERSE_REASON],
             ['reverseClip', { clipId: 'clip-audio-a', reversedBufferId: 'forced' }, projectContext, REVERSE_REASON],
         ])('%s refuses %j', (name, args, context, reason) => {
             expect(bridge(name, args, context)).toEqual({ index: 0, name, reason });

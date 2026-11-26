@@ -267,6 +267,24 @@ describe('reverseClip through the versioned envelope route', () => {
         }
     );
 
+    it('replaces an empty supplied reversed buffer id with a minted one, never caching audio under ""', async () => {
+        const result = await reverseThroughEnvelope('verse', 'supplied-empty', '');
+
+        expect(outcomeOf(result)).toEqual({ status: 'committed' });
+        expect(readClip('verse')?.audioBufferId).toMatch(/^reversed-command-/);
+        expect(getCachedAudioBuffer({ bufferId: '' })).toBeNull();
+    });
+
+    it('refuses a whitespace-only supplied reversed buffer id at compile, leaving the cache and clip unchanged', async () => {
+        const clipBefore = JSON.stringify(readClip('verse'));
+
+        await expect(reverseThroughEnvelope('verse', 'supplied-blank', '   ')).rejects.toThrow(
+            'Command object references are invalid'
+        );
+        expect(getCachedAudioBuffer({ bufferId: '   ' })).toBeNull();
+        expect(JSON.stringify(readClip('verse'))).toBe(clipBefore);
+    });
+
     it('refuses a supplied reversed buffer id only a clip holds, though the cache has evicted it', async () => {
         expect(getCachedAudioBuffer({ bufferId: 'dangling' })).toBeNull();
         const clipBefore = JSON.stringify(readClip('verse'));

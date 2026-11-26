@@ -389,6 +389,35 @@ const guardedPayloadContractCases = [
         invalidPayloads: [{ clipId: '' }, {}, { clipId: 1 }, { clipId: 'clip-1', extra: true }],
     }),
     guardedPayloadCase({
+        actionType: 'reverseClip',
+        validPayload: { clipId: 'clip-1' },
+        invalidPayloads: [
+            { clipId: '' },
+            {},
+            { clipId: 1 },
+            { clipId: 'clip-1', extra: true },
+            { clipId: 'clip-1', reversedBufferId: 'forced-buffer' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'detachPatternInstance',
+        validPayload: { clipId: 'clip-1' },
+        invalidPayloads: [{ clipId: '' }, {}, { clipId: 1 }, { clipId: 'clip-1', extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'createPatternInstance',
+        validPayload: { sourceClipId: 'clip-1', targetTrackId: 'track-1', startBeat: 16 },
+        invalidPayloads: [
+            { sourceClipId: '', targetTrackId: 'track-1', startBeat: 16 },
+            { sourceClipId: 'clip-1', targetTrackId: '', startBeat: 16 },
+            { sourceClipId: 'clip-1', targetTrackId: 'track-1', startBeat: -1 },
+            { sourceClipId: 'clip-1', targetTrackId: 'track-1', startBeat: '16' },
+            { sourceClipId: 'clip-1', targetTrackId: 'track-1' },
+            { sourceClipId: 'clip-1', targetTrackId: 'track-1', startBeat: 16, extra: true },
+            { sourceClipId: 'clip-1', targetTrackId: 'track-1', startBeat: 16, targetClipId: 'forced-id' },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'renameClip',
         validPayload: { clipId: 'clip-1', name: 'Verse Lead' },
         invalidPayloads: [

@@ -99,6 +99,9 @@ function findAudioRefusal(clip: Clip, reversedBufferId: string | undefined): str
     if (!clip.audioBufferId || !getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
         return `The audio of clip "${clip.id}" is not loaded`;
     }
+    if (reversedBufferId !== undefined && reversedBufferId.trim() === '') {
+        return 'The reversed buffer ID must not be blank';
+    }
     if (reversedBufferId !== undefined && isAudioBufferInUse(reversedBufferId)) {
         return `Audio buffer "${reversedBufferId}" already exists, so it cannot hold the reversed audio`;
     }
