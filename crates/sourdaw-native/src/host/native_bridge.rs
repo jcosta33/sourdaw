@@ -1,4 +1,7 @@
 use crate::events::EventSink;
+use crate::host::ui_thread::{
+    call_on_ui_thread, call_on_ui_thread_within, LentRef, UiThread, UiThreadError,
+};
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, RecordState};
 /// Bridge: implements daw_engine::NativePlugin for any hosted plugin runtime.
@@ -396,6 +399,113 @@ impl<Runtime: HostedPluginRuntime> Drop for ControlGateGuard<'_, Runtime> {
         drop(self.gate.take());
         fence(Ordering::SeqCst);
         self.owner.recover_if_unresponsive();
+    }
+}
+
+/// One instance's control gate, held across the steps of one control visit.
+///
+/// The gate serialises this instance's control calls against each other; the
+/// audio access seam, which the audio thread competes for, is a separate claim
+/// that each step takes for only as long as it touches the wrapper. Holding the
+/// gate between steps is what keeps another control call from interleaving
+/// with a visit that hops to the shell's UI thread and back.
+pub struct ControlVisit<'owner, Runtime: HostedPluginRuntime> {
+    owner: &'owner SharedHostedPlugin<Runtime>,
+    _gate: ControlGateGuard<'owner, Runtime>,
+}
+
+impl<Runtime: HostedPluginRuntime> ControlVisit<'_, Runtime> {
+    /// Run `operation` against the wrapper here, under the access seam, waiting
+    /// up to `timeout` for the audio thread to let go of it.
+    pub fn with_seam<ResultValue, OperationError>(
+        &self,
+        timeout: Duration,
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, OperationError>,
+    ) -> Result<ResultValue, PluginControlError<OperationError>> {
+        self.owner.with_control_locked(timeout, operation)
+    }
+
+    /// Run `call` against the wrapper on `ui`'s thread, claiming the access seam
+    /// only once the call has landed there.
+    ///
+    /// The seam is what the audio thread's `with_process` competes for, and the
+    /// wait for the shell's thread to take the call is unbounded by anything
+    /// this instance does: a seam held across it skips the plugin's blocks for
+    /// as long as the shell is busy. So the wait holds the gate alone. Landed,
+    /// the call waits up to `timeout` for the seam — while this visit holds the
+    /// gate, the audio thread is the seam's only other holder, and it lets go
+    /// at the end of a block, so the UI thread waits on nothing that waits on
+    /// it. The seam then covers the plugin's own call, because that call is
+    /// handed the whole wrapper the audio thread also borrows.
+    pub fn on_ui_thread<Ui, Produced>(
+        &self,
+        ui: &Ui,
+        timeout: Duration,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.hop(ui, None, timeout, call)
+    }
+
+    /// [`Self::on_ui_thread`], withdrawing the call if the UI thread has not
+    /// started it by `hop_deadline`; for a caller on a timer, whose retry
+    /// carries a call withdrawn unrun.
+    pub fn on_ui_thread_within<Ui, Produced>(
+        &self,
+        ui: &Ui,
+        hop_deadline: Duration,
+        timeout: Duration,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.hop(ui, Some(hop_deadline), timeout, call)
+    }
+
+    fn hop<Ui, Produced>(
+        &self,
+        ui: &Ui,
+        hop_deadline: Option<Duration>,
+        timeout: Duration,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        let owner = LentRef::new(self.owner);
+        let landed = move || {
+            // SAFETY: lent for exactly this call, and the hop below parks this
+            // visit — and with it the borrow of the owner — until the call has
+            // run or been withdrawn unrun.
+            unsafe {
+                owner.with(|owner| {
+                    owner.spin_for_control(timeout, |runtime| {
+                        Ok::<_, std::convert::Infallible>(call(runtime))
+                    })
+                })
+            }
+        };
+        let hopped = without_stalling_async_worker(|| match hop_deadline {
+            Some(deadline) => call_on_ui_thread_within(ui, deadline, landed),
+            None => call_on_ui_thread(ui, landed),
+        });
+        match hopped {
+            Err(unreached) => Err(PluginControlError::Operation(unreached)),
+            Ok(Ok(produced)) => Ok(produced),
+            Ok(Err(PluginControlError::Refused(refusal))) => {
+                Err(PluginControlError::Refused(refusal))
+            }
+            Ok(Err(PluginControlError::Operation(never))) => match never {},
+        }
     }
 }
 
@@ -1280,6 +1390,85 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     ) -> Result<ResultValue, PluginControlError<OperationError>> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.with_control_locked(timeout, operation)
+    }
+
+    /// Hold this instance's control gate for a visit of several steps, once the
+    /// lifecycle allows public control. Waits for the gate as
+    /// [`Self::with_control`] does.
+    pub fn control_visit(&self) -> Result<ControlVisit<'_, Runtime>, PluginControlRefusal> {
+        let gate = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+        Ok(ControlVisit {
+            owner: self,
+            _gate: gate,
+        })
+    }
+
+    /// [`Self::control_visit`], refusing a busy gate rather than waiting for it,
+    /// as [`Self::try_with_control`] does.
+    pub fn try_control_visit(&self) -> Result<ControlVisit<'_, Runtime>, PluginControlRefusal> {
+        let gate = self.try_lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+        Ok(ControlVisit {
+            owner: self,
+            _gate: gate,
+        })
+    }
+
+    /// [`Self::control_visit`] for an instance on its way out, without asking
+    /// the lifecycle, as [`Self::with_unload_control`] does.
+    pub fn unload_control_visit(&self) -> Result<ControlVisit<'_, Runtime>, PluginControlRefusal> {
+        let gate = self.lock_non_rt_control()?;
+        Ok(ControlVisit {
+            owner: self,
+            _gate: gate,
+        })
+    }
+
+    /// One call on `ui`'s thread under the control gate; see
+    /// [`ControlVisit::on_ui_thread`].
+    pub fn with_control_on_ui_thread<Ui, Produced>(
+        &self,
+        timeout: Duration,
+        ui: &Ui,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.control_visit()?.on_ui_thread(ui, timeout, call)
+    }
+
+    /// [`Self::with_control_on_ui_thread`] through [`Self::try_control_visit`].
+    pub fn try_with_control_on_ui_thread<Ui, Produced>(
+        &self,
+        timeout: Duration,
+        ui: &Ui,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.try_control_visit()?.on_ui_thread(ui, timeout, call)
+    }
+
+    /// [`Self::with_control_on_ui_thread`] through [`Self::unload_control_visit`].
+    pub fn with_unload_control_on_ui_thread<Ui, Produced>(
+        &self,
+        timeout: Duration,
+        ui: &Ui,
+        call: impl FnOnce(&mut Runtime) -> Produced + Send + 'static,
+    ) -> Result<Produced, PluginControlError<UiThreadError>>
+    where
+        Ui: UiThread + ?Sized,
+        Runtime: 'static,
+        Produced: Send + 'static,
+    {
+        self.unload_control_visit()?.on_ui_thread(ui, timeout, call)
     }
 
     /// Take the gate that serializes this instance's non-RT control operations.

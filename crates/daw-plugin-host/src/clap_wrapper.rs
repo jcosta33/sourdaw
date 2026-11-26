@@ -2143,6 +2143,15 @@ impl ClapWrapper {
         self.editor_window.clone()
     }
 
+    /// The window a pending `request_resize` is applied in, leaving the size
+    /// recorded. Control path only; no plugin call.
+    pub fn editor_window_with_pending_resize(&self) -> Option<SharedEditorWindow> {
+        if !self.host_state.has_pending_editor_resize() {
+            return None;
+        }
+        self.editor_window.clone()
+    }
+
     /// Take what the plugin asked of its editor window, with the window to
     /// answer it through. Control path only; no plugin call.
     ///
@@ -3920,6 +3929,10 @@ impl AudioPlugin for ClapWrapper {
 
     fn editor_window_with_pending_asks(&self) -> Option<SharedEditorWindow> {
         ClapWrapper::editor_window_with_pending_asks(self)
+    }
+
+    fn editor_window_with_pending_resize(&self) -> Option<SharedEditorWindow> {
+        ClapWrapper::editor_window_with_pending_resize(self)
     }
 
     fn take_editor_window_asks(&mut self) -> Option<(EditorWindowAsks, SharedEditorWindow)> {
