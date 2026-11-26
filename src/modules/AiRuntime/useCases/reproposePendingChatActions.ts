@@ -14,11 +14,11 @@ import {
     getPendingActionConfirmation,
 } from '../stores/pendingActionConfirmationStore';
 
+import { admitBatchPreviewEvidence } from './agentRequestOrchestration/admitBatchPreviewEvidence';
 import { composeRePreviewedCard } from './agentRequestOrchestration/composeRePreviewedCard';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import { readRePreviewedPlannedLines } from './agentRequestOrchestration/readRePreviewedPlannedLines';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
-import { recordBatchPreviewEvidence } from './agentRequestOrchestration/recordBatchPreviewEvidence';
 import { reportRePreviewRefusal } from './agentRequestOrchestration/reportRePreviewRefusal';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
@@ -385,12 +385,14 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
     };
 }
 
+type PreviewReceipts = Awaited<ReturnType<typeof prepareMetricGoalPreview>>['receipts'];
 type PreparedReproposal = Extract<ReturnType<typeof prepareReproposal>, { status: 'prepared' }>;
 
 function persistReproposalConfirmation(
     prepared: PreparedReproposal,
     approval: ReturnType<typeof compileAgentRiskApproval>,
-    card: ReturnType<typeof composeRePreviewedCard>
+    card: ReturnType<typeof composeRePreviewedCard>,
+    previewReceipts: PreviewReceipts
 ): string | null {
     const { confirmation, parsedRefreshed, refreshed, actions, actionLabels, carriedSelection, selectsSubset } =
         prepared;
@@ -428,6 +430,7 @@ function persistReproposalConfirmation(
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
         // Persistence binds it to this batch's digest and revision, as it binds a first proposal's.
         measuredPreview: card.measuredPreview,
+        previewReceipts,
         vibeValueChoice: selectsSubset ? undefined : confirmation.approvalSnapshot.vibeValueChoice,
         // A brief card is one action, so only the whole proposal keeps the lines.
         plannedRunLines: readRePreviewedPlannedLines(confirmation, selectsSubset),
@@ -459,8 +462,8 @@ function persistReproposalConfirmation(
 }
 
 /**
- * Measure the re-previewed batch again and record the fresh proof on the live run, refusing
- * when the card or run moved meanwhile or the run plan cannot hold the new evidence.
+ * Measure the re-previewed batch again, refusing when the card or run moved meanwhile or the run
+ * plan cannot hold the new evidence. The receipts reach the plan only with the card that cites them.
  */
 async function refreshMetricProof(
     prepared: PreparedReproposal,
@@ -468,7 +471,12 @@ async function refreshMetricProof(
     context: ReturnType<typeof getProjectContext>
 ): Promise<
     | { status: 'rejected'; reason: string }
-    | { status: 'refreshed'; state: typeof goalState; approval: ReturnType<typeof compileAgentRiskApproval> }
+    | {
+          status: 'refreshed';
+          state: typeof goalState;
+          approval: ReturnType<typeof compileAgentRiskApproval>;
+          receipts: PreviewReceipts;
+      }
 > {
     const { confirmation, refreshed } = prepared;
     let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
@@ -507,7 +515,7 @@ async function refreshMetricProof(
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(refreshedProof.state),
     });
-    const refusal = recordBatchPreviewEvidence(
+    const refusal = admitBatchPreviewEvidence(
         liveRun,
         refreshed.currentRevision,
         approval.metricGoalState,
@@ -516,7 +524,7 @@ async function refreshMetricProof(
     if (refusal !== null) {
         return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
     }
-    return { status: 'refreshed', state: refreshedProof.state, approval };
+    return { status: 'refreshed', state: refreshedProof.state, approval, receipts: refreshedProof.receipts };
 }
 
 /**
@@ -535,6 +543,7 @@ async function reproposeWithoutReporting(
     const { confirmation, parsedOriginal, includedOriginalCommandIds, selectsSubset, parsedRefreshed, refreshed } =
         prepared;
     let approval = prepared.approval;
+    let previewReceipts: PreviewReceipts = [];
 
     let goalState = metricGoalStateCodec(approval.metricGoalState);
     let measuredState: typeof goalState = null;
@@ -550,6 +559,7 @@ async function reproposeWithoutReporting(
         goalState = refreshedPreview.state;
         measuredState = goalState;
         approval = refreshedPreview.approval;
+        previewReceipts = refreshedPreview.receipts;
     }
     const card = composeRePreviewedCard({
         confirmation,
@@ -561,7 +571,7 @@ async function reproposeWithoutReporting(
         measuredState,
         selectsSubset,
     });
-    const reproposedConfirmationId = persistReproposalConfirmation(prepared, approval, card);
+    const reproposedConfirmationId = persistReproposalConfirmation(prepared, approval, card, previewReceipts);
     if (!reproposedConfirmationId) {
         return { status: 'rejected', reason: 'Prepared action resources exceed the live confirmation limit.' };
     }
