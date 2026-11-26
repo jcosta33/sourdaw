@@ -1,3 +1,4 @@
+pub(crate) mod dormant_attach_wake;
 pub mod latency_watcher;
 pub mod native_bridge;
 pub mod plugin_editor_asks;
@@ -14,9 +15,11 @@ pub mod service_watcher;
 pub mod tail_watcher;
 pub mod ui_thread;
 
+use crate::host::dormant_attach_wake::DormantRuntimeRelease;
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::state::{EnginePluginInstanceData, PluginInstanceData};
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::{Arc, Mutex, TryLockError};
 
 /// Look one engine-owned runtime up for a watcher thread woken by that instance.
@@ -81,6 +84,24 @@ pub(crate) type CommandPlugins = Arc<Mutex<HashMap<String, PluginInstanceData>>>
 /// Every runtime an editor can be open on, engine-owned or dormant, for an
 /// editor drain whose wake names no instance.
 ///
+/// The dormant clones are watched by the release they carry, which is dropped
+/// after them: the engine attach refuses an instance any clone is still inside,
+/// and only the drop of the last one tells it the instance is free.
+pub(crate) struct EditorRuntimes {
+    runtimes: Vec<(String, Arc<SharedHostedPlugin>)>,
+    _dormant_release: DormantRuntimeRelease,
+}
+
+impl Deref for EditorRuntimes {
+    type Target = [(String, Arc<SharedHostedPlugin>)];
+
+    fn deref(&self) -> &Self::Target {
+        &self.runtimes
+    }
+}
+
+/// Collect [`EditorRuntimes`].
+///
 /// The command-owned store is only tried. A worker may hold it while it waits
 /// for the shell's UI thread, and the tick this serves also carries every
 /// plugin's knob edits, so a busy store raises `reraise` — the visit's own hint
@@ -90,10 +111,11 @@ pub(crate) fn all_editor_runtimes(
     command_plugins: &CommandPlugins,
     context: &str,
     reraise: fn(),
-) -> Vec<(String, Arc<SharedHostedPlugin>)> {
+) -> EditorRuntimes {
     let mut runtimes = all_engine_runtimes(engine_plugins, context);
+    let mut dormant_runtimes = Vec::new();
     match command_plugins.try_lock() {
-        Ok(dormant) => runtimes.extend(
+        Ok(dormant) => dormant_runtimes.extend(
             dormant
                 .iter()
                 .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.plugin))),
@@ -103,7 +125,13 @@ pub(crate) fn all_editor_runtimes(
             eprintln!("[Plugin] {} failed to lock plugins", context);
         }
     }
-    runtimes
+    let dormant_release =
+        DormantRuntimeRelease::watching(dormant_runtimes.iter().map(|(_, runtime)| runtime));
+    runtimes.extend(dormant_runtimes);
+    EditorRuntimes {
+        runtimes,
+        _dormant_release: dormant_release,
+    }
 }
 
 /// Raise a hint again for an instance a visit could not get into.

@@ -202,6 +202,7 @@ impl SourdawNative {
             Arc::clone(&singletons.app_state.engine_plugins),
         );
         crate::commands::midi_watcher::start(Arc::clone(&events));
+        crate::commands::dormant_reattach::start(Arc::downgrade(&singletons));
         crate::host::plugin_parameter_events::start(
             events,
             Arc::clone(&singletons.app_state.engine_plugins),

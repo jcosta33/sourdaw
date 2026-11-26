@@ -2,6 +2,7 @@
 
 use crate::commands::graph::{self, StripReportPayload};
 use crate::commands::graph_refusals::GraphRefusal;
+use crate::host::dormant_attach_wake::{self, AttachHold, RuntimeClone};
 use crate::host::native_bridge::{
     HostedPluginSlot, ParameterWriteError, PluginControlError, PluginControlRefusal,
     PluginStateError, SharedHostedPlugin,
@@ -342,6 +343,18 @@ impl fmt::Display for PluginCommandError {
     }
 }
 
+impl PluginCommandError {
+    /// The transient hold this refusal of an engine attach waits on, if any.
+    fn attach_hold(&self) -> Option<AttachHold> {
+        match self {
+            Self::LifecycleHeld => Some(AttachHold::LifecycleLease),
+            Self::DormantCallInFlight => Some(AttachHold::DormantCall),
+            Self::RuntimeGateHeld => Some(AttachHold::RuntimeGate),
+            _ => None,
+        }
+    }
+}
+
 impl std::error::Error for PluginCommandError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -477,21 +490,38 @@ pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
     PLUGIN_RUNTIME_GATE.try_write().ok()
 }
 
+/// One instance's lifecycle lease.
+///
+/// A lease the engine attach can be refused by wakes the re-attach that
+/// refusal owes once it is let go (`host::dormant_attach_wake`). The attach's
+/// own lease does not: a pass that let go of a lease it took must not wake a
+/// second pass, or an instance refused for another reason would be retried in
+/// a loop.
 pub(super) struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
-    _guard: tokio::sync::OwnedMutexGuard<()>,
+    guard: Option<tokio::sync::OwnedMutexGuard<()>>,
+    wakes_reattach: bool,
 }
 impl Drop for PluginLifecycleLease {
     fn drop(&mut self) {
-        let mut gates = PLUGIN_LIFECYCLE_GATES
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let is_current_gate = gates
-            .get(&self.instance_id)
-            .is_some_and(|current| Arc::ptr_eq(current, &self.gate));
-        if is_current_gate && Arc::strong_count(&self.gate) == 3 {
-            gates.remove(&self.instance_id);
+        {
+            let mut gates = PLUGIN_LIFECYCLE_GATES
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            // Released before the wake below, so a woken attach finds the lease
+            // free. The guard held its own reference to the gate, so the map's
+            // and this lease's are all that remain when nobody else waits.
+            drop(self.guard.take());
+            let is_current_gate = gates
+                .get(&self.instance_id)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.gate));
+            if is_current_gate && Arc::strong_count(&self.gate) == 2 {
+                gates.remove(&self.instance_id);
+            }
+        }
+        if self.wakes_reattach {
+            dormant_attach_wake::note_hold_released(AttachHold::LifecycleLease);
         }
     }
 }
@@ -511,7 +541,8 @@ pub(super) async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleL
     PluginLifecycleLease {
         instance_id: instance_id.to_string(),
         gate,
-        _guard: guard,
+        guard: Some(guard),
+        wakes_reattach: true,
     }
 }
 /// The same lease, refused rather than waited for.
@@ -521,13 +552,17 @@ pub(super) async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleL
 /// load, an unload or another attach owns this instance right now: the attach
 /// leaves it dormant and the next batch tries again, which is the same answer
 /// an engine refusal gets.
+///
+/// Its release wakes no re-attach, because the attach is its only production
+/// caller: see [`PluginLifecycleLease`].
 pub(super) fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).try_lock_owned().ok()?;
     Some(PluginLifecycleLease {
         instance_id: instance_id.to_string(),
         gate,
-        _guard: guard,
+        guard: Some(guard),
+        wakes_reattach: false,
     })
 }
 fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
@@ -3306,6 +3341,11 @@ pub struct AttachedPlugin {
 /// held by a concurrent load or unload leaves the instance dormant for the next
 /// batch — the same answer an engine refusal gets.
 ///
+/// Those three holds are transient, so a refusal by one of them is not left to
+/// whichever edit happens to send the next batch: the pass owes a re-attach
+/// against the hold that refused it, and the hold's release wakes the
+/// re-attach worker (`commands::dormant_reattach`), which runs this same pass.
+///
 /// Locks in the load path's order, `PLUGIN_RUNTIME_GATE` then the per-instance
 /// lifecycle gate then `plugins` then `engine` then `engine_plugins`, and never
 /// holds `plugins` across the engine lock — nor `engine` across anything else.
@@ -3319,7 +3359,11 @@ pub(crate) fn attach_dormant_plugins(
         return Ok(Vec::new());
     }
 
+    // Read before any hold is tried, so a release that lands while this pass
+    // runs is counted against it rather than lost between the try and the debt.
+    let releases_before = dormant_attach_wake::release_counts();
     let Ok(_runtime_guard) = PLUGIN_RUNTIME_GATE.try_read() else {
+        dormant_attach_wake::owe_reattach([AttachHold::RuntimeGate], releases_before);
         return Err(PluginCommandError::RuntimeGateHeld);
     };
 
@@ -3339,6 +3383,7 @@ pub(crate) fn attach_dormant_plugins(
 
     let attempted = !dormant_instance_ids.is_empty();
     let mut attached = Vec::new();
+    let mut held = Vec::new();
     for instance_id in dormant_instance_ids {
         // Refusals cost the caller nothing, so only an instance actually taken
         // spends a reserved slot.
@@ -3349,12 +3394,14 @@ pub(crate) fn attach_dormant_plugins(
             Ok(Some(plugin)) => attached.push(plugin),
             Ok(None) => {}
             Err(reason) => {
+                held.extend(reason.attach_hold());
                 eprintln!(
                     "[Plugin] instance '{instance_id}' could not attach to the engine: {reason}"
                 );
             }
         }
     }
+    dormant_attach_wake::owe_reattach(held, releases_before);
 
     // An instance in transit between the two stores is in neither snapshot an
     // editor visit takes, so an editor ask raised while it moved was taken by
@@ -3584,6 +3631,9 @@ async fn unload_all_plugin_runtimes(
     let mut reply = PluginUnloadReply::default();
     let mut reports = Vec::new();
     {
+        // Declared before the guard so it drops after it, on every exit: the
+        // writer is the one hold that refuses a whole attach pass.
+        let _gate_release = dormant_attach_wake::RuntimeGateRelease;
         let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.write().await);
         let instance_ids = {
             let plugins = state
@@ -3838,14 +3888,14 @@ async fn unload_plugin_runtime(
 fn dormant_plugin_runtime(
     state: &AppState,
     instance_id: &str,
-) -> Result<Option<Arc<SharedHostedPlugin>>, PluginCommandError> {
+) -> Result<Option<RuntimeClone>, PluginCommandError> {
     let plugins = state
         .plugins
         .lock()
         .map_err(PluginCommandError::lock("plugins"))?;
     Ok(plugins
         .get(instance_id)
-        .map(|instance| Arc::clone(&instance.plugin)))
+        .map(|instance| RuntimeClone::dormant(&instance.plugin)))
 }
 
 fn update_parameter_cache_after_enqueue(

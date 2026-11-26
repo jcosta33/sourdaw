@@ -123,6 +123,7 @@ import { sendNativeGrinderNeuralPatch } from './sendNativeGrinderNeuralPatch';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
 import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
+import { watchNativePluginAttachments } from './watchNativePluginAttachments';
 
 /**
  * What a session runs at unless a caller asks for the shadow.
@@ -473,6 +474,7 @@ async function applyTopologyBatch(input: {
         return { ...command, shadowed: command.shadowed || nativeLiveGraphSession.auditionOwner !== null };
     });
     const commands = [...projected, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
+    watchNativePluginAttachments();
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
     // A batch that starts the engine takes over the plugin instances loaded
     // before there was one — reported to their devices as loaded but processing

@@ -6,15 +6,13 @@
  * import would be a cycle, and `no-circular` is an error here.
  */
 
-import { markExternalPluginEngineAttached } from '#/modules/PluginHost/useCases';
-
 import { type AudioGraphApplyResult } from '../../models/AudioGraphBackend';
+
+import { markEngineAttachedInstances } from './markEngineAttachedInstances';
 
 export function markAttachedInstances(result: AudioGraphApplyResult): void {
     if (result.application !== 'applied') {
         return;
     }
-    for (const attached of result.attachedPlugins ?? []) {
-        markExternalPluginEngineAttached({ instanceId: attached.instanceId });
-    }
+    markEngineAttachedInstances(result.attachedPlugins ?? []);
 }

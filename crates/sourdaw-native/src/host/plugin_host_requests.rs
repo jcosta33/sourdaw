@@ -321,7 +321,7 @@ pub fn apply_pending_editor_resizes(
         signal_pending_editor_resize,
     );
     RESIZE_RETRY.forget_absent(&runtimes);
-    for (instance_id, runtime) in &runtimes {
+    for (instance_id, runtime) in runtimes.iter() {
         if !RESIZE_RETRY.admits(instance_id, signal_pending_editor_resize) {
             continue;
         }

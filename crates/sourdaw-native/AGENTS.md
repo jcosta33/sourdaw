@@ -67,6 +67,14 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   instance created before the engine runs is therefore dormant rather than refused: it holds the
   panel's writes command-side and registers on the engine's first graph batch, at that engine's
   rate.
+- A dormant instance a transient hold kept from a batch's attach (its lifecycle lease, a dormant
+  call's clone of its runtime, the unload-all writer on the plugin-runtime gate) is attached once
+  that hold is released, never left for an unrelated later batch: the refusal owes a re-attach
+  against the hold (`host/dormant_attach_wake.rs`), and the release wakes a worker that runs the
+  batch's own attach pass under the graph registry guard, with ring room reserved first, and emits
+  `plugins-attached` for what it took (`commands/dormant_reattach.rs`). Every dormant clone carries
+  the release it owes (`RuntimeClone`, `DormantRuntimeRelease`), and the attach's own lease and the
+  holds a pass causes wake nothing, so a refused instance is retried only when its hold changes.
 - The native chain renders hosted plugins and the timeline graph built through the graph-command
   surface (`commands/graph.rs` — tracks, clips, buses, sends, device chains), started lazily by the
   first `apply_graph_commands`. Web Audio remains the live product path until the D3.c cutover;

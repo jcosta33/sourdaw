@@ -2,6 +2,7 @@ pub mod agent_asset_saga;
 pub mod ai_audio;
 pub mod collab;
 pub mod crumbs;
+pub mod dormant_reattach;
 pub mod engine_diagnostics;
 pub mod engine_lifecycle;
 pub mod engine_retrospective;
