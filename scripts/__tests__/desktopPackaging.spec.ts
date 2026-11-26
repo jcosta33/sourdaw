@@ -136,10 +136,20 @@ describe('desktop afterPack native admission and hardening', () => {
 
 describe('portable desktop build inputs', () => {
     it('should remove only the renderer sample copy using Node from the desktop build entry point', () => {
-        const manifest = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
-            scripts: Record<string, string>;
-        };
-        const commands = (manifest.scripts['desktop:build'] ?? '').split(' && ');
+        const manifest: unknown = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+        if (manifest === null || typeof manifest !== 'object' || !('scripts' in manifest)) {
+            throw new Error('package.json must define scripts');
+        }
+        const { scripts } = manifest;
+        if (
+            scripts === null ||
+            typeof scripts !== 'object' ||
+            !('desktop:build' in scripts) ||
+            typeof scripts['desktop:build'] !== 'string'
+        ) {
+            throw new Error('package.json must define a desktop:build command');
+        }
+        const commands = scripts['desktop:build'].split(' && ');
         const cleanup = commands.find((command) => command.includes('dist/samples'));
         const expression = /^node -e "([^"]+)"$/u.exec(cleanup ?? '')?.[1];
         if (expression === undefined) {

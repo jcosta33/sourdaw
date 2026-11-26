@@ -35,6 +35,8 @@ const FORMATS = {
 } as const;
 type Format = keyof typeof FORMATS;
 type DesktopWindow = Window & { readonly sourdaw?: SourdawBridge };
+type PackageArtifact = { name: string; sha256: string };
+type ReceiptStatus = 'passed' | 'failed';
 
 const STARTUP_TIMEOUT_MS = 45_000;
 const SCAN_TIMEOUT_MS = 60_000;
@@ -51,6 +53,7 @@ function parseFormat(value: string | undefined): Format {
         case 'nsis':
         case 'appimage':
             return value;
+        case undefined:
         default:
             throw new Error('Expected a package format: dmg, zip, nsis, or appimage');
     }
@@ -224,6 +227,31 @@ async function verifyInstalledApp(
     }
 }
 
+function packageReceipt(head: string, format: Format, status: ReceiptStatus, artifact: PackageArtifact | undefined) {
+    const receipt = {
+        head,
+        platform: process.platform,
+        arch: process.arch,
+        format,
+        launchMethod: FORMATS[format].method,
+        status,
+        artifact,
+    };
+    if (status === 'failed') {
+        return receipt;
+    }
+
+    // Only locally defined outcomes reach the receipt. Raw diagnostics stay in the CI log.
+    return {
+        ...receipt,
+        renderer: 'launch-screen',
+        rendererUrlPrefix: RENDERER_URL_PREFIX,
+        sample: SAMPLE_URL,
+        nativeIpc: 'is_scan_path_authorized returned true',
+        plugin: { descriptorId: PLUGIN_DESCRIPTOR, format: 'clap', matchesInstalledFixture: true },
+    };
+}
+
 async function main(): Promise<void> {
     const format = parseFormat(process.argv[2]);
     const receipts = process.argv[3];
@@ -232,8 +260,8 @@ async function main(): Promise<void> {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     assert.match(head, /^[0-9a-f]{40}$/u);
     const diagnostics = emptyDiagnostics();
-    let status: 'passed' | 'failed' = 'failed';
-    let artifact: { name: string; sha256: string } | undefined;
+    let status: ReceiptStatus = 'failed';
+    let artifact: PackageArtifact | undefined;
     try {
         assert.equal(head, process.env.SOURDAW_PACKAGE_HEAD ?? head, 'checkout differs from the requested head');
         assert.equal(process.platform, target.platform);
@@ -263,25 +291,7 @@ async function main(): Promise<void> {
         status = 'passed';
     } finally {
         printDiagnostics(diagnostics);
-        const receipt = {
-            head,
-            platform: process.platform,
-            arch: process.arch,
-            format,
-            launchMethod: target.method,
-            status,
-            artifact,
-            // Only locally defined outcomes reach the receipt. Raw diagnostics stay in the CI log.
-            ...(status === 'passed'
-                ? {
-                      renderer: 'launch-screen',
-                      rendererUrlPrefix: RENDERER_URL_PREFIX,
-                      sample: SAMPLE_URL,
-                      nativeIpc: 'is_scan_path_authorized returned true',
-                      plugin: { descriptorId: PLUGIN_DESCRIPTOR, format: 'clap', matchesInstalledFixture: true },
-                  }
-                : {}),
-        };
+        const receipt = packageReceipt(head, format, status, artifact);
         await mkdir(receipts, { recursive: true });
         await writeFile(join(receipts, `${format}.json`), `${JSON.stringify(receipt, null, 2)}\n`);
         console.log(`${format}: ${status} ${JSON.stringify(artifact)}`);
