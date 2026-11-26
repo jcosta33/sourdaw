@@ -242,6 +242,35 @@ describe('chord track session entry refusals', () => {
         ).toBe(false);
     });
 
+    it('refuses a replacement holding an event with an empty id, which the store would refuse to hold', () => {
+        const emptyId: ChordTrackState = {
+            enabled: true,
+            events: [{ id: '', beat: 0, root: 0, quality: 'major', duration: 4 }],
+        };
+        expect(
+            handleClearChordTrack.validateSessionEntry?.({
+                action: { type: 'clearChordTrack' },
+                ...pair({ expected: emptyId, replacement: emptyTrack }),
+            })
+        ).toBe(false);
+    });
+
+    it('refuses a replacement holding two events that share an id', () => {
+        const sharedId: ChordTrackState = {
+            enabled: true,
+            events: [
+                { id: 'c-1', beat: 0, root: 0, quality: 'major', duration: 4 },
+                { id: 'c-1', beat: 4, root: 7, quality: '7', duration: 2.5 },
+            ],
+        };
+        expect(
+            handleClearChordTrack.validateSessionEntry?.({
+                action: { type: 'clearChordTrack' },
+                ...pair({ expected: sharedId, replacement: emptyTrack }),
+            })
+        ).toBe(false);
+    });
+
     it('refuses an addChordEvent entry that never pinned its event id', () => {
         const withEvent: ChordTrackState = {
             enabled: true,

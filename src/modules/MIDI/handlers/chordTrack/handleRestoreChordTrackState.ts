@@ -7,10 +7,10 @@ import {
 } from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
-import { CHORD_TYPES } from '../../models/ChordTypes';
 import { chordTrackStore, type ChordTrackState } from '../../stores/chordTrackStore';
 import { cloneChordTrackState } from '../../transformers/cloneChordTrackState';
 import { type ChordMutationAction, isChordTrackEditAction } from '../../transformers/isChordTrackEditAction';
+import { isChordTrackState } from '../../transformers/isChordTrackState';
 import { projectChordTrackAction } from '../../transformers/projectChordTrackAction';
 import { moveChordEvent } from '../../useCases/chordTrack/moveChordEvent';
 import { projectChordTrackThroughActions } from '../../useCases/chordTrack/projectChordTrackState';
@@ -124,41 +124,15 @@ export const handleUpdateChordEvent = createHandler<'updateChordEvent'>({
     undoable: true,
 });
 
-type ChordTrackSnapshot = Extract<AppAction, { type: 'restoreChordTrackState' }>['payload']['expected'];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
-}
-
-function isBeatNumber(value: unknown, minimum: number): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= minimum;
-}
-
-function isChordEventSnapshot(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        typeof value.id === 'string' &&
-        isBeatNumber(value.beat, 0) &&
-        isBeatNumber(value.root, 0) &&
-        Number.isInteger(value.root) &&
-        value.root <= 11 &&
-        typeof value.quality === 'string' &&
-        Object.hasOwn(CHORD_TYPES, value.quality) &&
-        isBeatNumber(value.duration, 0.25)
-    );
-}
-
-function isChordTrackSnapshot(value: unknown): value is ChordTrackSnapshot {
-    return (
-        isRecord(value) &&
-        typeof value.enabled === 'boolean' &&
-        Array.isArray(value.events) &&
-        value.events.every(isChordEventSnapshot)
-    );
-}
-
 function isChordTrackRestorePayload(payload: unknown): boolean {
-    return isRecord(payload) && isChordTrackSnapshot(payload.expected) && isChordTrackSnapshot(payload.replacement);
+    return (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'expected' in payload &&
+        'replacement' in payload &&
+        isChordTrackState(payload.expected) &&
+        isChordTrackState(payload.replacement)
+    );
 }
 
 export const handleRestoreChordTrackState = createHandler<'restoreChordTrackState'>({
