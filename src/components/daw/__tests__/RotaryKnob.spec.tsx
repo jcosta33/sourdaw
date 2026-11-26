@@ -218,6 +218,54 @@ describe('RotaryKnob', () => {
         expect(onGestureCancel).toHaveBeenCalledOnce();
     });
 
+    it.each(['window blur', 'hidden document', 'unmount'])('uses the latest cancellation policy on %s', (source) => {
+        for (const enabled of [true, false]) {
+            const onChange = vi.fn();
+            const onGestureCancel = vi.fn();
+            const { container, rerender, unmount } = render(
+                <RotaryKnob value={50} onChange={onChange} onGestureCancel={enabled ? undefined : onGestureCancel} />
+            );
+            rerender(
+                <RotaryKnob value={50} onChange={onChange} onGestureCancel={enabled ? onGestureCancel : undefined} />
+            );
+            const root = getRoot(container);
+            fireEvent.pointerDown(root, { button: 0, pointerId: 4, clientY: 100 });
+            fireEvent.pointerMove(root, { pointerId: 4, clientY: 80 });
+            const transientValue = onChange.mock.calls.at(-1)?.[0] as number;
+            const previousVisibility = document.visibilityState;
+            if (source === 'window blur') fireEvent.blur(window);
+            else if (source === 'hidden document') {
+                setDocumentVisibility('hidden');
+                document.dispatchEvent(new Event('visibilitychange'));
+                setDocumentVisibility(previousVisibility);
+            } else unmount();
+            if (enabled) {
+                expect(onGestureCancel).toHaveBeenCalledOnce();
+                expect(onChange.mock.calls).toEqual([[transientValue, true]]);
+            } else {
+                expect(onGestureCancel).not.toHaveBeenCalled();
+                expect(onChange.mock.calls).toEqual([
+                    [transientValue, true],
+                    [transientValue, false],
+                ]);
+            }
+            unmount();
+        }
+    });
+
+    it('uses the latest cancellation callback when a rerender disables an active drag', () => {
+        const first = vi.fn();
+        const latest = vi.fn();
+        const onChange = vi.fn();
+        const { container, rerender } = render(<RotaryKnob value={50} onChange={onChange} onGestureCancel={first} />);
+        const root = getRoot(container);
+        fireEvent.pointerDown(root, { button: 0, pointerId: 4, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 4, clientY: 80 });
+        rerender(<RotaryKnob value={50} onChange={onChange} onGestureCancel={latest} disabled />);
+        expect(first).not.toHaveBeenCalled();
+        expect(latest).toHaveBeenCalledOnce();
+    });
+
     it('commits the latest transient value when a drag is cancelled', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);

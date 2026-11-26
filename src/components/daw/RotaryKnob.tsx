@@ -163,6 +163,7 @@ export const RotaryKnob = ({
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
     const onChangeRef = useRef(onChange);
+    const onGestureCancelRef = useRef(onGestureCancel);
     const gestureOwnerAtStartRef = useRef<string | number | undefined>(gestureOwner);
     const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
@@ -199,6 +200,7 @@ export const RotaryKnob = ({
 
     useLayoutEffect(() => {
         onChangeRef.current = onChange;
+        onGestureCancelRef.current = onGestureCancel;
         gestureAuthorityRef.current = gestureAuthority;
 
         // A drag that is already in flight when `disabled` flips true has to be
@@ -211,19 +213,19 @@ export const RotaryKnob = ({
         // discarded, which is the same treatment an owner change already gets
         // below.
         if (disabled && draggingRef.current) {
-            if (onGestureCancel) cancelDragRef.current();
+            if (onGestureCancelRef.current) cancelDragRef.current();
             else clearDragState();
         }
 
         if (draggingRef.current && !gestureAuthority && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
-            if (onGestureCancel) cancelDragRef.current();
+            if (onGestureCancelRef.current) cancelDragRef.current();
             else clearDragState();
         }
 
         cancelDragRef.current = () => {
             if (!draggingRef.current) return;
             clearDragState();
-            onGestureCancel?.();
+            onGestureCancelRef.current?.();
         };
 
         finalizeDragRef.current = (pointerId?: number): boolean => {
@@ -256,7 +258,7 @@ export const RotaryKnob = ({
             if (ownsCurrentGesture && hasEmittedTransientRef.current) {
                 onChangeRef.current(gestureValue, false);
             } else {
-                onGestureCancel?.();
+                onGestureCancelRef.current?.();
             }
             return true;
         };
@@ -276,19 +278,19 @@ export const RotaryKnob = ({
 
     useEffect(() => {
         return () => {
-            if (onGestureCancel) cancelDragRef.current();
+            if (onGestureCancelRef.current) cancelDragRef.current();
             else finalizeDragRef.current();
         };
     }, []);
 
     useEffect(() => {
         const handleWindowBlur = (): void => {
-            if (onGestureCancel) cancelDragRef.current();
+            if (onGestureCancelRef.current) cancelDragRef.current();
             else finalizeDragRef.current();
         };
         const handleVisibilityChange = (): void => {
             if (document.visibilityState === 'hidden') {
-                if (onGestureCancel) cancelDragRef.current();
+                if (onGestureCancelRef.current) cancelDragRef.current();
                 else finalizeDragRef.current();
             }
         };
@@ -362,7 +364,7 @@ export const RotaryKnob = ({
             return;
         }
         if (!ownsGesture()) {
-            if (onGestureCancel) cancelDragRef.current();
+            if (onGestureCancelRef.current) cancelDragRef.current();
             else clearDragState();
             return;
         }
@@ -441,7 +443,7 @@ export const RotaryKnob = ({
     };
 
     const handlePointerCancel = (event: PointerEvent<HTMLDivElement>) => {
-        if (onGestureCancel && activePointerIdRef.current === event.pointerId) cancelDragRef.current();
+        if (onGestureCancelRef.current && activePointerIdRef.current === event.pointerId) cancelDragRef.current();
         else handlePointerUp(event);
     };
 
@@ -460,7 +462,7 @@ export const RotaryKnob = ({
     const accessibleName = ariaLabel ?? label ?? paramId ?? 'Parameter control';
     const ariaValue = Math.max(min, Math.min(max, value));
     const handleFocusLoss = (): void => {
-        if (onGestureCancel) cancelDragRef.current();
+        if (onGestureCancelRef.current) cancelDragRef.current();
         else finalizeDragRef.current();
     };
 
