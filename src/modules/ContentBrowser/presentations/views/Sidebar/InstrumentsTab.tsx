@@ -20,6 +20,7 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { compileToasterTrackStackActions } from '#/modules/Toaster/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { hasOwnPresetExplorer } from '../../../models/DevicePresetExplorerByDeviceType';
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
 import { executePresetLoad } from '../../../useCases/executePresetLoad';
 import { BrowserRouteBody, BrowserRouteFooter, BrowserRouteSection } from '../../components/Sidebar/BrowserRouteBody';
@@ -61,8 +62,6 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
     },
 ];
 
-// Device types that have their own internal preset explorers (excluded from Sounds)
-const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-crumbs', 'grand-boule']);
 const GRAND_BOULE_RELEASED = isDeviceReleaseAdmitted('grand-boule');
 
 // Categories that belong in the Effects tab, not here
@@ -138,7 +137,7 @@ export const InstrumentsTab = ({
 
     // Filter out presets that belong to custom-UI instruments or effects categories
     const isSoundPreset = (param: SoundPreset): boolean =>
-        !param.devices.some((data) => CUSTOM_UI_DEVICE_TYPES.has(data.type)) && !EFFECTS_CATEGORIES.has(param.category);
+        !param.devices.some((data) => hasOwnPresetExplorer(data.type)) && !EFFECTS_CATEGORIES.has(param.category);
 
     const soundPresets = factoryPresets.filter((param) => isSoundPreset(param) && matchesSearch(param));
     const filteredUser = userPresets.filter((param) => matchesSearch(param));
