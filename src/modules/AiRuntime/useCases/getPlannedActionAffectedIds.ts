@@ -237,6 +237,7 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     setLevainIdentity: unaffected,
     setGrandBouleDeviceState: unaffected,
     setToasterFactoryKit: unaffected,
+    setToasterMasterGain: unaffected,
     setBacteriaFactoryPatch: unaffected,
     setGlutenFactoryPreset: unaffected,
     setProofPatchSelection: unaffected,

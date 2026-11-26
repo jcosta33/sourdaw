@@ -139,6 +139,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     setLevainIdentity: NONE,
     setGrandBouleDeviceState: NONE,
     setToasterFactoryKit: NONE,
+    setToasterMasterGain: NONE,
     setBacteriaFactoryPatch: NONE,
     setGlutenFactoryPreset: NONE,
     setProofPatchSelection: NONE,

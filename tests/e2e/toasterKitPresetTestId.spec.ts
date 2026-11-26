@@ -63,6 +63,63 @@ async function requireToasterProject(page: Page, selection?: { trackId?: string;
     return snapshot;
 }
 
+declare global {
+    var toasterAudioProbe: { node: AudioNode; worklet: AudioNode; analyser: AnalyserNode } | undefined;
+}
+
+async function readToasterRuntime(page: Page, deviceId: string) {
+    return page.evaluate(
+        async ({ entryPath, deviceId }) => {
+            const { arrangement, toaster }: typeof import('./persistedHydrationEntry') = await import(entryPath);
+            const state = toaster.toasterStore.value?.[deviceId];
+            if (!state) throw new Error('Mounted Toaster state is unavailable');
+            return { state, selectedTrackId: arrangement.trackStore.value?.selectedTrackId };
+        },
+        { entryPath: ENTRY, deviceId }
+    );
+}
+
+async function sampleToasterAudio(page: Page, trackId: string, deviceId: string) {
+    return page.evaluate(
+        async ({ entryPath, trackId, deviceId }) => {
+            const { audio }: typeof import('./persistedHydrationEntry') = await import(entryPath);
+            const device = audio
+                .getTrackStrip(trackId)
+                ?.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
+            if (!device?.toasterControls?.ready) throw new Error('Toaster worklet is not ready');
+            const worklet = device.nodes.find((node) => node instanceof AudioWorkletNode);
+            if (!worklet) throw new Error('Mounted Toaster worklet is unavailable');
+            if (!window.toasterAudioProbe) {
+                const analyser = device.outputNode.context.createAnalyser();
+                analyser.fftSize = 2048;
+                device.outputNode.connect(analyser);
+                window.toasterAudioProbe = { node: device.outputNode, worklet, analyser };
+            }
+            const probe = window.toasterAudioProbe;
+            if (probe.node !== device.outputNode || probe.worklet !== worklet) {
+                throw new Error('The mounted Toaster runtime changed');
+            }
+            const context = device.outputNode.context;
+            if (!(context instanceof AudioContext)) throw new Error('Toaster is not using a live AudioContext');
+            if (context.state !== 'running') await context.resume();
+            const settled = context.currentTime + 0.25;
+            while (context.currentTime < settled) await new Promise(requestAnimationFrame);
+            device.toasterControls.noteOn(1, 1);
+            const samples = new Float32Array(probe.analyser.fftSize);
+            const end = context.currentTime + 0.5;
+            let peak = 0;
+            while (context.currentTime < end) {
+                await new Promise(requestAnimationFrame);
+                probe.analyser.getFloatTimeDomainData(samples);
+                for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+            }
+            device.toasterControls.noteOff(1);
+            return peak;
+        },
+        { entryPath: ENTRY, trackId, deviceId }
+    );
+}
+
 test.describe('Toaster kit shelf and sequencer', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
@@ -103,6 +160,216 @@ test.describe('Toaster kit shelf and sequencer', () => {
         const close = page.getByRole('button', { name: 'Close Toaster', exact: true });
         await close.click();
         await expect(close).toHaveCount(0);
+    });
+
+    test('Master drag and keyboard edits replay and persist on the mounted Toaster', async ({ page }) => {
+        const first = await requireToasterProject(page);
+        await page.getByRole('button', { name: 'Close Toaster', exact: true }).click();
+        await open_browser_instrument({ page, instrument: 'Toaster' });
+        const second = await requireToasterProject(page, { excludeTrackId: first.trackId });
+        const selection = { trackId: second.trackId };
+        const readTarget = () => readToasterProject(page, selection);
+        const view = page.getByRole('combobox', { name: 'Toaster view', exact: true });
+        await view.selectOption('full');
+        const snare = page.getByRole('button', { name: 'Trigger Snare', exact: true });
+        await snare.click();
+        await expect(snare).toHaveAttribute('aria-pressed', 'true');
+        await expect
+            .poll(async () =>
+                page.evaluate(
+                    async ({ entryPath, trackId, deviceId }) => {
+                        const { audio }: typeof import('./persistedHydrationEntry') = await import(entryPath);
+                        return (
+                            audio.getTrackStrip(trackId)?.deviceNodes.find((device) => device.deviceId === deviceId)
+                                ?.toasterControls?.ready === true
+                        );
+                    },
+                    { entryPath: ENTRY, trackId: second.trackId, deviceId: second.deviceId }
+                )
+            )
+            .toBe(true);
+        await page.evaluate(
+            async ({ entryPath, trackId, deviceId }) => {
+                const { audio }: typeof import('./persistedHydrationEntry') = await import(entryPath);
+                const device = audio
+                    .getTrackStrip(trackId)
+                    ?.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
+                const context = device?.outputNode.context;
+                if (!(context instanceof AudioContext)) throw new Error('Toaster is not using a live AudioContext');
+                await context.resume();
+            },
+            { entryPath: ENTRY, trackId: second.trackId, deviceId: second.deviceId }
+        );
+        const transport = page.locator('section').filter({ has: page.getByText('Transport', { exact: true }) });
+        await transport.getByRole('button', { name: 'Play', exact: true }).click();
+        const stop = transport.getByRole('button', { name: 'Stop', exact: true });
+        await expect(stop).toBeVisible();
+        const cursor = page.getByText('Playback cursor', { exact: true }).locator('xpath=..');
+        const readStep = async () => Number((await cursor.innerText()).match(/Step\s+(\d+)/i)?.[1]);
+        await expect.poll(readStep).toBeGreaterThan(1);
+        const before = await requireToasterProject(page, selection);
+        const runtimeBefore = await readToasterRuntime(page, second.deviceId);
+        expect(runtimeBefore.state.isPlaying).toBe(true);
+        expect(runtimeBefore.state.selectedPadIndex).toBe(1);
+        expect(before.rawHasChunk).toBe(false);
+        expect(before.projectedHasChunk).toBe(false);
+        const master = page.getByRole('slider', { name: 'Master', exact: true });
+        await master.scrollIntoViewIfNeeded();
+        await expect(master).toHaveAttribute('aria-valuenow', '1');
+        expect(await sampleToasterAudio(page, second.trackId, second.deviceId)).toBeGreaterThan(0.0001);
+        const box = await master.boundingBox();
+        if (!box) throw new Error('Master knob has no bounds');
+        let x = box.x + box.width / 2;
+        let y = box.y + box.height / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(x, y + 75);
+        await expect(master).toHaveAttribute('aria-valuenow', '0');
+        expect(await sampleToasterAudio(page, second.trackId, second.deviceId)).toBeLessThan(0.00001);
+        expect(await readTarget()).toEqual(before);
+        await page.mouse.move(x, y);
+        await expect(master).toHaveAttribute('aria-valuenow', '1');
+        await page.mouse.up();
+        await expect.poll(readTarget).toEqual(before);
+        expect(await sampleToasterAudio(page, second.trackId, second.deviceId)).toBeGreaterThan(0.0001);
+        const stepBeforePreview = await readStep();
+        await snare.click();
+        expect(await readTarget()).toEqual(before);
+        await expect.poll(readStep).not.toBe(stepBeforePreview);
+        await expect(stop).toHaveAttribute('aria-pressed', 'true');
+        await master.scrollIntoViewIfNeeded();
+        const newBox = await master.boundingBox();
+        if (!newBox) throw new Error('Master knob has no bounds after preview');
+        x = newBox.x + newBox.width / 2;
+        y = newBox.y + newBox.height / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        const values: number[] = [];
+        const samples = [];
+        for (const delta of [15, 30, 45]) {
+            await page.mouse.move(x, y - delta);
+            await expect
+                .poll(async () => Number(await master.getAttribute('aria-valuenow')))
+                .toBeGreaterThan(values.at(-1) ?? 1);
+            await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+            values.push(Number(await master.getAttribute('aria-valuenow')));
+            samples.push(await requireToasterProject(page, selection));
+        }
+        await page.mouse.up();
+        await expect.poll(async () => (await readTarget())?.history.count).toBe(before.history.count + 1);
+        const committed = await requireToasterProject(page, selection);
+        expect(samples).toEqual([before, before, before]);
+        expect(committed.history.latestType).toBe('setToasterMasterGain');
+        expect(committed.otherRows).toEqual(before.otherRows);
+        expect(committed.automation).toEqual(before.automation);
+        const runtimeCommitted = await readToasterRuntime(page, second.deviceId);
+        const { masterGain: originalGain, ...originalKit } = runtimeBefore.state.kit;
+        const { masterGain: committedGain, ...committedKit } = runtimeCommitted.state.kit;
+        expect(originalGain).toBe(1);
+        expect(committedGain).toBe(values.at(-1));
+        expect(committedKit).toEqual(originalKit);
+        expect(runtimeCommitted.state.selectedPadIndex).toBe(runtimeBefore.state.selectedPadIndex);
+        expect(runtimeCommitted.state.isPlaying).toBe(true);
+        expect(runtimeCommitted.selectedTrackId).toBe(runtimeBefore.selectedTrackId);
+        await expect(snare).toHaveAttribute('aria-pressed', 'true');
+        await expect(stop).toHaveAttribute('aria-pressed', 'true');
+        const undo = page.getByRole('button', { name: 'Undo', exact: true });
+        const redo = page.getByRole('button', { name: 'Redo', exact: true });
+        await undo.click();
+        await expect.poll(readTarget).toEqual(before);
+        await expect(master).toHaveAttribute('aria-valuenow', '1');
+        await redo.click();
+        await expect.poll(readTarget).toEqual(committed);
+        await expect(master).toHaveAttribute('aria-valuenow', String(values.at(-1)));
+        await master.press('ArrowUp');
+        await expect.poll(async () => (await readTarget())?.history.count).toBe(before.history.count + 2);
+        const keyboard = await requireToasterProject(page, selection);
+        expect(keyboard.history.latestType).toBe('setToasterMasterGain');
+        await undo.click();
+        await expect.poll(readTarget).toEqual(committed);
+        await redo.click();
+        await expect.poll(readTarget).toEqual(keyboard);
+        await expect(snare).toHaveAttribute('aria-pressed', 'true');
+        await expect(stop).toHaveAttribute('aria-pressed', 'true');
+        await stop.click();
+        expect(await sampleToasterAudio(page, second.trackId, second.deviceId)).toBeGreaterThan(0.0001);
+        await master.press('Home');
+        await expect(master).toHaveAttribute('aria-valuenow', '0');
+        await expect.poll(async () => (await readTarget())?.history.count).toBe(before.history.count + 3);
+        expect(await sampleToasterAudio(page, second.trackId, second.deviceId)).toBeLessThan(0.00001);
+        await undo.click();
+        await expect.poll(readTarget).toEqual(keyboard);
+        expect(await sampleToasterAudio(page, second.trackId, second.deviceId)).toBeGreaterThan(0.0001);
+        expect(await readTarget()).toEqual(keyboard);
+        const firstAfter = await requireToasterProject(page, { trackId: first.trackId });
+        expect(firstAfter.raw).toEqual(first.raw);
+        expect(firstAfter.projected).toEqual(first.projected);
+
+        await chooseProjectDirectory(page);
+        await page.getByRole('button', { name: 'Project menu', exact: true }).click();
+        await page.getByRole('menuitem', { name: /^Save/ }).click();
+        await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0);
+        const binaries = await page.evaluate(
+            async ({ entryPath, projectId, trackId, deviceId }) => {
+                const { arrangement, crdt }: typeof import('./persistedHydrationEntry') = await import(entryPath);
+                type Tracks = NonNullable<typeof arrangement.trackStore.value>;
+                const root = await navigator.storage.getDirectory();
+                const chosen = await root.getDirectoryHandle('chosen-project-directory');
+                const projects = await chosen.getDirectoryHandle('projects');
+                const directory = await projects.getDirectoryHandle(projectId);
+                const files = [];
+                for await (const [name, handle] of directory as AsyncIterable<
+                    [string, FileSystemDirectoryHandle | FileSystemFileHandle]
+                >) {
+                    if (name.endsWith('.sdaw') && 'getFile' in handle) {
+                        const file = await handle.getFile();
+                        const decoded = await crdt.prepareExternalProjectDocument(
+                            new Uint8Array(await file.arrayBuffer()),
+                            projectId
+                        );
+                        const tracks = decoded.rootMediaSlots.tracks as Tracks;
+                        files.push({
+                            header: await file.slice(0, 4).text(),
+                            device:
+                                tracks.tracks
+                                    .find((track) => track.id === trackId)
+                                    ?.devices.find((device) => device.id === deviceId) ?? null,
+                        });
+                    }
+                }
+                return files;
+            },
+            { entryPath: ENTRY, projectId: keyboard.projectId, trackId: keyboard.trackId, deviceId: keyboard.deviceId }
+        );
+        expect(binaries).toContainEqual({ header: 'SDAW', device: keyboard.raw });
+
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 45_000 });
+        const { history, ...saved } = keyboard;
+        await expect
+            .poll(
+                async () => {
+                    const snapshot = await readTarget();
+                    if (!snapshot) {
+                        return null;
+                    }
+                    const { history, ...reopened } = snapshot;
+                    return { reopened, latestType: history.latestType };
+                },
+                { timeout: 15_000 }
+            )
+            .toEqual({ reopened: saved, latestType: history.latestType });
+        await expect(undo).toBeEnabled();
+        await undo.click();
+        const { history: _committedHistory, ...committedProject } = committed;
+        await expect
+            .poll(async () => {
+                const snapshot = await readTarget();
+                if (!snapshot) return null;
+                const { history, ...project } = snapshot;
+                return { project, latestType: history.latestType };
+            })
+            .toEqual({ project: committedProject, latestType: 'setToasterMasterGain' });
     });
 
     test('the second Toaster replays its factory kit pick and reopens the saved kit', async ({ page }) => {

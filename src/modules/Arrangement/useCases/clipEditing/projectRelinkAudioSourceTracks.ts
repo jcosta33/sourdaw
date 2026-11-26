@@ -208,6 +208,7 @@ const relinkPrefixStepByActionType: {
     setLevainIdentity: keepTracks,
     setGrandBouleDeviceState: keepTracks,
     setToasterFactoryKit: keepTracks,
+    setToasterMasterGain: keepTracks,
     setBacteriaFactoryPatch: keepTracks,
     setGlutenFactoryPreset: keepTracks,
     setProofPatchSelection: keepTracks,

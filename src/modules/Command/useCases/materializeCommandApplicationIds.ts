@@ -241,6 +241,7 @@ const applicationIdMaterializerByActionType: {
     setLevainIdentity: materializeByIdRule,
     setGrandBouleDeviceState: materializeByIdRule,
     setToasterFactoryKit: materializeByIdRule,
+    setToasterMasterGain: materializeByIdRule,
     setBacteriaFactoryPatch: materializeByIdRule,
     setGlutenFactoryPreset: materializeByIdRule,
     setProofPatchSelection: materializeByIdRule,

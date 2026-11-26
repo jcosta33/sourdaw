@@ -88,6 +88,7 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     setLevainIdentity: 'content',
     setGrandBouleDeviceState: 'content',
     setToasterFactoryKit: 'content',
+    setToasterMasterGain: 'content',
     setBacteriaFactoryPatch: 'content',
     setGlutenFactoryPreset: 'content',
     setProofPatchSelection: 'content',

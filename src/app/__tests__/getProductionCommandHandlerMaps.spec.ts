@@ -102,6 +102,9 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(allHandlers.filter(({ actionType }) => actionType === 'setToasterFactoryKit')).toEqual([
             { actionType: 'setToasterFactoryKit', handler: getToasterHandlers().setToasterFactoryKit },
         ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setToasterMasterGain')).toEqual([
+            { actionType: 'setToasterMasterGain', handler: getToasterHandlers().setToasterMasterGain },
+        ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setGlutenFactoryPreset')).toEqual([
             { actionType: 'setGlutenFactoryPreset', handler: getGlutenHandlers().setGlutenFactoryPreset },
         ]);
@@ -135,6 +138,7 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setBacteriaFactoryPatch');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setProofPatchSelection');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterFactoryKit');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterMasterGain');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setGlutenFactoryPreset');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setLevainIdentity');
         expect(registrations.every((registration) => typeof registration.handler.execute === 'function')).toBe(true);

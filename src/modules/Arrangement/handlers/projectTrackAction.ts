@@ -256,6 +256,7 @@ export const trackProjectionByActionType: {
     setLevainIdentity: keepTrack,
     setGrandBouleDeviceState: keepTrack,
     setToasterFactoryKit: keepTrack,
+    setToasterMasterGain: keepTrack,
     setBacteriaFactoryPatch: keepTrack,
     setGlutenFactoryPreset: keepTrack,
     setProofPatchSelection: keepTrack,

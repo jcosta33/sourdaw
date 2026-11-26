@@ -52,6 +52,7 @@ function createCapturedDeviceReplayContract(
         | 'setLevainIdentity'
         | 'setProofPatchSelection'
         | 'setToasterFactoryKit'
+        | 'setToasterMasterGain'
 ): SessionActionContract {
     return {
         actionType,
@@ -124,6 +125,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createCapturedDeviceReplayContract('setLevainIdentity'),
         createCapturedDeviceReplayContract('setProofPatchSelection'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),
+        createCapturedDeviceReplayContract('setToasterMasterGain'),
         createInternalReplayContract('discardRecording'),
         createInternalReplayContract('restoreRecording'),
         createOwnerEntryReplayContract('editTempoMap'),

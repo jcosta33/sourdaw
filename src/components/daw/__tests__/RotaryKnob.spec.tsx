@@ -194,6 +194,30 @@ describe('RotaryKnob', () => {
         expect(onChange).not.toHaveBeenCalled();
     });
 
+    it.each([
+        [
+            'pointer cancellation',
+            (root: HTMLElement, _unmount: () => void) => fireEvent.pointerCancel(root, { pointerId: 4 }),
+        ],
+        [
+            'lost capture',
+            (root: HTMLElement, _unmount: () => void) => fireEvent.lostPointerCapture(root, { pointerId: 4 }),
+        ],
+        ['unmount', (_root: HTMLElement, unmount: () => void) => unmount()],
+    ])('uses the opt-in cancellation callback on %s', (_name, end) => {
+        const onChange = vi.fn();
+        const onGestureCancel = vi.fn();
+        const { container, unmount } = render(
+            <RotaryKnob value={50} onChange={onChange} onGestureCancel={onGestureCancel} />
+        );
+        const root = getRoot(container);
+        fireEvent.pointerDown(root, { button: 0, pointerId: 4, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 4, clientY: 80 });
+        end(root, unmount);
+        expect(onChange).toHaveBeenCalledExactlyOnceWith(expect.any(Number), true);
+        expect(onGestureCancel).toHaveBeenCalledOnce();
+    });
+
     it('commits the latest transient value when a drag is cancelled', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);

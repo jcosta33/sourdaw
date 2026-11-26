@@ -675,12 +675,12 @@ async function createDivergedRelinkSourceAction(edit: 'source' | 'owner'): Promi
     return inverse;
 }
 
-function createToasterConflictFixture(): DivergedFixture {
+function createToasterConflictFixture(actionType: 'setToasterFactoryKit' | 'setToasterMasterGain'): DivergedFixture {
     type ToasterRoot = { tracks: { tracks: Track[] } };
     let verifyNonEffects: (() => void) | undefined;
     return {
-        title: 'setToasterFactoryKit refuses after a validated kit source diverges',
-        actionType: 'setToasterFactoryKit',
+        title: `${actionType} refuses after its validated kit source diverges`,
+        actionType,
         createDivergedAction: async () => {
             flushAutomergeStorageWrites();
             configureAutomergeStoragePort(null);
@@ -695,8 +695,14 @@ function createToasterConflictFixture(): DivergedFixture {
             const deviceId = 'toaster-conflict';
             const trackId = 'toaster-owner';
             const rawDevice = () => getCrdtDoc<ToasterRoot>('root')?.tracks.tracks[0]?.devices[0];
-            const before = getToasterPresetDeviceState('909-punchy');
-            const peer = getToasterPresetDeviceState('trap-heavy');
+            const before =
+                actionType === 'setToasterFactoryKit'
+                    ? getToasterPresetDeviceState('909-punchy')
+                    : { version: 1, data: { kit: { masterGain: 0.4 } } };
+            const peer =
+                actionType === 'setToasterFactoryKit'
+                    ? getToasterPresetDeviceState('trap-heavy')
+                    : { version: 1, data: { kit: { masterGain: 0.8 } } };
             if (!before || !peer) {
                 throw new Error('Expected both factory kits');
             }
@@ -721,10 +727,14 @@ function createToasterConflictFixture(): DivergedFixture {
             flushAutomergeStorageWrites();
             expect(rawDevice()?.deviceState).toEqual(before);
 
-            const inverse = {
-                type: 'setToasterFactoryKit',
-                payload: { trackId, deviceId, deviceIds: [deviceId], label: 'Load Rye 909', before, after: null },
-            } satisfies AppAction;
+            const owner = { trackId, deviceId, deviceIds: [deviceId] };
+            const inverse: AppAction =
+                actionType === 'setToasterFactoryKit'
+                    ? { type: actionType, payload: { ...owner, label: 'Load Rye 909', before, after: null } }
+                    : {
+                          type: actionType,
+                          payload: { ...owner, before: { kind: 'value', value: 0.4 }, after: { kind: 'missing-gain' } },
+                      };
             expect(getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
             mutateCrdtDoc<ToasterRoot>({
                 id: 'root',
@@ -1073,7 +1083,8 @@ function createProofConflictFixture(): DivergedFixture {
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     createFermenterConflictFixture(),
-    createToasterConflictFixture(),
+    createToasterConflictFixture('setToasterFactoryKit'),
+    createToasterConflictFixture('setToasterMasterGain'),
     createBacteriaConflictFixture(),
     createGlutenConflictFixture(),
     createLevainConflictFixture(),

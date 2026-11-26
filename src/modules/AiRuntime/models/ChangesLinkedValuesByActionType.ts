@@ -88,6 +88,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     setLevainIdentity: true,
     setGrandBouleDeviceState: true,
     setToasterFactoryKit: true,
+    setToasterMasterGain: true,
     setBacteriaFactoryPatch: true,
     setGlutenFactoryPreset: true,
     setProofPatchSelection: true,

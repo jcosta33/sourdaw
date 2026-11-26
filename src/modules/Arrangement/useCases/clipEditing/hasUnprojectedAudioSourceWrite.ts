@@ -143,6 +143,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     setLevainIdentity: noUnprojectedWrite,
     setGrandBouleDeviceState: noUnprojectedWrite,
     setToasterFactoryKit: noUnprojectedWrite,
+    setToasterMasterGain: noUnprojectedWrite,
     setBacteriaFactoryPatch: noUnprojectedWrite,
     setGlutenFactoryPreset: noUnprojectedWrite,
     setProofPatchSelection: noUnprojectedWrite,

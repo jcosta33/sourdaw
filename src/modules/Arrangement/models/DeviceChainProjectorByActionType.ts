@@ -115,6 +115,7 @@ export const deviceChainProjectorByActionType: {
     setLevainIdentity: (action, devices) => projectLevainIdentity(devices, action),
     setGrandBouleDeviceState: null,
     setToasterFactoryKit: (action, devices) => projectToasterFactoryKit(devices, action),
+    setToasterMasterGain: null,
     setBacteriaFactoryPatch: (action, devices) =>
         projectFactoryPatch(devices, { ...action.payload, deviceType: DEVICE_TYPE_IDS.bacteria }),
     setGlutenFactoryPreset: null,

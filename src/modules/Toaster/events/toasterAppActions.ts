@@ -12,9 +12,23 @@ export type ToasterFactoryKitAction = {
     };
 };
 
+export type ToasterMasterGainCapture =
+    { kind: 'missing-chunk' } | { kind: 'missing-kit' } | { kind: 'missing-gain' } | { kind: 'value'; value: number };
+
+export type ToasterMasterGainAction = {
+    type: 'setToasterMasterGain';
+    payload: {
+        deviceId: string;
+        trackId: string;
+        deviceIds: readonly string[];
+        before: ToasterMasterGainCapture;
+        after: ToasterMasterGainCapture;
+    };
+};
+
 declare module '#/utils/handlerContract' {
     // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- declaration-merging target: a type alias cannot merge
     interface AppActionRegistry {
-        toaster: ToasterFactoryKitAction;
+        toaster: ToasterFactoryKitAction | ToasterMasterGainAction;
     }
 }

@@ -136,6 +136,7 @@ const projectClipActionByActionType: {
     setLevainIdentity: keepState,
     setGrandBouleDeviceState: keepState,
     setToasterFactoryKit: keepState,
+    setToasterMasterGain: keepState,
     setBacteriaFactoryPatch: keepState,
     setGlutenFactoryPreset: keepState,
     setProofPatchSelection: keepState,

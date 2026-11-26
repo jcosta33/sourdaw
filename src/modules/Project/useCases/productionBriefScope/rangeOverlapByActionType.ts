@@ -96,6 +96,7 @@ export const rangeOverlapByActionType: {
     setLevainIdentity: rangeOverlapRules.none,
     setGrandBouleDeviceState: rangeOverlapRules.none,
     setToasterFactoryKit: rangeOverlapRules.none,
+    setToasterMasterGain: rangeOverlapRules.none,
     setBacteriaFactoryPatch: rangeOverlapRules.none,
     setGlutenFactoryPreset: rangeOverlapRules.none,
     setProofPatchSelection: rangeOverlapRules.none,

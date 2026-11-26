@@ -190,6 +190,7 @@ export const plannedDeviceWriteStepByActionType: {
     setLevainIdentity: levainIdentityStep,
     setGrandBouleDeviceState: commandStep,
     setToasterFactoryKit: toasterKitStep,
+    setToasterMasterGain: () => null,
     setBacteriaFactoryPatch: bacteriaFactoryPatchStep,
     createBus: createdBusStep,
     createFolder: commandStep,

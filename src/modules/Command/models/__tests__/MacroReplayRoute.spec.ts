@@ -11,6 +11,10 @@ describe('macroReplayRouteByActionType', () => {
             { kind: 'refuse', reason: 'Automation lane insertions are local edits.', precedence: 0 },
         ],
         ['setLevainIdentity', { kind: 'refuse', reason: 'Levain identity changes are local edits.', precedence: 1 }],
+        [
+            'setToasterMasterGain',
+            { kind: 'refuse', reason: 'Toaster Master gain edits target their original kit.', precedence: 2 },
+        ],
         ['togglePlayback', { kind: 'replay' }],
     ] as const)('routes %s', (type, expected) => {
         expect(macroReplayRouteByActionType[type]).toEqual(expected);
@@ -22,6 +26,7 @@ describe('macroReplayRouteByActionType', () => {
             'restoreTempoMapEdit',
             'insertAutomationLanePoints',
             'setLevainIdentity',
+            'setToasterMasterGain',
         ]);
         const others = Object.entries(macroReplayRouteByActionType).filter(([type]) => !special.has(type));
         expect(others.length).toBeGreaterThan(300);

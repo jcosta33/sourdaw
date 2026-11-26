@@ -67,10 +67,13 @@ function recordsWithinCeiling(values: Readonly<Record<string, number>>): Readonl
     return records;
 }
 
-export function sendNativeDeviceParameters(input: NativeDeviceParameterWrite): Promise<boolean> {
+export function sendNativeDeviceParameters(
+    input: NativeDeviceParameterWrite,
+    isCurrent?: () => boolean
+): Promise<boolean> {
     return queueOnNativeLiveGraphSession(async (): Promise<boolean> => {
         const backend = nativeLiveGraphSession.backend;
-        if (!backend) {
+        if (!backend || isCurrent?.() === false) {
             return false;
         }
         const target = { trackId: input.trackId, deviceId: input.deviceId };

@@ -211,6 +211,7 @@ export const plannedTrackByActionType: {
     setLevainIdentity: noPlannedTrack,
     setGrandBouleDeviceState: noPlannedTrack,
     setToasterFactoryKit: noPlannedTrack,
+    setToasterMasterGain: noPlannedTrack,
     setBacteriaFactoryPatch: noPlannedTrack,
     setGlutenFactoryPreset: noPlannedTrack,
     setProofPatchSelection: noPlannedTrack,

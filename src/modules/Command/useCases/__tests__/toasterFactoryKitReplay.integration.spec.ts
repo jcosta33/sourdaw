@@ -28,6 +28,7 @@ import {
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -79,6 +80,7 @@ type NotificationEvents = {
 type Root = { tracks: TrackStoreState };
 type Chunk = DeviceStateChunkSnapshot;
 type KitAction = Extract<AppAction, { type: 'setToasterFactoryKit' }>;
+type MasterAction = Extract<AppAction, { type: 'setToasterMasterGain' }>;
 
 function kit(id: string, siblings: Chunk['data'] = {}): Chunk {
     const chunk = getToasterPresetDeviceState(id);
@@ -92,6 +94,19 @@ function selection(before: Chunk | null, after: Chunk, label = 'Load Rye 909'): 
     return {
         type: 'setToasterFactoryKit',
         payload: { trackId: TRACK_ID, deviceId: DEVICE.id, deviceIds: [DEVICE.id, NEIGHBOR.id], before, after, label },
+    };
+}
+
+function masterGain(before: MasterAction['payload']['before'], value: number): MasterAction {
+    return {
+        type: 'setToasterMasterGain',
+        payload: {
+            trackId: TRACK_ID,
+            deviceId: DEVICE.id,
+            deviceIds: [DEVICE.id, NEIGHBOR.id],
+            before,
+            after: { kind: 'value', value },
+        },
     };
 }
 
@@ -366,5 +381,107 @@ describe('Toaster factory kit history through production Command and document st
         expectChunk(peer);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it('restores an absent Master chunk and replays a committed zero after opening both session stacks', async () => {
+        seed();
+        const action = masterGain({ kind: 'missing-chunk' }, 0);
+        const after = { version: 1, data: { kit: { masterGain: 0 } } };
+        macroStore.set({ macros: [], recording: true, currentRecording: [] });
+        await executeAppAction(action);
+        expectChunk(after);
+        expect(undoStore.value?.past).toMatchObject([
+            {
+                label: 'Set Toaster Master gain',
+                action,
+                inverseAction: {
+                    type: action.type,
+                    payload: { before: action.payload.after, after: action.payload.before },
+                },
+                redoAction: action,
+            },
+        ]);
+        expect(macroStore.value?.currentRecording).toEqual([]);
+
+        await persistAndReopen();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expectChunk(null);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await persistAndReopen();
+        expect(undoStore.value?.future).toHaveLength(1);
+        await redo();
+        expectChunk(after);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it.each([
+        [{ version: 1, data: UNOWNED }, { kind: 'missing-kit' }, {}],
+        [{ version: 1, data: { ...UNOWNED, kit: {} } }, { kind: 'missing-gain' }, {}],
+        [
+            { version: 1, data: { ...UNOWNED, kit: { masterGain: 0, swing: 0.3 } } },
+            { kind: 'value', value: 0 },
+            { swing: 0.3 },
+        ],
+    ] as const)('restores the exact earlier Master shape from %j', async (before, capture, siblings) => {
+        seed({ before });
+        const after = { version: 1, data: { ...UNOWNED, kit: { ...siblings, masterGain: 1.2 } } };
+        await expect(
+            executeAppActionBatch([masterGain(capture, 1.2)], { groupId: 'master-gain' })
+        ).resolves.toMatchObject({
+            status: 'committed',
+        });
+        expectChunk(after);
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expectChunk(before);
+        await redo();
+        expectChunk(after);
+    });
+
+    it('keeps a peer pad and data fields added under the ancestors the Master edit created', async () => {
+        seed();
+        const action = masterGain({ kind: 'missing-chunk' }, 0.3);
+        await executeAppAction(action);
+        const pads = [{ id: 'peer-kick', volume: 0.42 }];
+        mutateCrdtDoc<Root>({
+            id: 'root',
+            changeFn: (document) => {
+                const data = document.tracks.tracks[0]?.devices[0]?.deviceState?.data;
+                const peerKit = data?.kit;
+                if (!data || !isRecord(peerKit)) {
+                    throw new Error('Expected Master to create a kit before the peer write');
+                }
+                peerKit.pads = pads;
+                data.exportMetadata = UNOWNED.exportMetadata;
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        expectChunk({ version: 1, data: { ...UNOWNED, kit: { pads, masterGain: 0.3 } } });
+
+        await undo();
+        expectChunk({ version: 1, data: { ...UNOWNED, kit: { pads } } });
+        await redo();
+        expectChunk({ version: 1, data: { ...UNOWNED, kit: { pads, masterGain: 0.3 } } });
+    });
+
+    it('refuses a mixed Master batch before the earlier rename can write', async () => {
+        seed();
+        const action = masterGain({ kind: 'missing-chunk' }, 0);
+        await expect(
+            executeAppActionBatch([
+                { type: 'renameTrack', payload: { trackId: TRACK_ID, name: 'Should not land' } },
+                action,
+            ])
+        ).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Action must execute as a singleton batch: setToasterMasterGain',
+            actions: [],
+        });
+        expect(track().name).toBe('Rhythm');
+        expectChunk(null);
+        expect(undoStore.value?.past).toEqual([]);
     });
 });

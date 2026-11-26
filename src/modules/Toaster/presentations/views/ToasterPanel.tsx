@@ -60,6 +60,8 @@ import { setToasterKitParam } from '../../useCases/toasterParamBridge/setToaster
 import { setToasterPadParam } from '../../useCases/toasterParamBridge/setToasterPadParam';
 import { trigger16Level } from '../../useCases/trigger16Level';
 import { triggerToasterPad } from '../../useCases/triggerPad';
+import { MasterKnob } from './MasterKnob';
+
 import { PadGrid } from '../components/PadGrid';
 import { PadMixer } from '../components/PadMixer';
 import { StepSequencer } from '../components/StepSequencer';
@@ -1011,16 +1013,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 defaultValue={0}
                                 readout={`${Math.round(kit.swing * 100)}%`}
                             />
-                            <Knob
-                                value={kit.masterGain}
-                                onChange={(value) => setToasterKitParam(deviceId, 'masterGain', value)}
-                                label="Master"
-                                min={0}
-                                max={2}
-                                step={0.01}
-                                defaultValue={1}
-                                readout={`${Math.round(kit.masterGain * 100)}%`}
-                            />
+                            <MasterKnob deviceId={deviceId} value={kit.masterGain} />
                             <Knob
                                 value={kit.reverbMix}
                                 onChange={(value) => setToasterKitParam(deviceId, 'reverbMix', value)}
