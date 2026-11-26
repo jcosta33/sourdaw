@@ -1,107 +1,42 @@
-import { parse } from 'superjson';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
     type AgentRunBatchSchedule,
     type AgentRunBulkSetBatchSchedule,
-    type AgentRunGrants,
     type AgentRunPlan,
     type AgentRunScope,
-    type AgentRunState,
 } from '../../models/AgentRun';
-import { MAX_COLLECTION_LENGTH } from '../../models/AgentRunPlanBounds';
-import { APPLICATION_TOOL_RECEIPT_MAX_BYTES } from '../../models/ApplicationOwnedTool';
+import {
+    MAX_COLLECTION_LENGTH,
+    MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
+    MAX_PLAN_CAPABILITIES,
+} from '../../models/AgentRunPlanBounds';
+import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { MAX_METRIC_GOAL_STATE_BYTES } from '../../models/MetricGoalAdmission';
-import { sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 
-const RUN_ID = 'restore-bound-run';
-const STORAGE_KEY = 'sourdaw-agent-runs';
-const BOUND = MAX_COLLECTION_LENGTH;
-
-const scope: AgentRunScope = {
-    targetIds: ['track-1'],
-    targetRanges: [],
-    protectedTargetIds: [],
-    protectedRanges: [],
-};
-const grants: AgentRunGrants = {
-    allowedOperationPrefixes: [],
-    create: false,
-    delete: false,
-    routing: false,
-    tempo: false,
-    master: false,
-    file: false,
-    audioUpload: false,
-    remoteGeneration: false,
-    autoCommit: false,
-};
-const budgets = { limits: {}, consumed: {} };
-
-function createRun(): void {
-    agentRunLifecycle.create({
-        runId: RUN_ID,
-        request: 'Brighten the vocal.',
-        mode: 'plan',
-        createdRevision: 'revision-1',
-    });
-    agentRunLifecycle.recordPlan({
-        runId: RUN_ID,
-        summary: 'Brighten the vocal.',
-        commandIds: [],
-        serializedBatchIdentity: null,
-        revision: 'revision-1',
-        scope,
-        grants,
-        budgets,
-    });
-}
-
-function liveRun() {
-    const run = agentRunLifecycle.get(RUN_ID);
-    if (run?.plan === null || run?.plan === undefined) {
-        throw new Error('Expected the recorded run plan.');
-    }
-    return { run, plan: run.plan };
-}
+import {
+    RUN_ID,
+    STORAGE_KEY,
+    budgets,
+    createRun,
+    decodeReloadedRun,
+    grants,
+    ids,
+    liveRun,
+    planRecord,
+    scope,
+} from './agentRunBoundsFixture';
 
 function storedText(): string | null {
     return window.localStorage.getItem(STORAGE_KEY);
 }
 
-/** What the next session reads: the stored text, decoded and sanitized exactly as the store loads it. */
 function reloadedRun() {
-    const raw = storedText();
-    if (raw === null) {
-        throw new Error('Expected persisted agent run state.');
-    }
-    const state: AgentRunState = sanitizeAgentRunState(parse<unknown>(raw));
-    const run = state.runs.find((candidate) => candidate.runId === RUN_ID);
-    if (run === undefined) {
-        throw new Error('The run did not survive the reload.');
-    }
-    return run;
+    return decodeReloadedRun(storedText());
 }
 
-function planRecord(plan: AgentRunPlan, overrides: Partial<{ scope: AgentRunScope; grants: AgentRunGrants }> = {}) {
-    return {
-        runId: RUN_ID,
-        summary: plan.summary,
-        commandIds: plan.commandIds,
-        serializedBatchIdentity: plan.serializedBatchIdentity,
-        revision: 'revision-2',
-        scope,
-        grants,
-        budgets,
-        plan,
-        ...overrides,
-    };
-}
-
-function ids(prefix: string, count: number): string[] {
-    return Array.from({ length: count }, (_, index) => `${prefix}-${String(index)}`);
-}
+const BOUND = MAX_COLLECTION_LENGTH;
 
 function schedule(
     sliceCount: number,
@@ -201,6 +136,147 @@ const collectionRows: Array<PlanWithRow & { bound: number }> = [
     },
 ];
 
+function planWith(next: (count: number) => Partial<AgentRunPlan>): PlanWithRow['plan'] {
+    return (count) => ({ ...liveRun().plan, ...next(count) });
+}
+
+function planScopeWith(next: (count: number) => Partial<AgentRunScope>): PlanWithRow['plan'] {
+    return planWith((count) => ({ scope: { ...liveRun().plan.scope, ...next(count) } }));
+}
+
+function beatRanges(count: number): AgentRunScope['targetRanges'] {
+    return Array.from({ length: count }, (_, index) => ({ startBeat: index, endBeat: index + 1 }));
+}
+
+function receipt(index: number): ApplicationToolReceipt {
+    return {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId: `call-${String(index)}`,
+        toolName: 'project.query',
+        turn: 1,
+        status: 'success',
+        revision: null,
+        data: null,
+        summary: 'Read the project.',
+        warnings: [],
+        error: null,
+    };
+}
+
+const planCollectionRows: Array<PlanWithRow & { bound: number }> = [
+    {
+        field: 'commandIds',
+        bound: BOUND,
+        plan: planWith((count) => ({ commandIds: ids('command', count) })),
+        kept: (plan) => plan?.commandIds.length,
+    },
+    {
+        field: 'applicationToolReceipts',
+        bound: MAX_PLAN_APPLICATION_TOOL_RECEIPTS,
+        plan: planWith((count) => ({
+            applicationToolReceipts: Array.from({ length: count }, (_, index) => receipt(index)),
+        })),
+        kept: (plan) => plan?.applicationToolReceipts?.length,
+    },
+    {
+        field: 'interpretedConstraints',
+        bound: BOUND,
+        plan: planWith((count) => ({ interpretedConstraints: ids('constraint', count) })),
+        kept: (plan) => plan?.interpretedConstraints.length,
+    },
+    {
+        field: 'scope.targetIds',
+        bound: BOUND,
+        plan: planScopeWith((count) => ({ targetIds: ids('track', count) })),
+        kept: (plan) => plan?.scope.targetIds.length,
+    },
+    {
+        field: 'scope.targetRanges',
+        bound: BOUND,
+        plan: planScopeWith((count) => ({ targetRanges: beatRanges(count) })),
+        kept: (plan) => plan?.scope.targetRanges.length,
+    },
+    {
+        field: 'scope.protectedTargetIds',
+        bound: BOUND,
+        plan: planScopeWith((count) => ({ protectedTargetIds: ids('track', count) })),
+        kept: (plan) => plan?.scope.protectedTargetIds.length,
+    },
+    {
+        field: 'scope.protectedRanges',
+        bound: BOUND,
+        plan: planScopeWith((count) => ({ protectedRanges: beatRanges(count) })),
+        kept: (plan) => plan?.scope.protectedRanges.length,
+    },
+    {
+        field: 'steps',
+        bound: BOUND,
+        plan: planWith((count) => ({
+            steps: ids('step', count).map((id, index) => ({ order: index + 1, actionType: id, description: id })),
+        })),
+        kept: (plan) => plan?.steps.length,
+    },
+    {
+        field: 'expectedImpact.project',
+        bound: BOUND,
+        plan: planWith((count) => ({
+            expectedImpact: { ...liveRun().plan.expectedImpact, project: ids('impact', count) },
+        })),
+        kept: (plan) => plan?.expectedImpact.project.length,
+    },
+    {
+        field: 'capabilities',
+        bound: MAX_PLAN_CAPABILITIES,
+        plan: planWith((count) => ({
+            capabilities: ids('capability', count).map((id) => ({
+                id,
+                prerequisite: id,
+                source: 'action-catalog' as const,
+                status: 'available' as const,
+            })),
+        })),
+        kept: (plan) => plan?.capabilities.length,
+    },
+    {
+        field: 'risks',
+        bound: BOUND,
+        plan: planWith((count) => ({ risks: ids('risk', count) })),
+        kept: (plan) => plan?.risks.length,
+    },
+    {
+        field: 'approvalPoints',
+        bound: BOUND,
+        plan: planWith((count) => ({
+            approvalPoints: ids('approval', count).map((reason) => ({
+                kind: 'command-confirmation' as const,
+                reason,
+            })),
+        })),
+        kept: (plan) => plan?.approvalPoints.length,
+    },
+    {
+        field: 'validationStrategy',
+        bound: BOUND,
+        plan: planWith((count) => ({ validationStrategy: ids('validation', count) })),
+        kept: (plan) => plan?.validationStrategy.length,
+    },
+    {
+        field: 'stoppingConditions',
+        bound: BOUND,
+        plan: planWith((count) => ({ stoppingConditions: ids('stop', count) })),
+        kept: (plan) => plan?.stoppingConditions.length,
+    },
+    {
+        field: 'alternatives',
+        bound: BOUND,
+        plan: planWith((count) => ({
+            alternatives: ids('alternative', count).map((id) => ({ id, label: id, changesAuthority: false })),
+        })),
+        kept: (plan) => plan?.alternatives.length,
+    },
+];
+
 /** A string of exactly `bytes` UTF-8 bytes made of two-byte characters, so a character count cannot stand in for it. */
 function textOfBytes(bytes: number): string {
     return 'é'.repeat(bytes / 2);
@@ -239,7 +315,7 @@ describe('restore-only bounds on agent run fields are checked when the run is wr
         createRun();
     });
 
-    describe.each(collectionRows)('plan $field', ({ field, bound, plan, kept }) => {
+    describe.each([...collectionRows, ...planCollectionRows])('plan $field', ({ field, bound, plan, kept }) => {
         it('refuses one entry past the bound and keeps a run written at it across a reload', () => {
             const storedBefore = storedText();
             const overfull = planRecord(plan(bound + 1));
