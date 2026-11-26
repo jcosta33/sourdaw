@@ -1854,3 +1854,219 @@ describe('sibling names the prompt states as closely as each other', () => {
         }
     );
 });
+
+describe('a name read by the words a user types for it (#5395, #5450)', () => {
+    function namedTracksProject(tracks: readonly { id: string; name: string }[]): ProjectContext {
+        const project = createProjectState();
+        const template = project.tracks[0]!;
+        return {
+            ...project,
+            tracks: tracks.map(({ id, name }) => ({ ...template, id, name })),
+            selectedTrackId: null,
+        };
+    }
+
+    function tracksNamed(names: readonly string[]): ProjectContext {
+        return namedTracksProject(names.map((name, index) => ({ id: `track-named-${index}`, name })));
+    }
+
+    function trackIdNamed(project: ProjectContext, name: string): string {
+        return project.tracks.find((track) => track.name === name)!.id;
+    }
+
+    it.each([
+        ['mute the kick', ['01 Kick', 'Vocals'], '01 Kick'],
+        ['mute Guitar2', ['Guitar 2', 'Vocals'], 'Guitar 2'],
+        ['mute Bobs Guitar', ["Bob's Guitar", 'Vocals'], "Bob's Guitar"],
+        ['mute the kick', ['Kick', '01 Kick'], 'Kick'],
+        ['mute 01 kick', ['Kick', '01 Kick'], '01 Kick'],
+        ['mute 02 kick', ['01 Kick', '02 Kick'], '02 Kick'],
+        ['mute Guitar2', ['Guitar', 'Guitar 2'], 'Guitar 2'],
+        ['mute Bobs Guitar', ["Bob's Guitar", 'Guitar'], "Bob's Guitar"],
+        ['mute Lead, Lead', ['Lead', 'Lead Lead'], 'Lead Lead'],
+        ['mute kick/snare/room', ['Kick', 'Snare', 'Kick/Snare', 'Kick Snare Room'], 'Kick Snare Room'],
+        ['mute kick', ['01 Kick', '02 Snare'], '01 Kick'],
+        ['mute kick two', ['Kick', 'Snare'], 'Kick'],
+        ['mute kick number 2', ['Kick', 'Snare'], 'Kick'],
+        ['mute the kick, no more', ['01 Kick', '02 Snare'], '01 Kick'],
+        ['mute 808Kick', ['808 Kick', 'Vocals'], '808 Kick'],
+        ['mute kit/room/snare', ['Kit Room Snare', 'Room', 'Snare'], 'Kit Room Snare'],
+        ['set the kick track volume to 75%', ['01 Kick', '02 Snare'], '01 Kick'],
+    ])('resolves "%s" among %j to %s and no sibling', (prompt, names, picked) => {
+        const project = tracksNamed(names);
+        const pickedId = trackIdNamed(project, picked);
+
+        expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, picked, 'exact-name'));
+        for (const sibling of names.filter((name) => name !== picked)) {
+            expect(resolveTrack(prompt, trackIdNamed(project, sibling), project)).toMatchObject({
+                status: 'rejected',
+                reason: 'asserted-target-mismatch',
+            });
+        }
+    });
+
+    it('keeps "mute the kick" ambiguous between 01 Kick and 02 Kick', () => {
+        const project = tracksNamed(['01 Kick', '02 Kick']);
+        const siblingIds = [trackIdNamed(project, '01 Kick'), trackIdNamed(project, '02 Kick')];
+
+        for (const assertedId of siblingIds) {
+            expect(resolveTrack('mute the kick', assertedId, project)).toMatchObject({
+                status: 'rejected',
+                reason: 'ambiguous-target',
+                candidateIds: siblingIds,
+            });
+        }
+    });
+
+    it.each([
+        ['mute Guitar2', ['Guitar', 'Vocals'], 'Guitar'],
+        ['mute 02 kick', ['01 Kick', 'Vocals'], '01 Kick'],
+        ['mute Bassguitar', ['Bass Guitar', 'Vocals'], 'Bass Guitar'],
+        ['mute Bobs', ['Bob', 'Vocals'], 'Bob'],
+    ])('never resolves "%s" among %j to %s, which it does not state', (prompt, names, refused) => {
+        const project = tracksNamed(names);
+
+        expect(resolveTrack(prompt, trackIdNamed(project, refused), project)).toMatchObject({ status: 'rejected' });
+    });
+
+    it.each([
+        'mute the 2nd kick',
+        'mute 02: kick',
+        'mute 02, kick',
+        'mute the second kick',
+        'mute track2 kick',
+        'mute kick 2',
+        'mute kick two',
+        'mute kick number 2',
+        'mute kick no. 2',
+        'set kick two volume to 75%',
+        'mute kick track 2',
+        'mute kick track two',
+    ])('never resolves "%s" to 01 Kick, whose index another figure-led word replaces', (prompt) => {
+        const project = tracksNamed(['01 Kick', '02 Snare']);
+
+        expect(resolveTrack(prompt, trackIdNamed(project, '01 Kick'), project)).toMatchObject({
+            status: 'rejected',
+        });
+    });
+
+    it.each([
+        'set kick volume to 50%',
+        'turn kick down 2 dB',
+        'set kick 50%',
+        'turn kick down by 2 dB',
+        'set kick 1.5 dB',
+        'set kick 3db',
+        'set kick -6db',
+        'set kick number 50%',
+        'set kick no 3 dB',
+    ])('resolves "%s" to 01 Kick, whose figure carries a value unit', (prompt) => {
+        const project = tracksNamed(['01 Kick', '02 Snare']);
+        const kickId = trackIdNamed(project, '01 Kick');
+
+        expect(resolveTrack(prompt, kickId, project)).toMatchObject({ status: 'resolved', id: kickId });
+    });
+
+    it('resolves "bypass the Fix It EQ" to the device the user named Fix It EQ', () => {
+        const project = namedTracksProject([
+            { id: 'track-vocals', name: 'Vocals' },
+            { id: 'track-keys', name: 'Keys' },
+        ]);
+        const [vocals, keys] = project.tracks;
+        const context: ProjectContext = {
+            ...project,
+            tracks: [
+                {
+                    ...vocals!,
+                    deviceCount: 1,
+                    devices: [{ id: 'eq-fix-it', type: 'builtin-eq', name: 'Fix It EQ', bypassed: false }],
+                },
+                {
+                    ...keys!,
+                    deviceCount: 1,
+                    devices: [{ id: 'eq-plain-keys', type: 'builtin-eq', name: 'EQ', bypassed: false }],
+                },
+            ],
+            availableDeviceTypes: [{ id: 'builtin-eq', name: 'EQ' }],
+        };
+        const resolveDevice = (assertedId: string) =>
+            resolveAgentReference({ prompt: 'bypass the Fix It EQ', assertedId, capability: 'device', context });
+
+        expect(resolveDevice('eq-fix-it')).toEqual(resolvedTo('eq-fix-it', 'EQ', 'exact-name'));
+        expect(resolveDevice('eq-plain-keys')).toMatchObject({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
+        });
+    });
+
+    describe('a device the user named after a track', () => {
+        function deviceNamedVocalsProject(): ProjectContext {
+            const project = namedTracksProject([
+                { id: 'track-vocals', name: 'Vocals' },
+                { id: 'track-keys', name: 'Keys' },
+            ]);
+            const [vocals, keys] = project.tracks;
+            return {
+                ...project,
+                tracks: [
+                    {
+                        ...vocals!,
+                        deviceCount: 1,
+                        devices: [{ id: 'device-vocals-eq', type: 'builtin-eq', bypassed: false }],
+                    },
+                    {
+                        ...keys!,
+                        deviceCount: 1,
+                        devices: [{ id: 'device-keys-vocals', type: 'builtin-eq', name: 'Vocals', bypassed: false }],
+                    },
+                ],
+                availableDeviceTypes: [{ id: 'builtin-eq', name: 'EQ' }],
+            };
+        }
+
+        function resolveDevice(prompt: string, assertedId: string) {
+            return resolveAgentReference({
+                prompt,
+                assertedId,
+                capability: 'device',
+                context: deviceNamedVocalsProject(),
+            });
+        }
+
+        it('keeps "mute Vocals" on the Vocals track', () => {
+            expect(resolveTrack('mute Vocals', 'track-vocals', deviceNamedVocalsProject())).toEqual(
+                resolvedTo('track-vocals', 'Vocals', 'exact-name')
+            );
+        });
+
+        it('reads "bypass the EQ on Vocals" as the EQ the Vocals track owns', () => {
+            expect(resolveDevice('bypass the EQ on Vocals', 'device-vocals-eq')).toMatchObject({
+                status: 'resolved',
+                id: 'device-vocals-eq',
+            });
+            expect(resolveDevice('bypass the EQ on Vocals', 'device-keys-vocals')).toMatchObject({
+                status: 'rejected',
+            });
+        });
+    });
+
+    // The NFD prompt types "Cafe" and a combining acute accent; the literal id "cafe" is that word's plain fold.
+    it.each([
+        ['NFD', 'mute Cafe\u0301 Bus'],
+        ['NFC', 'mute Caf\u00E9 Bus'],
+    ])(
+        'resolves the %s prompt "%s" to Café Bus beside Café and a literal id equal to its folded word',
+        (_form, prompt) => {
+            const project = namedTracksProject([
+                { id: 'track-a', name: 'Café' },
+                { id: 'cafe', name: 'Café Bus' },
+            ]);
+
+            expect(resolveTrack(prompt, 'cafe', project)).toEqual(resolvedTo('cafe', 'Café Bus', 'exact-name'));
+            expect(resolveTrack(prompt, 'track-a', project)).toMatchObject({
+                status: 'rejected',
+                reason: 'asserted-target-mismatch',
+            });
+        }
+    );
+});

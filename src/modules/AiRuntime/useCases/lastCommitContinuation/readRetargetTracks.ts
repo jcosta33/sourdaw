@@ -1,8 +1,9 @@
 import { clarify } from '../../models/LastCommitRefusal';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { ORDINAL_WORDS } from '../agentReference/positionWords';
 
 import { type LastCommitContinuation, type RetargetRequest } from './lastCommitOutcome';
-import { type AmbiguousTrack, ORDINAL_WORDS, readNamedTracks } from './readNamedTracks';
+import { type AmbiguousTrack, readNamedTracks } from './readNamedTracks';
 import { readsAsAnotherTrack } from './readsAsAnotherTrack';
 
 type ReadTargets = { status: 'named'; ids: string[] } | { status: 'refused'; outcome: LastCommitContinuation };
