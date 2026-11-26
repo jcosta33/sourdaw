@@ -9,10 +9,11 @@
  * runtime collision.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 const SRC_ROOT = join(import.meta.dirname, '../../../..');
 
@@ -36,20 +37,40 @@ function isCensusSourceFile(entryName: string): boolean {
 }
 
 function collectTypeScriptFiles(directory: string, into: string[]): string[] {
-    for (const entry of readdirSync(directory)) {
-        const path = join(directory, entry);
-        if (statSync(path).isDirectory()) {
-            if (isExcludedDirectory(entry)) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) {
+            if (isExcludedDirectory(entry.name)) {
                 continue;
             }
             collectTypeScriptFiles(path, into);
             continue;
         }
-        if (isCensusSourceFile(entry)) {
+        if (isCensusSourceFile(entry.name)) {
             into.push(path);
         }
     }
     return into;
+}
+
+// Reads run in bounded batches so a cold page cache costs one queued pass over
+// the tree rather than one serial read per file, without holding thousands of
+// file handles open at once.
+const READ_BATCH_SIZE = 64;
+
+type SourceFile = { path: string; source: string };
+
+async function readSourceFile(path: string): Promise<SourceFile> {
+    return { path, source: await readFile(path, 'utf8') };
+}
+
+async function readSourceFiles(paths: string[]): Promise<SourceFile[]> {
+    const sourceFiles: SourceFile[] = [];
+    for (let start = 0; start < paths.length; start += READ_BATCH_SIZE) {
+        const batch = paths.slice(start, start + READ_BATCH_SIZE);
+        sourceFiles.push(...(await Promise.all(batch.map(readSourceFile))));
+    }
+    return sourceFiles;
 }
 
 /** Narrow, regex-based strip — adequate for a census that only ever searches
@@ -90,13 +111,20 @@ type ContextCensus = {
     offlineByFile: Map<string, number>;
 };
 
-function buildContextCensus(): ContextCensus {
+// Both construction patterns spell `AudioContext`, so a file without the word
+// cannot match either and skips the comment strip.
+const CONTEXT_WORD = 'AudioContext';
+
+async function buildContextCensus(): Promise<ContextCensus> {
     const files = collectTypeScriptFiles(SRC_ROOT, []);
     const liveByFile = new Map<string, number>();
     const offlineByFile = new Map<string, number>();
-    for (const absolutePath of files) {
+    for (const { path: absolutePath, source } of await readSourceFiles(files)) {
+        if (!source.includes(CONTEXT_WORD)) {
+            continue;
+        }
         const relativePath = absolutePath.slice(SRC_ROOT.length + 1);
-        const stripped = stripComments(readFileSync(absolutePath, 'utf8'));
+        const stripped = stripComments(source);
 
         const liveCount = countLiveContextConstructions(stripped);
         if (liveCount > 0) {
@@ -112,12 +140,18 @@ function buildContextCensus(): ContextCensus {
 }
 
 describe('single AudioContext invariant census', () => {
+    let census: ContextCensus;
+
+    beforeAll(async () => {
+        census = await buildContextCensus();
+    });
+
     it('visits enough of src/ and finds enough OfflineAudioContext sites to trust its own walk', () => {
         // Guards every assertion below: a broken walker that visits nothing, or a
         // pattern that matches nothing, would pass every assertion in this file
         // vacuously — exactly the failure mode a census like this exists to rule
         // out (see `undoableHandlersAudit.spec.ts`'s registry guard).
-        const { files, offlineByFile } = buildContextCensus();
+        const { files, offlineByFile } = census;
         const totalOfflineCount = [...offlineByFile.values()].reduce((sum, count) => sum + count, 0);
 
         expect(files.length).toBeGreaterThan(500);
@@ -125,7 +159,7 @@ describe('single AudioContext invariant census', () => {
     });
 
     it('constructs the one live production AudioContext only in createWebAudioEngine.ts', () => {
-        const { liveByFile } = buildContextCensus();
+        const { liveByFile } = census;
 
         // createWebAudioEngine.ts is the sole production owner of the live
         // AudioContext: every other module reaches it through
@@ -145,7 +179,7 @@ describe('single AudioContext invariant census', () => {
     });
 
     it('keeps every OfflineAudioContext construction out of repositories/, except the named capability probe', () => {
-        const { offlineByFile } = buildContextCensus();
+        const { offlineByFile } = census;
 
         // `webAudioEngine/createNoopAudioContext.ts` builds a throwaway 1-frame
         // OfflineAudioContext as a structurally-checked AudioContext shim for
