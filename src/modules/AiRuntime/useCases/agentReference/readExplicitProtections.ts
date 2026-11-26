@@ -16,12 +16,14 @@ import {
     type ProtectableObjectName,
     type Token,
 } from './protectionObjectForms';
+import { protectsNothing } from './protectsNothing';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { readRequestTargetTrackIds } from './readRequestTargetTrackIds';
 import { readRoleFamilyProtection, type RoleTrackIds } from './readRoleFamilyProtection';
 import { readTrackPosition } from './readTrackPosition';
 import { refinementRequestReading } from './refinementRequestReading';
 import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
+import { type BoundMember, type SelectionMember, type SlotReading } from './SlotReading';
 
 /**
  * An explicit protection is a preservation clause ("leave Keys alone", "with Bass unchanged", "Keys
@@ -166,25 +168,6 @@ function readMember(input: MemberInput): MemberReading {
     return { kind: 'ignore' };
 }
 
-type SelectionMember = {
-    phrase: string;
-    scope: 'any' | 'track';
-    controls: string[];
-    pronoun: boolean;
-    anaphoric: boolean;
-};
-/** `byName` is false for a role family, which names its tracks by role rather than by track name. */
-type BoundMember = { trackIds: string[]; controls: string[]; byName: boolean };
-type SlotReading = {
-    complete: boolean;
-    uniqueTrackOwners: boolean;
-    unreadContinuations: Range[];
-    unresolved: string[];
-    selection: SelectionMember[];
-    bound: BoundMember[];
-    /** Controls the slot lists with no owner ("except for the fader"). */
-    controls: string[];
-};
 type MemberRange = Range & { afterThen: boolean; resetsOwner: boolean };
 type SlotMemberState = {
     reading: SlotReading;
@@ -385,16 +368,17 @@ function readSlotMembers(input: {
     familyTrackIds: RoleTrackIds;
 }): SlotReading {
     const { prompt, blanked, masked, slot, references, context, objects, familyTrackIds } = input;
+    const trackIds = new Set(context.tracks.map((track) => track.id));
     const reading: SlotReading = {
         complete: true,
         uniqueTrackOwners: true,
+        nonTrackReferences: readNonTrackReferences(slot, references, trackIds, context),
         unreadContinuations: [],
         unresolved: [],
         selection: [],
         bound: [],
         controls: [],
     };
-    const trackIds = new Set(context.tracks.map((track) => track.id));
     const bounds = readMemberRanges(masked, slot);
     // Controls listed before their owner ("the fader and pan of Vocals") wait for it; ones after an owner that
     // names a control ("the Vocals pan and fader") join it. An owner protected whole never narrows to them.
@@ -413,6 +397,23 @@ function readSlotMembers(input: {
     }
     reading.controls.push(...state.pendingControls);
     return reading;
+}
+
+/** The project references a slot states that name something other than tracks and VCA groups with members. */
+function readNonTrackReferences(
+    slot: Slot,
+    references: readonly NamedRange[],
+    trackIds: ReadonlySet<string>,
+    context: ProjectContext
+): Range[] {
+    const groupIds = new Set(
+        (context.vcaGroups ?? []).filter((group) => group.trackIds.length > 0).map(({ id }) => id)
+    );
+    const namesTracks = (id: string) => trackIds.has(id) || groupIds.has(id);
+    const stated = references.filter((reference) => reference.start >= slot.start && reference.end <= slot.end);
+    return stated
+        .filter((reference) => !Array.from(reference.denotes).every(namesTracks))
+        .map(({ start, end }) => ({ start, end }));
 }
 
 /** Gives an owner naming a control the controls listed before it, and returns it when later controls may join it. */
@@ -584,6 +585,19 @@ export function readExplicitProtections(
     context: ProjectContext,
     options: { requireUniqueTrackOwners?: boolean } = {}
 ): ProtectionReading {
+    return readProtectionClauses(prompt, context, options).reading;
+}
+
+/** The whole clauses, from their protection verb, that this reader reads as protecting nothing. */
+export const inertProtectionClauses = {
+    read: (prompt: string, context: ProjectContext): Range[] => readProtectionClauses(prompt, context, {}).inertClauses,
+} as const;
+
+function readProtectionClauses(
+    prompt: string,
+    context: ProjectContext,
+    options: { requireUniqueTrackOwners?: boolean }
+): { reading: ProtectionReading; inertClauses: Range[] } {
     const candidates = [
         ...refinementRequestReading.candidates(context),
         ...protectionCandidates.extraCandidates(context),
@@ -611,6 +625,7 @@ export function readExplicitProtections(
     // Keep each protection separate until its own carve-out is read, so it cannot relax an earlier clause.
     const readings: Accumulator[] = [];
     const resolvedTrackClauses: Range[] = [];
+    const inertClauses: Range[] = [];
     let found = createAccumulator();
     const slots = protectionSlots.read(masked);
     const objects = protectionCandidates.protectableObjects(context);
@@ -661,8 +676,11 @@ export function readExplicitProtections(
         ) {
             resolvedTrackClauses.push(slot.completeRange);
         }
+        if (protectsNothing(slot, masked, reading)) {
+            inertClauses.push(slot.clause);
+        }
     }
-    return {
+    const protections: ProtectionReading = {
         resolvedTrackClauses,
         unresolved: [...new Set(readings.flatMap((reading) => [...reading.unresolved]))],
         protectedTrackIds: [
@@ -674,4 +692,5 @@ export function readExplicitProtections(
             ...reading.complements,
         ]),
     };
+    return { reading: protections, inertClauses };
 }

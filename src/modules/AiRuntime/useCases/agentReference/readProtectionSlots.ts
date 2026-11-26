@@ -71,6 +71,8 @@ export type Slot = {
     end: number;
     /** The whole clause, only when no unread text follows its closer. */
     completeRange: Range | null;
+    /** The whole clause from its opening words, closed or not. */
+    clause: Range;
     /** Original then separators continuing an explicitly opened, still-unclosed protection. */
     memberSeparators: Range[];
     /** Whether a closing word shows the clause is a closed protection, which a selection phrase needs. */
@@ -281,7 +283,7 @@ function findCloser(masked: string, from: number, end: number, pattern: RegExp, 
 }
 
 /** The reference a piece protects, and whether a closing word shows it is read as a closed protection. */
-function readSlot(masked: string, piece: Piece): Omit<Slot, 'lead'> | null {
+function readSlot(masked: string, piece: Piece): Omit<Slot, 'lead' | 'clause'> | null {
     const { lead } = piece;
     if (lead === null) {
         const closer = findCloser(masked, piece.start, piece.end, headlessCloserPattern, HEADLESS);
@@ -375,7 +377,13 @@ function readSlots(masked: string, names: readonly Range[] = []): Slot[] {
         }
         const isCarveOut = piece.lead?.kind === 'carve-out';
         const otherwise = readsOtherwise(masked, pieces, index);
-        slots.push({ ...slot, lead: piece.lead?.kind ?? null, exempts: isCarveOut && previousProtects, otherwise });
+        slots.push({
+            ...slot,
+            lead: piece.lead?.kind ?? null,
+            clause: { start: piece.start, end: piece.end },
+            exempts: isCarveOut && previousProtects,
+            otherwise,
+        });
         previousProtects = piece.lead?.kind === 'verb' || piece.lead?.kind === 'prohibition';
     }
     return slots;
