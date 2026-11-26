@@ -167,15 +167,35 @@ function rejectWhenAborted(signal: AbortSignal): Promise<never> {
     });
 }
 
-/** Gives the first save preparation a Worker round trip, which these cases script. */
+/**
+ * Scripts the Worker round trip of the first save preparation and records every attempt: how many
+ * preparations were planned, which Worker requests were made, and which attempts materialized.
+ * Later attempts keep the fixture's own local materialization, so a retry can complete.
+ */
 async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequest) => Promise<void>) {
     const arrangementStoreModule = await import('../../../../stores/arrangementStore');
     const prepare = arrangementStoreModule.prepareArrangementStoreState;
     const signals: AbortSignal[] = [];
-    let materializeCalls = 0;
+    const materializedAttempts: number[] = [];
+    let attempts = 0;
     vi.spyOn(arrangementStoreModule, 'prepareArrangementStoreState').mockImplementation((...args) => {
         const plan = prepare(...args);
-        if (!plan || signals.length > 0) {
+        if (!plan) {
+            return plan;
+        }
+        attempts += 1;
+        const attempt = attempts;
+        const materialize = (): void => {
+            materializedAttempts.push(attempt);
+            plan.materialize();
+        };
+        if (attempt > 1) {
+            // Observe the retry without copying the plan, which would evaluate its Worker request.
+            const materializeRetry = plan.materialize.bind(plan);
+            vi.spyOn(plan, 'materialize').mockImplementation(() => {
+                materializedAttempts.push(attempt);
+                materializeRetry();
+            });
             return plan;
         }
         return {
@@ -189,16 +209,26 @@ async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequ
                     },
                 });
             },
-            materialize: () => {
-                materializeCalls += 1;
-                plan.materialize();
-            },
+            materialize,
         };
     });
-    return { signals, materializeCalls: () => materializeCalls };
+    return { signals, attempts: () => attempts, materializedAttempts: () => materializedAttempts };
 }
 
-/** Counts the subscriptions the save's preparation still holds on the stores it captures. */
+const WATCHED_STORES = [
+    'track',
+    'automation',
+    'midi',
+    'tempoMap',
+    'timeSignatureMap',
+    'marker',
+    'takeLane',
+    'arrangement',
+    'project',
+] as const;
+type WatchedStore = (typeof WATCHED_STORES)[number];
+
+/** Counts the live subscriptions on each store the save's preparation captures. */
 async function countStoreSubscriptions() {
     const [
         { trackStore, markerStore, takeLaneStore },
@@ -215,32 +245,48 @@ async function countStoreSubscriptions() {
         import('../../../../stores/arrangementStore'),
         import('../../../../stores/projectStore'),
     ]);
-    let active = 0;
-    function countSubscriptions(store: { subscribe(callback: (value: unknown) => void): () => void }): void {
+    const live: Record<WatchedStore, number> = {
+        track: 0,
+        automation: 0,
+        midi: 0,
+        tempoMap: 0,
+        timeSignatureMap: 0,
+        marker: 0,
+        takeLane: 0,
+        arrangement: 0,
+        project: 0,
+    };
+    function countSubscriptions(
+        name: WatchedStore,
+        store: { subscribe(callback: (value: unknown) => void): () => void }
+    ): void {
         const subscribe = store.subscribe.bind(store);
         vi.spyOn(store, 'subscribe').mockImplementation((callback) => {
-            active += 1;
+            live[name] += 1;
             const unsubscribe = subscribe(callback);
             let released = false;
             return () => {
                 if (!released) {
                     released = true;
-                    active -= 1;
+                    live[name] -= 1;
                 }
                 unsubscribe();
             };
         });
     }
-    countSubscriptions(trackStore);
-    countSubscriptions(markerStore);
-    countSubscriptions(takeLaneStore);
-    countSubscriptions(automationStore);
-    countSubscriptions(midiStore);
-    countSubscriptions(transport.tempoMapStore);
-    countSubscriptions(transport.timeSignatureMapStore);
-    countSubscriptions(arrangement.arrangementStore);
-    countSubscriptions(projectStores.projectStore);
-    return { active: () => active };
+    countSubscriptions('track', trackStore);
+    countSubscriptions('automation', automationStore);
+    countSubscriptions('midi', midiStore);
+    countSubscriptions('tempoMap', transport.tempoMapStore);
+    countSubscriptions('timeSignatureMap', transport.timeSignatureMapStore);
+    countSubscriptions('marker', markerStore);
+    countSubscriptions('takeLane', takeLaneStore);
+    countSubscriptions('arrangement', arrangement.arrangementStore);
+    countSubscriptions('project', projectStores.projectStore);
+    return {
+        of: (name: WatchedStore): number => live[name],
+        active: (): number => WATCHED_STORES.reduce((total, name) => total + live[name], 0),
+    };
 }
 
 const SERIAL_SNAPSHOT_WORK = ['capture', 'build', 'first save settled', 'capture', 'build'];
@@ -510,7 +556,10 @@ describe('saveProject snapshot continuation', () => {
             workerFinished.resolve();
 
             expect(await saving).toBe(true);
+            // One abandoned Worker request, then one retry that materializes and saves the edit.
             expect(worker.signals).toHaveLength(1);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
             expect(opened.persistenceFailures()).toEqual([]);
             expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited while the Worker materialized']);
         },
@@ -541,7 +590,8 @@ describe('saveProject snapshot continuation', () => {
             // get that far, with no second attempt, because the same-value set left its inputs current.
             await saving;
             expect(worker.signals).toHaveLength(1);
-            expect(worker.materializeCalls()).toBe(1);
+            expect(worker.attempts()).toBe(1);
+            expect(worker.materializedAttempts()).toEqual([1]);
         },
         CASE_TIMEOUT_MS
     );
@@ -561,8 +611,10 @@ describe('saveProject snapshot continuation', () => {
 
             expect(await opened.project.saveProject()).toBe(true);
 
+            // The first answer is never materialized; the retry materializes against the edit.
             expect(worker.signals).toHaveLength(1);
-            expect(worker.materializeCalls()).toBe(0);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
             expect(opened.persistenceFailures()).toEqual([]);
             expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited after admission']);
         },
@@ -607,7 +659,30 @@ describe('saveProject snapshot continuation', () => {
             workerFinished.resolve();
 
             expect(await saving).toBe(true);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
             expect(opened.persistenceFailures()).toEqual([]);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it.each(WATCHED_STORES)(
+        'holds a subscription on the %s store while the Worker request is open, and releases it after',
+        async (name) => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const subscriptions = await countStoreSubscriptions();
+            let heldDuringRequest = 0;
+            const before = subscriptions.of(name);
+            await stubSlowMaterializationWorker(() => {
+                heldDuringRequest = subscriptions.of(name);
+                return Promise.reject(new Error('Worker failed'));
+            });
+
+            expect(await opened.project.saveProject()).toBe(false);
+
+            expect(heldDuringRequest).toBe(before + 1);
+            expect(subscriptions.of(name)).toBe(before);
         },
         CASE_TIMEOUT_MS
     );
@@ -638,6 +713,7 @@ describe('saveProject snapshot continuation', () => {
             expect(opened.persistenceFailures()).toEqual([failure]);
             expect(result).toBe(false);
             expect(worker.signals).toHaveLength(1);
+            expect(worker.attempts()).toBe(1);
             expect(subscriptions.active()).toBe(before);
         },
         CASE_TIMEOUT_MS
@@ -660,6 +736,7 @@ describe('saveProject snapshot continuation', () => {
             expect(await opened.project.saveProject()).toBe(true);
 
             expect(worker.signals[0]?.aborted).toBe(true);
+            expect(worker.attempts()).toBe(2);
             expect(subscriptions.active()).toBe(before);
         },
         CASE_TIMEOUT_MS
