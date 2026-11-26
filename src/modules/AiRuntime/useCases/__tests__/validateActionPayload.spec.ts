@@ -978,6 +978,50 @@ const guardedPayloadContractCases = [
             { clipId: 'clip-1', sourceRevision: '[]' },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'scaleVelocities',
+        validPayload: { clipId: 'clip-1', curve: 'linear', minVelocity: 20, maxVelocity: 100 },
+        invalidPayloads: [
+            { clipId: 'clip-1', curve: 'linear', extra: true },
+            { clipId: '', curve: 'linear' },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', curve: 'unknown' },
+            { clipId: 'clip-1', curve: 'linear', minVelocity: 0 },
+            { clipId: 'clip-1', curve: 'linear', maxVelocity: 128 },
+            { clipId: 'clip-1', curve: 'linear', minVelocity: 100, maxVelocity: 50 },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'humanizeNotes',
+        validPayload: { clipId: 'clip-1', amount: 0.5, velocityAmount: 0.25, seed: 7 },
+        invalidPayloads: [
+            { clipId: 'clip-1', amount: 0.5, extra: true },
+            { clipId: '', amount: 0.5 },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', amount: 1.5 },
+            { clipId: 'clip-1', amount: 0.5, velocityAmount: -0.1 },
+            { clipId: 'clip-1', amount: 0.5, seed: 'seven' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'addChordEvent',
+        validPayload: { beat: 4, root: 0, quality: 'major', duration: 2 },
+        invalidPayloads: [
+            { beat: 4, root: 0, quality: 'major', extra: true },
+            { root: 0, quality: 'major' },
+            { beat: -1, root: 0, quality: 'major' },
+            { beat: 4, root: 12, quality: 'major' },
+            { beat: 4, root: 0.5, quality: 'major' },
+            { beat: 4, root: 0, quality: 'nonsense' },
+            { beat: 4, root: 0, quality: 'major', duration: 0.1 },
+            { beat: 4, root: 0, quality: 'major', eventId: '' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'clearChordTrack',
+        validPayload: undefined,
+        invalidPayloads: [{}, null, { extra: true }],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
@@ -1028,6 +1072,32 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 }
             }
         );
+    });
+
+    it('admits a toggleChordTrack payload with only a boolean enabled and refuses any other shape', () => {
+        // RuntimeAction types this payload as absent, so the contract table cannot hold a valid one.
+        const guard = PAYLOAD_VALIDATORS.toggleChordTrack;
+        if (guard === 'unchecked') {
+            throw new Error('Expected a real payload guard for toggleChordTrack');
+        }
+
+        expect([guard({ enabled: true }), guard({ enabled: false })]).toEqual([true, true]);
+        expect([guard({ enabled: true, extra: true }), guard({}), guard({ enabled: 'yes' }), guard(null)]).toEqual([
+            false,
+            false,
+            false,
+            false,
+        ]);
+    });
+
+    it('admits an addChordEvent with an application-supplied eventId and refuses an empty one', () => {
+        const guard = PAYLOAD_VALIDATORS.addChordEvent;
+        if (guard === 'unchecked') {
+            throw new Error('Expected a real payload guard for addChordEvent');
+        }
+
+        expect(guard({ beat: 4, root: 0, quality: 'major', eventId: 'chord-1' })).toBe(true);
+        expect(guard({ beat: 4, root: 0, quality: 'major', eventId: '' })).toBe(false);
     });
 
     it('refuses a scaleVelocities range whose minimum exceeds its maximum and admits equal or lone bounds', () => {
