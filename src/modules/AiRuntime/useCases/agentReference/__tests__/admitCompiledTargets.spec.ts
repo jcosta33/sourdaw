@@ -565,6 +565,14 @@ describe('a role-family pick needs its family stated in its own instruction', ()
         ).toEqual(ADMITTED);
     });
 
+    it('admits the kick for "turn down the lead vocal and the kit by 3 dB", whose vocal role narrows no drum', () => {
+        const prompt = 'turn down the lead vocal and the kit by 3 dB';
+
+        expect(
+            admitPick(prompt, prompt, (instruction) => pickTerms(drumFamily('all'), ['track-kick'], instruction, kit))
+        ).toEqual(ADMITTED);
+    });
+
     it('admits the kick for "turn the drums down 3 dB"', () => {
         expect(
             admitPick('turn the drums down 3 dB', 'turn the drums down 3 dB', (instruction) =>
