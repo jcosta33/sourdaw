@@ -1167,6 +1167,36 @@ describe('ElasticEditorPanel', () => {
         ]);
     });
 
+    it('draws and hit-tests the marker at its stored beat after switching clips mid-drag and back', async () => {
+        mocks.trackStoreValue.tracks[0]?.clips.push({
+            id: 'c2',
+            type: 'audio',
+            audioBufferId: 'buf-2',
+            startBeat: 0,
+            endBeat: 8,
+        });
+        const { rerender } = render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+        });
+
+        // A fresh store value each time, as the real store publishes, so the target is recomputed.
+        mocks.elasticStoreValue = { ...mocks.elasticStoreValue, openClipId: 'c2' };
+        rerender(<ElasticEditorPanel />);
+        mocks.elasticStoreValue = { ...mocks.elasticStoreValue, openClipId: 'c1' };
+        rerender(<ElasticEditorPanel />);
+        mocks.selectElasticMarkers.mockClear();
+
+        fireEvent.pointerDown(canvas, { clientX: 69, pointerId: 5 });
+        expect(mocks.selectElasticMarkers).not.toHaveBeenCalled();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 6 });
+        expect(mocks.selectElasticMarkers).toHaveBeenCalledWith(['m1']);
+    });
+
     it('draws and hit-tests the marker at its stored beat again after the gesture is canceled', async () => {
         render(<ElasticEditorPanel />);
         const canvas = screen.getByTestId('elastic-waveform-canvas');

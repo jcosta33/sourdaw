@@ -36,6 +36,13 @@ export function useWarpMarkerDragPreview(clipId: string) {
     const [preview, setPreview] = useState<MarkerPreview | null>(null);
     const previewRef = useRef<MarkerPreview | null>(null);
 
+    // A clip change abandons the drag: reset the state the way React documents resetting state on a changed input.
+    const [previewClipId, setPreviewClipId] = useState(clipId);
+    if (previewClipId !== clipId) {
+        setPreviewClipId(clipId);
+        setPreview(null);
+    }
+
     useEffect(() => {
         previewRef.current = null;
     }, [clipId]);

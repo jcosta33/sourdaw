@@ -955,6 +955,32 @@ describe('WaveformEditor', () => {
             ]);
         });
 
+        it('draws and hit-tests the marker at its stored beat after switching clips mid-drag and back', async () => {
+            vi.mocked(getWarpState).mockImplementation((id: string) => ({
+                enabled: true,
+                markers: id === 'clip-a' ? [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }] : [],
+                stretchMode: 'phase-vocoder',
+                originalTempo: null,
+            }));
+            const { rerender } = render(<WaveformEditor clipId="clip-a" />);
+            const canvas = screen.getByLabelText('Waveform editor');
+            const capture = vi.fn();
+            canvas.setPointerCapture = capture;
+            fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+            await act(async () => {
+                fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+            });
+
+            rerender(<WaveformEditor clipId="clip-b" />);
+            rerender(<WaveformEditor clipId="clip-a" />);
+            capture.mockClear();
+
+            fireEvent.pointerDown(canvas, { clientX: 84, pointerId: 8 });
+            expect(capture).not.toHaveBeenCalled();
+            fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 9 });
+            expect(capture).toHaveBeenCalledWith(9);
+        });
+
         it('draws and hit-tests the marker at its stored beat again after the gesture is canceled', async () => {
             twoMarkers();
             render(<WaveformEditor {...defaultProps} />);

@@ -68,8 +68,10 @@ describe('commitWarpMarkerBeatDrag', () => {
     });
 
     it('records no history entry when the marker ends where it started', async () => {
-        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', originalBeat: 1, warpedBeat: 2 });
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', originalBeat: 1.25, warpedBeat: 2.5 });
 
+        // A drag that ends where the marker already is must not add an entry on top of the real one.
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', originalBeat: 1.25, warpedBeat: 2.5 });
         await undo();
 
         expect(getStoredWarpState(clipId)).toEqual(BEFORE_DRAG);
