@@ -1,5 +1,5 @@
+import { type ChordTrackState } from '../models/ChordTrackState';
 import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
-import { type ChordTrackState } from '../stores/chordTrackStore';
 
 import { cloneChordTrackState } from './cloneChordTrackState';
 import { type ChordMutationAction } from './isChordTrackEditAction';

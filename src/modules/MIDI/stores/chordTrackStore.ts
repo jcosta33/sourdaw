@@ -2,12 +2,10 @@ import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type ChordEvent } from '../models/ChordEvent';
+import { type ChordTrackState as ChordTrackModel } from '../models/ChordTrackState';
 import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
 
-export type ChordTrackState = {
-    enabled: boolean;
-    events: ChordEvent[];
-};
+export type ChordTrackState = ChordTrackModel;
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 

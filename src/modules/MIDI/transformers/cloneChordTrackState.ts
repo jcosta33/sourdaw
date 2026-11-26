@@ -1,7 +1,6 @@
-import { type ChordTrackActionSnapshot } from '../events/midiAppActions';
-import { type ChordTrackState } from '../stores/chordTrackStore';
+import { type ChordTrackState, type ReadonlyChordTrackState } from '../models/ChordTrackState';
 
-export function cloneChordTrackState(state: ChordTrackActionSnapshot): ChordTrackState {
+export function cloneChordTrackState(state: ReadonlyChordTrackState): ChordTrackState {
     return {
         enabled: state.enabled,
         events: state.events.map((event) => ({
