@@ -4407,8 +4407,8 @@ fn a_render_block_performs_no_heap_allocation() {
 }
 
 /// Every point the host stages for one parameter is a point the plugin reads,
-/// at its own offset and in order, and a second value for the sample the last
-/// point already names replaces it. Only the value the points end on can be
+/// at its own offset and in order, and a value staged at an offset the queue
+/// already holds replaces that point's value. Only the value the points end on can be
 /// an echo of the host's own write, so `carries` matches that one and nothing else.
 #[test]
 fn a_parameter_queue_hands_the_plugin_every_staged_point_at_its_offset() {
@@ -4467,6 +4467,22 @@ fn read_queue_points(queue: &ComWrapper<HostParamValueQueue>) -> Vec<(int32, Par
             (offset, value)
         })
         .collect()
+}
+
+/// A point staged at an offset the queue already holds replaces that point's
+/// value wherever it sits: the third stage lands on offset 50, which is not the
+/// last point, so the 100-sample point keeps its place and value.
+#[test]
+fn a_point_at_a_held_offset_replaces_that_point_wherever_it_sits() {
+    let changes = HostParameterChanges::new();
+    changes.stage(5, 50, 0.1);
+    changes.stage(5, 100, 0.2);
+    changes.stage(5, 50, 0.3);
+
+    assert_eq!(
+        read_queue_points(&changes.queues[0]),
+        vec![(50, 0.3), (100, 0.2)]
+    );
 }
 
 /// A queue filled to its bound hands the plugin every point, in order, at its

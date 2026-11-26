@@ -507,11 +507,12 @@ impl PendingParameterQueue {
     /// offset, since it is for the block about to run.
     ///
     /// Every late write of one parameter names the same sample, so they are
-    /// one write: the slots of a parameter fold into its latest (highest
-    /// sequence) and the rest are freed. Kept apart, the points of a ramp from
-    /// consecutive unserved blocks would fill the queue and refuse the newest
-    /// writes of that ramp. A slot another thread holds is skipped by the
-    /// fold; drain folds it the same way once it is published.
+    /// one write. The fold is best-effort under claims: it runs only forward,
+    /// from each slot to the later slots of its parameter, and it skips any
+    /// slot another thread holds. A late slot the fold leaves that way is
+    /// folded by the drain once it is published. Kept apart, the points of a
+    /// ramp from consecutive unserved blocks would fill the queue and refuse
+    /// the newest writes of that ramp.
     fn mark_pending_late(&self) {
         let issued = self.next_sequence.load(Ordering::Acquire).saturating_sub(1);
         self.late_through.fetch_max(issued, Ordering::Release);

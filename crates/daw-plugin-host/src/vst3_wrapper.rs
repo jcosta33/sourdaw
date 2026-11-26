@@ -131,9 +131,9 @@ const MAX_QUEUE_POINTS: usize = MAX_PARAMETER_QUEUES + 1;
 ///
 /// Automation hands one parameter several points inside one block, and VST3
 /// carries a sample offset on every point precisely so a host need not split
-/// its process call to deliver them. A point staged at the same offset as the
-/// last one replaces its value: two values for one sample are one value, the
-/// later.
+/// its process call to deliver them. A point staged at an offset the queue
+/// already holds replaces that point's value: two values for one sample are one
+/// value, the later.
 ///
 /// The points are a fixed array allocated with the queue at activation; staging
 /// writes into it in place and never grows it.
