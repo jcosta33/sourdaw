@@ -290,6 +290,7 @@ function retirePreviewBindings(node = session.node): void {
     releasePreviewBindings([...bindings.values()], node);
 }
 
+// Normalize before taking a preview capture: a new source epoch retires the previous bindings.
 function transportForRuntime(transport: TransportInfo): TransportInfo {
     if (
         transport.discontinuityEpoch !== undefined &&
@@ -781,6 +782,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
+            const transport = transportForRuntime(input.transport);
             const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId, trackId: input.trackId });
             if (previewCapture.enabled) {
                 rememberPreviewBinding({
@@ -794,7 +796,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
-                transportForRuntime(input.transport),
+                transport,
                 input.trackId,
                 previewCapture.enabled,
                 rackId,
@@ -858,6 +860,7 @@ export async function processYeastRuntimeTransaction(
                 markProjectionApplied(record);
             }
 
+            const transport = transportForRuntime(input.transport);
             const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId, trackId: input.trackId });
             if (previewCapture.enabled) {
                 rememberPreviewBinding({
@@ -871,7 +874,7 @@ export async function processYeastRuntimeTransaction(
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
-                transportForRuntime(input.transport),
+                transport,
                 input.trackId,
                 previewCapture.enabled,
                 rackId,
