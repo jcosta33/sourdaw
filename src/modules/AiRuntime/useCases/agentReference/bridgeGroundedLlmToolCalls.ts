@@ -126,39 +126,34 @@ import {
     type ClearSolosRestrictionActionSpan,
 } from './groundingStrategies/collectClearSolosRestrictionClauses';
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
+import { continuesLevelChange } from './groundingStrategies/continuesLevelChange';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
 import { findTrailingRangePhrase } from './groundingStrategies/findTrailingRangePhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
+import { getAnchorReferences } from './groundingStrategies/getAnchorReferences';
+import { getAnchorValueScope } from './groundingStrategies/getAnchorValueScope';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
 import { getIntentPhraseIndex } from './groundingStrategies/getIntentPhraseIndex';
-import {
-    getNamedReferenceSpans,
-    getReferenceRanges,
-    type ReferenceRange,
-} from './groundingStrategies/getNamedReferenceSpans';
+import { getNamedReferenceSpans } from './groundingStrategies/getNamedReferenceSpans';
 import { getNearestIntentAction } from './groundingStrategies/getNearestIntentAction';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { getReferencedCancellationAction } from './groundingStrategies/getReferencedCancellationAction';
+import { getReferenceRanges, type ReferenceRange } from './groundingStrategies/getReferenceRanges';
 import { getSendLaneBusId } from './groundingStrategies/getSendLaneBusId';
 import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
+import { isLevelContinuationClause } from './groundingStrategies/isLevelContinuationClause';
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
-import {
-    continuesLevelChange,
-    getAnchorReferences,
-    getAnchorValueScope,
-    isLevelContinuationClause,
-} from './groundingStrategies/percentLevelContinuation';
 import { groundPostScopeAdmission } from './groundingStrategies/postScopeAdmissionStrategy';
 import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTargetEvidenceAdmissionStrategy';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';

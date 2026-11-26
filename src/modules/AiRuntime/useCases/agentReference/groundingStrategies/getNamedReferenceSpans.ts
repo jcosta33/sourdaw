@@ -1,23 +1,9 @@
 import { type PromptReferenceSpan } from './bindDecibelFiguresToReferences';
-import { escapeRegExp } from './escapeRegExp';
+import { getReferenceRanges } from './getReferenceRanges';
 import { normalizePromptText } from './normalizePromptText';
 
-export type ReferenceRange = {
-    end: number;
-    start: number;
-};
-
-export function getReferenceRanges(commandSource: string, reference: string): ReferenceRange[] {
-    const referenceTokens = normalizePromptText(reference).split(' ').filter(Boolean);
-    if (referenceTokens.length === 0) {
-        return [];
-    }
-    const normalizedReferencePattern = referenceTokens.map(escapeRegExp).join('[^\\p{L}\\p{N}]+');
-    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${normalizedReferencePattern}(?![\\p{L}\\p{N}])`, 'giu');
-    return [...commandSource.matchAll(pattern)].map((match) => ({
-        start: match.index,
-        end: match.index + match[0].length,
-    }));
+function matchedLength(name: string): number {
+    return normalizePromptText(name).length;
 }
 
 /**
@@ -29,7 +15,6 @@ export function getNamedReferenceSpans(
     scopeText: string,
     objects: readonly { id: string; name: string }[]
 ): PromptReferenceSpan[] {
-    const matchedLength = (name: string) => normalizePromptText(name).length;
     const spans: PromptReferenceSpan[] = [];
     for (const object of objects.toSorted((left, right) => matchedLength(right.name) - matchedLength(left.name))) {
         for (const range of getReferenceRanges(scopeText, object.name)) {

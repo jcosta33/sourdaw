@@ -5,7 +5,8 @@
  */
 export function getSendLaneBusId(groundedArguments: Record<string, unknown>): string | undefined {
     const parameterId = groundedArguments.parameterId;
-    return typeof parameterId === 'string' && parameterId.startsWith('send:')
-        ? parameterId.slice('send:'.length)
-        : undefined;
+    if (typeof parameterId !== 'string' || !parameterId.startsWith('send:')) {
+        return undefined;
+    }
+    return parameterId.slice('send:'.length);
 }
