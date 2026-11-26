@@ -3,7 +3,6 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
 import {
-    SEMANTIC_COMMAND_LIST_ROLE_FAMILIES,
     type SemanticCommandListMatch,
     type SemanticCommandListRoleFamily,
     type SemanticCommandListSelector,
@@ -26,6 +25,7 @@ import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
 import { holdsFragmentAtWordStart } from './holdsFragmentAtWordStart';
+import { namesTrackSelectorForm } from './namesTrackSelectorForm';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readTrackPosition } from './readTrackPosition';
@@ -475,9 +475,12 @@ function namesTrack(text: string, context: ProjectContext): boolean {
     return namesObjectByName(text, 'track', context) || readTrackPosition(text) !== undefined;
 }
 
-/** Whether the text names a narrower role of any family, outside every object name: "the lead vocal". */
-function namesNarrowerRole(text: string, context: ProjectContext): boolean {
-    return findNarrowerRoleSpans(maskObjectNames(text, context), SEMANTIC_COMMAND_LIST_ROLE_FAMILIES).length > 0;
+/**
+ * Whether the text states tracks in any form a selector picks them by: a whole name, id or position,
+ * or a role, family or name fragment outside every object name.
+ */
+function statesTracks(text: string, context: ProjectContext): boolean {
+    return namesTrack(text, context) || namesTrackSelectorForm(maskObjectNames(text, context), context.tracks);
 }
 
 /** "them", "their" or "those", which refer back to the tracks an earlier instruction states. */
@@ -518,7 +521,7 @@ function getEvidenceText(
         clauses: request.clauses,
         instruction,
         reader: {
-            namesTracks: (text) => namesTrack(text, context) || namesNarrowerRole(text, context),
+            namesTracks: (text) => statesTracks(text, context),
             findBackReference: (text) => findBackReference(text, context),
             givesInstruction: (masked) => resolveClauseActionIntent(masked, catalog) !== null,
             extendInstruction: (clause) => extendInstruction(request, clause, catalog),

@@ -3,7 +3,7 @@ import { type AgentReferenceTextRange } from './findAgentReferenceNameSpans';
 
 /** How the scope reads the request: the tracks it names and the instructions it gives. */
 export type InstructionReader = {
-    /** Whether the text names a track by whole name, id or position, or a narrower role ("the lead vocal"). */
+    /** Whether the text states tracks in any form a selector picks them by: a name, a role, a family or a fragment. */
     namesTracks: (text: string) => boolean;
     /** Where the text first refers back to tracks stated before it: "it", "them", "that track". */
     findBackReference: (text: string) => number | undefined;

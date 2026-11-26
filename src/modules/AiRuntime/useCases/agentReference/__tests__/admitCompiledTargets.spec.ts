@@ -279,6 +279,30 @@ describe('a compiled pick reads the request less the other instructions that nam
         }
     );
 
+    describe('another instruction stating a track by fragment counts as naming it', () => {
+        const padMix = createProjectContext([keys, createTrack('track-synth-pad', 'Synth Pad')]);
+        const padFragment: CompiledSelectorTerms = {
+            targetArgument: 'trackId',
+            match: { all: [{ nameIncludes: 'pad' }] },
+        };
+
+        it('refuses the pad for "set Keys volume to 75% and mute the pad"', () => {
+            expect(
+                admitPick('set Keys volume to 75% and mute the pad', 'set Keys volume to 75%', (instruction) =>
+                    pickTerms(padFragment, ['track-synth-pad'], instruction, padMix)
+                )
+            ).toEqual(UNAUTHORIZED);
+        });
+
+        it('admits the pad for "set the pad to 60% and mute Keys"', () => {
+            expect(
+                admitPick('set the pad to 60% and mute Keys', 'set the pad to 60%', (instruction) =>
+                    pickTerms(padFragment, ['track-synth-pad'], instruction, padMix)
+                )
+            ).toEqual(ADMITTED);
+        });
+    });
+
     it('reads each instruction of one batch apart, whatever start or end the two share', () => {
         const prompt = 'set Vocals volume to 75% and mute Keys';
         const whole = { start: 0, end: prompt.length };
