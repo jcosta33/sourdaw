@@ -5,6 +5,7 @@ import { MAX_TRACK_NOTES_LENGTH } from '#/utils/trackNotesLimits';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackNotes } from '../../useCases/setTrackGainPan/setTrackNotes';
 
+import { isSetTrackNotesSessionEntry } from './isSetTrackNotesSessionEntry';
 import { describeMissingTrack, readPlannedDisplayTrack } from './readPlannedDisplayTrack';
 
 type SetTrackNotesAction = Extract<AppAction, { type: 'setTrackNotes' }>;
@@ -33,6 +34,7 @@ export const handleSetTrackNotes = createHandler<'setTrackNotes'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedNotes !== undefined,
     validate: (action, context) => findRefusal(action, context) === null,
     validationRefusalReason: findRefusal,
+    validateSessionEntry: isSetTrackNotesSessionEntry,
     isNoop: (action) => {
         const notes = readLiveNotes(action.payload.trackId);
         return notes === action.payload.notes && (action.payload.expectedNotes ?? notes) === notes;
