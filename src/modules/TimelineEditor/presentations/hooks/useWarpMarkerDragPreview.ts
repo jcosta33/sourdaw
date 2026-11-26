@@ -51,21 +51,41 @@ export function useWarpMarkerDragPreview(clipId: string) {
         setPreview(next);
     };
 
-    const release = (markerId: string): void => {
-        const released = previewRef.current;
-        previewRef.current = null;
-        if (released === null || released.clipId !== clipId || released.markerId !== markerId) {
+    const commit = (moved: MarkerPreview): void => {
+        if (moved.clipId !== clipId) {
             clear();
             return;
         }
         // The preview stays drawn until its commit settles, unless a newer drag has replaced it by then.
-        void commitWarpMarkerBeatDrag({ clipId, markerId, warpedBeat: released.warpedBeat }).finally(() =>
-            setPreview((current) => (current === released ? null : current))
-        );
+        void commitWarpMarkerBeatDrag({
+            clipId: moved.clipId,
+            markerId: moved.markerId,
+            warpedBeat: moved.warpedBeat,
+        }).finally(() => setPreview((current) => (current === moved ? null : current)));
+    };
+
+    const release = (markerId: string): void => {
+        const released = previewRef.current;
+        previewRef.current = null;
+        if (released === null || released.markerId !== markerId) {
+            clear();
+            return;
+        }
+        commit(released);
+    };
+
+    // Pressing another marker while one is mid-drag ends that drag: its moved preview is committed first.
+    const begin = (markerId: string): void => {
+        const pending = previewRef.current;
+        if (pending === null || pending.markerId === markerId) {
+            return;
+        }
+        previewRef.current = null;
+        commit(pending);
     };
 
     const overlay = <State extends { markers: BeatMarker[] }>(state: State): State =>
         withMarkerPreview(state, preview, clipId);
 
-    return { overlay, move, release, cancel: clear };
+    return { overlay, begin, move, release, cancel: clear };
 }

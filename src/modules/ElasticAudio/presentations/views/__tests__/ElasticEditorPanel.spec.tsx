@@ -1130,13 +1130,61 @@ describe('ElasticEditorPanel', () => {
             fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
         });
 
-        // A second press while the first drag is unreleased makes the drag track the other marker.
+        // A second press while the first drag is unreleased ends that drag, committing its own move,
+        // and the unmoved press on the other marker commits nothing.
         fireEvent.pointerDown(canvas, { clientX: 80, pointerId: 5 });
         await act(async () => {
             fireEvent.pointerUp(canvas, { pointerId: 5 });
         });
 
-        expect(mocks.commitWarpMarkerBeatDrag).not.toHaveBeenCalled();
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledTimes(1);
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            warpedBeat: 1.725,
+        });
+    });
+
+    it('commits the first marker move and then the second marker own move when a second marker is pressed mid-drag', async () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+        });
+
+        fireEvent.pointerDown(canvas, { clientX: 80, pointerId: 5 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 100, pointerId: 5 });
+            fireEvent.pointerUp(canvas, { pointerId: 5 });
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag.mock.calls).toEqual([
+            [{ clipId: 'c1', markerId: 'm1', warpedBeat: 1.725 }],
+            [{ clipId: 'c1', markerId: 'm2', warpedBeat: 2.5 }],
+        ]);
+    });
+
+    it('draws and hit-tests the marker at its stored beat again after the gesture is canceled', async () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        await act(async () => {
+            fireEvent.pointerMove(canvas, { clientX: 69, pointerId: 4 });
+        });
+        await act(async () => {
+            fireEvent.pointerCancel(canvas, { pointerId: 4 });
+        });
+        mocks.selectElasticMarkers.mockClear();
+
+        fireEvent.pointerDown(canvas, { clientX: 69, pointerId: 5 });
+        expect(mocks.selectElasticMarkers).not.toHaveBeenCalled();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 6 });
+        expect(mocks.selectElasticMarkers).toHaveBeenCalledWith(['m1']);
     });
 
     it('writes nothing for a click without movement on a second marker after an earlier drag', async () => {

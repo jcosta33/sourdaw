@@ -308,6 +308,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         }
 
         if (hit) {
+            markerDrag.begin(hit.id);
             dragRef.current = {
                 markerId: hit.id,
                 pointerId: event.pointerId,

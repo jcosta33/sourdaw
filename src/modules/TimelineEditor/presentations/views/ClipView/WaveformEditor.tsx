@@ -380,6 +380,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         const x = getCanvasX(event);
         const hit = hitTestMarker(x);
         if (hit) {
+            markerDrag.begin(hit.id);
             draggingMarkerRef.current = {
                 id: hit.id,
                 startX: x,
@@ -426,10 +427,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         }
         endMarkerDrag();
         markerDrag.release(drag.id);
-    };
-
-    const handlePointerUp = () => {
-        finishMarkerDrag();
     };
 
     const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -563,7 +560,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                     aria-label="Waveform editor"
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
+                    onPointerUp={finishMarkerDrag}
                     onPointerCancel={cancelMarkerDrag}
                     onLostPointerCapture={finishMarkerDrag}
                     onDoubleClick={handleDoubleClick}
