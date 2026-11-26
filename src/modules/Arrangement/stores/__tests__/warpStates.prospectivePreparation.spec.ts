@@ -26,6 +26,7 @@ import {
     captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
@@ -131,6 +132,26 @@ async function materialize(preparation: ReturnType<typeof plan>['preparation']):
     preparation.materialize();
 }
 
+const peerState: WarpState = { ...original, originalTempo: 133 };
+
+/** A collaborator's change to another clip arriving in the shared document. */
+function applyPeerChange(): void {
+    mutateCrdtDoc<{ warpStates: { states: Record<string, unknown> } }>({
+        id: 'root',
+        changeFn: (document) => {
+            document.warpStates.states.peer = structuredClone(peerState);
+        },
+    });
+}
+
+function readDocumentStates(): Record<string, unknown> {
+    const root = getCrdtDoc<{ warpStates: { states: Record<string, unknown> } }>('root');
+    if (!root) {
+        throw new Error('Expected root');
+    }
+    return structuredClone(root.warpStates.states);
+}
+
 describe('Arrangement private warp-state preparation', () => {
     it('keeps bounded native preparation private, then publishes one actual-actor change to an independent peer', async () => {
         const before = getCrdtDoc('root');
@@ -197,5 +218,46 @@ describe('Arrangement private warp-state preparation', () => {
         transaction.commit();
         expect(getWarpState('target').markers).toContainEqual(latest.markers[1]);
         expect(getWarpState('other').originalTempo).toBe(99);
+    });
+
+    it('refuses a staged prepared write whose base a peer change made stale before its flush, keeping the peer change', async () => {
+        const { transaction, preparation } = plan();
+        await materialize(preparation);
+        expect(transaction.scope(preparation.stage)).toBe(true);
+
+        applyPeerChange();
+        warpStateStore.hydrate();
+        // While the prepared write is pending, the store already shows the peer's clip beside it.
+        expect(getWarpState('peer')).toEqual(peerState);
+        expect(getWarpState('target')).toEqual(replacement);
+
+        transaction.validateDocument('root', () => null);
+        expect(() => transaction.commit()).toThrow('authority changed');
+        transaction.abort();
+
+        expect(readDocumentStates()).toMatchObject({ peer: peerState, target: original });
+        expect(getWarpState('peer')).toEqual(peerState);
+        expect(getWarpState('target')).toEqual(original);
+    });
+
+    it('replans a prepared write a peer change made stale before staging, landing it beside the peer change', async () => {
+        const first = plan();
+        await materialize(first.preparation);
+        applyPeerChange();
+        warpStateStore.hydrate();
+        expect(first.preparation.isCurrent()).toBe(false);
+        expect(first.transaction.scope(first.preparation.stage)).toBe(false);
+        first.preparation.discard();
+        first.transaction.abort();
+
+        const second = plan();
+        await materialize(second.preparation);
+        expect(second.transaction.scope(second.preparation.stage)).toBe(true);
+        second.transaction.validateDocument('root', () => null);
+        second.transaction.commit();
+
+        expect(readDocumentStates()).toMatchObject({ peer: peerState, target: replacement });
+        expect(getWarpState('peer')).toEqual(peerState);
+        expect(getWarpState('target')).toEqual(replacement);
     });
 });

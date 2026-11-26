@@ -635,6 +635,20 @@ describe('reconcileCrdtSlot', () => {
 
         expect(slotOf(doc).rows).toStrictEqual([]);
     });
+
+    it('keeps a peer-deleted entry deleted when the writer carries it unchanged with its keys in another order', () => {
+        const doc: Doc = { slot: { entries: { b: { name: 'b0', beat: 2 } } } };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: { entries: { a: { beat: 1, name: 'a0' } } },
+            value: { entries: { a: { name: 'a0', beat: 1 }, c: { name: 'c0', beat: 3 } } },
+            documentPresence: { slot: { entries: { a: { beat: 1, name: 'a0' } } } },
+        });
+
+        expect(doc.slot).toEqual({ entries: { b: { name: 'b0', beat: 2 }, c: { name: 'c0', beat: 3 } } });
+    });
 });
 
 type AutomergeSlotDoc = { slot: { rows: Row[]; title?: string } };
