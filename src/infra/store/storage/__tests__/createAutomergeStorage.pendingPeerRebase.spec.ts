@@ -143,7 +143,10 @@ describe('createAutomergeStorage rebasing a pending write over a peer change', (
 
         expect(readEntries(storage)).toEqual({ A: entry(1), B: entry(2) });
         flushAutomergeStorageWrites();
-        expect(document.readEntries()).toMatchObject({ A: entry(1), B: entry(2) });
+        // The flush leaves the peer's row the store cannot show in the document.
+        expect(document.readSlot()).toEqual({
+            entries: { A: entry(1), B: entry(2), malformed: { tempo: 'not a tempo' } },
+        });
         expect(readEntries(storage)).toEqual({ A: entry(1), B: entry(2) });
     });
 
