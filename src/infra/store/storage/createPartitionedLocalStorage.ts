@@ -271,6 +271,20 @@ function readStoredCommits(keys: StorageKeys): StoredCommits {
  * it is. Every other commit takes a fresh one, so a read between its writes finds a part written by
  * a commit its index does not name.
  */
+let nextWriteSequence = 0;
+
+/**
+ * A token no other write of this page or another tab shares. It draws its randomness from
+ * `getRandomValues` and counts writes of its own, never from `crypto.randomUUID`, so a caller that
+ * stubs `randomUUID` to a fixed or repeating sequence neither repeats a token nor has its sequence
+ * consumed by storage writes it never asked for.
+ */
+function newWriteToken(): string {
+    nextWriteSequence += 1;
+    const random = crypto.getRandomValues(new Uint32Array(4));
+    return `${nextWriteSequence.toString(36)}-${Array.from(random, (word) => word.toString(16)).join('')}`;
+}
+
 function chooseCommit(shape: {
     writtenIds: readonly string[];
     changesOtherKeys: boolean;
@@ -285,11 +299,11 @@ function chooseCommit(shape: {
             return reused;
         }
     }
-    return crypto.randomUUID();
+    return newWriteToken();
 }
 
 function writtenPartText(commit: string, body: string): string {
-    return encodePartText({ commit, write: crypto.randomUUID(), writtenAt: Date.now() }, body);
+    return encodePartText({ commit, write: newWriteToken(), writtenAt: Date.now() }, body);
 }
 
 /**

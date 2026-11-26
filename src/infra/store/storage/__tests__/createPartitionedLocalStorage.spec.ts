@@ -153,6 +153,21 @@ describe('createPartitionedLocalStorage', () => {
         expect(storedPartKeys()).toHaveLength(3);
     });
 
+    it('reads back a single tab sequence of writes while crypto.randomUUID repeats one value, and never draws from it', () => {
+        const randomUUID = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
+        const storage = createStorage();
+        const first = { version: 1, items: items(3) };
+        const second = { version: 2, items: [...first.items.with(1, { ...first.items[1]!, label: 'Changed' })] };
+        const third = { version: 3, items: second.items.slice(1) };
+
+        for (const value of [first, second, third]) {
+            expect(storage.trySet(value)).toBe(true);
+            expect(createStorage().get()).toEqual(value);
+        }
+
+        expect(randomUUID).not.toHaveBeenCalled();
+    });
+
     it('writes only the part whose object changed, and the index only when it changed', () => {
         const storage = createStorage();
         const first = { version: 1, items: items(20) };
