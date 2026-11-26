@@ -1,6 +1,6 @@
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
 
-import { blankRange } from './blankRange';
+import { blankRanges } from './blankRanges';
 import { findNamedRoleFamilies } from './findNamedRoleFamilies';
 import { findNarrowerRoleSpans } from './findNarrowerRoleSpans';
 
@@ -17,7 +17,7 @@ export type FamilyStatement =
 
 function readStatedFamily(masked: string, family: SemanticCommandListRoleFamily): FamilyStatement | undefined {
     const roleSpans = findNarrowerRoleSpans(masked, [family]);
-    const uses = findNamedRoleFamilies(roleSpans.reduce(blankRange, masked), [family]);
+    const uses = findNamedRoleFamilies(blankRanges(masked, roleSpans, ' '), [family]);
     if ([...uses.named, ...uses.modifying].includes(family)) {
         return { kind: 'family' };
     }

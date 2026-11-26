@@ -1,4 +1,4 @@
-import { blankRange } from './blankRange';
+import { blankRanges } from './blankRanges';
 import { type AgentReferenceTextRange } from './findAgentReferenceNameSpans';
 
 /** Where a text refers back to tracks stated before it, and whether to several ("them") or one ("it"). */
@@ -80,5 +80,6 @@ export function scopeToInstruction(input: InstructionScopeInput): string {
         input.reader.namesTracks(input.text.slice(range.start, range.end))
     );
     const antecedents = getAntecedents(naming, input);
-    return naming.filter((range) => !antecedents.includes(range)).reduce(blankRange, input.text);
+    const unreferenced = naming.filter((range) => !antecedents.includes(range));
+    return blankRanges(input.text, unreferenced, ' ');
 }

@@ -81,7 +81,7 @@ import {
     resolveBatchLocalBindingProducer,
 } from './batchLocalBindingProducers';
 import { type BoundRefinementValue, type RefinementClause } from './bindRefinementFigure';
-import { blankRange } from './blankRange';
+import { blankRanges } from './blankRanges';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
@@ -1299,9 +1299,7 @@ function isPercentLevelContinuationClause(
     }
     const start = continuation.index + continuation[1].length;
     const end = start + continuation[2].length;
-    return getNamedReferenceSpans(clause.text, context.tracks).some(
-        (span) => span.start === start && span.end === end
-    );
+    return getNamedReferenceSpans(clause.text, context.tracks).some((span) => span.start === start && span.end === end);
 }
 
 /** Whether the clause continues the level change before it in decibels or in percent onto another track. */
@@ -3111,9 +3109,8 @@ function getAnchorValueScope(
         return actionScope;
     }
     const otherNumbers = numbers.filter((number) => !anchorNumbers.includes(number));
-    const masked = otherNumbers
-        .map((number) => ({ start: number.index, end: number.end }))
-        .reduce(blankRange, actionScope.masked);
+    const otherRanges = otherNumbers.map((number) => ({ start: number.index, end: number.end }));
+    const masked = blankRanges(actionScope.masked, otherRanges, ' ');
     return { ...actionScope, masked };
 }
 

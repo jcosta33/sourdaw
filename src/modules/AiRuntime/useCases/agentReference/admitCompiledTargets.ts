@@ -9,12 +9,13 @@ import {
 } from '../../models/SemanticCommandList';
 import { resolveRoleFamily } from '../canonicalRoleFamilies';
 
-import { blankRange } from './blankRange';
+import { blankRanges } from './blankRanges';
 import {
     findAgentReferenceNameSpans,
     type AgentReferenceNameForms,
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
+import { DEMONSTRATIVE_TRACK_REFERENCE, findBackReference, SELECTION_PRONOUN } from './findBackReference';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -31,7 +32,7 @@ import { readFamilyStatement, type FamilyStatement } from './readFamilyStatement
 import { readOnce } from './readOnce';
 import { readTrackPosition } from './readTrackPosition';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
-import { scopeToInstruction, type BackReference } from './scopeToInstruction';
+import { scopeToInstruction } from './scopeToInstruction';
 
 /*
  * Compiled target authority (#5295).
@@ -71,11 +72,11 @@ import { scopeToInstruction, type BackReference } from './scopeToInstruction';
  * form a selector picks by: a name, id or position, a role phrase, a family word, or a word-start
  * fragment of a track name ("mute the pad" names Synth Pad). Text giving no instruction always
  * counts ("Mute Vocals. Keys too.", "Turn down these tracks by 3 dB\nBass\nDrums"). Only an
- * instruction that refers back with "it", "them" or "that track", naming no track before that
- * reference, keeps the nearest earlier instruction naming tracks ("Mute Vocals and Keys, then pan
- * them left"); a call no clause grounds reads the whole request. A selection reference ("this
- * track", "the selected track", "it" or "its" outside every object name for the selected track) that resolves to the picked objects states those
- * picks only when the text names no object of that kind, by name, id or, for a track, position, or
+ * instruction that refers back, naming no track before that reference, keeps earlier instructions
+ * naming tracks: every one for "them" ("Mute Vocals. Mute Keys. Pan them left."), the nearest for
+ * "it" or "that track"; a call no clause grounds reads the whole request. A selection reference
+ * ("this track", "the selected track", "it" or "its" outside every object name for the selected
+ * track) that resolves to the picked objects states those picks only when the text names no object of that kind, by name, id or, for a track, position, or
  * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
  * volume so it sits better" never stands for the selected Keys, nor "set the first track volume so it
  * sits better", nor "bypass the EQ on Play It". A fragment picks a target only where it starts a
@@ -267,12 +268,6 @@ function getProjectObjectNames(context: ProjectContext): string[] {
     return [...trackNames, ...laneNames, ...layerNames];
 }
 
-/** "that track" points at a track as "this track" does, though the shared reading takes only the latter. */
-const DEMONSTRATIVE_TRACK_REFERENCE = /\bthat (?:audio |midi |bus |folder )?track\b/u;
-
-/** "it" or "its", which may stand for the selected track. */
-const SELECTION_PRONOUN = /\bits?\b/iu;
-
 /** A phrase that may stand for the selection: "this track", "the selected track", "the current track", "it" or "its". */
 const SELECTION_REFERENCE =
     /\b(?:this|(?:the\s+)?(?:selected|current))(?:\s+(?:audio|midi|bus|folder))?\s+track\b|\bits?\b/giu;
@@ -292,7 +287,8 @@ function joinsAsListMembers(between: string): boolean {
 /** The text with every range stating the name of an object in the project blanked out. */
 function maskObjectNames(text: string, context: ProjectContext): string {
     const names = getProjectObjectNames(context);
-    return names.flatMap((name) => findAgentReferenceNameSpans(text, name, NAME_FORMS, names)).reduce(blankRange, text);
+    const spans = names.flatMap((name) => findAgentReferenceNameSpans(text, name, NAME_FORMS, names));
+    return blankRanges(text, spans, ' ');
 }
 
 /** Whether "it" or "its" occurs outside every object name: "Play It" names a track, not the selection. */
@@ -417,7 +413,7 @@ function maskWrittenValues(text: string, values: readonly string[], context: Pro
     const objectNames = getProjectObjectNames(context);
     return values.reduce((masked, value) => {
         const last = findAgentReferenceNameSpans(masked, value, NAME_FORMS, objectNames).at(-1);
-        return last === undefined ? masked : blankRange(masked, last);
+        return last === undefined ? masked : blankRanges(masked, [last], ' ');
     }, text);
 }
 
@@ -452,7 +448,7 @@ function getProtectedIds(
     // Whole owners are transferred before their source clauses are masked. Control facets remain
     // enforced after grounding against the actual mutation owners, never as blanket exclusions.
     const genericRestrictionIds = new Set<string>();
-    const genericRestrictions = consumed.reduce(blankRange, request.prompt);
+    const genericRestrictions = blankRanges(request.prompt, consumed, ' ');
     for (const range of restrictionRanges) {
         const restriction = genericRestrictions.slice(range.start, range.end);
         const { capability, context, dependencyId } = input;
@@ -460,9 +456,10 @@ function getProtectedIds(
             genericRestrictionIds.add(id);
         }
         // "leave Bass Verse unchanged" protects the clip, not every object on a track named Bass.
-        const trackRestriction = readNaming(restriction, capability, context, dependencyId).nameRanges.reduce(
-            blankRange,
-            restriction
+        const trackRestriction = blankRanges(
+            restriction,
+            readNaming(restriction, capability, context, dependencyId).nameRanges,
+            ' '
         );
         for (const trackId of readReferencedIds(trackRestriction, 'track', context)) {
             genericRestrictionIds.add(trackId);
@@ -487,46 +484,13 @@ function statesTracks(text: string, context: ProjectContext): boolean {
     return namesTrack(text, context) || namesTrackSelectorForm(maskObjectNames(text, context), context.tracks);
 }
 
-/** "them", "their" or "those", which refer back to the tracks an earlier instruction states. */
-const PLURAL_BACK_REFERENCE = /\b(?:them|their|those)\b/iu;
-
-/** "these" or "both", which refer back only when no track named after them is what they point at. */
-const LIST_BACK_REFERENCE = /\b(?:these|both)\b/iu;
-
-/** Where a list word refers back: "pan both left", never "pan both Vocals and Keys left". */
-function findListBackReference(masked: string, instruction: string, context: ProjectContext): number | undefined {
-    const match = LIST_BACK_REFERENCE.exec(masked);
-    if (match === null || statesTracks(instruction.slice(match.index + match[0].length), context)) {
-        return undefined;
-    }
-    return match.index;
-}
-
-/**
- * Where the instruction first refers back to earlier tracks, outside every object name, and whether
- * it refers to several ("them", "their", "those", "these", "both") or one ("it", "its", "that track").
- */
-function findBackReference(instruction: string, context: ProjectContext): BackReference | undefined {
-    const masked = maskObjectNames(instruction, context);
-    const references: { index: number | undefined; plural: boolean }[] = [
-        { index: SELECTION_PRONOUN.exec(masked)?.index, plural: false },
-        { index: DEMONSTRATIVE_TRACK_REFERENCE.exec(normalizeAgentReferenceText(instruction))?.index, plural: false },
-        { index: PLURAL_BACK_REFERENCE.exec(masked)?.index, plural: true },
-        { index: findListBackReference(masked, instruction, context), plural: true },
-    ];
-    return references
-        .flatMap(({ index, plural }) => (index === undefined ? [] : [{ index, plural }]))
-        .toSorted((left, right) => left.index - right.index)
-        .at(0);
-}
-
 /** The whole request with its restrictions and the values the batch writes blanked. */
 function getRequestText(
     input: RequestReadingInput,
     request: MaskedRequest,
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): string {
-    const unrestricted = restrictionRanges.reduce(blankRange, request.prompt);
+    const unrestricted = blankRanges(request.prompt, restrictionRanges, ' ');
     return maskWrittenValues(unrestricted, input.valueTexts, input.context);
 }
 
@@ -547,7 +511,8 @@ function getEvidenceText(input: RequestReadingInput, request: MaskedRequest, unw
         instruction,
         reader: {
             namesTracks: (text) => statesTracks(text, context),
-            findBackReference: (text) => findBackReference(text, context),
+            findBackReference: (text) =>
+                findBackReference(text, maskObjectNames(text, context), (after) => statesTracks(after, context)),
             givesInstruction: (masked) => resolveClauseActionIntent(masked, catalog) !== null,
             extendInstruction: (clause) => extendInstruction(request, clause, catalog),
         },
@@ -824,7 +789,10 @@ function readRequest(input: RequestReadingInput): RequestReading {
     };
 }
 
-/** The targets a family pick's predicate reaches: every one under `match.all`, those of the family under `match.any`. */
+/**
+ * The targets a family pick's predicate reaches: every one under `match.all`, those of the family
+ * under `match.any`.
+ */
 function getReachedTargetIds(pick: FamilyPick, input: CompiledTargetAuthorityInput): readonly string[] {
     if (pick.everyTarget) {
         return input.targetIds;

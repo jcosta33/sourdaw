@@ -2873,7 +2873,7 @@ describe('a typed name reads every dash as the hyphen and its letters composed',
 
 const ROLE_AUDIO_TRACK_IDS = roleContext.tracks.filter((track) => track.kind === 'audio').map((track) => track.id);
 
-describe('#5351 a role, family or kind selection never widens past the role its clause states', () => {
+describe('a role, family or kind selection never widens past the role its clause states', () => {
     it('refuses the backing vocals a vocal-family selection reaches for "turn down the lead vocal by 3 dB"', () => {
         const result = compileAndBridge(
             'turn down the lead vocal by 3 dB',
@@ -2921,7 +2921,7 @@ describe('#5351 a role, family or kind selection never widens past the role its 
     });
 });
 
-describe('#5353 a compiled value pairs with the track its clause states it for', () => {
+describe('a compiled value pairs with the track its clause states it for', () => {
     it('refuses Drums at the value "set Vocals volume to 75%, Drums to 60%" gives Vocals', () => {
         const result = compileMix('set Vocals volume to 75%, Drums to 60%', [
             trackItem('setTrackGain', mixDrums, { gain: 0.75 }),
@@ -2943,7 +2943,7 @@ describe('#5353 a compiled value pairs with the track its clause states it for',
     });
 });
 
-describe('#5353 a call reads the figures of the other tracks in its scope only where they may be its own', () => {
+describe('a call reads the figures of the other tracks in its scope only where they may be its own', () => {
     it.each([
         // Vocals binds no figure of its own, so the 60% Drums states is read for it too.
         ['set Drums volume to 60% and Vocals too', [mixDrums, mixVocals], 0.6],
@@ -2963,7 +2963,7 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
         ['set the volume to 75% on Vocals and Drums'],
         ['set the volume to 75% on Vocals from bar 5 and Drums from bar 9'],
         ['set the volume to 75% on Vocals, Drums to 60%'],
-    ])('refuses Vocals at 90%% for "%s", which states 75%% before every track it names', (prompt) => {
+    ])('refuses Vocals at 90 percent for "%s", which states 75 percent before every track it names', (prompt) => {
         const result = compileMix(prompt, [trackItem('setTrackGain', mixVocals, { gain: 0.9 })]);
 
         expect(result.rejections).not.toEqual([]);
@@ -3039,9 +3039,7 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
                     id: 'device-mix-vocals-reverb',
                     type: 'builtin-reverb',
                     bypassed: false,
-                    parameters: [
-                        { id: 'mix', name: 'Reverb', type: 'float', value: 0.2, minValue: 0, maxValue: 1 },
-                    ],
+                    parameters: [{ id: 'mix', name: 'Reverb', type: 'float', value: 0.2, minValue: 0, maxValue: 1 }],
                 },
             ],
         });
@@ -3109,7 +3107,7 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
     });
 });
 
-describe('#5378 a name fragment picks only tracks whose name has it as a word start', () => {
+describe('a name fragment picks only tracks whose name has it as a word start', () => {
     it('refuses Launchpad for "turn down the pads by 3 dB"', () => {
         const { context, track } = namedTracksContext(['Warm Pad', 'Dark Pad', 'Launchpad']);
         const result = compileAndBridge('turn down the pads by 3 dB', [nameFragmentItem('pad', 3)], [], context);
@@ -3127,7 +3125,7 @@ describe('#5378 a name fragment picks only tracks whose name has it as a word st
     });
 });
 
-describe('#5385 a name inside a negation protects rather than states its track', () => {
+describe('a name inside a negation protects rather than states its track', () => {
     it.each([
         "set Vocals volume to 75% but don't touch Keys",
         'set Vocals volume to 75% and skip Keys',
@@ -3153,7 +3151,7 @@ describe('#5385 a name inside a negation protects rather than states its track',
     });
 });
 
-describe('#5393 a compiled pick is stated only by the instruction that asks for its change', () => {
+describe('a compiled pick is stated only by the instruction that asks for its change', () => {
     it('refuses a Keys gain for "set Vocals volume to 75% and mute Keys"', () => {
         const result = compileMix('set Vocals volume to 75% and mute Keys', [
             trackItem('setTrackGain', mixKeys, { gain: 0.75 }),
@@ -3199,7 +3197,7 @@ describe('#5393 a compiled pick is stated only by the instruction that asks for 
     });
 });
 
-describe('#5393 a pronoun reads back only the nearest earlier clause that names a track', () => {
+describe('a singular pronoun reads back only the nearest earlier clause that names a track', () => {
     it.each([
         [
             'mute Keys and set Vocals volume to 75% so it sits better',
@@ -3245,7 +3243,7 @@ describe('#5393 a pronoun reads back only the nearest earlier clause that names 
     });
 });
 
-describe('#5393 an instruction naming no track reads the leading clause of its sentence that does', () => {
+describe('an instruction naming no track reads the leading clause of its sentence that does', () => {
     it.each([
         ['On Vocals, set volume to 75%', [trackItem('setTrackGain', mixVocals, { gain: 0.75 })], [mixVocals.id]],
         ['For Vocals, set the volume to 75%', [trackItem('setTrackGain', mixVocals, { gain: 0.75 })], [mixVocals.id]],
@@ -3276,7 +3274,7 @@ function namedTrackGroupItem(names: readonly string[]): CompiledItem {
     };
 }
 
-describe('#5393 a compiled set is stated only by the instruction that asks for it', () => {
+describe('a compiled set is stated only by the instruction that asks for it', () => {
     it('refuses Keys in the group for "create VCA group for Vocals named Rhythm and mute Keys"', () => {
         const result = compileAndBridge(
             'create VCA group for Vocals named Rhythm and mute Keys',
@@ -3303,7 +3301,7 @@ describe('#5393 a compiled set is stated only by the instruction that asks for i
     });
 });
 
-describe('#5393 an instruction naming no track reads the nearest earlier clause that names one', () => {
+describe('an instruction naming no track reads the nearest earlier clause that names one', () => {
     it.each([
         ['Select Vocals and set the volume to 75%', [mixVocals]],
         ['Vocals and Keys:\nset volume to 75%', [mixVocals, mixKeys]],
@@ -3329,7 +3327,7 @@ describe('#5393 an instruction naming no track reads the nearest earlier clause 
     });
 });
 
-describe('#5378 a name fragment picks a name holding it at a word start, a camel-case one included', () => {
+describe('a name fragment picks a name holding it at a word start, a camel-case one included', () => {
     it.each([
         ['turn down the guitars by 3 dB', 'guitar', ['Guitar1', 'Guitar2']],
         ['turn down the bass by 3 dB', 'bass', ['BassGuitar']],
@@ -3346,7 +3344,7 @@ describe('#5378 a name fragment picks a name holding it at a word start, a camel
     });
 });
 
-describe('#5385 a "not" opening a coordinated part protects what it names', () => {
+describe('a "not" opening a coordinated part protects what it names', () => {
     it('refuses the protected Keys selector in "set Vocals volume to 75% and not Keys"', () => {
         const result = compileMix('set Vocals volume to 75% and not Keys', [
             trackItem('setTrackGain', mixKeys, { gain: 0.75 }),
@@ -3359,7 +3357,7 @@ describe('#5385 a "not" opening a coordinated part protects what it names', () =
     });
 });
 
-describe('#5393 an instruction naming no track reads back one whole antecedent', () => {
+describe('an instruction naming no track reads back one whole antecedent', () => {
     function gainItems(tracks: readonly ProjectTrack[], arguments_: Record<string, unknown>): CompiledItem[] {
         return tracks.map((track) => trackItem('setTrackGain', track, arguments_));
     }
@@ -3435,7 +3433,7 @@ describe('#5393 an instruction naming no track reads back one whole antecedent',
     });
 });
 
-describe('#5378 a fragment starts a word at a capital opening a lowercase run after capitals', () => {
+describe('a fragment starts a word at a capital opening a lowercase run after capitals', () => {
     it.each([
         ['turn down the vox by 3 dB', 'vox', ['BGVox']],
         ['turn down the reverb by 3 dB', 'reverb', ['FXReverb']],
@@ -3448,7 +3446,7 @@ describe('#5378 a fragment starts a word at a capital opening a lowercase run af
     });
 });
 
-describe('#5393 text giving no instruction states the tracks of the instruction it follows', () => {
+describe('text giving no instruction states the tracks of the instruction it follows', () => {
     it.each([
         ['Pan Vocals left. Same for Keys.', [trackItem('setTrackPan', mixKeys, { pan: -50 })], [mixKeys.id]],
         [
