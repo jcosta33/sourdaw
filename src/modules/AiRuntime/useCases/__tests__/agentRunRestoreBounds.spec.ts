@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
     type AgentRunBatchSchedule,
     type AgentRunBulkSetBatchSchedule,
+    type AgentRunGrants,
     type AgentRunPlan,
+    type AgentRunScope,
     type AgentRunState,
 } from '../../models/AgentRun';
 import { MAX_COLLECTION_LENGTH } from '../../models/AgentRunPlanBounds';
@@ -17,8 +19,13 @@ const RUN_ID = 'restore-bound-run';
 const STORAGE_KEY = 'sourdaw-agent-runs';
 const BOUND = MAX_COLLECTION_LENGTH;
 
-const scope = { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
-const grants = {
+const scope: AgentRunScope = {
+    targetIds: ['track-1'],
+    targetRanges: [],
+    protectedTargetIds: [],
+    protectedRanges: [],
+};
+const grants: AgentRunGrants = {
     allowedOperationPrefixes: [],
     create: false,
     delete: false,
@@ -77,7 +84,7 @@ function reloadedRun() {
     return run;
 }
 
-function planRecord(plan: AgentRunPlan, overrides: Partial<{ scope: typeof scope; grants: typeof grants }> = {}) {
+function planRecord(plan: AgentRunPlan, overrides: Partial<{ scope: AgentRunScope; grants: AgentRunGrants }> = {}) {
     return {
         runId: RUN_ID,
         summary: plan.summary,
