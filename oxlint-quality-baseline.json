@@ -5258,11 +5258,6 @@
             "count": 1
         }
     },
-    "src/modules/Arrangement/handlers/clip/handleLockClip.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 2
-        }
-    },
     "src/modules/Arrangement/handlers/clip/handleMoveClip.ts": {
         "eslint/max-params": {
             "count": 1
@@ -5274,11 +5269,6 @@
     "src/modules/Arrangement/handlers/clip/handleMoveClips.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 1
-        }
-    },
-    "src/modules/Arrangement/handlers/clip/handleMuteClip.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 2
         }
     },
     "src/modules/Arrangement/handlers/clip/handleNormalizeClip.ts": {
@@ -5337,16 +5327,6 @@
     "src/modules/Arrangement/handlers/clip/handleReverseClip.ts": {
         "sourdaw-craft/no-conditional-empty-spread": {
             "count": 4
-        }
-    },
-    "src/modules/Arrangement/handlers/clip/handleSetClipColor.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 2
-        }
-    },
-    "src/modules/Arrangement/handlers/clip/handleSetClipFade.ts": {
-        "sourdaw-craft/no-control-flow-ternary": {
-            "count": 2
         }
     },
     "src/modules/Arrangement/handlers/clip/handleSetClipGain.ts": {
@@ -7122,9 +7102,6 @@
     },
     "src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts": {
         "eslint/complexity": {
-            "count": 2
-        },
-        "eslint/max-lines-per-function": {
             "count": 1
         },
         "eslint/max-params": {

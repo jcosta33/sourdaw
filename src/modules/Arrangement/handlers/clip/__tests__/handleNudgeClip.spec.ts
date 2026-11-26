@@ -4,7 +4,10 @@ import { handleNudgeClip } from '../handleNudgeClip';
 
 const mocks = vi.hoisted(() => ({
     nudgeClip: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; clips: { id: string; startBeat: number }[] }[] } | null>(),
+    getTrackStoreState:
+        vi.fn<
+            () => { tracks: { id: string; clips: { id: string; startBeat: number; endBeat?: number }[] }[] } | null
+        >(),
 }));
 
 vi.mock('../../../useCases/clipEditing/nudgeClip', () => ({
@@ -46,7 +49,7 @@ describe('handleNudgeClip', () => {
 
     it('describes an inverse nudge of the negated applied delta', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 2 }] }],
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 2, endBeat: 6 }] }],
         });
 
         const desc = handleNudgeClip.describe({
@@ -56,13 +59,18 @@ describe('handleNudgeClip', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'nudgeClip',
-            payload: { clipId: 'c1', beats: -1.5 },
+            payload: {
+                clipId: 'c1',
+                beats: -1.5,
+                expectedStartBeat: 3.5,
+                placement: { startBeat: 2, endBeat: 6 },
+            },
         });
     });
 
     it('describes an inverse of the post-clamp delta when the forward nudge clamps at beat 0', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0.5 }] }],
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0.5, endBeat: 4.5 }] }],
         });
 
         const desc = handleNudgeClip.describe({
@@ -74,7 +82,12 @@ describe('handleNudgeClip', () => {
         // +0.5, not +1, or undo/redo drift the clip's notes off its rectangle.
         expect(desc.inverseAction).toEqual({
             type: 'nudgeClip',
-            payload: { clipId: 'c1', beats: 0.5 },
+            payload: {
+                clipId: 'c1',
+                beats: 0.5,
+                expectedStartBeat: 0,
+                placement: { startBeat: 0.5, endBeat: 4.5 },
+            },
         });
     });
 

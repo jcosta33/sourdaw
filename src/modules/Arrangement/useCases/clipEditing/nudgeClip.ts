@@ -1,12 +1,30 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
-import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
+import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
-import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 
-export function nudgeClip(clipId: string, beats: number): boolean {
+import { planClipNudge } from './planClipNudge';
+import { type ClipPlacement } from './readClipPlacement';
+
+function placeClip(clip: Clip, placement: ClipPlacement): Clip {
+    const placed = { ...clip, startBeat: placement.startBeat, endBeat: placement.endBeat };
+    // Clip objects carry an optional anchor either present or absent, never `undefined`.
+    if (placement.loopOriginBeat === undefined) {
+        delete placed.loopOriginBeat;
+    } else {
+        placed.loopOriginBeat = placement.loopOriginBeat;
+    }
+    if (placement.audioLoopPassOriginBeat === undefined) {
+        delete placed.audioLoopPassOriginBeat;
+    } else {
+        placed.audioLoopPassOriginBeat = placement.audioLoopPassOriginBeat;
+    }
+    return placed;
+}
+
+export function nudgeClip(clipId: string, beats: number, placement?: ClipPlacement): boolean {
     if (!Number.isFinite(beats)) {
         return false;
     }
@@ -28,19 +46,12 @@ export function nudgeClip(clipId: string, beats: number): boolean {
         if (context.locked) {
             return context;
         }
-        const newStart = Math.max(0, context.startBeat + beats);
-        const duration = context.endBeat - context.startBeat;
-        appliedDelta = newStart - context.startBeat;
         // The nudge is a relocation, not a trim: the loop anchor moves with
         // the rectangle so the applied delta (clamped at zero) never re-derives
         // the loop window or the pass count from the new placement (#4988).
-        return {
-            ...context,
-            startBeat: newStart,
-            endBeat: newStart + duration,
-            ...shiftLoopOriginEntry(context, appliedDelta),
-            ...relocateAudioSourceTimeFields(context, appliedDelta),
-        };
+        const planned = planClipNudge(context, beats, placement);
+        appliedDelta = planned.startBeat - context.startBeat;
+        return placeClip(context, planned);
     });
 
     // Clip-scoped automation is stored at timeline-absolute beats and must
