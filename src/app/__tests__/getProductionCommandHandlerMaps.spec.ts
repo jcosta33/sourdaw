@@ -84,7 +84,7 @@ describe('getProductionCommandHandlerMaps', () => {
         );
 
         // Pattern instance actions share the Arrangement map rather than a separate map.
-        expect(handlerMaps).toHaveLength(44);
+        expect(handlerMaps).toHaveLength(45);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         const arrangementHandlers = getArrangementHandlers();
         for (const actionType of [
