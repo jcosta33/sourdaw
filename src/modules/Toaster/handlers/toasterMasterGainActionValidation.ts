@@ -3,7 +3,8 @@ import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
-import { type ToasterMasterGainAction, type ToasterMasterGainCapture } from '../events/toasterAppActions';
+import { type ToasterMasterGainAction } from '../events/toasterAppActions';
+import { type ToasterMasterGainCapture } from '../models/ToasterMasterGainPatch';
 
 function isNonemptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;

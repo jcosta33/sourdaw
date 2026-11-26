@@ -1,5 +1,7 @@
 import { type DeviceStateChunkSnapshot } from '#/modules/Arrangement/events';
 
+import { type ToasterMasterGainCapture } from '../models/ToasterMasterGainPatch';
+
 export type ToasterFactoryKitAction = {
     type: 'setToasterFactoryKit';
     payload: {
@@ -11,9 +13,6 @@ export type ToasterFactoryKitAction = {
         after: DeviceStateChunkSnapshot | null;
     };
 };
-
-export type ToasterMasterGainCapture =
-    { kind: 'missing-chunk' } | { kind: 'missing-kit' } | { kind: 'missing-gain' } | { kind: 'value'; value: number };
 
 export type ToasterMasterGainAction = {
     type: 'setToasterMasterGain';

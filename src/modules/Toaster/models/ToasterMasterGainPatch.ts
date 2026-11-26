@@ -1,11 +1,12 @@
 import { isRecord } from '#/utils/structuralEquality';
 
-import { type ToasterMasterGainAction, type ToasterMasterGainCapture } from '../events/toasterAppActions';
-
 import { TOASTER_KIT_STATE_VERSION, type toToasterKitState } from './ToasterKitState';
 
 type Chunk = ReturnType<typeof toToasterKitState>;
 type Fields = Chunk['data'];
+
+export type ToasterMasterGainCapture =
+    { kind: 'missing-chunk' } | { kind: 'missing-kit' } | { kind: 'missing-gain' } | { kind: 'value'; value: number };
 
 type CurrentMaster = {
     chunk: Chunk | null;
@@ -63,7 +64,7 @@ function matchesMasterCapture(current: ToasterMasterGainCapture, expected: Toast
 /** Preserve siblings the current project holds, even when replaying an older edit. */
 export function compileToasterMasterGainPatch(
     current: CurrentMaster,
-    { before, after }: Pick<ToasterMasterGainAction['payload'], 'before' | 'after'>
+    { before, after }: { before: ToasterMasterGainCapture; after: ToasterMasterGainCapture }
 ): { nextChunk: Chunk | null } | null {
     const { chunk, kit, capture } = current;
     if (!matchesMasterCapture(capture, before)) {
