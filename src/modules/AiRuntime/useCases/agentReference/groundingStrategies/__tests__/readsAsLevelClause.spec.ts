@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../../../models/ProjectContext';
+import { DEVICE_CONTROL_WORDS, SONG_SECTION_NOUNS } from '../levelClauseWords';
 import { maskProjectReferences } from '../maskProjectReferences';
 import { readsAsLevelClause } from '../readsAsLevelClause';
 
@@ -84,6 +85,12 @@ const contextWithoutMixTrack: ProjectContext = {
     tracks: context.tracks.filter((track) => track.name !== 'Mix'),
 };
 
+/** The same project with no section or marker, so only the section kinds name a stretch of the song. */
+const contextWithoutPlaces: ProjectContext = { ...context, sections: [], markers: [] };
+
+const finale = { id: 'section-finale', name: 'Finale', startBeat: 72, endBeat: 88 };
+const buildUp = { id: 'section-build-up', name: 'Build Up', startBeat: 32, endBeat: 48 };
+
 function reads(prompt: string, actionType = 'setTrackGain', project = context): boolean {
     const entry = getExecutableAppActionGroundingCatalog().find((candidate) => candidate.actionType === actionType);
     if (entry === undefined) {
@@ -159,6 +166,22 @@ describe('readsAsLevelClause', () => {
         ],
         ['a kind noun after the compared track', 'turn Drums down 3 dB like the Keys track', 'setTrackGain'],
         ['targets only list punctuation separates', 'turn down Bass & Drums by 3 dB', 'setTrackGain'],
+        ['a determiner right before the target', 'turn my Drums down 3 dB', 'setTrackGain'],
+        ['a level noun and its preposition of before the target', 'lower the volume of Drums by 3 dB', 'setTrackGain'],
+        ['a level noun and its preposition on before the target', 'raise the gain on Drums by 2 dB', 'setTrackGain'],
+        [
+            'a level noun and its preposition for before the target',
+            'turn the volume for Drums down 3 dB',
+            'setTrackGain',
+        ],
+        ['a kind noun right before the target', 'lower the track Drums by 3 dB', 'setTrackGain'],
+        ['a kind noun with no article before the target', 'set channel Drums to -6 dB', 'setTrackGain'],
+        [
+            'a level noun and its preposition where no reference is masked',
+            'raise the volume of the vocal by 2 dB',
+            'setTrackGain',
+        ],
+        ['a trailing range the action declares', 'lift Drums by 1.5 dB in Verse 2', 'automateParameterRange'],
     ])('reads %s: "%s"', (_rule, prompt, actionType) => {
         expect(reads(prompt, actionType)).toBe(true);
     });
@@ -169,6 +192,7 @@ describe('readsAsLevelClause', () => {
         ['a closing phrase after a direction before the figure', 'Turn Drums up in the mix by 2 dB'],
         ['a closing phrase courtesy follows', 'Lower Drums by 3 dB in the mix please'],
         ['courtesy a closing phrase follows', 'Lower Drums by 3 dB please, in the mix'],
+        ['a closing phrase where no reference is masked', 'raise the vocal in the mix by 2 dB'],
     ])('reads %s where no track is called Mix: "%s"', (_rule, prompt) => {
         expect(reads(prompt, 'setTrackGain', contextWithoutMixTrack)).toBe(true);
     });
@@ -205,8 +229,53 @@ describe('readsAsLevelClause', () => {
         ['a word of a marker name between the target and the figure', 'lower Drums at the big moment by 3 dB'],
         ['musical time after the figure', 'lower Drums by 3 dB for 2 bars'],
         ['a word right before the target that may start a name no track holds', 'lower Acoustic Drums by 3 dB'],
+        ['a word of a marker name before the target', 'at the big moment lower Drums by 3 dB'],
+        ['a trim between the target and the figure', 'put Drums trim at -6 dB'],
+        ['automation between the target and the figure', 'lower Drums automation by 3 dB'],
+        ['a ceiling between the target and the figure', 'put Drums ceiling at -1 dB'],
+        ['a band between the target and the figure', 'lower Drums highs by 3 dB'],
+        ['a pan between the target and the figure', 'lower Drums pan by 3 dB'],
+        ['a mixer control before the target', 'pan down Drums by 3 dB'],
+        ['a place in time after the figure', 'turn Drums up 2 dB at the end'],
+        ['a length in words after the figure', 'turn Drums up 2 dB for one measure'],
+        ['an output after the figure', 'turn Drums up 2 dB in the headphones'],
+        ['a destination noun after a verb opener', 'turn Drums up 2 dB to aux'],
+        ['a kind noun after a verb opener', 'turn Drums up 2 dB to bus'],
+        ['the start of the song after the figure', 'Lower Drums by 3 dB at the start'],
+        ['a band after the figure', 'Lower Drums by 3 dB in the highs'],
+        ['a figure the level starts from after the one it lands on', 'set Drums to -6 dB from -12 dB'],
+        ['a second track a subject opener names after the subject', 'turn Drums up 2 dB so Vocals sit above Reverb'],
+        ['a subject opener with nothing after it', 'turn Drums up 2 dB so'],
+        ['a kind of object where no reference is masked', 'lower the vocal send by 3 dB'],
     ])('refuses %s: "%s"', (_rule, prompt) => {
         expect(reads(prompt)).toBe(false);
+    });
+
+    it.each(DEVICE_CONTROL_WORDS)('refuses the device control "%s" before the target', (word) => {
+        expect(reads(`${word} lower Drums by 3 dB`)).toBe(false);
+    });
+
+    it.each(SONG_SECTION_NOUNS)('refuses the section kind "%s" before the target', (word) => {
+        expect(reads(`in the ${word} lower Drums by 3 dB`, 'setTrackGain', contextWithoutPlaces)).toBe(false);
+    });
+
+    it('refuses a verb opener whose first word a track name holds', () => {
+        const project = { ...context, tracks: [...context.tracks, createTrack('track-plate-room', 'Plate Room')] };
+
+        expect(reads('turn Drums up 2 dB to plate', 'setTrackGain', project)).toBe(false);
+    });
+
+    it('refuses a word of a section name before the target', () => {
+        const project = { ...contextWithoutPlaces, sections: [finale] };
+
+        expect(reads('at the finale lower Drums by 3 dB', 'setTrackGain', project)).toBe(false);
+        expect(reads('lower Drums at the finale by 3 dB', 'setTrackGain', project)).toBe(false);
+    });
+
+    it('reads a level word a section name holds as the level own', () => {
+        const project = { ...contextWithoutPlaces, sections: [buildUp] };
+
+        expect(reads('turn Drums up 2 dB', 'setTrackGain', project)).toBe(true);
     });
 
     it('refuses the words a head opening on its range holds, which are no level words', () => {

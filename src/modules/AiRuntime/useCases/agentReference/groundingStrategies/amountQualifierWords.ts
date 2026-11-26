@@ -17,6 +17,7 @@ export const AMOUNT_QUALIFIER_PHRASES: readonly string[] = [
     'a bit',
     'a little',
     'a touch',
+    'a lot',
     'full',
     'or so',
     'another',

@@ -4,4 +4,4 @@
  * A clause closing on one still names only the object and the amount it named. A conditional close
  * ("if you can") is no entry: the unsafe control cue refuses any `if` first.
  */
-export const CLOSING_PHRASES: readonly string[] = ['in the mix', 'overall', 'for me', 'now'];
+export const CLOSING_PHRASES: readonly string[] = ['in the mix', 'overall', 'for me', 'right now', 'now'];

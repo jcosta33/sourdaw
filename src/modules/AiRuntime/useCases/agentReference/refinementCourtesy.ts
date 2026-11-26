@@ -1,4 +1,12 @@
 /**
+ * The filler clauses that are courtesy and nothing else, in normalized words: each asks for nothing and
+ * never restricts, redirects or withdraws the change beside it, so a level request may close on one.
+ */
+const STRICT_COURTESY_CLAUSES: readonly string[] = ['please', 'thanks', 'thank you', 'ok', 'okay'];
+
+const STRICT_COURTESY: ReadonlySet<string> = new Set(STRICT_COURTESY_CLAUSES);
+
+/**
  * The closed list of clauses a refinement states only as courtesy, hesitation or acknowledgement,
  * which it consumes whole. Wherever a call inherits a pending command, any other clause naming nothing
  * and stating no figure is read for what it asks, never guessed to say nothing: "slower" or "double it"
@@ -6,13 +14,9 @@
  * clause of the closed courtesy list also read as asking for nothing.
  */
 const FILLER_CLAUSES: ReadonlySet<string> = new Set([
-    'please',
-    'thanks',
-    'thank you',
+    ...STRICT_COURTESY_CLAUSES,
     'thanks a lot',
     'cheers',
-    'ok',
-    'okay',
     'instead',
     'go ahead',
     'actually',
@@ -68,9 +72,11 @@ const COURTESY_CLAUSES: ReadonlySet<string> = new Set([
 /**
  * How a refinement clause reads as filler, on every route, or as courtesy alone, beside a batch its
  * text grounds by itself: its normalized words, leading connectors read off (and, for courtesy, object
- * names masked out), are exactly one entry of the closed filler or courtesy list.
+ * names masked out), are exactly one entry of the closed filler or courtesy list. `strict` is the
+ * filler that is courtesy alone, which a level request reads beside its change.
  */
 export const refinementCourtesy = {
     filler: FILLER_CLAUSES,
     clauses: COURTESY_CLAUSES,
+    strict: STRICT_COURTESY,
 } as const;

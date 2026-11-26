@@ -149,6 +149,7 @@ import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { MASKED_REFERENCE_PATTERN, maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { NAME_END_WORDS } from './groundingStrategies/nameEndWords';
+import { namesLevelOutsideActionFader } from './groundingStrategies/namesLevelOutsideActionFader';
 import { namesOnlyNonTrackObject } from './groundingStrategies/namesOnlyNonTrackObject';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
@@ -164,7 +165,6 @@ import { REASON_OPENER_WORDS } from './groundingStrategies/reasonOpenerWords';
 import { resolveCallRange } from './groundingStrategies/resolveCallRange';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
-import { STRICT_COURTESY_CLAUSES } from './groundingStrategies/strictCourtesyClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { withoutReferencedLevelPhrases } from './groundingStrategies/withoutReferencedLevelPhrases';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
@@ -178,6 +178,7 @@ import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
+import { refinementCourtesy } from './refinementCourtesy';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 import { resolveAgentReference, type ResolveAgentReferenceResult } from './resolveAgentReference';
 import { resolveCompleteClipReference } from './resolveCompleteClipReference';
@@ -1222,60 +1223,6 @@ function getProposedCreationNames(
     );
 }
 
-/**
- * Whether a clause names a send ("the Kick send", "send the Kick to the Drum Bus") or the master.
- * Either one is what a level stated there moves, never a track fader.
- */
-function namesSendOrMaster(clause: PromptClause, context: ProjectContext): boolean {
-    if (/□\s+sends?\b/u.test(clause.masked) || /\bsends?\b.*\b(?:to|into)\b/iu.test(clause.masked)) {
-        return true;
-    }
-    return namesMaster(clause, context);
-}
-
-function isBareMasterReference(reference: string): boolean {
-    return normalizePromptText(reference) === 'master';
-}
-
-/**
- * The project's objects other than the master, less any whose whole name is the bare word "master":
- * a synth parameter named "Master" cannot tell the master apart from itself, so it never hides it.
- */
-function getOtherThanMasterReferences(context: ProjectContext): ProjectContext {
-    return {
-        ...context,
-        vcaGroups: context.vcaGroups?.filter((group) => !isBareMasterReference(group.name)),
-        tracks: context.tracks
-            .filter((track) => track.kind !== 'master' && !isBareMasterReference(track.name))
-            .map((track) => ({
-                ...track,
-                clips: track.clips.filter((clip) => !isBareMasterReference(clip.name)),
-                devices: track.devices.map((device) => ({
-                    ...device,
-                    parameters: device.parameters?.filter(
-                        (parameter) => !isBareMasterReference(parameter.id) && !isBareMasterReference(parameter.name)
-                    ),
-                })),
-            })),
-    };
-}
-
-/** Whether a clause names the master itself, outside a longer name of another project object ("Master Keys"). */
-function namesMaster(clause: PromptClause, context: ProjectContext): boolean {
-    return /\bmaster\b/iu.test(maskProjectReferences(clause.text, getOtherThanMasterReferences(context)));
-}
-
-/**
- * Whether a clause states a level the action never moves: a send's or the master's for a track
- * fader, and anything but the master's for the master fader.
- */
-function namesLevelOutsideActionFader(actionName: string, clause: PromptClause, context: ProjectContext): boolean {
-    if (actionName === 'setTrackGain') {
-        return namesSendOrMaster(clause, context);
-    }
-    return actionName === 'setMasterGain' && !namesMaster(clause, context);
-}
-
 /** One masked reference and its decibel figure: "the Snare at -9 dB", or "Riff to -3 dB" for a four-character clip. */
 const LEVEL_CONTINUATION_PATTERN = new RegExp(
     String.raw`^\s*(?:(?:the|a|an)\s+)?(?:${MASKED_REFERENCE_PATTERN.source})\s+(?:at|to|by|up|down)\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*d\s?b\s*$`,
@@ -1523,7 +1470,7 @@ function readsAsCollapsedLevelClause(
  */
 function hasCourtesyNamedMember(list: CoordinatedTrackList, prompt: string): boolean {
     return list.members.some((member) =>
-        STRICT_COURTESY_CLAUSES.has(normalizePromptText(prompt.slice(member.start, member.end)))
+        refinementCourtesy.strict.has(normalizePromptText(prompt.slice(member.start, member.end)))
     );
 }
 
@@ -2144,7 +2091,7 @@ function readsOnlyReferencedLevelClauses(input: {
         ) {
             return true;
         }
-        if (STRICT_COURTESY_CLAUSES.has(normalizePromptText(clause.masked))) {
+        if (refinementCourtesy.strict.has(normalizePromptText(clause.masked))) {
             return true;
         }
         if (namesLevelOutsideActionFader(actionName, clause, context)) {
