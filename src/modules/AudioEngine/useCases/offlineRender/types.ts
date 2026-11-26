@@ -178,4 +178,10 @@ export type OfflineRenderOptions = {
      * to a musician's export, which stops it with a `RenderBusy` error (#4768, #5036).
      */
     lockHolder?: RenderLockHolder;
+    /**
+     * Whether the render runs past its range by the session's deepest latency, so a compensated
+     * mix's last stretch is printed. On unless set to `false`. A measurement reads its windows by
+     * the offline frame law, which counts only the range's own frames, so it renders without it.
+     */
+    extendForLatency?: boolean;
 };

@@ -24,9 +24,10 @@ function widenForLatency(input: {
     resolved: ReturnType<typeof resolveHistoryAwareRenderContext>;
     project: OfflineRenderProjectSource | undefined;
     latency: LatencyCompensationInput;
+    extend: boolean;
 }) {
     const latencySeconds = getMaxTrackLatency(input.latency) / 1000;
-    if (latencySeconds <= 0) {
+    if (!input.extend || latencySeconds <= 0) {
         return input.resolved;
     }
     // Only the widened span is kept from this resolution; the render context keeps the
@@ -95,7 +96,13 @@ export function captureOfflineRenderInput(
         }
     }
     const scheduling = captureOfflineSchedulingInput(tracks, sampleRate, project, runtime);
-    const span = widenForLatency({ request, resolved, project, latency: scheduling.latency });
+    const span = widenForLatency({
+        request,
+        resolved,
+        project,
+        latency: scheduling.latency,
+        extend: options.extendForLatency !== false,
+    });
     return {
         ...resolved,
         outputDurationSeconds: span.outputDurationSeconds,

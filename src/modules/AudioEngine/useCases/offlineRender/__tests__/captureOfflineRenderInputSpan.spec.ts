@@ -52,13 +52,20 @@ function projectWith(devices: Device[]): OfflineRenderProjectSource {
     };
 }
 
-function capture(input: { devices: Device[]; startBeat?: number; durationBeats?: number; tailSeconds?: number }) {
+function capture(input: {
+    devices: Device[];
+    startBeat?: number;
+    durationBeats?: number;
+    tailSeconds?: number;
+    extendForLatency?: boolean;
+}) {
     return captureOfflineRenderInput(
         {
             durationBeats: input.durationBeats ?? BEATS,
             startBeat: input.startBeat ?? 0,
             tailSeconds: input.tailSeconds ?? 0,
             sampleRate: SAMPLE_RATE,
+            extendForLatency: input.extendForLatency,
         },
         { project: projectWith(input.devices) }
     );
@@ -107,5 +114,14 @@ describe('captureOfflineRenderInput span', () => {
 
         expect(captured.historyFrameCount).toBe(2 * SAMPLE_RATE);
         expect(captured.outputFrameCount).toBe((2 + LATENCY_MS / 1000) * SAMPLE_RATE);
+    });
+
+    it('keeps the span to the range and tail for a render that opts out of the widening', () => {
+        reportLatency(latencyDevice.id, LATENCY_MS);
+
+        const captured = capture({ devices: [latencyDevice], extendForLatency: false });
+
+        expect(captured.renderContext.durationSeconds).toBe(PROJECT_SECONDS);
+        expect(captured.outputFrameCount).toBe(PROJECT_SECONDS * SAMPLE_RATE);
     });
 });
