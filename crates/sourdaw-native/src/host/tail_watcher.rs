@@ -26,6 +26,7 @@ use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{signal_pending_tail_change, HostedPluginRuntime};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -33,6 +34,22 @@ use std::time::Duration;
 /// `PluginTailChange`; the listener that subscribes to this name arrives with
 /// the packet that consumes the tail.
 pub const PLUGIN_TAIL_CHANGED_EVENT: &str = "plugin-tail-changed";
+
+static TAIL_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// The next place in the one order every tail figure this process hands the
+/// frontend takes, starting at 1.
+///
+/// Both ways a tail leaves the host, the `plugin-tail-changed` event and the
+/// `read_plugin_tails` answer, take their number inside the plugin's control
+/// closure. That closure runs under the instance's control gate, which
+/// serializes the two per instance, so a larger number is the value read later
+/// and the frontend can rank an event against an answer however late either one
+/// is delivered. A u64 stays a JSON number the frontend reads exactly while it
+/// is below 2^53, which a counter bumped once per tail read never reaches.
+pub(crate) fn next_tail_sequence() -> u64 {
+    TAIL_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
+}
 
 /// How long re-reading one plugin's tail may wait for the audio thread to
 /// release it.
@@ -55,6 +72,9 @@ pub struct PluginTailChanged {
     /// the top of the range for a tail that never ends, and dividing that
     /// sentinel by a sample rate turns "infinite" into an ordinary duration.
     pub tail_samples: u32,
+    /// Where this figure falls in the order of every tail the host reported; see
+    /// [`next_tail_sequence`].
+    pub sequence: u64,
 }
 
 type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
@@ -67,12 +87,13 @@ type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
 /// which downstream would read as the plugin having shortened its decay.
 pub fn tail_change_payload(
     instance_id: &str,
-    refreshed: Result<Option<u32>, PluginControlRefusal>,
+    refreshed: Result<Option<(u32, u64)>, PluginControlRefusal>,
 ) -> Option<PluginTailChanged> {
     match refreshed {
-        Ok(Some(tail_samples)) => Some(PluginTailChanged {
+        Ok(Some((tail_samples, sequence))) => Some(PluginTailChanged {
             instance_id: instance_id.to_string(),
             tail_samples,
+            sequence,
         }),
         Ok(None) => None,
         Err(error) => {
@@ -89,10 +110,25 @@ pub fn tail_change_payload(
 ///
 /// Called from the parameter-event drain's tick, once it has taken the hint.
 pub fn publish_pending_tail_changes(engine_plugins: &EnginePlugins, events: &dyn EventSink) {
+    publish_pending_tail_changes_within(CONTROL_TIMEOUT, engine_plugins, events);
+}
+
+/// `publish_pending_tail_changes` with the per-instance wait as a parameter, so
+/// a test that holds the audio seam can give the visit a deadline only its own
+/// release beats.
+pub(crate) fn publish_pending_tail_changes_within(
+    timeout: Duration,
+    engine_plugins: &EnginePlugins,
+    events: &dyn EventSink,
+) {
     for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "tail re-read") {
         let refreshed = runtime
-            .try_with_control(CONTROL_TIMEOUT, |plugin| {
-                Ok::<_, std::convert::Infallible>(plugin.take_tail_change())
+            .try_with_control(timeout, |plugin| {
+                Ok::<_, std::convert::Infallible>(
+                    plugin
+                        .take_tail_change()
+                        .map(|tail_samples| (tail_samples, next_tail_sequence())),
+                )
             })
             .map_err(PluginControlError::into_refusal);
 
@@ -119,10 +155,11 @@ mod tests {
     #[test]
     fn a_flagged_tail_becomes_an_event_payload_carrying_frames() {
         assert_eq!(
-            tail_change_payload("inst-1", Ok(Some(48_000))),
+            tail_change_payload("inst-1", Ok(Some((48_000, 9)))),
             Some(PluginTailChanged {
                 instance_id: "inst-1".to_string(),
                 tail_samples: 48_000,
+                sequence: 9,
             })
         );
     }
@@ -151,9 +188,25 @@ mod tests {
         let json = serde_json::to_string(&PluginTailChanged {
             instance_id: "inst-7".to_string(),
             tail_samples: 1024,
+            sequence: 12,
         })
         .expect("payload serialises");
 
-        assert_eq!(json, r#"{"instance_id":"inst-7","tail_samples":1024}"#);
+        assert_eq!(
+            json,
+            r#"{"instance_id":"inst-7","tail_samples":1024,"sequence":12}"#
+        );
+    }
+
+    #[test]
+    fn every_sequence_taken_is_larger_than_the_one_before_it() {
+        let first = next_tail_sequence();
+        let second = next_tail_sequence();
+
+        assert!(
+            first >= 1,
+            "sequences start at 1 so 0 can mean none applied"
+        );
+        assert!(second > first);
     }
 }
