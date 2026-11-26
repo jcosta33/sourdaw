@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { buildSemanticProjectDiff, describeCommandBatchRecovery } from '#/modules/Command/useCases';
 
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { readPublicCreativeInterpretation } from '../../models/CreativeInterpretation';
 import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { updateChatMessage } from '../../stores/chatStore';
@@ -42,6 +43,8 @@ type PersistPromptActionConfirmationInput = {
     adoptedRecipes?: ConfirmationProposal['adoptedRecipes'];
     /** The preview measurement the proposal adopted; kept only when the persisted batch is the one it rendered. */
     measuredPreview?: MeasuredPreview;
+    /** Receipts the preview of this batch read; the run's plan keeps them only once the card is stored. */
+    previewReceipts?: ApplicationToolReceipt[];
     metricGoalState?: string;
     /** Which of the run's successive batches this proposal is; absent for a request that fits one batch. */
     batchPosition?: ConfirmationProposal['batchPosition'];
@@ -161,6 +164,8 @@ function recordConfirmationMetricGoalPlan(
         return;
     }
     const { metricGoalState, measuredPreview } = confirmation.approvalSnapshot;
+    const priorReceipts = run.plan.applicationToolReceipts ?? [];
+    const previewReceipts = input.previewReceipts ?? [];
     const state = metricGoalStateCodec(metricGoalState);
     const evidence = {
         state,
@@ -179,7 +184,12 @@ function recordConfirmationMetricGoalPlan(
         scope: run.scope,
         grants: run.grants,
         budgets: run.budgets,
-        plan: { ...run.plan, metricGoalState, revision: input.projectRevision },
+        plan: {
+            ...run.plan,
+            metricGoalState,
+            revision: input.projectRevision,
+            applicationToolReceipts: [...priorReceipts, ...previewReceipts],
+        },
         audibleClaim: claim ?? undefined,
     });
 }

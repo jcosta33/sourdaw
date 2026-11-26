@@ -43,6 +43,16 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...audio,
 }));
 
+const store = vi.hoisted(() => ({ refuseReplacements: false }));
+vi.mock('../../stores/pendingActionConfirmationStore', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../stores/pendingActionConfirmationStore')>();
+    return {
+        ...original,
+        proposePendingActionConfirmation: (input: Parameters<typeof original.proposePendingActionConfirmation>[0]) =>
+            store.refuseReplacements && input.supersedes ? null : original.proposePendingActionConfirmation(input),
+    };
+});
+
 type RenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
 
 const RUN_ID = 're-previewed-card-measurement';
@@ -289,6 +299,17 @@ async function persistMeasuredCard(trackIds: readonly string[]): Promise<string>
     return confirmationId;
 }
 
+/** What a card needs of its run to stay confirmable: its phase, errors, batches, revisions and plan. */
+function runAfter(runId: string, run = agentRunLifecycle.get(runId)) {
+    return {
+        phase: run?.phase,
+        errors: run?.errors,
+        batches: run?.batches,
+        revisions: run?.revisions,
+        plan: run?.plan,
+    };
+}
+
 /** Moves the project on to a new revision the card was not measured at. */
 async function editProject(): Promise<void> {
     const before = captureProjectRevision();
@@ -366,6 +387,7 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.restoreAllMocks();
+    store.refuseReplacements = false;
     resetMetricGoalProject();
 });
 
@@ -377,6 +399,7 @@ describe('a re-previewed card shows the measurement its re-preview made', { time
         startRun();
         const confirmationId = await persistMeasuredCard(THREE_TRACKS);
         await editProject();
+        const receiptsBefore = agentRunLifecycle.get(RUN_ID)?.plan?.applicationToolReceipts ?? [];
 
         const reproposed = await reproposePendingChatActions({ confirmationId });
 
@@ -384,6 +407,9 @@ describe('a re-previewed card shows the measurement its re-preview made', { time
         if (reproposed.status !== 'reproposed') {
             throw new Error('Expected the re-preview to replace the card.');
         }
+        const receiptsAfter = agentRunLifecycle.get(RUN_ID)?.plan?.applicationToolReceipts ?? [];
+        expect(receiptsAfter.slice(0, receiptsBefore.length)).toEqual(receiptsBefore);
+        expect(receiptsAfter.length).toBeGreaterThan(receiptsBefore.length);
         const replacement = readReplacement(reproposed.confirmationId);
         expect(replacement.boundProof?.revision).toBe(captureProjectRevision());
         expect(replacement.snapshotPreview).toEqual(replacement.boundProof);
@@ -440,5 +466,30 @@ describe('a re-previewed card shows the measurement its re-preview made', { time
         expect(replacement.snapshotPreview).toEqual(replacement.boundProof);
         expect(replacement.onCard.length).toBeGreaterThan(0);
         expect(replacement.claimed).toEqual(replacement.onCard);
+    });
+
+    // Red when a replacement the store refuses leaves the run changed beside the card that still owns it: a
+    // failed or re-planned run, the refreshed receipts of a batch never stored, or a replacement message left behind.
+    it('leaves the card, its run and its plan as they were when the store refuses the replacement', async () => {
+        configureProject(THREE_TRACKS);
+        startRun();
+        const confirmationId = await persistMeasuredCard(THREE_TRACKS);
+        await editProject();
+        const runBefore = structuredClone(agentRunLifecycle.get(RUN_ID));
+        const confirmationBefore = structuredClone(getPendingActionConfirmation(confirmationId));
+        const messagesBefore = structuredClone(chatStore.value?.messages) ?? [];
+        store.refuseReplacements = true;
+
+        const refused = await reproposePendingChatActions({ confirmationId });
+
+        const reason = 'Prepared action resources exceed the live confirmation limit.';
+        expect(refused).toEqual({ status: 'rejected', reason });
+        // The measurement spent budget and render time, which no refusal gives back; everything the card relies on stays.
+        expect(runAfter(RUN_ID)).toEqual(runAfter(RUN_ID, runBefore));
+        expect(getPendingActionConfirmation(confirmationId)).toEqual(confirmationBefore);
+        expect(chatStore.value?.messages).toEqual([
+            ...messagesBefore,
+            expect.objectContaining({ role: 'assistant', content: `Re-preview refused: ${reason}` }),
+        ]);
     });
 });
