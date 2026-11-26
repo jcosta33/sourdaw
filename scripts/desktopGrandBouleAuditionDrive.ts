@@ -11,7 +11,7 @@ import {
     type AuditionObservations,
     type AuditionTrial,
 } from './desktopGrandBouleAuditionEvidence.ts';
-import { captureBlackHole } from './desktopGrandBouleCapture.ts';
+import { captureAdmissionFailure, captureBlackHole } from './desktopGrandBouleCapture.ts';
 import { STEP_TIMEOUT_MS, step } from './packagedAppSession.ts';
 
 const DEVICE = 'BlackHole 2ch';
@@ -283,12 +283,14 @@ export async function driveDesktopGrandBouleAudition(
         );
         try {
             assertBlackHoleInput();
+        } catch {
+            observations.unavailable = 'exact-blackhole-device-unavailable';
+            return;
+        }
+        try {
             capture = await step('admit BlackHole media capture', () => captureBlackHole(page), STEP_TIMEOUT_MS);
         } catch (error) {
-            observations.unavailable =
-                error instanceof Error && /NotAllowedError|Permission denied|Permission dismissed/u.test(error.message)
-                    ? 'microphone-permission-denied'
-                    : 'capture-bootstrap-unavailable';
+            observations.unavailable = captureAdmissionFailure(error);
             return;
         }
         const observer = capture;

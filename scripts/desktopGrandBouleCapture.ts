@@ -63,54 +63,132 @@ class Receive extends AudioWorkletProcessor {
 registerProcessor('sourdaw-observer-receive', Receive);
 `;
 
-/** Isolated receive-only graph. It never connects to any audible destination. */
-export async function captureBlackHole(page: Page) {
-    const media = await page.evaluateHandle(async () => {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const named = devices.filter((device) => device.kind === 'audioinput' && device.label === 'BlackHole 2ch');
-        if (
-            named.length > 1 ||
-            (named.length === 0 && devices.some((device) => device.kind === 'audioinput' && device.label))
-        ) {
-            throw new Error('named-input-unavailable');
+const BLACKHOLE_INPUT = 'BlackHole 2ch';
+const INPUT_FAILURES = [
+    'capture-media-devices-unavailable',
+    'capture-device-enumeration-failed',
+    'capture-named-input-unavailable',
+    'capture-returned-input-mismatch',
+    'capture-raw-input-unavailable',
+    'capture-context-creation-failed',
+];
+const MEDIA_ERRORS = [
+    'AbortError',
+    'NotAllowedError',
+    'NotFoundError',
+    'NotReadableError',
+    'OverconstrainedError',
+    'SecurityError',
+];
+
+class CaptureAdmissionError extends Error {}
+
+export function captureAdmissionFailure(error: unknown): string {
+    if (error instanceof CaptureAdmissionError) {
+        return error.message;
+    }
+    return 'capture-admission-interrupted';
+}
+
+function admissionError(stage: 'input' | 'worklet' | 'graph', error: unknown): CaptureAdmissionError {
+    // Playwright sends renderer errors across CDP as stack text. Retain only known codes.
+    const firstLine = (error instanceof Error ? error.message : '').split('\n', 1)[0] ?? '';
+    const detail = firstLine.replace(/^(?:page|jsHandle)\.evaluate(?:Handle)?: /u, '');
+    const [name, message] = detail.split(': ', 2);
+    if (stage === 'input' && name === 'Error' && message !== undefined && INPUT_FAILURES.includes(message)) {
+        return new CaptureAdmissionError(message, { cause: error });
+    }
+    const reason = MEDIA_ERRORS.find((candidate) => candidate === name);
+    const code = reason === undefined ? `capture-${stage}-failed` : `capture-${stage}-${reason}`;
+    return new CaptureAdmissionError(code, { cause: error });
+}
+
+/** Runs in the packaged app renderer. The caller verifies the OS input before the request. */
+export async function openBlackHoleMedia(device: string) {
+    const media = navigator.mediaDevices;
+    if (!media) {
+        throw new Error('capture-media-devices-unavailable');
+    }
+    const listInputs = async () => {
+        try {
+            return (await media.enumerateDevices()).filter((entry) => entry.kind === 'audioinput');
+        } catch (error) {
+            throw new Error('capture-device-enumeration-failed', { cause: error });
         }
-        // Caller verified both OS defaults before requesting the otherwise concealed default.
-        const constraints: MediaTrackConstraints = {
+    };
+    const findNamed = (inputs: MediaDeviceInfo[]) =>
+        inputs.filter((entry) => entry.label === device && entry.deviceId && entry.deviceId !== 'default');
+    async function verifyDefaultAlias(label: string, groupId: string | undefined): Promise<boolean> {
+        if (!label || !groupId) {
+            return false;
+        }
+        // Chromium decorates the default label. The group revealed after opening
+        // the stream ties that alias to the exact named device in any locale.
+        const revealed = await listInputs();
+        const devices = findNamed(revealed);
+        const alias = revealed.find((entry) => entry.deviceId === 'default');
+        return (
+            devices.length === 1 &&
+            devices[0]?.groupId === groupId &&
+            alias?.groupId === groupId &&
+            alias.label === label
+        );
+    }
+    const inputs = await listInputs();
+    const named = findNamed(inputs);
+    if (named.length > 1 || (named.length === 0 && inputs.some((entry) => entry.label))) {
+        throw new Error('capture-named-input-unavailable');
+    }
+    // With labels concealed, Chromium must request the already verified OS default explicitly.
+    const deviceId = named[0]?.deviceId ?? 'default';
+    const stream = await media.getUserMedia({
+        audio: {
+            deviceId: { exact: deviceId },
             echoCancellation: { exact: false },
             noiseSuppression: { exact: false },
             autoGainControl: { exact: false },
-        };
-        if (named[0]) {
-            constraints.deviceId = { exact: named[0].deviceId };
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
-        const tracks = stream.getAudioTracks();
-        const track = tracks[0];
+        },
+        video: false,
+    });
+    try {
+        const [track, ...extra] = stream.getAudioTracks();
         const settings = track?.getSettings();
+        if (!track || extra.length !== 0 || settings?.deviceId !== deviceId) {
+            throw new Error('capture-returned-input-mismatch');
+        }
+        const verifiedInput =
+            deviceId === 'default' ? await verifyDefaultAlias(track.label, settings.groupId) : track.label === device;
+        if (!verifiedInput) {
+            throw new Error('capture-returned-input-mismatch');
+        }
         if (
-            tracks.length !== 1 ||
-            track?.label !== 'BlackHole 2ch' ||
-            !settings?.deviceId ||
-            (named[0] && settings.deviceId !== named[0].deviceId) ||
             settings.echoCancellation === true ||
             settings.noiseSuppression === true ||
             settings.autoGainControl === true
         ) {
-            for (const capturedTrack of stream.getTracks()) {
-                capturedTrack.stop();
-            }
-            throw new Error('returned-input-mismatch');
+            throw new Error('capture-raw-input-unavailable');
         }
+        let context: AudioContext;
         try {
-            const context = new AudioContext();
-            return { stream, context, track, input: track.label, deviceId: settings.deviceId };
+            context = new AudioContext();
         } catch (error) {
-            for (const capturedTrack of stream.getTracks()) {
-                capturedTrack.stop();
-            }
-            throw error;
+            throw new Error('capture-context-creation-failed', { cause: error });
         }
+        return { stream, context, track, input: device };
+    } catch (error) {
+        for (const capturedTrack of stream.getTracks()) {
+            capturedTrack.stop();
+        }
+        throw error;
+    }
+}
+
+/** Isolated receive-only graph. It never connects to any audible destination. */
+export async function captureBlackHole(page: Pick<Page, 'evaluateHandle'>) {
+    const media = await page.evaluateHandle(openBlackHoleMedia, BLACKHOLE_INPUT).catch((error: unknown) => {
+        throw admissionError('input', error);
     });
+    let stage: 'worklet' | 'graph' = 'worklet';
     try {
         await media.evaluate(async (receiver, source) => {
             const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
@@ -120,30 +198,25 @@ export async function captureBlackHole(page: Page) {
                 URL.revokeObjectURL(url);
             }
         }, RECEIVE_WORKLET);
+        stage = 'graph';
         return await connectCapture(media);
     } catch (error) {
-        await media.evaluate(async (receiver) => {
-            for (const capturedTrack of receiver.stream.getTracks()) {
-                capturedTrack.stop();
-            }
-            await receiver.context.close();
-        });
-        throw error;
+        await media
+            .evaluate(async (receiver) => {
+                for (const capturedTrack of receiver.stream.getTracks()) {
+                    capturedTrack.stop();
+                }
+                await receiver.context.close();
+            })
+            .catch(() => undefined);
+        throw admissionError(stage, error);
     } finally {
         await media.dispose();
     }
 }
 
 // A separate renderer evaluation keeps graph connection and bounded receive lifecycle together.
-async function connectCapture(
-    media: JSHandle<{
-        stream: MediaStream;
-        context: AudioContext;
-        track: MediaStreamTrack;
-        input: string;
-        deviceId: string;
-    }>
-) {
+async function connectCapture(media: JSHandle<Awaited<ReturnType<typeof openBlackHoleMedia>>>) {
     return await media.evaluateHandle(async (receiver) => {
         const { context, stream, track } = receiver;
         const source = context.createMediaStreamSource(stream);
