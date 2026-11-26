@@ -6,6 +6,7 @@ import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { readTempoAtBeat, sanitize_tempo_map_state, sanitize_transport_snapshot } from '#/modules/Transport/stores';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { createHandler } from '#/utils/createHandler';
 import { type HandlerExecutionResult } from '#/utils/handlerContract';
@@ -13,13 +14,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type TrackClipStateSnapshot } from '../../events/arrangementTrackSnapshots';
 import { createWarpMarker } from '../../models/WarpMarker';
-import {
-    getStoredWarpState,
-    getWarpState,
-    isDefaultWarpState,
-    prepareTransientWarpState,
-    setWarpState,
-} from '../../stores/warpStates';
+import { getWarpState, isDefaultWarpState, prepareTransientWarpState, setWarpState } from '../../stores/warpStates';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
 
 type Capture = { before: TrackClipStateSnapshot[]; after: TrackClipStateSnapshot[] };
@@ -101,7 +96,7 @@ type DetectedSource = Parameters<DetectConsumer>[0];
 type DetectionLifetime = Parameters<DetectConsumer>[1];
 type StorageScope = ReturnType<typeof captureAutomergeStorageTransactionScope>;
 type PreparationScope = ReturnType<typeof captureAutomergeStoragePreparationScope>;
-type TransientRows = ReturnType<typeof planTransientRows>;
+type TransientRows = NonNullable<ReturnType<typeof planDetectRows>>;
 type TransientPlan = ReturnType<typeof prepareTransientWarpState>;
 type MaterializationOutcome = 'ready' | 'stale' | 'cancelled';
 
@@ -109,26 +104,100 @@ function transientConflict(): HandlerExecutionResult {
     return { status: 'conflict', reason: 'Transient detection was cancelled or its source changed' };
 }
 
-function planTransientRows(clipId: string, result: DetectedSource) {
-    const existing = getWarpState(clipId);
+function findDocumentClip(document: Record<string, unknown>, trackId: string, clipId: string): unknown {
+    const tracks = record(document.tracks)?.tracks;
+    if (!Array.isArray(tracks)) {
+        return undefined;
+    }
+    const clips = record(tracks.find((entry: unknown) => record(entry)?.id === trackId))?.clips;
+    return Array.isArray(clips) ? clips.find((entry: unknown) => record(entry)?.id === clipId) : undefined;
+}
+
+function findDocumentClipStartBeat(
+    document: Record<string, unknown>,
+    trackId: string,
+    clipId: string
+): number | undefined {
+    const startBeat = record(findDocumentClip(document, trackId, clipId))?.startBeat;
+    return typeof startBeat === 'number' ? startBeat : undefined;
+}
+
+/**
+ * The tempo playback reads at the clip's start: the tempo-map and transport
+ * stores, which sanitize the document slots. Undefined when the clip cannot be
+ * found: no fallback tempo is invented.
+ */
+function readPlaybackClipStartTempo(trackId: string, clipId: string): number | undefined {
+    const document = getCrdtDoc<Record<string, unknown>>('root');
+    const beat = document ? findDocumentClipStartBeat(document, trackId, clipId) : undefined;
+    return beat === undefined ? undefined : readTempoAtBeat({ beat });
+}
+
+/** The same tempo, derived from a raw document through the stores' own sanitizers. */
+function readDocumentClipStartTempo(
+    document: Record<string, unknown>,
+    trackId: string,
+    clipId: string
+): number | undefined {
+    const beat = findDocumentClipStartBeat(document, trackId, clipId);
+    if (beat === undefined) {
+        return undefined;
+    }
+    const clock = {
+        tempo: sanitize_transport_snapshot(document.transport).tempo,
+        changes: sanitize_tempo_map_state(document.tempoMap).changes,
+    };
+    return readTempoAtBeat({ beat, clock });
+}
+
+/**
+ * A markerless result identical to the stored state (an absent one reads as the
+ * default) has nothing to record, as on main when marker removal deleted the
+ * state. A marked state still takes the ordinary write route.
+ */
+function replacementIsStored(clipId: string, replacement: TransientRows['replacement']): boolean {
+    return replacement.markers.length === 0 && transientStateMatches(getWarpState(clipId), replacement);
+}
+
+function planTransientRows(
+    result: DetectedSource,
+    existing: ReturnType<typeof getWarpState>,
+    referenceTempo: number,
+    clipStartTempo: number | null
+) {
     const preserved = existing.markers.filter(
         (marker) => marker.locked === true || (marker.origin ?? 'user') !== 'transient-auto'
     );
     const added = result.hits.flatMap((hit) => {
-        const beat = ((hit.sampleOffset / result.identity.sampleRate) * result.tempo) / 60;
+        const beat = ((hit.sampleOffset / result.identity.sampleRate) * referenceTempo) / 60;
         if (preserved.some((marker) => Math.abs(marker.originalBeat - beat) < 1e-3)) {
             return [];
         }
         return [createWarpMarker(beat, beat, { origin: 'transient-auto', confidence: hit.confidence })];
     });
-    return {
-        preserved,
-        added,
-        replacement: {
-            ...existing,
-            markers: [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat),
-        },
-    };
+    const markers = [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat);
+    // A markerless result has no beats to anchor, so it stamps no tempo: the stored
+    // one stays, and a clip with none stays a default state.
+    const originalTempo = markers.length > 0 ? referenceTempo : existing.originalTempo;
+    return { preserved, added, clipStartTempo, replacement: { ...existing, originalTempo, markers } };
+}
+
+/**
+ * A marker's originalBeat counts source beats at the reference tempo, so it stays
+ * the source position when the project tempo changes later. A stored tempo is
+ * kept and the clip-start tempo is not read; a first stamp takes the tempo
+ * playback reads at the clip's start. Undefined when that tempo cannot be read.
+ */
+function planDetectRows(trackId: string, clipId: string, result: DetectedSource) {
+    const existing = getWarpState(clipId);
+    if (typeof existing.originalTempo === 'number') {
+        return planTransientRows(result, existing, existing.originalTempo, null);
+    }
+    const clipStartTempo = readPlaybackClipStartTempo(trackId, clipId);
+    if (clipStartTempo === undefined) {
+        return undefined;
+    }
+    return planTransientRows(result, existing, clipStartTempo, clipStartTempo);
 }
 
 /** Keep committed history rendering ahead of success feedback without waiting for a visible frame. */
@@ -185,6 +254,7 @@ function createTransientWriteResult(
     preserved: TransientRows['preserved'],
     added: TransientRows['added'],
     replacement: TransientRows['replacement'],
+    clipStartTempo: number | null,
     commitStarted: number
 ): HandlerExecutionResult {
     let storageCommitStarted: number | undefined;
@@ -229,16 +299,7 @@ function createTransientWriteResult(
             },
             documentId: 'root',
             validateDocument: (document) => {
-                const tracks = record(document.tracks)?.tracks;
-                let track: unknown;
-                if (Array.isArray(tracks)) {
-                    track = tracks.find((entry: unknown) => record(entry)?.id === trackId);
-                }
-                const clips = record(track)?.clips;
-                let clip: unknown;
-                if (Array.isArray(clips)) {
-                    clip = clips.find((entry: unknown) => record(entry)?.id === clipId);
-                }
+                const clip = findDocumentClip(document, trackId, clipId);
                 const bufferId = record(clip)?.audioBufferId;
                 const states = record(record(document.warpStates)?.states);
                 const validationStarted = performance.now();
@@ -248,7 +309,8 @@ function createTransientWriteResult(
                     record(clip)?.type === 'audio' &&
                     typeof bufferId === 'string' &&
                     digest(bufferId) === result.identity.bufferId &&
-                    record(document.transport)?.tempo === result.tempo &&
+                    (clipStartTempo === null ||
+                        readDocumentClipStartTempo(document, trackId, clipId) === clipStartTempo) &&
                     transientStateMatches(states?.[clipId], expectedState)
                         ? null
                         : 'Transient detection authority changed inside commit');
@@ -281,6 +343,7 @@ function completeUnchangedDetection(
         rows.preserved,
         rows.added,
         rows.replacement,
+        rows.clipStartTempo,
         commitStarted
     ).commitValidation;
     const document = getCrdtDoc<Record<string, unknown>>('root');
@@ -308,13 +371,17 @@ function commitTransientRows(
     let rows = plannedRows;
     if (!plan) {
         // Ineligible ordinary writes are still planned from the latest rows at their final frame.
-        rows = planTransientRows(clipId, result);
+        const replanned = planDetectRows(trackId, clipId, result);
+        if (!replanned) {
+            return transientConflict();
+        }
+        rows = replanned;
     }
     if (!result.isCurrent() || context?.signal?.aborted) {
         return transientConflict();
     }
     const { preserved, added, replacement } = rows;
-    if (isDefaultWarpState(replacement) && getStoredWarpState(clipId) === undefined) {
+    if (replacementIsStored(clipId, replacement)) {
         return completeUnchangedDetection(result, context, rows, commitStarted);
     }
     const before = captureTransientClipStates(trackId, clipId);
@@ -338,7 +405,17 @@ function commitTransientRows(
         end: performance.now(),
     });
     performance.clearMeasures('elastic-transient-preparation-task');
-    return createTransientWriteResult(result, context, trackId, clipId, preserved, added, replacement, commitStarted);
+    return createTransientWriteResult(
+        result,
+        context,
+        trackId,
+        clipId,
+        preserved,
+        added,
+        replacement,
+        rows.clipStartTempo,
+        commitStarted
+    );
 }
 
 function readTransientCapture(action: DetectAction, result: DetectedSource): Capture | HandlerExecutionResult {
@@ -378,6 +455,30 @@ async function waitForTransientMaterialization(
     return (await lifetime.waitForFrame()) ? 'ready' : 'cancelled';
 }
 
+/**
+ * One planning attempt: the rows at the tempo playback reads at the clip start
+ * and, unless the replacement is already stored, its private preparation.
+ * Undefined when the clip-start tempo cannot be read.
+ */
+function planDetectAttempt(
+    preparationScope: PreparationScope,
+    result: DetectedSource,
+    trackId: string,
+    clipId: string
+): { rows: TransientRows; plan: TransientPlan } | undefined {
+    return measurePreparationTask('elastic-transient-plan-task', () => {
+        const rows = planDetectRows(trackId, clipId, result);
+        if (!rows) {
+            return undefined;
+        }
+        // An identical replacement needs no private preparation: it completes without a write.
+        if (replacementIsStored(clipId, rows.replacement)) {
+            return { rows, plan: undefined };
+        }
+        return { rows, plan: prepareTransientWarpState(preparationScope, clipId, rows.replacement) };
+    });
+}
+
 async function consumeDetectedTransients(
     action: DetectAction,
     context: DetectContext,
@@ -392,10 +493,10 @@ async function consumeDetectedTransients(
     }
     const { clipId, trackId } = result.identity;
     while (lifetime.isCurrent()) {
-        const attempt = measurePreparationTask('elastic-transient-plan-task', () => {
-            const rows = planTransientRows(clipId, result);
-            return { rows, plan: prepareTransientWarpState(preparationScope, clipId, rows.replacement) };
-        });
+        const attempt = planDetectAttempt(preparationScope, result, trackId, clipId);
+        if (!attempt) {
+            return transientConflict();
+        }
         const rows = attempt.rows;
         const plan = attempt.plan;
         try {
@@ -413,8 +514,6 @@ async function consumeDetectedTransients(
                 if (!plan.isCurrent()) {
                     continue;
                 }
-            }
-            if (plan) {
                 const request = plan.requestMaterialization;
                 let materialization: MaterializationOutcome = 'ready';
                 if (request) {
