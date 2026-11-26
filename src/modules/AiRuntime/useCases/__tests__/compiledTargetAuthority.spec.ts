@@ -2959,6 +2959,27 @@ describe('#5353 a call reads the figures of the other tracks in its scope only w
         expect(targetsOf(result)).toEqual(tracks.map((track) => track.id));
     });
 
+    // 75% precedes every track, so it may be Vocals' level even though 60% binds to Vocals.
+    it('grounds Vocals at 75% for "set the volume to 75% on Vocals and to 60% on Drums"', () => {
+        const result = compileMix('set the volume to 75% on Vocals and to 60% on Drums', [
+            trackItem('setTrackGain', mixVocals, { gain: 0.75 }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id]);
+    });
+
+    // Vocals binds no figure of its own, so it is held to the 60% Drums states rather than to none.
+    it('refuses Vocals at 90% for "set Drums volume to 60% and Vocals too"', () => {
+        const result = compileMix('set Drums volume to 60% and Vocals too', [
+            trackItem('setTrackGain', mixDrums, { gain: 0.6 }),
+            trackItem('setTrackGain', mixVocals, { gain: 0.9 }),
+        ]);
+
+        expect(targetsOf(result)).not.toContain(mixVocals.id);
+        expect(result.rejections).not.toEqual([]);
+    });
+
     it('refuses Drums at 60% for "set Vocals volume to -6 dB, Drums to 60%", which continues no percent level', () => {
         const result = compileMix('set Vocals volume to -6 dB, Drums to 60%', [
             trackItem('setTrackGain', mixVocals, { gainDb: -6 }),
