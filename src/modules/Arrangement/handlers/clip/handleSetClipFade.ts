@@ -1,76 +1,52 @@
-import { createHandler } from '#/utils/createHandler';
+import { createExpectedValueHandler } from '#/utils/createExpectedValueHandler';
 
 import { setClipFade } from '../../useCases/clipEditing/setClipFade';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { isMidiClip } from '../isMidiClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-export const handleSetClipFade = createHandler<'setClipFade'>({
-    // Conflicts when `expectedFadeInBeats`/`expectedFadeOutBeats` no longer match
-    // the live clip — the guard its own inverse carries. Proven by the
-    // `canReportConflict` registry honesty spec; undo step-over (#2881) relies on it.
+import { readPlannedClip } from './readPlannedClip';
+
+type Fades = { fadeInBeats: number; fadeOutBeats: number };
+
+function requestedFades(fadeInBeats: number, fadeOutBeats: number): Fades {
+    return { fadeInBeats: Math.max(0, fadeInBeats), fadeOutBeats: Math.max(0, fadeOutBeats) };
+}
+
+export const handleSetClipFade = createExpectedValueHandler<'setClipFade', Fades, Partial<Fades>>({
+    // Proven by the `canReportConflict` registry honesty spec; undo step-over (#2881) relies on it.
     canReportConflict: true,
-    execute: (action) => {
-        if (isMidiClip(action.payload.clipId)) {
-            return { status: 'no-write' };
+    label: () => 'Set clip fade',
+    requested: (action) => requestedFades(action.payload.fadeInBeats, action.payload.fadeOutBeats),
+    // Either expected fade alone guards its own side.
+    expected: (action) => {
+        const { expectedFadeInBeats, expectedFadeOutBeats } = action.payload;
+        if (expectedFadeInBeats === undefined && expectedFadeOutBeats === undefined) {
+            return undefined;
         }
-        const clip = getTrackStoreState()
-            ?.tracks.flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const expectedFadeIn = action.payload.expectedFadeInBeats;
-        const expectedFadeOut = action.payload.expectedFadeOutBeats;
-        if (
-            (expectedFadeIn !== undefined && clip?.fadeInBeats !== expectedFadeIn) ||
-            (expectedFadeOut !== undefined && clip?.fadeOutBeats !== expectedFadeOut)
-        ) {
-            return { status: 'conflict' };
-        }
-        return toHandlerExecutionResult(
+        return { fadeInBeats: expectedFadeInBeats, fadeOutBeats: expectedFadeOutBeats };
+    },
+    matches: (current, expected) =>
+        (expected.fadeInBeats === undefined || current.fadeInBeats === expected.fadeInBeats) &&
+        (expected.fadeOutBeats === undefined || current.fadeOutBeats === expected.fadeOutBeats),
+    sameValue: (a, b) => a.fadeInBeats === b.fadeInBeats && a.fadeOutBeats === b.fadeOutBeats,
+    read: (action, context) => {
+        const clip = readPlannedClip(action.payload.clipId, context);
+        return clip && { fadeInBeats: clip.fadeInBeats, fadeOutBeats: clip.fadeOutBeats };
+    },
+    withExpected: (action, value, expected) => ({
+        type: 'setClipFade',
+        payload: {
+            clipId: action.payload.clipId,
+            fadeInBeats: value.fadeInBeats,
+            fadeOutBeats: value.fadeOutBeats,
+            expectedFadeInBeats: expected.fadeInBeats,
+            expectedFadeOutBeats: expected.fadeOutBeats,
+        },
+    }),
+    // MIDI playback reads no fades, so a MIDI clip is refused rather than stored.
+    refuse: (action) => (isMidiClip(action.payload.clipId) ? { status: 'no-write' } : null),
+    write: (action) =>
+        toHandlerExecutionResult(
             setClipFade(action.payload.clipId, action.payload.fadeInBeats, action.payload.fadeOutBeats)
-        );
-    },
-    describe: (action) => {
-        const clip = getTrackStoreState()
-            ?.tracks.flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const fadeInBeats = Math.max(0, action.payload.fadeInBeats);
-        const fadeOutBeats = Math.max(0, action.payload.fadeOutBeats);
-        return {
-            label: 'Set clip fade',
-            inverseAction: clip
-                ? {
-                      type: 'setClipFade',
-                      payload: {
-                          clipId: clip.id,
-                          fadeInBeats: clip.fadeInBeats,
-                          fadeOutBeats: clip.fadeOutBeats,
-                          expectedFadeInBeats: fadeInBeats,
-                          expectedFadeOutBeats: fadeOutBeats,
-                      },
-                  }
-                : null,
-            redoAction: clip
-                ? {
-                      type: 'setClipFade',
-                      payload: {
-                          clipId: clip.id,
-                          fadeInBeats,
-                          fadeOutBeats,
-                          expectedFadeInBeats: clip.fadeInBeats,
-                          expectedFadeOutBeats: clip.fadeOutBeats,
-                      },
-                  }
-                : action,
-        };
-    },
-    isNoop: (action) => {
-        const clip = getTrackStoreState()
-            ?.tracks.flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        return (
-            clip?.fadeInBeats === Math.max(0, action.payload.fadeInBeats) &&
-            clip.fadeOutBeats === Math.max(0, action.payload.fadeOutBeats)
-        );
-    },
-    undoable: true,
+        ),
 });

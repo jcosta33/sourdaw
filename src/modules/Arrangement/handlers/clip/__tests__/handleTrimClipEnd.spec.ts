@@ -4,7 +4,10 @@ import { handleTrimClipEnd } from '../handleTrimClipEnd';
 
 const mocks = vi.hoisted(() => ({
     trimClipEnd: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; clips: { id: string; endBeat: number }[] }[] } | null>(),
+    getTrackStoreState:
+        vi.fn<
+            () => { tracks: { id: string; clips: { id: string; startBeat?: number; endBeat: number }[] }[] } | null
+        >(),
 }));
 
 vi.mock('../../../useCases/clipEditing/trimClipEnd', () => ({
@@ -41,7 +44,7 @@ describe('handleTrimClipEnd', () => {
 
     it('describes an inverse back to the pre-trim end beat', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', endBeat: 12 }] }],
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 12 }] }],
         });
 
         const desc = handleTrimClipEnd.describe({
@@ -51,7 +54,7 @@ describe('handleTrimClipEnd', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'trimClipEnd',
-            payload: { clipId: 'c1', newEndBeat: 12 },
+            payload: { clipId: 'c1', newEndBeat: 12, expectedEndBeat: 8 },
         });
     });
 

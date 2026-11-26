@@ -12,6 +12,11 @@ function isRowAction(action: AppAction | null | undefined): action is RowAction 
 function hasCapture(action: RowAction): boolean {
     return Object.hasOwn(action.payload, 'midiRowCoordinates');
 }
+function withoutExpectedState(payload: object): Record<string, unknown> {
+    return Object.fromEntries(
+        Object.entries(payload).filter(([key]) => key !== 'expectedStartBeat' && key !== 'expectedOffset')
+    );
+}
 function isFiniteBeat(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
@@ -90,8 +95,11 @@ function isCompletePair(pair: Pair): boolean {
     ) {
         return false;
     }
-    const { midiRowCoordinates: _redoCapture, ...redoRequest } = redo.payload;
-    const { midiRowCoordinates: _actionCapture, ...originalRequest } = action.payload;
+    // A recorded redo carries the guard its description added; the fresh action never does.
+    const { midiRowCoordinates: _redoCapture, ...redoWithGuard } = redo.payload;
+    const { midiRowCoordinates: _actionCapture, ...originalWithGuard } = action.payload;
+    const redoRequest = withoutExpectedState(redoWithGuard);
+    const originalRequest = withoutExpectedState(originalWithGuard);
     if (!valuesEqual(originalRequest, redoRequest)) {
         return false;
     }

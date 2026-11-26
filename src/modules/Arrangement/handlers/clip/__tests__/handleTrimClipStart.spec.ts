@@ -8,7 +8,13 @@ const mocks = vi.hoisted(() => ({
         () => {
             tracks: {
                 id: string;
-                clips: { id: string; startBeat: number; type?: 'audio' | 'midi'; midiOffsetBeats?: number }[];
+                clips: {
+                    id: string;
+                    startBeat: number;
+                    endBeat?: number;
+                    type?: 'audio' | 'midi';
+                    midiOffsetBeats?: number;
+                }[];
             }[];
         } | null
     >(),
@@ -49,7 +55,7 @@ describe('handleTrimClipStart', () => {
 
     it('describes an inverse back to the pre-trim start beat', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 1 }] }],
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 1, endBeat: 10 }] }],
         });
 
         const desc = handleTrimClipStart.describe({
@@ -59,7 +65,7 @@ describe('handleTrimClipStart', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'trimClipStart',
-            payload: { clipId: 'c1', newStartBeat: 1, loopOriginBeat: null },
+            payload: { clipId: 'c1', newStartBeat: 1, loopOriginBeat: null, expectedStartBeat: 2 },
         });
     });
 
