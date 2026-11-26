@@ -34,6 +34,9 @@ const LEVEL_NOUN_OF_REFERENCE = `(?:${REFERENCE_DETERMINER})?${words(LEVEL_CONTR
  * `maskProjectReferences.ts` writes each project reference as one run of mask glyphs, a clip name after
  * `clip`. The reference may head a noun phrase: a level noun handing its level to it, a determiner and a
  * track kind noun ("turn the volume for the track Drums down"), which say only what the reference is.
+ * The gap reads no project, so whether that noun fits the object the reference names is read where the
+ * clause is read against the project (`readsAsLevelClause.ts`), which refuses "turn the bus Drums down"
+ * for an audio track Drums.
  */
 const MASKED_REFERENCE_GAP = `${GAP_SEPARATOR}(?:${LEVEL_NOUN_OF_REFERENCE})?(?:${REFERENCE_DETERMINER})?(?:${words([...TRACK_KIND_NOUNS])}${GAP_SEPARATOR})?(?:clip)?□+${GAP_SEPARATOR}`;
 

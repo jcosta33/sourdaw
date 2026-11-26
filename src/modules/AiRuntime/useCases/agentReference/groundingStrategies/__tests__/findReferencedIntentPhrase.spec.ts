@@ -25,6 +25,14 @@ describe('findReferencedIntentPhrase', () => {
         expect(findReferencedIntentPhrase(text, 'set {reference} to')?.slot).toEqual({ start: 8, end: 13 });
     });
 
+    it('reports the track kind noun written before the reference, for the object it names to fit', () => {
+        const match = findReferencedIntentPhrase('set the VCA □□□□□ to -6 dB', 'set {reference} to');
+
+        expect(match?.slot).toEqual({ start: 12, end: 17 });
+        expect(match?.kindNoun).toBe('vca');
+        expect(findReferencedIntentPhrase('set □□□□□ to -6 dB', 'set {reference} to')?.kindNoun).toBeUndefined();
+    });
+
     it.each([
         ['no reference', 'set to -6 dB'],
         ['a word that is not a reference', 'set Drums to -6 dB'],

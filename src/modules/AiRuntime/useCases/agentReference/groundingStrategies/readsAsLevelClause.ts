@@ -50,6 +50,7 @@ import { getPoliteCommandPrefixLength } from './getPoliteCommandPrefixLength';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { isGenericDeviceIntent } from './isGenericDeviceIntent';
 import { isLeftAsWritten } from './isLeftAsWritten';
+import { kindNounFitsNamedObject } from './kindNounFitsNamedObject';
 import {
     DEVICE_CONTROL_WORDS,
     LEVEL_CARRIER_VERBS,
@@ -181,19 +182,35 @@ function readSpan(clause: LevelClause, span: ReadSpan, context: ProjectContext):
 
 /**
  * The words and whole references of `clause.masked[from, to)`, in order, a kind or mix noun right after a
- * reference ("the Vocals track", "the Drums mix") and a kind noun right before one ("the track Drums",
- * "channel Drums") read as part of it, since each names that same track.
+ * reference ("the Vocals track", "the Drums mix") and a kind noun right before one that fits an object
+ * it names ("the track Drums", "channel Drums", "the bus Reverb" for a bus) read as part of it, since
+ * each names that same object. A kind noun that fits nothing the reference names ("the bus Drums" for an
+ * audio track) is a word of its own.
  */
 function readTokens(clause: LevelClause, from: number, to: number, context: ProjectContext): ClauseToken[] {
     const tokens = readSpanTokens(clause, from, to, context);
-    return tokens.filter((token, index) => token.kind === 'reference' || !isPartOfReference(token, tokens, index));
+    return tokens.filter(
+        (token, index) => token.kind === 'reference' || !isPartOfReference({ clause, context, index, token, tokens })
+    );
 }
 
-function isPartOfReference(token: ClauseWord, tokens: readonly ClauseToken[], index: number): boolean {
+function isPartOfReference(input: {
+    clause: LevelClause;
+    context: ProjectContext;
+    index: number;
+    token: ClauseWord;
+    tokens: readonly ClauseToken[];
+}): boolean {
+    const { clause, context, index, token, tokens } = input;
     if (tokens[index - 1]?.kind === 'reference' && namesReferencedTrack(token)) {
         return true;
     }
-    return tokens[index + 1]?.kind === 'reference' && !token.inName && isTrackKindNoun(token.word);
+    const next = tokens[index + 1];
+    if (next?.kind !== 'reference' || token.inName) {
+        return false;
+    }
+    const referenceText = clause.text.slice(next.start, next.end);
+    return withSingularForm(token.word).some((form) => kindNounFitsNamedObject(form, referenceText, context));
 }
 
 /** The words and whole references of `clause.masked[from, to)`, in order, each as written. */

@@ -134,7 +134,11 @@ function writesUnboundName(named: readonly Token[]): boolean {
     return isWrittenAsName(named) && !conventional;
 }
 
-const KIND_OBJECT: Readonly<Record<string, ProtectableObjectName['kind']>> = {
+/**
+ * The kind of object each track kind noun names: a track or channel any track, a bus or return a bus,
+ * a group or VCA a VCA group.
+ */
+export const KIND_OBJECT: Readonly<Record<string, ProtectableObjectName['kind']>> = {
     track: 'track',
     channel: 'track',
     bus: 'bus',

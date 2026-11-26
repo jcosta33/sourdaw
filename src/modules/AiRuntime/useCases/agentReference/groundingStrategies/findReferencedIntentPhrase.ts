@@ -10,6 +10,8 @@ export type ReferencedIntentPhraseMatch = {
     index: number;
     /** Where the reference the placeholder stands for sits in the clause itself. */
     slot: { start: number; end: number };
+    /** The track kind noun written right before the reference, lowercased, which says what it names. */
+    kindNoun?: string;
 };
 
 /** The registry writes the project object a phrase acts on as this placeholder. */
@@ -17,9 +19,10 @@ export const REFERENCE_PLACEHOLDER = '{reference}';
 
 /**
  * `maskProjectReferences.ts` writes each project reference as one run of mask glyphs, optionally after
- * "the" and a track kind noun that says only what it is: "set channel Drums to -6 dB".
+ * "the" and a track kind noun that says what it is: "set channel Drums to -6 dB". The match reports the
+ * noun, so a reader that knows the project holds it to the object the reference names.
  */
-const MASKED_REFERENCE = `(?:the\\s+)?(?:${words([...TRACK_KIND_NOUNS])}\\s+)?(□+)`;
+const MASKED_REFERENCE = `(?:the\\s+)?(?:(${words([...TRACK_KIND_NOUNS])})\\s+)?(□+)`;
 
 /** A signed decibel figure and its unit, the way `classifyPromptDecibelFigures.ts` reads one. */
 const DECIBEL_FIGURE = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*d\\s?b';
@@ -58,7 +61,7 @@ function getPhrasePattern(phrase: string): RegExp {
 export function findReferencedIntentPhrase(text: string, phrase: string): ReferencedIntentPhraseMatch | null {
     const match = getPhrasePattern(phrase).exec(text);
     const phraseSpan = match?.indices?.[1];
-    const slotSpan = match?.indices?.[2];
+    const slotSpan = match?.indices?.[3];
     if (!phraseSpan || !slotSpan) {
         return null;
     }
@@ -66,5 +69,6 @@ export function findReferencedIntentPhrase(text: string, phrase: string): Refere
     return {
         index: normalizedPrefix.length === 0 ? 0 : normalizedPrefix.length + 1,
         slot: { start: slotSpan[0], end: slotSpan[1] },
+        kindNoun: match[2]?.toLocaleLowerCase(),
     };
 }

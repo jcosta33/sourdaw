@@ -148,6 +148,7 @@ import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueCli
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
 import { isLeftAsWritten } from './groundingStrategies/isLeftAsWritten';
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
+import { kindNounFitsVcaGroup } from './groundingStrategies/kindNounFitsVcaGroup';
 import { MASKED_REFERENCE_PATTERN, maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { NAME_END_WORDS } from './groundingStrategies/nameEndWords';
@@ -1868,6 +1869,7 @@ function resolveActionPromptScope({
                     matchedIntentPhrase: intent.phrase,
                     referencedSlot:
                         intent.referenceSlot && clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end),
+                    referencedKindNoun: intent.referenceKindNoun,
                 });
                 takesContinuation = decibelLevelForms.length > 0;
             }
@@ -2041,6 +2043,9 @@ function readsOnlyReferencedVcaLevel(input: {
     const clause = clauses[0]!;
     const intent = resolveClauseActionIntent(clause.masked, input.catalog, 'setVcaGain');
     if (intent?.actionType !== 'setVcaGain' || !intent.referenceSlot) {
+        return false;
+    }
+    if (intent.referenceKindNoun !== undefined && !kindNounFitsVcaGroup(intent.referenceKindNoun)) {
         return false;
     }
     const reference = normalizePromptText(clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end));

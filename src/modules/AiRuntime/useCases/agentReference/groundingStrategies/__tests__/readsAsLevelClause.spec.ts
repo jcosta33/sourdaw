@@ -300,6 +300,111 @@ describe('readsAsLevelClause', () => {
         expect(reads(`in the ${word} lower Drums by 3 dB`, 'setTrackGain', contextWithoutPlaces)).toBe(false);
     });
 
+    it.each([
+        ['just', 'turn Drums up just 2 dB'],
+        ['exactly', 'lower Drums by exactly 3 dB'],
+        ['about', 'turn Drums up about 2 dB'],
+        ['approximately', 'lower Drums by approximately 3 dB'],
+        ['around', 'turn Drums up around 2 dB'],
+        ['roughly', 'turn Drums up roughly 2 dB'],
+        ['slightly', 'turn Drums up slightly by 2 dB'],
+        ['a bit', 'turn Drums up a bit by 2 dB'],
+        ['a little', 'turn Drums up a little by 2 dB'],
+        ['a touch', 'turn Drums up a touch by 2 dB'],
+        ['a lot', 'turn Drums up a lot by 2 dB'],
+        ['full', 'lower Drums by a full 3 dB'],
+        ['or so', 'turn Drums up 2 dB or so'],
+        ['another', 'turn Drums up another 2 dB'],
+        ['further', 'lower Drums by a further 3 dB'],
+        ['additional', 'lower Drums by an additional 3 dB'],
+        ['extra', 'turn Drums up an extra 2 dB'],
+        ['again', 'turn Drums up 2 dB again'],
+        ['too', 'turn Drums up 2 dB too'],
+        ['as well', 'turn Drums up 2 dB as well'],
+        ['together', 'turn down Bass & Drums together by 3 dB'],
+        ['instead', 'raise Drums by 2 dB instead'],
+    ])('reads the amount qualifier "%s": "%s"', (_word, prompt) => {
+        expect(reads(prompt)).toBe(true);
+    });
+
+    it.each([
+        ['in the mix', 'lower Drums by 3 dB in the mix'],
+        ['overall', 'lower Drums by 3 dB overall'],
+        ['for me', 'lower Drums by 3 dB for me'],
+        ['right now', 'lower Drums by 3 dB right now'],
+        ['now', 'lower Drums by 3 dB now'],
+    ])('reads the closing phrase "%s": "%s"', (_phrase, prompt) => {
+        expect(reads(prompt, 'setTrackGain', contextWithoutMixTrack)).toBe(true);
+    });
+
+    it.each([
+        ['make', 'make Drums 3 dB quieter'],
+        ['of', 'lower the volume of Drums by 3 dB'],
+        ['on', 'raise the gain on Drums by 2 dB'],
+        ['for', 'turn the volume for Drums down 3 dB'],
+    ])('reads the level carrier or level noun preposition "%s": "%s"', (_word, prompt) => {
+        expect(reads(prompt)).toBe(true);
+    });
+
+    it.each([
+        ['like', 'turn Drums down 3 dB like Keys'],
+        ['relative to', 'turn Drums down 3 dB relative to Keys'],
+        ['compared to', 'turn Drums down 3 dB compared to Keys'],
+        ['compared with', 'turn Drums down 3 dB compared with Keys'],
+    ])('reads the comparison against another track "%s": "%s"', (_phrase, prompt) => {
+        expect(reads(prompt)).toBe(true);
+    });
+
+    it.each([
+        ['relative to the current level', 'turn Drums down 3 dB relative to the current level'],
+        ['than before', 'make Drums 3 dB quieter than before'],
+        ['than it is', 'make Drums 3 dB louder than it is'],
+    ])('reads the comparison against the level as it stands "%s": "%s"', (_phrase, prompt) => {
+        expect(reads(prompt)).toBe(true);
+    });
+
+    it.each([
+        ['because', 'turn Drums down 3 dB because Keys is too loud'],
+        ['since', 'turn Drums down 3 dB since Keys is too loud'],
+        ['so', 'turn Drums up 2 dB so it sits better'],
+        ['so that', 'turn Drums up 2 dB so that it sits better'],
+        ['to', 'turn Drums up 2 dB to make room for Keys'],
+    ])('reads the reason opener "%s": "%s"', (_word, prompt) => {
+        expect(reads(prompt)).toBe(true);
+    });
+
+    it.each([
+        ['band', 'turn Drums up 2 dB so the low band'],
+        ['master', 'turn Drums up 2 dB so the master'],
+        ['aux', 'turn Drums up 2 dB so the aux'],
+        ['output', 'turn Drums up 2 dB so the output'],
+        ['monitor', 'turn Drums up 2 dB so the monitors'],
+        ['headphone', 'turn Drums up 2 dB so the headphones'],
+    ])('refuses the destination "%s" after a subject opener: "%s"', (_noun, prompt) => {
+        expect(reads(prompt)).toBe(false);
+    });
+
+    it.each([
+        ['a bus kind noun before an audio track', 'lower the bus Drums by 3 dB'],
+        ['a VCA kind noun before a track no VCA group shares a name with', 'lower the vca Drums by 3 dB'],
+    ])('refuses %s: "%s"', (_rule, prompt) => {
+        expect(reads(prompt)).toBe(false);
+    });
+
+    it('reads a kind noun before the object of that kind the target names', () => {
+        const busReverb = {
+            ...context,
+            tracks: context.tracks.map((track) => (track.name === 'Reverb' ? { ...track, kind: 'bus' } : track)),
+        };
+        const drumsVca = {
+            ...context,
+            vcaGroups: [{ id: 'vca-drums', name: 'Drums', gain: 1, muted: false, trackIds: ['track-drums'] }],
+        };
+
+        expect(reads('lower the bus Reverb by 3 dB', 'setTrackGain', busReverb)).toBe(true);
+        expect(reads('lower the vca Drums by 3 dB', 'setTrackGain', drumsVca)).toBe(true);
+    });
+
     it('refuses a verb opener whose first word a track name holds', () => {
         const project = { ...context, tracks: [...context.tracks, createTrack('track-plate-room', 'Plate Room')] };
 

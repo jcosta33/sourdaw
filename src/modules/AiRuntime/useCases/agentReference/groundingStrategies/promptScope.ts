@@ -14,6 +14,8 @@ export type ActionPromptScope = PromptClause & {
     matchedIntentPhrase: string;
     /** Set when a referenced level phrase named the scope's action: the text of the reference in its slot. */
     referencedSlot?: string;
+    /** The track kind noun written right before that reference ("set channel Drums to"), lowercased. */
+    referencedKindNoun?: string;
     /**
      * Set when the roles are not the halves of `text` around its first `to`: a scope that took in a
      * continuation clause, or one attached to the clause naming its destination.

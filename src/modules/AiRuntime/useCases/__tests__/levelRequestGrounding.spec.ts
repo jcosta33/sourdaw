@@ -1599,6 +1599,73 @@ describe('a track level clause reads its qualifiers, closings and tails from the
     });
 });
 
+describe('a track kind noun before a name reads as part of the reference only when it fits the named object (#5551)', () => {
+    const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+    const bass = createTrack({ id: 'track-bass', name: 'Bass' });
+    const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
+    const kindContext: ProjectContext = {
+        ...projectContext,
+        tracks: [drums, bass, keys, reverb, master],
+        selectedTrackId: null,
+    };
+    const drumsVcaContext: ProjectContext = {
+        ...kindContext,
+        vcaGroups: [{ id: 'vca-drums', name: 'Drums', gain: 1, muted: false, trackIds: [drums.id] }],
+    };
+    const stringsVcaContext: ProjectContext = {
+        ...kindContext,
+        vcaGroups: [{ id: 'vca-strings', name: 'Strings', gain: 1, muted: false, trackIds: [keys.id] }],
+    };
+
+    function bridgeGain(prompt: string, trackId: string, value: FaderLevel, context: ProjectContext) {
+        return bridge([{ name: 'setTrackGain', arguments: { trackId, ...value } }], prompt, context);
+    }
+
+    it.each<[string, FaderLevel, ProjectContext]>([
+        ['set vca Drums to -6 dB', { gainDb: -6 }, drumsVcaContext],
+        ['set the group Drums to -6 dB', { gainDb: -6 }, drumsVcaContext],
+        ['set the bus Drums to -6 dB', { gainDb: -6 }, kindContext],
+        ['set the return Drums to -6 dB', { gainDb: -6 }, kindContext],
+        ['set vca Drums to -6 dB', { gainDb: -6 }, kindContext],
+        ['lower the bus Drums by 3 dB', { deltaDb: -3 }, kindContext],
+        ['turn the bus Drums down 3 dB', { deltaDb: -3 }, kindContext],
+    ])('puts no fader level on the audio track Drums for "%s"', (prompt, value, context) => {
+        const result = bridgeGain(prompt, drums.id, value, context);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each<[string, ProjectTrack, FaderLevel, ProjectContext]>([
+        ['set channel Drums to -6 dB', drums, { gainDb: -6 }, kindContext],
+        ['set the track Drums to -6 dB', drums, { gainDb: -6 }, kindContext],
+        ['set channel Keys to -6 dB', keys, { gainDb: -6 }, kindContext],
+        ['lower the track Keys by 3 dB', keys, { deltaDb: -3 }, kindContext],
+        ['lower the volume of the Keys track by 3 dB', keys, { deltaDb: -3 }, kindContext],
+        ['turn the volume for the track Drums down 3 dB', drums, { deltaDb: -3 }, kindContext],
+        ['set the bus Reverb to -6 dB', reverb, { gainDb: -6 }, kindContext],
+        ['set the return Reverb to -6 dB', reverb, { gainDb: -6 }, kindContext],
+        ['lower the bus Reverb by 3 dB', reverb, { deltaDb: -3 }, kindContext],
+        ['turn the bus Reverb down 3 dB', reverb, { deltaDb: -3 }, kindContext],
+        ['lower the group Drums by 3 dB', drums, { deltaDb: -3 }, drumsVcaContext],
+        ['lower the vca Drums by 3 dB', drums, { deltaDb: -3 }, drumsVcaContext],
+    ])('still grounds "%s"', (prompt, track, value, context) => {
+        const result = bridgeGain(prompt, track.id, value, context);
+
+        expect(result.actions, JSON.stringify(result.rejections)).toEqual([
+            { type: 'setTrackGain', payload: { trackId: track.id, ...value } },
+        ]);
+    });
+
+    it('grounds a VCA level its kind noun names and refuses one a track kind noun names', () => {
+        const call = { name: 'setVcaGain', arguments: { vcaGroupId: 'vca-strings', gainDb: -6 } };
+
+        expect(bridge([call], 'set the vca Strings gain to -6 dB', stringsVcaContext).actions).toEqual([
+            { type: 'setVcaGain', payload: call.arguments },
+        ]);
+        expect(bridge([call], 'set the bus Strings gain to -6 dB', stringsVcaContext).actions).toEqual([]);
+    });
+});
+
 describe('a track level clause reads purposes, comparisons and parameter-named words from the shared tables (#5551)', () => {
     const drums = createTrack({
         id: 'track-drums',
