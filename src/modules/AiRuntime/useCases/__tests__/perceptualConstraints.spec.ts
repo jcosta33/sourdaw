@@ -32,7 +32,15 @@ import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
-import { AVOID_VERB, KEEP, SCOPE_WORD } from '../perceptualConstraints/constraintClauseWords';
+import {
+    AVOID_VERB,
+    CLAUSE_HEAD,
+    CLAUSE_JOINING_AMPERSAND,
+    KEEP,
+    PURPOSE_HEAD,
+    RELEASED_GERUND,
+    SCOPE_WORD,
+} from '../perceptualConstraints/constraintClauseWords';
 import { findExcludedDimensionEdit } from '../perceptualConstraints/findExcludedDimensionEdit';
 import { PERCEPTUAL_CONSTRAINT_INVARIANTS } from '../perceptualConstraints/perceptualConstraintInvariants';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
@@ -4440,5 +4448,40 @@ describe('the card a constraint criterion is shown on', () => {
         expect(criterionTexts('Lower the Vocal Trim and keep it warm')).toEqual([
             'Constraint “keep it warm”: nothing the application measures shows that it holds, so this batch cannot be approved as verified.',
         ]);
+    });
+});
+
+describe('whitespace guards in the clause vocabulary', () => {
+    // Runs long enough that asking a lookbehind from every position of one takes far longer than the test timeout.
+    const spaces = (length: number) => ' '.repeat(length);
+
+    /** The start and length of the first match, or null. */
+    function firstMatch(pattern: string, text: string): { index: number; length: number } | null {
+        const match = new RegExp(pattern, 'u').exec(text);
+        return match === null ? null : { index: match.index, length: match[0].length };
+    }
+
+    it('asks a clause head only where a word starts, not from every position of a whitespace run', () => {
+        const run = 100_000;
+        expect(firstMatch(`${CLAUSE_HEAD}\\s*x`, `1 and${spaces(run)}y`)).toBeNull();
+        expect(firstMatch(`${CLAUSE_HEAD}\\s*x`, `1 and${spaces(run)}x`)).toEqual({ index: 5 + run, length: 1 });
+    });
+
+    it('asks a purpose head only where a word starts, not from every position of a whitespace run', () => {
+        const run = 100_000;
+        expect(firstMatch(`${PURPOSE_HEAD}\\s*x`, `so${spaces(run)}y`)).toBeNull();
+        expect(firstMatch(`${PURPOSE_HEAD}\\s*x`, `so${spaces(run)}x`)).toEqual({ index: 2 + run, length: 1 });
+    });
+
+    it('asks whether a release governs a gerund only where a word starts, not from every position of a whitespace run', () => {
+        const run = 300_000;
+        expect(firstMatch(RELEASED_GERUND, `stop${spaces(run)}!`)).toBeNull();
+        expect(firstMatch(RELEASED_GERUND, `stop${spaces(run)}keeping`)).toEqual({ index: 4 + run, length: 7 });
+    });
+
+    it('reads a whitespace run once for a clause-joining ampersand it never finds', () => {
+        const run = 300_000;
+        expect(firstMatch(CLAUSE_JOINING_AMPERSAND, `a${spaces(run)}stop`)).toBeNull();
+        expect(firstMatch(CLAUSE_JOINING_AMPERSAND, `a${spaces(run)}&stop`)).toEqual({ index: 1, length: run + 1 });
     });
 });

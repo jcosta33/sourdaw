@@ -462,7 +462,7 @@ const UNREFUSED_RELEASE = String.raw`(?<!${GOVERNING_NEGATION})\b${RELEASE_LEAD}
  * its own. This is a lookahead holding a lookbehind: the verb ahead is a gerund and the release stands
  * right before it.
  */
-const RELEASED_GERUND = String.raw`(?=\S)(?<=${UNREFUSED_RELEASE}\s+)${GERUND}`;
+export const RELEASED_GERUND = String.raw`(?=\S)(?<=${UNREFUSED_RELEASE}\s+)${GERUND}`;
 /**
  * A governing negation no release gives up, directly or through an intent: a release before the
  * negation gives up the "not" it leads to, so "stop trying to not keep the vocal bright" keeps it.
