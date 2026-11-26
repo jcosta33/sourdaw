@@ -4214,10 +4214,7 @@ impl HostedPluginRuntime for ClapWrapper {
         let current = refused_now.then(|| {
             // The refused-start path always hands the engine's input back
             // (`copy_inputs_to_outputs`), instrument or not.
-            format!(
-                "'{}' refused to start processing; its blocks pass through unprocessed",
-                self.name
-            )
+            "it refused to start processing; its blocks pass through unprocessed".to_string()
         });
         let change = ServiceChange::between(&self.published_out_of_service, &current)?;
         self.published_out_of_service = current;
@@ -6449,9 +6446,9 @@ mod tests {
         let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
             panic!("a refused start is published as out of service");
         };
-        assert!(
-            reason.ends_with("refused to start processing; its blocks pass through unprocessed"),
-            "{reason}"
+        assert_eq!(
+            reason,
+            "it refused to start processing; its blocks pass through unprocessed"
         );
         assert_eq!(wrapper.take_service_change(), None);
     }
@@ -8988,9 +8985,9 @@ mod tests {
         let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
             panic!("a refused start is published as out of service");
         };
-        assert!(
-            reason.ends_with("refused to start processing; its blocks pass through unprocessed"),
-            "{reason}"
+        assert_eq!(
+            reason,
+            "it refused to start processing; its blocks pass through unprocessed"
         );
         assert_eq!(wrapper.take_service_change(), None);
     }

@@ -371,10 +371,9 @@ fn a_refused_start_of_processing_is_published_once() {
         _ => None,
     }
     .expect("a refused start is published as out of service");
-    assert!(
-        reason.contains("refused to start processing")
-            && reason.ends_with("its blocks pass through unprocessed"),
-        "{reason}"
+    assert_eq!(
+        reason,
+        "it refused to start processing; its blocks pass through unprocessed"
     );
     assert_eq!(wrapper.take_service_change(), None);
 }

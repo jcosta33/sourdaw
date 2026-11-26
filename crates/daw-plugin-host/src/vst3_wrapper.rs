@@ -2162,10 +2162,7 @@ impl Vst3Wrapper {
         // The refused-start path hands the engine's input back for every
         // plugin, instrument or not (`pass_through`).
         refused_now.then(|| {
-            format!(
-                "'{}' refused to start processing; its blocks pass through unprocessed",
-                self.instance.name()
-            )
+            "it refused to start processing; its blocks pass through unprocessed".to_string()
         })
     }
 

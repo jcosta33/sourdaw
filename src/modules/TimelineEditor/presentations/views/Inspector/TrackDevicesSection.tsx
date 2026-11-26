@@ -402,7 +402,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     ) : null}
                                     {degradedExternalDeviceMessages.has(device.id) ? (
                                         <span
-                                            className="block text-[9px] leading-tight text-[var(--color-state-warning)]"
+                                            className="block text-[length:var(--text-nano)] leading-tight text-[var(--color-state-warning)]"
                                             data-testid={`device-degraded-${device.id}`}
                                         >
                                             {degradedExternalDeviceMessages.get(device.id)}

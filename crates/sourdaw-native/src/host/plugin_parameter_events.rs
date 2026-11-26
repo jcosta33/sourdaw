@@ -935,7 +935,7 @@ mod tests {
                 serde_json::json!({
                     "instance_id": "inst-1",
                     "out_of_service_reason":
-                        "'Drain Fixture' refused to start processing; its blocks pass through unprocessed",
+                        "it refused to start processing; its blocks pass through unprocessed",
                 }),
             )]
         );
