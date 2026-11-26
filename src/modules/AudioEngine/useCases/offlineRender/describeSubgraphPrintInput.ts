@@ -27,6 +27,18 @@ function sortedById<Row extends { id: string }>(rows: readonly Row[] | undefined
     return (rows ?? []).toSorted((left, right) => left.id.localeCompare(right.id));
 }
 
+/**
+ * A source's group id reaches the print only as its `vcaMultiplier`, so two groups of one gain
+ * sound alike. Change detection still reads the id, which is why the print reader keeps it.
+ */
+function omitVcaGroupId<Printed extends object>(printed: Printed) {
+    if (!('vcaGroupId' in printed)) {
+        return printed;
+    }
+    const { vcaGroupId: _vcaGroupId, ...rest } = printed;
+    return rest;
+}
+
 type DescribeTrackInput = {
     track: Track;
     input: SubgraphPrintInput;
@@ -36,13 +48,13 @@ type DescribeTrackInput = {
 /** One strip as the keep-live render builds it, with its clips and chain told by the caller. */
 function describeTrack({ track, input, describeTrackContent }: DescribeTrackInput) {
     const isTarget = track.id === input.targetTrackId;
-    const { clips, devices, ...printed } = readPrintedTrack({
+    const { clips, devices, ...read } = readPrintedTrack({
         track,
         isTarget,
         honoursMute: input.muteHonoringTrackIds.has(track.id),
     });
     return {
-        ...printed,
+        ...omitVcaGroupId(read),
         content: describeTrackContent({ clips, devices }),
         vcaMultiplier: resolveContributorVcaMultiplier({ track, isTarget, groups: [...input.vcaGroups] }),
     };

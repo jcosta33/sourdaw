@@ -761,6 +761,15 @@ describe('a freeze whose render reads a routed source track', () => {
             });
         });
 
+        it('keeps the freeze when a routed source joins a VCA group at unity gain', async () => {
+            setVcaGain(1);
+            await freezeWatched();
+
+            updateTrack(SOURCE_ID, (track) => ({ ...track, vcaGroupId: 'vca-1' }));
+
+            expect(findTrack(TRACK_ID).freezeState.status).toBe('frozen');
+        });
+
         describe('with a take lane, an adjustment layer and a modulator on a covered track', () => {
             beforeEach(async () => {
                 seedSessionRows();
