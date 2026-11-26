@@ -329,6 +329,13 @@ function selectsPartialBatch(input: ReproposePendingChatActionsInput, originalCo
     );
 }
 
+function readReproposalMidiRefusal(
+    confirmation: PendingAppActionConfirmation
+): Extract<ReproposePendingChatActionsResult, { status: 'rejected' }> | null {
+    const reason = readMidiNoteEditApprovalRefusal(confirmation.approvalSnapshot.actions, confirmation.projectRevision);
+    return reason === null ? null : { status: 'rejected', reason };
+}
+
 function prepareReproposal(input: ReproposePendingChatActionsInput) {
     const confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
@@ -338,12 +345,9 @@ function prepareReproposal(input: ReproposePendingChatActionsInput) {
     if (refusal) {
         return refusal;
     }
-    const selectionRefusal = readMidiNoteEditApprovalRefusal(
-        confirmation.approvalSnapshot.actions,
-        confirmation.projectRevision
-    );
+    const selectionRefusal = readReproposalMidiRefusal(confirmation);
     if (selectionRefusal !== null) {
-        return { status: 'rejected' as const, reason: selectionRefusal };
+        return selectionRefusal;
     }
     const { agentApproval, commandBatch } = confirmation.approvalSnapshot;
     if (!commandBatch) {
@@ -482,23 +486,18 @@ function persistReproposalConfirmation(
     return persistedId;
 }
 
-/**
- * Measure the re-previewed batch again and record the fresh proof on the live run, refusing
- * when the card or run moved meanwhile or the run plan cannot hold the new evidence.
- */
-async function refreshMetricProof(
+async function prepareRefreshedMetricProof(
     prepared: PreparedReproposal,
     goalState: NonNullable<ReturnType<typeof metricGoalStateCodec>>,
     context: ReturnType<typeof getProjectContext>
 ): Promise<
     | { status: 'rejected'; reason: string }
-    | { status: 'refreshed'; state: typeof goalState; approval: ReturnType<typeof compileAgentRiskApproval> }
+    | { status: 'measured'; proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>> }
 > {
     const { confirmation, refreshed } = prepared;
-    let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
     const watch = watchVibeBatchRePreview(confirmation, context);
     try {
-        refreshedProof = await prepareMetricGoalPreview({
+        const proof = await prepareMetricGoalPreview({
             state: goalState,
             commandBatch: refreshed.commandBatch,
             context,
@@ -507,43 +506,21 @@ async function refreshMetricProof(
             onBegin: watch.onBegin,
             onProgress: watch.onProgress,
         });
+        return { status: 'measured', proof };
     } catch (error) {
         return { status: 'rejected', reason: failureReason(error) };
     } finally {
         await watch.settle();
     }
-    const live = getPendingActionConfirmation(confirmation.id);
-    const liveRun = agentRunLifecycle.get(confirmation.runId);
-    if (liveRun === null || !proofRefreshStillCurrent(live, liveRun, confirmation)) {
-        return {
-            status: 'rejected',
-            reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
-        };
-    }
-    const approval = compileAgentRiskApproval({
-        commandBatch: refreshed.commandBatch,
-        requireExplicitApproval: true,
-        metricGoalState: JSON.stringify(refreshedProof.state),
-    });
-    const refusal = recordBatchPreviewEvidence(
-        liveRun,
-        refreshed.currentRevision,
-        approval.metricGoalState,
-        refreshedProof.receipts
-    );
-    if (refusal !== null) {
-        return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
-    }
-    return { status: 'refreshed', state: refreshedProof.state, approval };
 }
 
 function proofRefreshStillCurrent(
-    live: ReturnType<typeof getPendingActionConfirmation>,
+    live: PendingAppActionConfirmation,
     liveRun: NonNullable<ReturnType<typeof agentRunLifecycle.get>>,
     confirmation: PendingAppActionConfirmation
 ): boolean {
     return (
-        live?.status === 'proposed' &&
+        live.status === 'proposed' &&
         live.supersededBy === null &&
         live.approvalSnapshot.metricGoalState === confirmation.approvalSnapshot.metricGoalState &&
         !TERMINAL_RUN_PHASES.has(liveRun.phase)
@@ -567,20 +544,45 @@ async function reproposeWithoutReporting(
         prepared;
     let approval = prepared.approval;
 
-    let goalState = metricGoalStateCodec(approval.metricGoalState);
+    const goalState = metricGoalStateCodec(approval.metricGoalState);
     let measuredState: typeof goalState = null;
     const context = getProjectContext();
     if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
-        if (selectsSubset) {
-            goalState = { ...goalState, proofs: [] };
+        const measured = await prepareRefreshedMetricProof(
+            prepared,
+            selectsSubset ? { ...goalState, proofs: [] } : goalState,
+            context
+        );
+        if (measured.status !== 'measured') {
+            return measured;
         }
-        const refreshedPreview = await refreshMetricProof(prepared, goalState, context);
-        if (refreshedPreview.status !== 'refreshed') {
-            return refreshedPreview;
+        const live = getPendingActionConfirmation(confirmation.id);
+        const liveRun = agentRunLifecycle.get(confirmation.runId);
+        if (live === null || liveRun === null || !proofRefreshStillCurrent(live, liveRun, confirmation)) {
+            return {
+                status: 'rejected',
+                reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
+            };
         }
-        goalState = refreshedPreview.state;
-        measuredState = goalState;
-        approval = refreshedPreview.approval;
+        const selectionRefusal = readReproposalMidiRefusal(live);
+        if (selectionRefusal !== null) {
+            return selectionRefusal;
+        }
+        measuredState = measured.proof.state;
+        approval = compileAgentRiskApproval({
+            commandBatch: refreshed.commandBatch,
+            requireExplicitApproval: true,
+            metricGoalState: JSON.stringify(measuredState),
+        });
+        const refusal = recordBatchPreviewEvidence(
+            liveRun,
+            refreshed.currentRevision,
+            approval.metricGoalState,
+            measured.proof.receipts
+        );
+        if (refusal !== null) {
+            return { status: 'rejected', reason: describeAgentRunPlanBoundRefusal(refusal) };
+        }
     }
     const card = composeRePreviewedCard({
         confirmation,

@@ -72,6 +72,8 @@ import { revertAiActionGroup } from '../aiHistoryActions';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { checkMidiNoteEditAuthority } from '../checkMidiNoteEditAuthority';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
@@ -831,6 +833,55 @@ describe('high-level intent execution', () => {
         });
         expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
         expect(undoStore.value?.past).toEqual(historyBefore);
+    });
+
+    it('refuses to re-preview a selective edit when selection changes during proof preparation', async () => {
+        seedMidiPhrase();
+        scriptMidiPhraseEdit();
+        await sendChatMessage(PHRASE_TASK);
+        const confirmation = requireConfirmation();
+        expect(metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState)?.authorities).toEqual(
+            expect.arrayContaining([expect.objectContaining({ kind: 'non-acoustic' })])
+        );
+        const cardBefore = structuredClone(
+            chatStore.value?.messages.find((message) => message.id === confirmation.assistantMessageId)
+        );
+        expect(cardBefore).toMatchObject({ pendingActionConfirmationId: confirmation.id });
+        const runBefore = agentRunLifecycle.get(confirmation.runId);
+        expect(runBefore?.phase).toBe('waiting-for-approval');
+        const planBefore = structuredClone(runBefore?.plan);
+        expect(planBefore).toBeDefined();
+        const historyBefore = structuredClone(undoStore.value);
+
+        const pending = reproposePendingChatActions({ confirmationId: confirmation.id });
+        selectPhraseNotes([THIRD.id]);
+        expect(readPianoRollSelection()).toMatchObject({
+            status: 'resolved',
+            clipId: PHRASE_CLIP_ID,
+            viewIds: [THIRD.id],
+        });
+
+        const reason = 'The MIDI note selection changed; start a fresh request.';
+        await expect(pending).resolves.toEqual({ status: 'rejected', reason });
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'proposed',
+            supersededBy: null,
+            approvalSnapshot: confirmation.approvalSnapshot,
+        });
+        expect(getConfirmationId()).toBe(confirmation.id);
+        expect(chatStore.value?.messages.find((message) => message.id === confirmation.assistantMessageId)).toEqual(
+            cardBefore
+        );
+        expect(chatStore.value?.messages.at(-1)).toMatchObject({
+            role: 'assistant',
+            content: `Re-preview refused: ${reason}`,
+            error: reason,
+        });
+        const runAfter = agentRunLifecycle.get(confirmation.runId);
+        expect(runAfter?.phase).toBe(runBefore?.phase);
+        expect(runAfter?.plan).toEqual(planBefore);
+        expect(durablePhraseNotes()).toEqual(PHRASE_NOTES);
+        expect(undoStore.value).toEqual(historyBefore);
     });
 
     it('requires a new musical read after project revision drift, even on another track', async () => {
