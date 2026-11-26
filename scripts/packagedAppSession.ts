@@ -141,15 +141,29 @@ async function pickFreePort(): Promise<number> {
 }
 
 /** SIGTERM, then SIGKILL, then wait for the exit either way: a left-behind app holds the audio device. */
-async function quitApp(child: ChildProcess): Promise<void> {
+async function quitApp(child: ChildProcess, timeoutMs?: number): Promise<void> {
     if (child.exitCode !== null || child.signalCode !== null) {
         return;
     }
     const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
     child.kill('SIGTERM');
     const grace = setTimeout(() => child.kill('SIGKILL'), QUIT_GRACE_MS);
-    await exited;
-    clearTimeout(grace);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+        if (timeoutMs === undefined) {
+            await exited;
+        } else {
+            await Promise.race([
+                exited,
+                new Promise<never>((_resolve, reject) => {
+                    deadline = setTimeout(() => reject(new Error('packaged process exit timed out')), timeoutMs);
+                }),
+            ]);
+        }
+    } finally {
+        clearTimeout(grace);
+        clearTimeout(deadline);
+    }
 }
 
 /**
@@ -353,6 +367,7 @@ export type PackagedApp = {
     version: CdpVersion;
     /** Everything the packaged process has written to stdout and stderr so far. */
     output: () => string;
+    quitObserved: () => Promise<{ code: number | null; signal: string | null; forced: boolean }>;
     /** Closes the CDP connection, quits the app, removes the profile directory, and releases the signal handlers. */
     quit: () => Promise<void>;
 };
@@ -419,9 +434,9 @@ export async function launchPackagedApp(
     const removeSigintTeardown = installTeardownOnSignal('SIGINT', child, profileDir);
     const removeSigtermTeardown = installTeardownOnSignal('SIGTERM', child, profileDir);
 
-    const quitProcess = async (): Promise<void> => {
+    const quitProcess = async (timeoutMs?: number): Promise<void> => {
         abortController.abort();
-        await quitApp(child);
+        await quitApp(child, timeoutMs);
         reportProfileRemoval(profileDir, removeProfileDir(profileDir));
         removeSigintTeardown();
         removeSigtermTeardown();
@@ -441,6 +456,24 @@ export async function launchPackagedApp(
         page: connected.page,
         version: connected.version,
         output,
+        quitObserved: async () => {
+            const { promise: closeDeadline, resolve } = Promise.withResolvers<void>();
+            const timer = setTimeout(resolve, 2000);
+            try {
+                await Promise.race([
+                    connected.browser.close().catch(() => {
+                        process.stderr.write(
+                            'Could not close the packaged browser connection before process teardown.\n'
+                        );
+                    }),
+                    closeDeadline,
+                ]);
+            } finally {
+                clearTimeout(timer);
+            }
+            await quitProcess(12000);
+            return { code: child.exitCode, signal: child.signalCode, forced: child.signalCode === 'SIGKILL' };
+        },
         quit: async () => {
             await connected.browser.close();
             await quitProcess();

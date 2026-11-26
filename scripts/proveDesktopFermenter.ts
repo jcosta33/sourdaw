@@ -19,6 +19,11 @@ import { basename, dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import {
+    crumbsSamplerFailure,
+    freshCrumbsSamplerObservations,
+    type CrumbsSamplerObservations,
+} from './desktopCrumbsSamplerEvidence.ts';
+import {
     familyFailure,
     freshFamilyObservations,
     type EditorFamilyDrive,
@@ -50,7 +55,7 @@ const DIGEST = /^[a-f0-9]{64}$/u;
 const RUN_NUMBER = /^[1-9][0-9]{0,19}$/u;
 const MAX_RECEIPT_BYTES = 1024;
 const USAGE =
-    'Expected either --capture --receipt PATH or [--family | --workspace | --audition] --receipt PATH --json PATH';
+    'Expected either --capture --receipt PATH or [--family | --workspace | --audition | --crumbs] --receipt PATH --json PATH';
 
 type RunIdentity = { sourceSha: string; runId: string; runAttempt: string };
 type Digests = { payloadSha256: string; executableSha256: string };
@@ -72,6 +77,10 @@ type FailureCode =
     | NonNullable<ReturnType<typeof familyFailure>>
     | NonNullable<ReturnType<typeof workspaceFailure>>
     | NonNullable<ReturnType<typeof auditionFailure>>
+    | 'crumbs-observations-incomplete'
+    | 'crumbs-control-invalid'
+    | 'crumbs-audio-invalid'
+    | 'crumbs-not-scheduled-main'
     | 'checkout-changed'
     | 'bundle-changed'
     | 'driver-failed';
@@ -389,6 +398,34 @@ type AuditionRecord = BoundRecord & {
     scope: 'packaged-grand-boule-output-audition';
     observations: AuditionObservations;
 };
+
+type CrumbsRecord = BoundRecord & { scope: 'packaged-crumbs-sampler'; observations: CrumbsSamplerObservations };
+export async function runCrumbsSamplerProof(
+    options: Options,
+    env: NodeJS.ProcessEnv,
+    ports: { hostSupported: boolean; drive: (binary: string, observations: CrumbsSamplerObservations) => Promise<void> }
+): Promise<CrumbsRecord> {
+    const observations = freshCrumbsSamplerObservations();
+    const record = await runBoundObservation(options, env, ports.hostSupported, async (binary) => {
+        if (env.GITHUB_EVENT_NAME !== 'schedule' || env.GITHUB_REF !== 'refs/heads/main') {
+            throw new FermenterProofError('crumbs-not-scheduled-main');
+        }
+        await ports.drive(binary, observations);
+        const failure = crumbsSamplerFailure(observations);
+        if (failure) {
+            throw new FermenterProofError(failure);
+        }
+    });
+    const result: CrumbsRecord = { ...record, scope: 'packaged-crumbs-sampler', observations };
+    if (
+        record.failureCode === 'capture-unavailable' ||
+        record.failureCode === 'crumbs-not-scheduled-main' ||
+        (record.failureCode === 'driver-failed' && observations.unavailable)
+    ) {
+        result.verdict = 'not-run';
+    }
+    return result;
+}
 export async function runGrandBouleAuditionProof(
     options: Options,
     env: NodeJS.ProcessEnv,
@@ -436,17 +473,15 @@ async function main(): Promise<number> {
             family: { type: 'boolean' },
             workspace: { type: 'boolean' },
             audition: { type: 'boolean' },
+            crumbs: { type: 'boolean' },
             receipt: { type: 'string' },
             json: { type: 'string' },
         },
     });
     const checkout = process.cwd();
-    const { capture, family, workspace, audition, receipt, json } = values;
-    if (
-        !receipt ||
-        [family, workspace, audition].filter(Boolean).length > 1 ||
-        (capture && (family || workspace || audition || json !== undefined))
-    ) {
+    const { capture, family, workspace, audition, crumbs, receipt, json } = values;
+    const observerCount = [family, workspace, audition, crumbs].filter(Boolean).length;
+    if (!receipt || observerCount > 1 || (capture && (observerCount > 0 || json !== undefined))) {
         throw new TypeError(USAGE);
     }
     const options = { checkout, app: join(checkout, APP_PATH), receipt };
@@ -459,8 +494,16 @@ async function main(): Promise<number> {
     if (!json) {
         throw new TypeError(USAGE);
     }
-    let record: FamilyRecord | ProofRecord | WorkspaceRecord | AuditionRecord;
-    if (audition) {
+    let record: FamilyRecord | ProofRecord | WorkspaceRecord | AuditionRecord | CrumbsRecord;
+    if (crumbs) {
+        record = await runCrumbsSamplerProof(options, process.env, {
+            hostSupported,
+            async drive(binary, observations) {
+                const { driveDesktopCrumbsSampler } = await import('./desktopCrumbsSamplerDrive.ts');
+                await driveDesktopCrumbsSampler(binary, observations);
+            },
+        });
+    } else if (audition) {
         record = await runGrandBouleAuditionProof(options, process.env, {
             hostSupported,
             async drive(binary, observations) {
@@ -495,7 +538,9 @@ async function main(): Promise<number> {
     }
     writeFinalJson(json, record);
     let label = 'Fermenter';
-    if (audition) {
+    if (crumbs) {
+        label = 'Crumbs Sampler';
+    } else if (audition) {
         label = 'Grand Boule output audition';
     } else if (workspace) {
         label = 'Premium editor workspace';

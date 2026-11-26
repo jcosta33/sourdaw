@@ -312,6 +312,8 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Upload the premium editor workspace proof record',
             'Observe Grand Boule output audition in the packaged app',
             'Upload the Grand Boule output audition record',
+            'Observe Crumbs Sampler in the packaged app',
+            'Upload the Crumbs Sampler record',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'e2e-coverage': [
@@ -439,6 +441,13 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
         'desktop-measure',
         'Upload the Grand Boule output audition record',
         "${{ !cancelled() && (steps.prove-grand-boule-audition.outcome == 'success' || steps.prove-grand-boule-audition.outcome == 'failure') }}"
+    ),
+    pin('nightly.yml', 'desktop-measure', 'Observe Crumbs Sampler in the packaged app', FERMENTER_ADMISSION),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Upload the Crumbs Sampler record',
+        "${{ !cancelled() && (steps.prove-crumbs-sampler.outcome == 'success' || steps.prove-crumbs-sampler.outcome == 'failure') }}"
     ),
     pin('nightly.yml', 'desktop-measure', 'Capture the Fermenter build receipt', FERMENTER_ADMISSION),
     pin('nightly.yml', 'desktop-measure', 'Prove Fermenter in the packaged app', FERMENTER_ADMISSION),

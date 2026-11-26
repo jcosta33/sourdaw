@@ -425,6 +425,8 @@ const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
         EDITOR_WORKSPACE_UPLOAD,
         'Observe Grand Boule output audition in the packaged app',
         'Upload the Grand Boule output audition record',
+        'Observe Crumbs Sampler in the packaged app',
+        'Upload the Crumbs Sampler record',
     ].map((step) => ({
         workflow: 'nightly.yml',
         job: 'desktop-measure',
@@ -2912,7 +2914,53 @@ function assertPackagedGrandBouleAudition(candidate: UnknownRecord): void {
     });
 }
 
+function assertPackagedCrumbsSampler(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'desktop-measure');
+    const steps = jobSteps('nightly.yml', 'desktop-measure', job);
+    const proof = stepNamed(job, 'Observe Crumbs Sampler in the packaged app');
+    const upload = stepNamed(job, 'Upload the Crumbs Sampler record');
+    expect(steps[steps.indexOf(stepNamed(job, 'Upload the Grand Boule output audition record')) + 1]).toBe(proof);
+    expect(steps[steps.indexOf(proof) + 1]).toBe(upload);
+    expect(proof).toMatchObject({
+        id: 'prove-crumbs-sampler',
+        if: FERMENTER_ADMISSION,
+        'continue-on-error': true,
+        'timeout-minutes': 15,
+        env: { FERMENTER_CAPTURE_OUTCOME: '${{ steps.capture-fermenter.outcome }}' },
+    });
+    expect(stringAt(proof, 'run').trimEnd().split('\n')).toEqual([
+        'node scripts/proveDesktopFermenter.ts --crumbs --receipt "$RUNNER_TEMP/sourdaw-fermenter-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json" \\',
+        '  --json "$RUNNER_TEMP/sourdaw-crumbs-sampler-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"',
+    ]);
+    expect(upload).toMatchObject({
+        if: "${{ !cancelled() && (steps.prove-crumbs-sampler.outcome == 'success' || steps.prove-crumbs-sampler.outcome == 'failure') }}",
+        'continue-on-error': true,
+        uses: 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+    });
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'desktop-crumbs-sampler-${{ github.sha }}-${{ github.run_attempt }}',
+        path: '${{ runner.temp }}/sourdaw-crumbs-sampler-${{ github.run_id }}-${{ github.run_attempt }}.json',
+        'retention-days': 7,
+        'if-no-files-found': 'error',
+    });
+}
+
 describe('health gates workflow contract', () => {
+    it('pins the Crumbs witness to scheduled main and its matching receipt', () => {
+        assertPackagedCrumbsSampler(nightly);
+        const name = 'Observe Crumbs Sampler in the packaged app';
+        const proof = stepNamed(jobAt(nightly, 'desktop-measure'), name);
+        for (const change of [
+            { if: FERMENTER_ADMISSION.replace("github.event_name == 'schedule' && ", '') },
+            { if: FERMENTER_ADMISSION.replace("github.ref == 'refs/heads/main' && ", '') },
+            { run: stringAt(proof, 'run').replace('--crumbs ', '') },
+            { run: stringAt(proof, 'run').replace('sourdaw-fermenter-build-', 'different-receipt-') },
+        ]) {
+            const candidate = cloneWorkflows('altered Crumbs proof').nightly;
+            Object.assign(stepNamed(jobAt(candidate, 'desktop-measure'), name), change);
+            expect(() => assertPackagedCrumbsSampler(candidate)).toThrow();
+        }
+    });
     it('pins the separate exact-receipt Grand Boule audition after workspace evidence', () => {
         assertPackagedGrandBouleAudition(nightly);
         const proofName = 'Observe Grand Boule output audition in the packaged app';
