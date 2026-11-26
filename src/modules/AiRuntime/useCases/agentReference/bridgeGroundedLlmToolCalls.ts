@@ -3060,8 +3060,10 @@ function getReferenceBoundDecibelFigures(
 /**
  * The figures a scope gives the call's own track. In a scope that took in continuation clauses each
  * clause states its own track's figures, wherever they stand in it ("set the volume to 75% on Vocals,
- * Drums to 60%"), so the anchor reads the figures of the one clause naming it; otherwise a figure
- * binds to the nearest track named before it.
+ * Drums to 60%"), so the anchor reads the figures up to the end of the one clause naming it. Figures of
+ * an earlier clause stay readable here: a continuation clause states its figure after its own track,
+ * so the figures bound to the nearest track before them already keep that track to its own.
+ * Otherwise a figure binds to the nearest track named before it.
  */
 function getAnchorNumbers<Figure extends { index: number }>(
     actionScope: ActionPromptScope,
@@ -3085,7 +3087,7 @@ function getAnchorNumbers<Figure extends { index: number }>(
     if (anchorClauses.length !== 1 || anchorClause === undefined) {
         return [];
     }
-    return numbers.filter((number) => number.index >= anchorClause.start && number.index < anchorClause.end);
+    return numbers.filter((number) => number.index < anchorClause.end);
 }
 
 /**
