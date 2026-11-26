@@ -815,8 +815,12 @@ describe('project directory save and cold Recent open', () => {
         expect(typeof previousNamed).toBe('string');
         const previousDirectory = await projectDirectory.read(runtime.directory, runtime.projectId);
 
-        // The store write left pending by project creation is not flushed here, so the Save's own settle step
-        // flushes it and re-projects the edited native identity after the Save captured the store's identity.
+        // Settle, then leave exactly one store write pending in the same synchronous block as the native edit. The
+        // write carries the stored values unchanged, so flushing it commits nothing to the document. The Save's own
+        // settle step flushes it and re-projects the edited native identity after the Save captured the store's
+        // identity, whatever animation frames ran during the awaits above.
+        flushAutomergeStorageWrites();
+        projectStore.set({ ...project, updatedAt: project.updatedAt });
         type NativeProjectRoot = { projectMeta?: { projectId?: string } };
         const rootId = runtime.crdt.DOC_PREFIX_ROOT;
         const differentProjectId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -831,7 +835,7 @@ describe('project directory save and cold Recent open', () => {
         });
         expect(runtime.crdt.getCrdtDoc<NativeProjectRoot>(rootId)?.projectMeta?.projectId).toBe(differentProjectId);
         expect(projectStore.value?.projectId).toBe(runtime.projectId);
-        expect(countPendingAutomergeStorageWrites()).toBeGreaterThanOrEqual(1);
+        expect(countPendingAutomergeStorageWrites()).toBe(1);
         const witness = runtime.crdt.captureDurableDocumentWitness();
         const warn = vi.spyOn(logger, 'warn');
 
