@@ -574,13 +574,14 @@ impl BlockHostWrites {
 /// land at the head of the next processed block, each parameter on the last
 /// value it was written, which is what the VST3 half does with its gesture
 /// queue. Notes are not held: one that sounds blocks after it was played is
-/// wrong, not late.
+/// wrong, not late. Nor are the writes of a block that arrives while the
+/// wrapper is not activated: those are ignored, as they always were.
 ///
 /// Touched only through the wrapper's `&mut self` — by the thread that runs
 /// its blocks, or by a state load holding it exclusively — so it needs no
-/// atomics. Allocated once at load and never grown. It never overflows: it is
-/// refilled only from a block's parameter scratch, which already carries every
-/// held write and is itself `MAX_PARAMETER_EVENTS` long.
+/// atomics. Allocated once at load and never grown, so it holds at most
+/// `MAX_PARAMETER_EVENTS` distinct parameters: refused blocks that write more
+/// than that between them leave the parameters past it unheld.
 struct HeldHostWrites {
     writes: Box<[HostParameterUpdate; MAX_PARAMETER_EVENTS]>,
     count: usize,
@@ -616,12 +617,33 @@ impl HeldHostWrites {
         self.count += 1;
     }
 
-    /// Move every held write into `scratch`, at the head of the block.
-    fn drain_into(&mut self, scratch: &mut Vec<clap_event_param_value>) {
-        for write in &self.writes[..self.count] {
+    /// Let go of every held write for a parameter `block_writes` writes: the
+    /// block's own value is the newer one.
+    fn discard_superseded(&mut self, block_writes: &[HostParameterUpdate]) {
+        let mut kept = 0;
+        for index in 0..self.count {
+            let write = self.writes[index];
+            if block_writes
+                .iter()
+                .any(|update| update.param_id == write.param_id)
+            {
+                continue;
+            }
+            self.writes[kept] = write;
+            kept += 1;
+        }
+        self.count = kept;
+    }
+
+    /// Move up to `room` held writes into `scratch`, at the head of the block,
+    /// oldest held first. The rest stay held for the next processed block.
+    fn drain_into(&mut self, scratch: &mut Vec<clap_event_param_value>, room: usize) {
+        let delivered = self.count.min(room);
+        for write in &self.writes[..delivered] {
             scratch.push(host_parameter_event(write));
         }
-        self.count = 0;
+        self.writes.copy_within(delivered..self.count, 0);
+        self.count -= delivered;
     }
 
     fn clear(&mut self) {
@@ -2747,10 +2769,12 @@ impl ClapWrapper {
     /// already; at one time a parameter value is listed ahead of a note, so a
     /// note sounds with the value written for its own sample.
     ///
-    /// Writes held from blocks the plugin refused to process lead the list at
-    /// time 0, ahead of this block's own, which are newer. Together they share
-    /// the one `MAX_PARAMETER_EVENTS` capacity, and this block's writes past it
-    /// are ignored like any others.
+    /// This block's own writes keep the first `MAX_PARAMETER_EVENTS` slots
+    /// they always had; any past that are ignored. Writes held from blocks the
+    /// plugin refused to process take the room left over, at time 0 ahead of
+    /// the block's own. A held write for a parameter this block also writes is
+    /// dropped, because the block's value is newer, and a held write that does
+    /// not fit stays held for the next processed block.
     pub fn process_with_midi_and_parameters(
         &mut self,
         inputs: &[&[f32]],
@@ -2777,10 +2801,13 @@ impl ClapWrapper {
 
         fill_note_scratch(&mut self.midi_scratch, midi_events);
         self.parameter_scratch.clear();
-        self.held_host_writes
-            .drain_into(&mut self.parameter_scratch);
-        let room = MAX_PARAMETER_EVENTS - self.parameter_scratch.len();
-        for update in parameter_updates.iter().take(room) {
+        let block_writes = &parameter_updates[..parameter_updates.len().min(MAX_PARAMETER_EVENTS)];
+        self.held_host_writes.discard_superseded(block_writes);
+        self.held_host_writes.drain_into(
+            &mut self.parameter_scratch,
+            MAX_PARAMETER_EVENTS - block_writes.len(),
+        );
+        for update in block_writes {
             self.parameter_scratch.push(host_parameter_event(update));
         }
         merge_event_order(
@@ -3190,8 +3217,10 @@ impl ClapWrapper {
     }
 
     /// Keep the writes of a block the plugin is not handed for the next one it
-    /// is. `host_writes` already leads with whatever was held before, and in
-    /// list order a later value for one parameter replaces an earlier one.
+    /// is. `host_writes` carries every write this block admitted, led by the
+    /// held writes that fitted beside them; the held writes that did not fit
+    /// never left the store. In list order a later value for one parameter
+    /// replaces an earlier one.
     fn hold_host_writes(&mut self, host_writes: BlockHostWrites) {
         // SAFETY: `host_writes` describes `parameter_scratch` or nothing, and
         // the loop below writes only `held_host_writes`, never the scratch.
@@ -8821,8 +8850,11 @@ mod tests {
 
         HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
         process_one_block(&mut wrapper);
+        // At one time, the order between two parameters carries no meaning.
+        let mut received = received_parameter_values();
+        received.sort_by_key(|(_, param_id, _)| *param_id);
         assert_eq!(
-            received_parameter_values(),
+            received,
             vec![(0, 5, 0.7), (0, 6, 0.3)],
             "the first processed block carries every held write at its head"
         );
@@ -8835,11 +8867,11 @@ mod tests {
         );
     }
 
-    /// A write made in the first processed block is newer than any held one,
-    /// so it comes after it in the list the plugin reads and is the value the
-    /// parameter ends on.
+    /// A write made in the first processed block is newer than any held one
+    /// for the same parameter, so it replaces it: the parameter is delivered
+    /// once, with the block's value.
     #[test]
-    fn a_write_in_the_first_processed_block_comes_after_the_held_write_it_replaces() {
+    fn a_write_in_the_first_processed_block_replaces_the_held_write_for_its_parameter() {
         let _guard = held_write_test_guard();
         stage_emitted_events(Vec::new());
         let mut wrapper = start_refusing_recording_wrapper();
@@ -8847,8 +8879,85 @@ mod tests {
         process_one_block_with_updates(&mut wrapper, &[write(5, 0, 0.2)]);
         HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
         process_one_block_with_updates(&mut wrapper, &[write(5, 4, 0.9)]);
+        process_one_block(&mut wrapper);
 
-        assert_eq!(received_parameter_values(), vec![(0, 5, 0.2), (4, 5, 0.9)]);
+        assert_eq!(received_parameter_values(), vec![(4, 5, 0.9)]);
+    }
+
+    /// A processed block's own writes keep every slot they had before any
+    /// write was held. Held writes take the room left at the head, and the ones
+    /// that do not fit wait for the next processed block rather than being lost.
+    #[test]
+    fn a_processed_blocks_own_writes_are_never_crowded_out_by_held_ones() {
+        let _guard = held_write_test_guard();
+        stage_emitted_events(Vec::new());
+        let mut wrapper = start_refusing_recording_wrapper();
+        let held: Vec<HostParameterUpdate> = (100..110).map(|id| write(id, 0, 0.25)).collect();
+        let block: Vec<HostParameterUpdate> = (0..60).map(|id| write(id, id, 0.75)).collect();
+
+        process_one_block_with_updates(&mut wrapper, &held);
+        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block_with_updates(&mut wrapper, &block);
+
+        let mut expected: Vec<(u32, u32, f64)> = (100..104).map(|id| (0, id, 0.25)).collect();
+        expected.extend((0..60).map(|id| (id, id, 0.75)));
+        assert_eq!(
+            received_parameter_values(),
+            expected,
+            "all 60 block writes, and the 4 held writes that fit at the head"
+        );
+
+        process_one_block(&mut wrapper);
+        assert_eq!(
+            received_parameter_values(),
+            (104..110).map(|id| (0, id, 0.25)).collect::<Vec<_>>(),
+            "the held writes that did not fit lead the next processed block"
+        );
+    }
+
+    /// Refused blocks that write more distinct parameters than one block
+    /// carries still leave every parameter that is held on its newest value.
+    #[test]
+    fn refused_blocks_past_one_blocks_capacity_keep_the_newest_value_of_each_held_parameter() {
+        let _guard = held_write_test_guard();
+        stage_emitted_events(Vec::new());
+        let mut wrapper = start_refusing_recording_wrapper();
+        let first: Vec<HostParameterUpdate> = (0..40).map(|id| write(id, 0, 0.1)).collect();
+        let mut second: Vec<HostParameterUpdate> = (0..10).map(|id| write(id, 0, 0.9)).collect();
+        second.extend((100..130).map(|id| write(id, 0, 0.5)));
+        let newest = |id: u32| match id {
+            0..10 => 0.9,
+            100..130 => 0.5,
+            _ => 0.1,
+        };
+
+        process_one_block_with_updates(&mut wrapper, &first);
+        process_one_block_with_updates(&mut wrapper, &second);
+        HELD_WRITE_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+        process_one_block(&mut wrapper);
+
+        let received = received_parameter_values();
+        assert_eq!(
+            received.len(),
+            MAX_PARAMETER_EVENTS,
+            "a full store is delivered"
+        );
+        for (time, id, value) in &received {
+            assert_eq!((*time, *value), (0, newest(*id)), "parameter {id}");
+        }
+        let mut ids: Vec<u32> = received.iter().map(|(_, id, _)| *id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(
+            ids.len(),
+            received.len(),
+            "each parameter is delivered once"
+        );
+        assert!(
+            (0..10).all(|id| ids.contains(&id)),
+            "every parameter the newest refused block rewrote is held"
+        );
     }
 
     /// A held write is still a host write when it is finally delivered: the
