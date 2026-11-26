@@ -321,7 +321,6 @@ describe('readExplicitProtections over a canonical role phrase and the negating 
         'make the vocals warmer but not harsh',
         'make the vocals louder if not louder still',
         'turn the kick down',
-        'mute every track, not including Keys',
     ])('"%s" protects nothing', (prompt) => {
         expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
     });
@@ -350,5 +349,13 @@ describe('readExplicitProtections over a role phrase no track name states', () =
             readExplicitProtections('make the mix warmer but not the lead vocal double', unnamedKickContext)
                 .protectedTrackIds
         ).toEqual([]);
+    });
+});
+
+describe('readExplicitProtections leaves "not including" to the track-control restriction', () => {
+    it('reads nothing from "clear all solos, not including Keys, and mute Guitar"', () => {
+        expect(readExplicitProtections('clear all solos, not including Keys, and mute Guitar', context)).toEqual(
+            NOTHING
+        );
     });
 });

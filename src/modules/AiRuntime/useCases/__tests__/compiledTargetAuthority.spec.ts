@@ -2943,6 +2943,39 @@ describe('#5353 a compiled value pairs with the track its clause states it for',
     });
 });
 
+describe('#5353 a call reads the figures of the other tracks in its scope only where they may be its own', () => {
+    it.each([
+        // Vocals binds no figure of its own, so the 60% Drums states is read for it too.
+        ['set Drums volume to 60% and Vocals too', [mixDrums, mixVocals], 0.6],
+        // 75% precedes every track, so it binds to none and stays readable for both.
+        ['set the volume to 75% on Vocals from bar 5 and Drums from bar 9', [mixVocals, mixDrums], 0.75],
+    ])('grounds "%s" for every track', (prompt, tracks, gain) => {
+        const result = compileMix(
+            prompt,
+            tracks.map((track) => trackItem('setTrackGain', track, { gain }))
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(tracks.map((track) => track.id));
+    });
+
+    it('refuses Drums at 60% for "set Vocals volume to -6 dB, Drums to 60%", which continues no percent level', () => {
+        const result = compileMix('set Vocals volume to -6 dB, Drums to 60%', [
+            trackItem('setTrackGain', mixVocals, { gainDb: -6 }),
+            trackItem('setTrackGain', mixDrums, { gain: 0.6 }),
+        ]);
+
+        expect(targetsOf(result)).toEqual([mixVocals.id]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'setTrackGain',
+                reason: 'Provider value gain must use the decibel form the request states',
+            },
+        ]);
+    });
+});
+
 describe('#5378 a name fragment picks only tracks whose name has it as a word start', () => {
     it('refuses Launchpad for "turn down the pads by 3 dB"', () => {
         const { context, track } = namedTracksContext(['Warm Pad', 'Dark Pad', 'Launchpad']);

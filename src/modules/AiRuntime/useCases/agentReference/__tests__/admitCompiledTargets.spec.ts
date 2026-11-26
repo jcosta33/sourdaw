@@ -240,7 +240,7 @@ describe('a compiled pick reads the request less the other instructions that nam
         ['Mute Vocals and Keys, then pan those like Drums', 'pan those like Drums'],
         ['Mute Keys, then pan it like Drums', 'pan it like Drums'],
         ['Mute Keys, then pan that track like Drums', 'pan that track like Drums'],
-        ['Mute Vocals and Keys, then pan them like Drums on their own', 'pan them like Drums on their own'],
+        ['Mute Vocals and Keys, then pan them like Drums with its width', 'pan them like Drums with its width'],
     ])('admits Keys for "%s", which refers back before it names Drums', (prompt, clause) => {
         expect(
             admitPick(prompt, clause, (instruction) => pickTerms(trackNamed('Keys'), ['track-keys'], instruction))
