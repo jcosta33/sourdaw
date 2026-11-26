@@ -1,3 +1,6 @@
+/** A word of figures alone: the index word opening an indexed name ("01" in "01 Kick"), or a figure's digits. */
+export const FIGURE_WORD = /^\p{N}+$/u;
+
 /** The ordinal words a request may use to pick one of several objects by position, first to tenth. */
 export const ORDINAL_WORDS: readonly string[] = [
     'first',

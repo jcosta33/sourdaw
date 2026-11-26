@@ -3,6 +3,8 @@ import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
 
+import { FIGURE_WORD } from './positionWords';
+
 /** Each unit a figure may be stated in, by its canonical spelling, and the words that spell it. */
 const UNIT_WORDS: ReadonlyArray<{ unit: string; pattern: RegExp }> = [
     { unit: '%', pattern: /^\s*(?:%|percent|per\s+cent)(?![\p{L}\p{N}])/iu },
@@ -17,8 +19,6 @@ const UNIT_WORDS: ReadonlyArray<{ unit: string; pattern: RegExp }> = [
     { unit: 'cents', pattern: /^\s*cents?(?![\p{L}\p{N}])/iu },
     { unit: 's', pattern: /^\s*(?:s|secs?|seconds?)(?![\p{L}\p{N}])/iu },
 ];
-/** A normalized word that is a figure's digits. */
-const FIGURE_WORD = /^\p{N}+$/u;
 
 /** The unit word a text opens with, by its canonical spelling, and how much of the text it takes. */
 function readUnitWord(text: string): { unit: string; length: number } | null {

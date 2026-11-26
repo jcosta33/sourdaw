@@ -1,6 +1,6 @@
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
-import { CARDINAL_WORDS, NUMBER_SIGN_WORDS, ORDINAL_WORDS } from './positionWords';
+import { CARDINAL_WORDS, FIGURE_WORD, NUMBER_SIGN_WORDS, ORDINAL_WORDS } from './positionWords';
 import { refinementValueUnits } from './refinementValueUnits';
 
 /** A range of the original text, `end` exclusive. */
@@ -50,9 +50,6 @@ const ANY_JOINER = '([^\\p{L}\\p{N}]+)';
 
 /** The same run where the text may also write the two words as one: "Guitar2" for Guitar 2, "Bobs" for Bob's. */
 const ANY_OR_NO_JOINER = '([^\\p{L}\\p{N}]*)';
-
-/** A word of figures alone, which opens an indexed name such as "01 Kick". */
-const INDEX_WORD = /^\p{N}+$/u;
 
 /**
  * How far either side of a reading is read for the word beside it, so each reading costs the same
@@ -365,7 +362,7 @@ function getFirstWordForms(tokens: readonly string[], forms: AgentReferenceNameF
 /** The words a name an index word opens ("01 Kick") is also stated by, none for any other name. */
 function getUnindexedWords(tokens: readonly string[]): readonly string[] {
     const [indexWord, ...words] = tokens;
-    return indexWord !== undefined && words.length > 0 && INDEX_WORD.test(indexWord) ? words : [];
+    return indexWord !== undefined && words.length > 0 && FIGURE_WORD.test(indexWord) ? words : [];
 }
 
 /**
