@@ -130,6 +130,16 @@ describe('createGrinderNode', () => {
         });
     }
 
+    async function createLivePresetNode(ctx = makeCtx()) {
+        const node = await createGrinderNode(ctx, undefined, undefined, presetTarget);
+        const { applyPreset } = node;
+        if (!applyPreset) {
+            throw new Error('The bound live node did not expose grouped presets');
+        }
+        postMessage.mockClear();
+        return { node, applyPreset };
+    }
+
     it('flushes older scalar writes and posts one correlated group before later manual writes', async () => {
         vi.stubGlobal(
             'requestAnimationFrame',
@@ -299,6 +309,87 @@ describe('createGrinderNode', () => {
         node.destroy();
         await onClose;
         await expect(applyPreset(presetInput)).rejects.toThrow('Grinder preset requires an open, bound live target');
+    });
+
+    it('bounds pending installations and rejects them when the audio context closes', async () => {
+        const ctx = makeCtx();
+        const { node, applyPreset } = await createLivePresetNode(ctx);
+        const latency = vi.fn();
+        node.onLatencyChanged(latency);
+        const pending = Array.from({ length: 16 }, () => applyPreset(presetInput));
+        const closed = Promise.all(
+            pending.map((request) =>
+                expect(request).rejects.toThrow('Grinder preset target closed before installation was acknowledged')
+            )
+        );
+        await expect(applyPreset(presetInput)).rejects.toThrow('Grinder preset reply capacity exhausted');
+        expect(postMessage).toHaveBeenCalledTimes(16);
+
+        Object.assign(ctx, { state: 'closed' });
+        ctx.dispatchEvent(new Event('statechange'));
+        await closed;
+        node.workletNode.port.onmessage?.(replyToPreset(postedPreset()));
+        expect(latency).not.toHaveBeenCalled();
+    });
+
+    it('keeps both parameter carriers after a reply timeout until a current installation is acknowledged', async () => {
+        const { node, applyPreset } = await createLivePresetNode();
+        const setTargetAtTime = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime });
+        const latency = vi.fn();
+        node.onLatencyChanged(latency);
+        vi.useFakeTimers();
+        try {
+            const timedOut = expect(applyPreset(presetInput)).rejects.toThrow('installation acknowledgement timed out');
+            const expired = postedPreset();
+            node.workletNode.port.onmessage?.(replyToPreset(expired, { correlation: null }));
+            node.workletNode.port.onmessage?.(replyToPreset(expired, { latency: -1 }));
+            await vi.advanceTimersByTimeAsync(5_000);
+            await timedOut;
+
+            node.workletNode.port.onmessage?.(replyToPreset(expired));
+            expect(latency).not.toHaveBeenCalled();
+            node.setParam('gain', 6);
+            expect(postMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({ command: 'set-fallback-param', value: 6 })
+            );
+            expect(setTargetAtTime).toHaveBeenCalledExactlyOnceWith(6, 0, 0.01);
+
+            postMessage.mockClear();
+            const installed = applyPreset(presetInput);
+            node.workletNode.port.onmessage?.(replyToPreset(postedPreset()));
+            await installed;
+            expect(latency).toHaveBeenCalledExactlyOnceWith(96);
+            node.setParam('gain', 7);
+            expect(postMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({ command: 'set-fallback-param', value: 7 })
+            );
+            expect(setTargetAtTime).toHaveBeenCalledTimes(1);
+        } finally {
+            node.destroy();
+            vi.useRealTimers();
+        }
+    });
+
+    it('refuses a malformed preset and allows a failed port post to retry on the same sequence', async () => {
+        const { node, applyPreset } = await createLivePresetNode();
+        await expect(
+            applyPreset({ ...presetInput, parameters: [{ parameterId: 'gain', value: Number.NaN }] })
+        ).rejects.toThrow('Runtime Grinder preset scalar vectors are invalid');
+        expect(postMessage).not.toHaveBeenCalled();
+
+        postMessage.mockImplementationOnce(() => {
+            throw new Error('Preset could not be sent');
+        });
+        await expect(applyPreset(presetInput)).rejects.toThrow('Preset could not be sent');
+        const failed = postedPreset();
+        postMessage.mockClear();
+
+        const installed = applyPreset(presetInput);
+        const retry = postedPreset();
+        expect(retry).toStrictEqual(failed);
+        node.workletNode.port.onmessage?.(replyToPreset(retry));
+        await installed;
     });
 
     it('should resume the context only when it starts out suspended', async () => {
