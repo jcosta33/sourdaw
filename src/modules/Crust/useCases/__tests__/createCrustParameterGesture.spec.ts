@@ -56,10 +56,14 @@ import { setCrustParamWithAudio } from '../crustParamBridge/setCrustParamWithAud
 import { getCrustHandlers } from '../getCrustHandlers';
 import { selectCrustFactoryPreset } from '../selectCrustFactoryPreset';
 
-const audio = vi.hoisted(() => ({ updateDeviceParam: vi.fn() }));
+const audio = vi.hoisted(() => ({
+    updateDeviceParam: vi.fn(),
+    updateDeviceParameters: vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParameters>(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audio.updateDeviceParam,
+    updateDeviceParameters: audio.updateDeviceParameters,
 }));
 
 let recordingContext: AudioContext;
@@ -183,6 +187,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         crustStore.set({});
         flushAutomergeStorageWrites();
         audio.updateDeviceParam.mockReset();
+        audio.updateDeviceParameters.mockReset();
         setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 0 });
         transportStore.set({ ...defaultTransportState, isPlaying: false });
         vi.stubGlobal(
@@ -297,14 +302,19 @@ describe('Crust numeric controller with real Command and CRDT', () => {
             { name: 'Init', gain: 9, ceiling: -6 },
             { name: 'Punchy Bus', gain: 2, ceiling: -0.3 },
         ]);
-        expect(audio.updateDeviceParam.mock.calls.filter(([, , key]) => key === 'gain' || key === 'ceiling')).toEqual([
-            [TRACK, DEVICE, 'gain', 2],
-            [TRACK, DEVICE, 'ceiling', -0.3],
+        expect(audio.updateDeviceParam).not.toHaveBeenCalled();
+        expect(audio.updateDeviceParameters).toHaveBeenCalledTimes(1);
+        const [trackId, deviceId, values] = audio.updateDeviceParameters.mock.calls[0]!;
+        expect([trackId, deviceId]).toEqual([TRACK, DEVICE]);
+        expect(values).toHaveLength(27);
+        expect(values.slice(0, 2)).toEqual([
+            ['gain', 2],
+            ['ceiling', -0.3],
         ]);
         expect(rawDevice().parameterValues).toMatchObject({ gain: 2, ceiling: -0.3 });
         expect(projectedDevice()).toEqual(rawDevice());
         expect(captureUndoHistory().past).toMatchObject([{ action: { type: 'setCrustFactoryPreset' } }]);
-        audio.updateDeviceParam.mockClear();
+        audio.updateDeviceParameters.mockClear();
 
         const presetRevision = crdtApi.captureProjectRevision();
         expect(edit.isCurrent('gain', gainToken)).toBe(false);
@@ -314,6 +324,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(1);
         expect(getCrustState(DEVICE).patch).toMatchObject({ name: 'Punchy Bus', gain: 2, ceiling: -0.3 });
         expect(audio.updateDeviceParam).not.toHaveBeenCalled();
+        expect(audio.updateDeviceParameters).not.toHaveBeenCalled();
         expect(notices).toEqual([]);
 
         expect(rawDevice(otherDeviceId).parameterValues.gain).toBe(4);

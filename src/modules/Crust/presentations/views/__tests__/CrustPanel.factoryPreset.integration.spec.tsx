@@ -41,12 +41,12 @@ import { crustMeterStore, crustStore } from '../../../stores/crustStore';
 import { selectCrustFactoryPreset } from '../../../useCases/selectCrustFactoryPreset';
 import { CrustPanel } from '../CrustPanel';
 
-const updateDeviceParam = vi.hoisted(() =>
-    vi.fn<(trackId: string, deviceId: string, key: string, value: number) => void>()
+const updateDeviceParameters = vi.hoisted(() =>
+    vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParameters>()
 );
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    updateDeviceParam,
+    updateDeviceParameters,
 }));
 
 // Style must precede algorithm because the engine derives an algorithm from style.
@@ -100,10 +100,8 @@ function rawTrack(): Track {
     return track;
 }
 function expectEngine(values: Record<string, number>): void {
-    expect(updateDeviceParam.mock.calls).toEqual(
-        Object.entries(values).map(([key, value]) => ['track', 'a', key, value])
-    );
-    updateDeviceParam.mockClear();
+    expect(updateDeviceParameters).toHaveBeenCalledExactlyOnceWith('track', 'a', Object.entries(values));
+    updateDeviceParameters.mockClear();
 }
 function openPreset(): HTMLElement {
     const trigger = within(screen.getByRole('group', { name: 'Preset selector' })).getByRole('button', {
@@ -134,7 +132,7 @@ async function queueSelection(change: (transaction: object) => void): Promise<vo
 
 describe('Crust factory preset history on the mounted panel', () => {
     beforeEach(async () => {
-        updateDeviceParam.mockReset();
+        updateDeviceParameters.mockReset();
         clearUndoHistory();
         sessionStorage.removeItem('sourdaw-undo-session');
         configureAutomergeStoragePort(null);
@@ -320,7 +318,7 @@ describe('Crust factory preset history on the mounted panel', () => {
             expect(rawTrack()).toEqual(before);
             expect(captureDurableDocumentWitness()).toEqual(witness);
             expect(undoHistoryStore.value).toEqual(history);
-            expect(updateDeviceParam).not.toHaveBeenCalled();
+            expect(updateDeviceParameters).not.toHaveBeenCalled();
             expect(notifications).toMatchObject([
                 { level: 'warning', message: 'Could not load the preset. The Crust device is no longer editable.' },
             ]);
@@ -330,7 +328,7 @@ describe('Crust factory preset history on the mounted panel', () => {
         const before = structuredClone(rawTrack());
         expect(before.devices[0]!.parameterValues).not.toEqual(PUNCHY);
         expect(undoHistoryStore.value?.past).toEqual([]);
-        updateDeviceParam.mockImplementation(() => {
+        updateDeviceParameters.mockImplementation(() => {
             throw new Error('runtime unavailable');
         });
         await selectCrustFactoryPreset('a', 'punchy-bus');
@@ -338,9 +336,9 @@ describe('Crust factory preset history on the mounted panel', () => {
         expect(rawTrack().devices[1]).toEqual(before.devices[1]);
         expect(trackStore.value?.tracks[0]).toEqual(rawTrack());
         expect(undoHistoryStore.value?.past).toMatchObject([{ action: { type: 'setCrustFactoryPreset' } }]);
-        expect(updateDeviceParam.mock.calls).toEqual([
-            ['track', 'a', 'gain', PUNCHY.gain],
-            ['track', 'a', 'gain', PUNCHY.gain],
+        expect(updateDeviceParameters.mock.calls).toEqual([
+            ['track', 'a', Object.entries(PUNCHY)],
+            ['track', 'a', Object.entries(PUNCHY)],
         ]);
         expect(notifications).toMatchObject([
             { level: 'warning', message: 'Punchy Bus was saved, but Crust could not finish applying it.' },
@@ -362,7 +360,7 @@ describe('Crust factory preset history on the mounted panel', () => {
         expect(rawTrack()).toEqual(expected);
         expect(trackStore.value?.tracks[0]).toEqual(expected);
         expect(undoHistoryStore.value?.past).toEqual([]);
-        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(updateDeviceParameters).not.toHaveBeenCalled();
     });
     it('refuses a queued preset when its same-valued device is replaced', async () => {
         const original = rawTrack().devices[0]!;
@@ -381,7 +379,7 @@ describe('Crust factory preset history on the mounted panel', () => {
         expect(getObjectId(rawTrack().devices[0]!)).not.toBe(originalId);
         expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(replacement);
         expect(undoHistoryStore.value?.past).toEqual([]);
-        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(updateDeviceParameters).not.toHaveBeenCalled();
     });
     it('keeps the preset history and runtime untouched when Undo addresses a same-valued replacement', async () => {
         await selectCrustFactoryPreset('a', 'punchy-bus');
@@ -407,6 +405,6 @@ describe('Crust factory preset history on the mounted panel', () => {
         expect(rawTrack().devices[0]).toEqual(replacement);
         expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(replacement);
         expect(undoHistoryStore.value).toEqual(history);
-        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(updateDeviceParameters).not.toHaveBeenCalled();
     });
 });

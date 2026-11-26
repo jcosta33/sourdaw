@@ -6,7 +6,7 @@ import { clampDeviceParamWrite, trackStore, type Device, type Track } from '#/mo
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { isDeviceCarriedByNativeSession } from '../../livePlayback/isDeviceCarriedByNativeSession';
 import { sendNativeDeviceParameters } from '../../livePlayback/sendNativeDeviceParameters';
-import { updateDeviceParam } from '../updateDeviceParam';
+import { updateDeviceParam, updateDeviceParameters } from '../updateDeviceParam';
 
 registerDeviceEnginePorts();
 
@@ -50,19 +50,22 @@ function projectHolding(device: Device): void {
     });
 }
 
+beforeEach(() => {
+    vi.mocked(audioEngine.updateDeviceParam).mockReset();
+    vi.mocked(sendNativeDeviceParameters).mockClear();
+    vi.mocked(isDeviceCarriedByNativeSession).mockReset();
+    vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
+    vi.mocked(clampDeviceParamWrite).mockReset();
+    vi.mocked(clampDeviceParamWrite).mockImplementation(({ value }) => value);
+});
+
+afterEach(() => {
+    trackStore.set(null);
+});
+
 describe('updateDeviceParam', () => {
     beforeEach(() => {
-        vi.mocked(audioEngine.updateDeviceParam).mockClear();
-        vi.mocked(sendNativeDeviceParameters).mockClear();
-        vi.mocked(isDeviceCarriedByNativeSession).mockReset();
-        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
-        vi.mocked(clampDeviceParamWrite).mockReset();
-        vi.mocked(clampDeviceParamWrite).mockImplementation(({ value }) => value);
         projectHolding(createDevice({ id: 'd1', type: 'fermenter' }));
-    });
-
-    afterEach(() => {
-        trackStore.set(null);
     });
 
     it('should forward to the audio engine', () => {
@@ -170,6 +173,76 @@ describe('updateDeviceParam', () => {
         updateDeviceParam('t1', 'd1', 'gain', 0.75);
 
         expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.75);
+        expect(sendNativeDeviceParameters).not.toHaveBeenCalled();
+    });
+});
+
+describe('updateDeviceParameters', () => {
+    beforeEach(() => {
+        projectHolding(createDevice({ id: 'd1', type: 'crust' }));
+    });
+
+    it('writes clamped parameters in their supplied order with no native send for an uncarried Crust', () => {
+        vi.mocked(clampDeviceParamWrite).mockReturnValueOnce(2).mockReturnValueOnce(7);
+
+        updateDeviceParameters('t1', 'd1', [
+            ['style', 19],
+            ['algorithm', 25],
+        ]);
+
+        expect(vi.mocked(clampDeviceParamWrite).mock.calls).toEqual([
+            [{ deviceId: 'd1', paramId: 'style', value: 19 }],
+            [{ deviceId: 'd1', paramId: 'algorithm', value: 25 }],
+        ]);
+        expect(vi.mocked(audioEngine.updateDeviceParam).mock.calls).toEqual([
+            ['t1', 'd1', 'style', 2],
+            ['t1', 'd1', 'algorithm', 7],
+        ]);
+        expect(sendNativeDeviceParameters).not.toHaveBeenCalled();
+    });
+
+    it('sends one carried Crust command with all the clamped values under their native names', () => {
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        vi.mocked(clampDeviceParamWrite).mockReturnValueOnce(1).mockReturnValueOnce(4).mockReturnValueOnce(1);
+
+        updateDeviceParameters('t1', 'd1', [
+            ['style', 1],
+            ['algorithm', 4],
+            ['attackAuto', 8],
+        ]);
+
+        expect(vi.mocked(audioEngine.updateDeviceParam).mock.calls).toEqual([
+            ['t1', 'd1', 'style', 1],
+            ['t1', 'd1', 'algorithm', 4],
+            ['t1', 'd1', 'attackAuto', 1],
+        ]);
+        expect(sendNativeDeviceParameters).toHaveBeenCalledExactlyOnceWith({
+            trackId: 't1',
+            deviceId: 'd1',
+            values: { style: 1, algorithm: 4, attack_auto: 1 },
+        });
+    });
+
+    it('propagates a Web Audio failure without sending an incomplete native command', () => {
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        const failure = new Error('Web Audio update failed');
+        vi.mocked(audioEngine.updateDeviceParam)
+            .mockImplementationOnce(() => {})
+            .mockImplementationOnce(() => {
+                throw failure;
+            });
+
+        expect(() =>
+            updateDeviceParameters('t1', 'd1', [
+                ['style', 1],
+                ['algorithm', 4],
+                ['attackAuto', 1],
+            ])
+        ).toThrow(failure);
+        expect(vi.mocked(audioEngine.updateDeviceParam).mock.calls).toEqual([
+            ['t1', 'd1', 'style', 1],
+            ['t1', 'd1', 'algorithm', 4],
+        ]);
         expect(sendNativeDeviceParameters).not.toHaveBeenCalled();
     });
 });

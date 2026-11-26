@@ -515,6 +515,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         throw new Error('bootstrap wiring fixture does not capture device parameter write authority');
     }),
     updateDeviceParam: noop,
+    updateDeviceParameters: noop,
     holdWebFallbackDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
