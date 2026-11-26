@@ -32,7 +32,7 @@ const FORMATS = {
     },
 } as const;
 type Format = keyof typeof FORMATS;
-type DesktopWindow = Window & { readonly sourdaw: SourdawBridge };
+type DesktopWindow = Window & { readonly sourdaw?: SourdawBridge };
 
 const STARTUP_TIMEOUT_MS = 45_000;
 const SCAN_TIMEOUT_MS = 60_000;
@@ -191,7 +191,11 @@ async function main(): Promise<void> {
                         receipt.renderer = await waitForVisibleLaunchScreen(app.page, STARTUP_TIMEOUT_MS);
                         const { sampleUrl, signature } = await step('read a packaged WAV via app://', () =>
                             app.page.evaluate(async (sample) => {
-                                const sampleUrl = `${await (window as DesktopWindow).sourdaw.paths.samplesBase()}/${sample}`;
+                                const bridge = (window as DesktopWindow).sourdaw;
+                                if (bridge === undefined) {
+                                    throw new Error('Sourdaw desktop bridge is not available');
+                                }
+                                const sampleUrl = `${await bridge.paths.samplesBase()}/${sample}`;
                                 const response = await fetch(sampleUrl);
                                 if (!response.ok) {
                                     throw new Error(`sample fetch returned HTTP ${response.status}: ${sampleUrl}`);
@@ -207,20 +211,26 @@ async function main(): Promise<void> {
                         assert.equal(signature, 'RIFFWAVE');
                         receipt.sample = sampleUrl;
                         const authorized = await step('authorize the fixture folder through native IPC', () =>
-                            app.page.evaluate(
-                                (root) => (window as DesktopWindow).sourdaw.invoke('is_scan_path_authorized', [root]),
-                                scanRoot
-                            )
+                            app.page.evaluate((root) => {
+                                const bridge = (window as DesktopWindow).sourdaw;
+                                if (bridge === undefined) {
+                                    throw new Error('Sourdaw desktop bridge is not available');
+                                }
+                                return bridge.invoke('is_scan_path_authorized', [root]);
+                            }, scanRoot)
                         );
                         assert.equal(authorized, true, `the native addon did not authorize ${scanRoot}`);
                         receipt.nativeIpc = 'is_scan_path_authorized returned true';
                         const scan = await step(
                             'scan the real CLAP fixture with the packaged helper',
                             () =>
-                                app.page.evaluate(
-                                    (root) => (window as DesktopWindow).sourdaw.invoke('scan_plugins', [[root], false]),
-                                    scanRoot
-                                ),
+                                app.page.evaluate((root) => {
+                                    const bridge = (window as DesktopWindow).sourdaw;
+                                    if (bridge === undefined) {
+                                        throw new Error('Sourdaw desktop bridge is not available');
+                                    }
+                                    return bridge.invoke('scan_plugins', [[root], false]);
+                                }, scanRoot),
                             SCAN_TIMEOUT_MS
                         );
                         const plugin = findHarnessPlugin(scan);
