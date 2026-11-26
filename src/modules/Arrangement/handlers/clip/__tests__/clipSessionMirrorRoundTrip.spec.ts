@@ -105,6 +105,7 @@ import { resolveTakeMedia } from '../../../useCases/resolveTakeMedia';
 import { hitTestClipEdge } from '../../../useCases/timelineInteractions/hitTestClipEdge';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { getPlannedTrackState } from '../../getPlannedTrackState';
+import { handleRemoveTrack } from '../../track/handleRemoveTrack';
 import { handleSetTrackColor } from '../../track/handleSetTrackColor';
 import { handleHideTrack } from '../../track/hideTrack';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
@@ -2689,8 +2690,47 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 expect(result).toMatchObject({ status: 'committed' });
                 expect(trackStore.value?.tracks.some((track) => track.id === trackId)).toBe(false);
 
+                // The removal restores the track as the earlier edit left it, so that edit's guarded
+                // inverse finds the state it expects. A restore at the pre-batch state would conflict,
+                // which the group undo reports as a warning while the final value still reads as original.
+                const notices: NotifyPayload[] = [];
+                const bus = createEventBus<NotificationEvents>();
+                bus.on('ui.notify', (payload) => {
+                    notices.push(payload);
+                });
+                setNotificationEventBus(bus);
+
                 expect((await undo()).headConsumed).toBe(true);
+                expect(notices).toEqual([]);
                 expect(read()).toBe(original);
+            }
+        );
+
+        // The group undo cannot tell the restore snapshot's disabled state apart: a restore at the pre-batch
+        // state makes the disable's guarded inverse a no-op, so the final value reads as original either way.
+        // The snapshot itself is what must carry the state the batch left, so it is read where it is written.
+        it.each([
+            [
+                'disableTrack',
+                { type: 'disableTrack', payload: { trackId: TRACK_ID, disabled: true } },
+                { disabled: true, notes: '' },
+            ],
+            [
+                'setTrackNotes',
+                { type: 'setTrackNotes', payload: { trackId: TRACK_ID, notes: 'left by the batch' } },
+                { disabled: false, notes: 'left by the batch' },
+            ],
+        ] as const)(
+            'describes the removal of a track after %s as restoring the state that batch left',
+            (_name, edit, left) => {
+                const remove = { type: 'removeTrack', payload: { trackId: TRACK_ID } } as const;
+
+                const described = handleRemoveTrack.describe(remove, { actions: [edit, remove], actionIndex: 1 });
+
+                expect(described.inverseAction).toMatchObject({
+                    type: 'restoreTrack',
+                    payload: { trackSnapshot: left },
+                });
             }
         );
 

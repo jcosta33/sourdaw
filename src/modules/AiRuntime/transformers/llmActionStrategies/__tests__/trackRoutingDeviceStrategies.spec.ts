@@ -143,7 +143,7 @@ describe('trackStrategy', () => {
             });
         });
 
-        it('bridges notes to their payload, empty notes included, and nothing past the limit', () => {
+        it('bridges notes to their payload, including empty notes and notes of exactly the limit', () => {
             expect(bridge('setTrackNotes', { trackId: 'track-vox', notes: 'Re-record the bridge' })).toEqual({
                 type: 'setTrackNotes',
                 payload: { trackId: 'track-vox', notes: 'Re-record the bridge' },
@@ -152,9 +152,10 @@ describe('trackStrategy', () => {
                 type: 'setTrackNotes',
                 payload: { trackId: 'track-vox', notes: '' },
             });
-            expect(bridge('setTrackNotes', { trackId: 'track-vox', notes: 'x'.repeat(2000) })).not.toHaveProperty(
-                'reason'
-            );
+            expect(bridge('setTrackNotes', { trackId: 'track-vox', notes: 'x'.repeat(2000) })).toEqual({
+                type: 'setTrackNotes',
+                payload: { trackId: 'track-vox', notes: 'x'.repeat(2000) },
+            });
         });
 
         it('rejects disabling the master track', () => {
