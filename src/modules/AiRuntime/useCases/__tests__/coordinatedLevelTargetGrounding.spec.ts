@@ -1794,6 +1794,28 @@ describe('a protection grounds what main grounds outside its object forms', () =
         });
     });
 
+    it('refuses a protection whose name is a track and a clip at once on the compiled bridge and batch routes', () => {
+        const bassClip = {
+            id: 'clip-bass',
+            name: 'Bass',
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 8,
+            noteCount: 0,
+            locked: false,
+        };
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) =>
+                track.id === drums.id ? { ...track, clips: [bassClip], clipCount: 1 } : track
+            ),
+        };
+        const prompt = 'turn the Drums down 3 dB and keep Bass punchy';
+
+        expect(bridgeCompiledGainList(prompt, [drums], context).actions).toEqual([]);
+        expect(groundGainList(prompt, [drums], context, true).status).toBe('rejected');
+    });
+
     describe('a protection pointing at a selected clip keeps the compiled refusal', () => {
         const loop = {
             id: 'clip-loop-a',

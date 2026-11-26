@@ -415,7 +415,7 @@ function readNonTrackReferences(
     const namesTracks = (id: string) => trackIds.has(id) || groupIds.has(id);
     const stated = references.filter((reference) => reference.start >= slot.start && reference.end <= slot.end);
     return stated
-        .filter((reference) => !Array.from(reference.denotes).some(namesTracks))
+        .filter((reference) => !Array.from(reference.denotes).every(namesTracks))
         .map(({ start, end }) => ({ start, end }));
 }
 
