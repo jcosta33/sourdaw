@@ -17,6 +17,7 @@ import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiSto
 import { externalLatencyReporters } from './externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
+import { externalPluginServiceMessages } from './externalPluginServiceMessages';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstancePluginIds, loadedExternalInstances } from './loadedExternalInstances';
 import { tailRevisionsDuringLoad } from './tailRevisionsDuringLoad';
@@ -38,6 +39,7 @@ export function forgetPluginInstance(instanceId: string): void {
     // A destroyed instance rings for nothing; an export must not reserve its tail.
     dropExternalPluginTail(instanceId);
     tailRevisionsDuringLoad.delete(instanceId);
+    externalPluginServiceMessages.delete(instanceId);
     externalPluginActivationStore.update((state) => {
         const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
         delete byInstanceId[instanceId];

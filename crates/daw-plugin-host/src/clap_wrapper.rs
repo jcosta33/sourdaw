@@ -61,10 +61,10 @@ use crate::scanner::{
     category_from_clap_features, clap_library_path, owned_feature_list, ScanError,
 };
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorClosed, EditorVisibility, EditorWindowAsks,
-    EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    PluginError, PluginHostRequestNotifier, ProcessMode, ProcessingGate, SharedEditorWindow,
-    MAX_MIDI_EVENTS_PER_BLOCK,
+    signal_pending_process_refusal, signal_pending_service_change, AudioPlugin, EditorClosed,
+    EditorVisibility, EditorWindowAsks, EditorWindowResizer, HostMidiEvent, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, PluginError, PluginHostRequestNotifier, ProcessMode,
+    ProcessingGate, ServiceChange, SharedEditorWindow, MAX_MIDI_EVENTS_PER_BLOCK,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -204,6 +204,9 @@ pub struct ClapWrapper {
     /// block would otherwise print once per control visit for the rest of the
     /// session.
     process_refusal_reported: bool,
+    /// The out-of-service reason this wrapper last answered `take_service_change`
+    /// with, so a state it already published is not published again.
+    published_out_of_service: Option<String>,
     /// The plugin's declared audio port layout and the preallocated buffers
     /// that honour it. Replaces a hardcoded stereo pair that ignored the
     /// declaration entirely.
@@ -1381,6 +1384,7 @@ impl ClapWrapper {
             process_refused: false,
             processing_start_refused: false,
             process_refusal_reported: false,
+            published_out_of_service: None,
             audio,
             is_instrument,
             accepts_note_events,
@@ -1433,6 +1437,7 @@ impl ClapWrapper {
             process_refused: false,
             processing_start_refused: false,
             process_refusal_reported: false,
+            published_out_of_service: None,
             audio: AudioBusLayout::portless(),
             is_instrument: false,
             accepts_note_events: true,
@@ -1633,6 +1638,23 @@ impl ClapWrapper {
     #[doc(hidden)]
     pub fn latch_engine_owned_command_fixture_process_refusal(&mut self) {
         self.latch_process_refusal();
+    }
+
+    /// Latch a refused start of processing on a fixture, exactly as the audio
+    /// thread does: the wrapper's own flag, and the process-wide service hint.
+    /// A fixture has no plugin to refuse `start_processing`, so this is the only
+    /// way a downstream host can drive the visit that publishes it.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn latch_engine_owned_command_fixture_processing_start_refusal(&mut self) {
+        // A refusal stands while the host wants processing and the plugin is not
+        // in it, so the gate is left in exactly that state.
+        self.processing.request_start();
+        self.processing.mark_stopped();
+        if !self.processing_start_refused {
+            self.processing_start_refused = true;
+            signal_pending_service_change();
+        }
     }
 
     /// Whether the recorded failure has already been said out loud. Read back to
@@ -2823,6 +2845,11 @@ impl ClapWrapper {
             };
             if started {
                 self.processing.mark_started();
+                if self.processing_start_refused {
+                    // A refused start has now succeeded: the slot is served
+                    // again, and the control path publishes it.
+                    signal_pending_service_change();
+                }
             }
             return;
         }
@@ -2909,8 +2936,9 @@ impl ClapWrapper {
         if !self.processing.is_processing() {
             // Either the plugin refused to start, or a stop has been requested
             // and performed. Either way it must not be handed a block.
-            if self.processing.wants_processing() {
+            if self.processing.wants_processing() && !self.processing_start_refused {
                 self.processing_start_refused = true;
+                signal_pending_service_change();
             }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
@@ -4163,6 +4191,26 @@ impl HostedPluginRuntime for ClapWrapper {
     fn has_passed_a_block_unprocessed(&self) -> bool {
         self.processing_start_refused
     }
+
+    fn take_service_change(&mut self) -> Option<ServiceChange> {
+        // The latch never resets, so "out of service now" is the refusal still
+        // standing: the host wants processing and the plugin is not in it. A
+        // requested stop is not a refusal.
+        let refused_now = self.processing_start_refused
+            && self.processing.wants_processing()
+            && !self.processing.is_processing();
+        let current = refused_now.then(|| {
+            // The refused-start path always hands the engine's input back
+            // (`copy_inputs_to_outputs`), instrument or not.
+            format!(
+                "'{}' refused to start processing; its blocks pass through unprocessed",
+                self.name
+            )
+        });
+        let change = ServiceChange::between(&self.published_out_of_service, &current)?;
+        self.published_out_of_service = current;
+        Some(change)
+    }
 }
 
 impl Drop for ClapWrapper {
@@ -4706,6 +4754,7 @@ mod tests {
             process_refused: false,
             processing_start_refused: false,
             process_refusal_reported: false,
+            published_out_of_service: None,
             audio,
             // Derived from the stub's own descriptor, the way the loader
             // derives it, so a stub declaring `instrument` is hosted exactly as
@@ -6214,6 +6263,128 @@ mod tests {
             0,
             "no fallback was needed while the audio thread was still pumping"
         );
+    }
+
+    /// Whether the stub below accepts `start_processing`; a test flips it to model
+    /// a plugin that refuses once and then accepts.
+    static STUB_START_ACCEPTS: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    unsafe extern "C" fn stub_start_processing_refusing(_plugin: *const clap_plugin) -> bool {
+        STUB_START_ACCEPTS.load(Ordering::Relaxed)
+    }
+
+    /// A refused start publishes out of service once; the start that later
+    /// succeeds raises the hint and publishes back in service once. A requested
+    /// stop after a refusal is not out of service.
+    #[test]
+    fn a_refused_start_that_later_succeeds_is_published_back_in_service_once() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        // SAFETY: `clap_plugin` is raw pointers and `Option` fn pointers, for which
+        // all-zero bytes are null and `None`.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+        crate::traits::take_pending_service_change_signal();
+
+        process_one_block(&mut wrapper);
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+        assert_eq!(wrapper.take_service_change(), None);
+        crate::traits::take_pending_service_change_signal();
+
+        STUB_START_ACCEPTS.store(true, Ordering::Relaxed);
+        process_one_block(&mut wrapper);
+        assert!(
+            crate::traits::take_pending_service_change_signal(),
+            "the start that succeeds after a refusal raises the service hint"
+        );
+        assert_eq!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::BackInService)
+        );
+        assert_eq!(wrapper.take_service_change(), None);
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+    }
+
+    /// A stop requested after a refusal leaves the plugin unprocessed, which is
+    /// not the host taking it out of service.
+    #[test]
+    fn a_requested_stop_after_a_refused_start_is_not_out_of_service() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        STUB_START_ACCEPTS.store(false, Ordering::Relaxed);
+        // SAFETY: as above.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+
+        process_one_block(&mut wrapper);
+        assert!(matches!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::OutOfService { .. })
+        ));
+
+        wrapper.processing_gate().request_stop();
+        assert_eq!(
+            wrapper.take_service_change(),
+            Some(ServiceChange::BackInService)
+        );
+    }
+
+    /// A plugin that answers `start_processing` with false is taken out of
+    /// service by the block that finds it so: the audio thread raises the
+    /// service hint on that transition, and the control path then publishes the
+    /// reason once.
+    #[test]
+    fn a_plugin_refusing_to_start_processing_raises_the_service_hint_and_is_published_once() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        // SAFETY: `clap_plugin` is raw pointers and `Option` fn pointers, for which
+        // all-zero bytes are null and `None`.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_refusing);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+        crate::traits::take_pending_service_change_signal();
+
+        process_one_block(&mut wrapper);
+
+        assert!(
+            crate::traits::take_pending_service_change_signal(),
+            "the refused start raises the service hint"
+        );
+        process_one_block(&mut wrapper);
+        assert!(
+            !crate::traits::take_pending_service_change_signal(),
+            "a refusal already latched raises nothing again"
+        );
+        let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
+            panic!("a refused start is published as out of service");
+        };
+        assert!(
+            reason.ends_with("refused to start processing; its blocks pass through unprocessed"),
+            "{reason}"
+        );
+        assert_eq!(wrapper.take_service_change(), None);
     }
 
     /// The claim the rest of this section only approximates: both transitions
@@ -8491,7 +8662,9 @@ mod tests {
     // "the plugin failed to process, and the output buffers are in an undefined
     // state". A host that discards the answer plays those buffers.
 
-    use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
+    use crate::traits::{
+        take_pending_process_refusal_signal, ServiceChange, PROCESS_REFUSAL_HINT_TEST_LOCK,
+    };
     use clap_sys::process::{
         CLAP_PROCESS_CONTINUE, CLAP_PROCESS_CONTINUE_IF_NOT_QUIET, CLAP_PROCESS_SLEEP,
         CLAP_PROCESS_TAIL,
@@ -8726,6 +8899,31 @@ mod tests {
             wrapper.process_refused,
             "the portless path reads the status too"
         );
+    }
+
+    /// A refused start is published to the slot once, naming the plugin and what
+    /// happens to its blocks. The wake is covered where the transition is
+    /// raised on the audio path and in `sourdaw-native`'s drain tick.
+    #[test]
+    fn a_refused_start_is_published_as_a_service_change_once() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+        assert_eq!(wrapper.take_service_change(), None);
+
+        wrapper.processing_start_refused = true;
+        wrapper.processing_gate().request_start();
+
+        let Some(ServiceChange::OutOfService { reason }) = wrapper.take_service_change() else {
+            panic!("a refused start is published as out of service");
+        };
+        assert!(
+            reason.ends_with("refused to start processing; its blocks pass through unprocessed"),
+            "{reason}"
+        );
+        assert_eq!(wrapper.take_service_change(), None);
     }
 
     /// The audio thread may not print, so it latches the failure and raises the
