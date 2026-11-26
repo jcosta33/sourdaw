@@ -44,6 +44,7 @@ import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePrepared
 import { readAgentRunBoundRefusal } from '../validators/readAgentRunBoundRefusal';
 import { type AgentRunPlanBoundRefusal } from '../validators/readAgentRunPlanBoundRefusal';
 
+import { admitRecoveredAgentRuns } from './admitRecoveredAgentRuns';
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import {
     type ClaimAgentRunWorkLeaseResult as ClaimWorkLeaseResult,
@@ -2350,13 +2351,8 @@ function acknowledgeAgentRunCancellation(input: {
 function recoverInterruptedAgentRunState(input?: { recoveredAt?: number }): { recoveredRunIds: string[] } {
     const recoveredAt = input?.recoveredAt ?? Date.now();
     const current = readAgentRunState();
-    const recovery = recoverInterruptedRunState(current, recoveredAt);
+    const recovery = admitRecoveredAgentRuns(current, recoverInterruptedRunState(current, recoveredAt));
     if (recovery.recoveredRunIds.length > 0) {
-        for (const run of recovery.state.runs) {
-            if (recovery.recoveredRunIds.includes(run.runId)) {
-                requireAdmittedAgentRun(run);
-            }
-        }
         persistAgentRunState(recovery.state, recoveredAt);
     }
     return { recoveredRunIds: recovery.recoveredRunIds };

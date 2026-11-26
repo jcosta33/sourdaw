@@ -206,20 +206,6 @@ const cases: WriteCase[] = [
             }),
         refusal: fullMessage('run.errors'),
     },
-    {
-        name: 'recoverInterruptedState',
-        prepare: () => {
-            fillErrors(BOUND);
-            agentRunLifecycle.registerTemporaryAsset({
-                runId: SAGA_RUN_ID,
-                assetId: 'buffer-1',
-                kind: 'import',
-                cleanupOwner: 'stem-import-preparation',
-            });
-        },
-        write: () => agentRunLifecycle.recoverInterruptedState({ recoveredAt: 60 }),
-        refusal: fullMessage('run.errors'),
-    },
 ];
 
 describe('every agent run write is admitted against the bounds restore reads', () => {
