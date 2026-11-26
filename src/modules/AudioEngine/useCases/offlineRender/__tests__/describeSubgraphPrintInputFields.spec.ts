@@ -295,6 +295,71 @@ describe('describeSubgraphPrintInput track and automation lane fields', () => {
             expect(select(changed).refs).toEqual(select(scene).refs);
         });
 
+        describe('a follower on a member track of a lane that drives the target', () => {
+            const memberFollower: Lane = {
+                ...lane,
+                id: 'member-follower',
+                trackId: MEMBER_ID,
+                linkedLaneId: 'gain-lane',
+            };
+            const panLane: Lane = { ...mixerLane, id: 'pan-lane', parameterId: 'pan' };
+            const lanes = [memberFollower, mixerLane, panLane];
+            const scene = { ...baseline, lanes };
+
+            it('reads the target fader lane the follower follows, as the render resolves it over the full list', () => {
+                const changed = { ...baseline, lanes: withPointsOn(lanes, mixerLane.id) };
+                expect(describeScene(scene).automationLanes.map((entry) => entry.id)).toEqual([
+                    memberFollower.id,
+                    mixerLane.id,
+                ]);
+                expect(describeScene(changed)).not.toEqual(describeScene(scene));
+                expect(select(changed).refs).not.toEqual(select(scene).refs);
+            });
+
+            it('does not read the target pan lane the follower does not follow', () => {
+                const changed = { ...baseline, lanes: withPointsOn(lanes, panLane.id) };
+                expect(describeScene(changed)).toEqual(describeScene(scene));
+                expect(select(changed).refs).toEqual(select(scene).refs);
+            });
+
+            it('walks on through the target fader lane to the lane it follows', () => {
+                const farLeader: Lane = { ...lane, id: 'far-leader', trackId: OTHER_ID };
+                const chained = [memberFollower, { ...mixerLane, linkedLaneId: farLeader.id }, farLeader];
+                const changed = { ...baseline, lanes: withPointsOn(chained, farLeader.id) };
+                expect(describeScene(changed)).not.toEqual(describeScene({ ...baseline, lanes: chained }));
+            });
+        });
+
+        it('walks each follower chain on its own when a target chain and a member chain reach one leader', () => {
+            const sharedLeader: Lane = { ...lane, id: 'shared-leader', trackId: OTHER_ID, linkedLaneId: 'gain-lane' };
+            const farLeader: Lane = { ...lane, id: 'far-leader', trackId: OTHER_ID };
+            const targetFollower: Lane = { ...lane, linkedLaneId: sharedLeader.id };
+            const memberFollower: Lane = {
+                ...lane,
+                id: 'member-follower',
+                trackId: MEMBER_ID,
+                linkedLaneId: sharedLeader.id,
+            };
+            const lanes = [
+                targetFollower,
+                memberFollower,
+                sharedLeader,
+                { ...mixerLane, linkedLaneId: farLeader.id },
+                farLeader,
+            ];
+            const scene = { ...baseline, lanes };
+            expect(
+                describeScene(scene)
+                    .automationLanes.map((entry) => entry.id)
+                    .toSorted()
+            ).toEqual(['far-leader', 'gain-lane', 'lane-1', 'member-follower', 'shared-leader']);
+            for (const id of [mixerLane.id, farLeader.id]) {
+                const changed = { ...baseline, lanes: withPointsOn(lanes, id) };
+                expect(describeScene(changed)).not.toEqual(describeScene(scene));
+                expect(select(changed).refs).not.toEqual(select(scene).refs);
+            }
+        });
+
         it('reads no lane that drives the target fader, whether or not a follower names it', () => {
             const scene = { ...baseline, lanes: [lane, mixerLane] };
             const changed = { ...baseline, lanes: [lane, { ...mixerLane, points: [point] }] };
