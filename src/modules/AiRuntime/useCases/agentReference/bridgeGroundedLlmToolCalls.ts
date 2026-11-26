@@ -84,6 +84,7 @@ import { type BoundRefinementValue, type RefinementClause } from './bindRefineme
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
+import { clipProtectionReading } from './clipProtectionReading';
 import {
     getSpentCreationBudgetReason,
     SPENT_CREATION_BUDGET_INFIX,
@@ -169,7 +170,7 @@ import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
 import { proposalProtection } from './proposalProtection';
 import { protectionObjectForms } from './protectionObjectForms';
-import { readExplicitProtections } from './readExplicitProtections';
+import { inertProtectionClauses, readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
@@ -7488,9 +7489,11 @@ function refuseWhenProtectionIsUnresolved(
 
 /**
  * The clips a request's explicit protections and exclusions keep, whether every member resolved, and
- * the text that reading was taken from. A resolved track clause is blanked and the request read again
- * only when the whole request does not parse completely, since removing a following track clause can
- * extend an earlier exclusion; the blanked text keeps every offset of the request.
+ * the text that reading was taken from. The clauses the track reader classifies are blanked and the
+ * request read again only when the whole request does not parse completely, since removing a following
+ * track clause can extend an earlier exclusion: a resolved track clause, and a protection clause that
+ * protects nothing and speaks of no clip ("keep the Kick level punchy"). The blanked text keeps every
+ * offset of the request.
  */
 function readClipProtection(
     prompt: string,
@@ -7501,7 +7504,10 @@ function readClipProtection(
     if (clipProtection.complete) {
         return { ...clipProtection, read: prompt };
     }
-    const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+    const inertClauses = inertProtectionClauses
+        .read(prompt, context)
+        .filter(({ start, end }) => !clipProtectionReading.namesClip(prompt.slice(start, end), context));
+    const clipPrompt = [...trackProtections.resolvedTrackClauses, ...inertClauses].reduce(
         (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
         prompt
     );

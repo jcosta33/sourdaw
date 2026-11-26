@@ -43,6 +43,7 @@ const courtesyOpeningPattern = new RegExp(
     'iu'
 );
 const referenceSeparatorPattern = /,\s*(?:and\b\s*)?|\s+and\s+/giu;
+const clipNounPattern = /\bclips?\b/iu;
 
 /** A list member's text and where it stands in the request. */
 export type ReferenceMember = Range & { text: string };
@@ -266,7 +267,7 @@ function resolveProtectedClipIds(reference: string, clips: readonly ProjectClip[
 
 function isTrackOnlyReference(reference: string, context: ProjectContext): boolean {
     const maskedReference = scanPromptQuotedText(reference).maskedText;
-    if (/\btracks?\b/iu.test(maskedReference) && !/\bclips?\b/iu.test(maskedReference)) {
+    if (/\btracks?\b/iu.test(maskedReference) && !clipNounPattern.test(maskedReference)) {
         return true;
     }
     const normalizedReference = normalizePromptText(reference);
@@ -343,8 +344,17 @@ function readClipProtection(
     };
 }
 
+/** Whether a text speaks of a clip: by the clip noun, or by naming or selecting a project clip. */
+function namesClip(text: string, context: ProjectContext): boolean {
+    const clips = context.tracks.flatMap((track) => track.clips);
+    return (
+        clipNounPattern.test(scanPromptQuotedText(text).maskedText) ||
+        resolveProtectedClipIds(text, clips, context).length > 0
+    );
+}
+
 /**
  * One reading of a request's explicit clip protections and exclusions, shared by the callers that
  * read its protected clips and completeness and the one that reads which members did not resolve.
  */
-export const clipProtectionReading = { read: readClipProtection } as const;
+export const clipProtectionReading = { read: readClipProtection, namesClip } as const;

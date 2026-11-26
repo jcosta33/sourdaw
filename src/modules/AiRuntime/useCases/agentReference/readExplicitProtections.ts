@@ -17,6 +17,7 @@ import {
     type ProtectableObjectName,
     type Token,
 } from './protectionObjectForms';
+import { protectsNothing } from './protectsNothing';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { readRequestTargetTrackIds } from './readRequestTargetTrackIds';
 import { readRoleFamilyProtection } from './readRoleFamilyProtection';
@@ -587,6 +588,19 @@ export function readExplicitProtections(
     context: ProjectContext,
     options: { requireUniqueTrackOwners?: boolean } = {}
 ): ProtectionReading {
+    return readProtectionClauses(prompt, context, options).reading;
+}
+
+/** The whole clauses, from their protection verb, that this reader reads as protecting nothing. */
+export const inertProtectionClauses = {
+    read: (prompt: string, context: ProjectContext): Range[] => readProtectionClauses(prompt, context, {}).inertClauses,
+} as const;
+
+function readProtectionClauses(
+    prompt: string,
+    context: ProjectContext,
+    options: { requireUniqueTrackOwners?: boolean }
+): { reading: ProtectionReading; inertClauses: Range[] } {
     const candidates = [
         ...refinementRequestReading.candidates(context),
         ...protectionCandidates.extraCandidates(context),
@@ -614,6 +628,7 @@ export function readExplicitProtections(
     // Keep each protection separate until its own carve-out is read, so it cannot relax an earlier clause.
     const readings: Accumulator[] = [];
     const resolvedTrackClauses: Range[] = [];
+    const inertClauses: Range[] = [];
     let found = createAccumulator();
     const slots = protectionSlots.read(masked);
     const objects = protectionCandidates.protectableObjects(context);
@@ -664,8 +679,11 @@ export function readExplicitProtections(
         ) {
             resolvedTrackClauses.push(slot.completeRange);
         }
+        if (protectsNothing(slot, masked, reading)) {
+            inertClauses.push(slot.clause);
+        }
     }
-    return {
+    const protections: ProtectionReading = {
         resolvedTrackClauses,
         unresolved: [...new Set(readings.flatMap((reading) => [...reading.unresolved]))],
         protectedTrackIds: [
@@ -677,4 +695,5 @@ export function readExplicitProtections(
             ...reading.complements,
         ]),
     };
+    return { reading: protections, inertClauses };
 }
