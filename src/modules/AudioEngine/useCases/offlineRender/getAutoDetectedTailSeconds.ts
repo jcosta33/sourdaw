@@ -3,10 +3,13 @@ import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
 
 import { estimateRenderTailSeconds, type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
 
+import { type HostedTailSamplesByInstanceId } from './hostedPluginTail';
 import { projectDeviceTails } from './projectDeviceTails';
 import { shouldCreateOfflineStrip } from './shouldCreateOfflineStrip';
 
 type DeviceTailLookup = (deviceType: string) => TailDeclarationLike | undefined;
+/** What a hosted device's tail is read from: the instances' reports and the rate they are in. */
+type HostedTails = Pick<GetAutoDetectedTailSecondsInput, 'hostedTailSamplesByInstanceId' | 'engineSampleRate'>;
 type TailAutomationLane = { trackId: string; parameterId: string; enabled?: boolean };
 
 type GetAutoDetectedTailSecondsInput = {
@@ -18,6 +21,15 @@ type GetAutoDetectedTailSecondsInput = {
      * downstream of both, supplies the lookup.
      */
     tailForDeviceType: DeviceTailLookup;
+    /**
+     * What each hosted instance reported, as `externalPluginTailStore` holds it.
+     * A caller that renders from the store passes the snapshot it subscribed to,
+     * and an export passes the value it reads after refreshing, so both size
+     * from the same figure.
+     */
+    hostedTailSamplesByInstanceId: HostedTailSamplesByInstanceId;
+    /** The rate those frames are in: the running engine's, or `null` when none runs. */
+    engineSampleRate: number | null;
     /**
      * Whether this export silences muted tracks. Mirrors `createOfflineTrackStrip`'s
      * own `honorMuted`: a mixdown bakes mute in, a stem set deliberately does not.
@@ -45,12 +57,14 @@ type GetAutoDetectedTailSecondsInput = {
 function projectDevices(
     track: Track,
     tailForDeviceType: DeviceTailLookup,
+    hostedTails: HostedTails,
     automationLanes: readonly TailAutomationLane[]
 ) {
     return projectDeviceTails({
         devices: track.devices,
         automationLanes: automationLanes.filter((lane) => lane.trackId === track.id),
         tailForDeviceType,
+        ...hostedTails,
     });
 }
 
@@ -72,10 +86,14 @@ function projectRouting(track: Track) {
 function projectTrack(
     track: Track,
     tailForDeviceType: DeviceTailLookup,
+    hostedTails: HostedTails,
     automationLanes: readonly TailAutomationLane[]
 ) {
     if (track.freezeState.status !== 'frozen') {
-        return { ...projectRouting(track), devices: projectDevices(track, tailForDeviceType, automationLanes) };
+        return {
+            ...projectRouting(track),
+            devices: projectDevices(track, tailForDeviceType, hostedTails, automationLanes),
+        };
     }
 
     const baked = resolveFrozenBufferTail(track.freezeState.renderSettings);
@@ -94,7 +112,9 @@ function projectTrack(
     // would otherwise re-enter as exactly the ceiling, and the outer clamp check
     // (`> MAX_AUTO_TAIL_SECONDS`) would read false for a truncated estimate.
     const chainOnly = estimateRenderTailSeconds([
-        { devices: projectDevices(track, tailForDeviceType, automationLanes) },
+        {
+            devices: projectDevices(track, tailForDeviceType, hostedTails, automationLanes),
+        },
     ]).uncappedSeconds;
     return {
         ...projectRouting(track),
@@ -113,11 +133,14 @@ function projectTrack(
  */
 export function getAutoDetectedTailSeconds({
     tailForDeviceType,
+    hostedTailSamplesByInstanceId,
+    engineSampleRate,
     honorMuted,
     tracks: explicitTracks,
     soloMode: explicitSoloMode,
     automationLanes = [],
 }: GetAutoDetectedTailSecondsInput): ReturnType<typeof estimateRenderTailSeconds> {
+    const hostedTails = { hostedTailSamplesByInstanceId, engineSampleRate };
     const tracks = explicitTracks ?? trackStore.value?.tracks ?? [];
     const busIds = new Set(tracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const renderable = tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track));
@@ -127,7 +150,7 @@ export function getAutoDetectedTailSeconds({
         // with `honorMuted: false`, so mute and solo change nothing about which
         // chains run and every renderable track keeps its tail.
         return estimateRenderTailSeconds(
-            renderable.map((track) => projectTrack(track, tailForDeviceType, automationLanes))
+            renderable.map((track) => projectTrack(track, tailForDeviceType, hostedTails, automationLanes))
         );
     }
 
@@ -172,6 +195,6 @@ export function getAutoDetectedTailSeconds({
     });
 
     return estimateRenderTailSeconds(
-        contributing.map((track) => projectTrack(track, tailForDeviceType, automationLanes))
+        contributing.map((track) => projectTrack(track, tailForDeviceType, hostedTails, automationLanes))
     );
 }

@@ -391,6 +391,7 @@ mod tests {
     use crate::host::plugin_editor_asks::editor_window_host;
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::host::plugin_window::{PluginEditorWindow, PluginWindowHost};
+    use crate::host::tail_watcher::publish_pending_tail_changes_within;
     use crate::state::PluginInstanceData;
     use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::{ClapWrapper, EditorVisibility};
@@ -836,12 +837,76 @@ mod tests {
 
         tick(&engine_plugins, &sink);
 
+        let events = sink.events();
+        assert_eq!(events.len(), 1, "one flagged instance publishes one event");
+        let (name, mut payload) = events.into_iter().next().expect("one event");
+        assert_eq!(name, crate::host::tail_watcher::PLUGIN_TAIL_CHANGED_EVENT);
+        // The sequence is process-wide, so only that it is a taken, positive
+        // number is fixed; its order is pinned where it is taken.
+        let sequence = payload
+            .as_object_mut()
+            .and_then(|fields| fields.remove("sequence"))
+            .and_then(|sequence| sequence.as_u64());
+        assert!(
+            sequence.is_some_and(|sequence| sequence >= 1),
+            "the event must carry the sequence the frontend orders it by"
+        );
         assert_eq!(
-            sink.events(),
-            vec![(
-                crate::host::tail_watcher::PLUGIN_TAIL_CHANGED_EVENT.to_string(),
-                serde_json::json!({ "instance_id": "inst-1", "tail_samples": 0 }),
-            )]
+            payload,
+            serde_json::json!({ "instance_id": "inst-1", "tail_samples": 0 })
+        );
+    }
+
+    /// The sequence orders the event against a read of the same instance only if
+    /// it is taken once the instance's control path is ours: a number taken while
+    /// the tick still waits for the audio thread's seam is older than a read that
+    /// got in first. The test holds the seam, takes a marker while the tick waits,
+    /// and releases it, so the event's number has to come after the marker.
+    #[test]
+    fn a_tail_event_takes_its_sequence_once_the_control_path_is_reached() {
+        let _guard = hint_guard();
+        let wrapper = fixture_wrapper();
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_tail_dirty();
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        let sink = Arc::new(RecordingEventSink::default());
+        let seam = runtime
+            .try_claim_control()
+            .expect("an idle fixture's access seam is free");
+
+        let ticking_sink = Arc::clone(&sink);
+        let (started, ticking_started) = std::sync::mpsc::channel();
+        let ticker = std::thread::spawn(move || {
+            started.send(()).expect("the test is listening");
+            // A deadline only the release below can beat, so a slow machine
+            // cannot end the wait before the test has taken its marker.
+            publish_pending_tail_changes_within(
+                Duration::from_secs(10),
+                &engine_plugins,
+                ticking_sink.as_ref(),
+            );
+        });
+        ticking_started
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the ticker starts");
+        // Let the ticker reach the seam wait. A stall that delays it past the
+        // marker can only make this test pass vacuously (the event then takes its
+        // sequence after the marker either way); it can never make it fail.
+        std::thread::sleep(Duration::from_millis(50));
+        let marker = crate::host::tail_watcher::next_tail_sequence();
+        drop(seam);
+        ticker.join().expect("the tick finishes");
+
+        let events = sink.events();
+        let sequence = events
+            .iter()
+            .find(|(name, _)| name == crate::host::tail_watcher::PLUGIN_TAIL_CHANGED_EVENT)
+            .and_then(|(_, payload)| payload["sequence"].as_u64())
+            .expect("the flagged tail was published with a sequence");
+        assert!(
+            sequence > marker,
+            "the event's sequence {sequence} was taken before the control path was reached ({marker} came later)"
         );
     }
 

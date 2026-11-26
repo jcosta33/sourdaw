@@ -328,6 +328,7 @@ describe('external plugin capture while saved-state restore is pending (issue 36
                 latency_samples: 0,
                 latency_ms: 0,
                 tail_samples: 0,
+                tail_sequence: 0,
                 engine_plugin_id: 1000,
             })
         );

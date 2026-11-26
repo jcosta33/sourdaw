@@ -10,6 +10,9 @@ export { audioRecordingStore } from './audioRecordingStore';
 export type { AdjustmentApplicationState } from './adjustmentApplicationStore';
 export { adjustmentApplicationStore } from './adjustmentApplicationStore';
 
+export type { EngineRtDiagnosticsState } from './engineRtDiagnosticsStore';
+export { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from './engineRtDiagnosticsStore';
+
 export type { NativeEngineRearmState } from './nativeEngineRearmStore';
 export { defaultNativeEngineRearmState, nativeEngineRearmStore } from './nativeEngineRearmStore';
 
