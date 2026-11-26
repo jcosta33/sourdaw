@@ -81,7 +81,6 @@ import {
     resolveBatchLocalBindingProducer,
 } from './batchLocalBindingProducers';
 import { type BoundRefinementValue, type RefinementClause } from './bindRefinementFigure';
-import { blankRanges } from './blankRanges';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
@@ -116,10 +115,7 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getUnresolvedClipProtectionMembers } from './getUnresolvedClipProtectionMembers';
-import {
-    bindDecibelFiguresToReferences,
-    type PromptReferenceSpan,
-} from './groundingStrategies/bindDecibelFiguresToReferences';
+import { bindDecibelFiguresToReferences } from './groundingStrategies/bindDecibelFiguresToReferences';
 import {
     classifyPromptDecibelFigures,
     type PromptDecibelFigure,
@@ -138,10 +134,15 @@ import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPrompt
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
 import { getIntentPhraseIndex } from './groundingStrategies/getIntentPhraseIndex';
+import {
+    getNamedReferenceSpans,
+    getReferenceRanges,
+    type ReferenceRange,
+} from './groundingStrategies/getNamedReferenceSpans';
 import { getNearestIntentAction } from './groundingStrategies/getNearestIntentAction';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { getReferencedCancellationAction } from './groundingStrategies/getReferencedCancellationAction';
-import { getStatedDecibelLevelForms } from './groundingStrategies/getStatedDecibelLevelForms';
+import { getSendLaneBusId } from './groundingStrategies/getSendLaneBusId';
 import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
@@ -152,6 +153,12 @@ import { maskProjectReferences } from './groundingStrategies/maskProjectReferenc
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
+import {
+    continuesLevelChange,
+    getAnchorReferences,
+    getAnchorValueScope,
+    isLevelContinuationClause,
+} from './groundingStrategies/percentLevelContinuation';
 import { groundPostScopeAdmission } from './groundingStrategies/postScopeAdmissionStrategy';
 import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTargetEvidenceAdmissionStrategy';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
@@ -786,24 +793,6 @@ function isExplicitDirectionalCommandClause(
     });
 }
 
-type ReferenceRange = {
-    end: number;
-    start: number;
-};
-
-function getReferenceRanges(commandSource: string, reference: string): ReferenceRange[] {
-    const referenceTokens = normalizePromptText(reference).split(' ').filter(Boolean);
-    if (referenceTokens.length === 0) {
-        return [];
-    }
-    const normalizedReferencePattern = referenceTokens.map(escapeRegExp).join('[^\\p{L}\\p{N}]+');
-    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${normalizedReferencePattern}(?![\\p{L}\\p{N}])`, 'giu');
-    return [...commandSource.matchAll(pattern)].map((match) => ({
-        start: match.index,
-        end: match.index + match[0].length,
-    }));
-}
-
 function getControlCarrierEnd(commandSource: string, carrierPhrases: readonly string[]): number | null {
     let carrierEnd: number | null = null;
     for (const carrierPhrase of carrierPhrases) {
@@ -1258,63 +1247,6 @@ function namesLevelOutsideActionFader(actionName: string, clause: PromptClause, 
         return namesSendOrMaster(clause, context);
     }
     return actionName === 'setMasterGain' && !namesMaster(clause, context);
-}
-
-/**
- * A clause that only adds one more reference and its decibel figure to the level change before it:
- * "and the Snare at -9 dB". The figure's connector states its form, and the action must declare it.
- */
-function isLevelContinuationClause(
-    maskedClause: string,
-    decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[]
-): boolean {
-    if (
-        !/^\s*(?:(?:the|a|an)\s+)?(?:clip)?□+\s+(?:at|to|by|up|down)\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*d\s?b\s*$/iu.test(
-            maskedClause
-        )
-    ) {
-        return false;
-    }
-    const statedLevelForms = getStatedDecibelLevelForms(maskedClause);
-    return decibelLevelForms.some((form) => statedLevelForms.has(form));
-}
-
-/**
- * Whether the clause continues a level the scope before it states in percent onto another track:
- * "Drums to 60%" after "set Vocals volume to 75%". The reference must be a track's whole name, so a
- * device's level ("Reverb to 30%") is never read as another track's fader.
- */
-function isPercentLevelContinuationClause(
-    clause: PromptClause,
-    previousScope: ActionPromptScope | undefined,
-    context: ProjectContext
-): boolean {
-    if (previousScope === undefined || !/\d%/u.test(previousScope.masked)) {
-        return false;
-    }
-    const continuation = /^(\s*(?:(?:the|a|an)\s+)?)(□+)\s+(?:at|to)\s+(?:\d+(?:\.\d+)?|\.\d+)\s*%\s*$/iu.exec(
-        clause.masked
-    );
-    const [, lead, reference] = continuation ?? [];
-    if (continuation === null || lead === undefined || reference === undefined) {
-        return false;
-    }
-    const start = continuation.index + lead.length;
-    const end = start + reference.length;
-    return getNamedReferenceSpans(clause.text, context.tracks).some((span) => span.start === start && span.end === end);
-}
-
-/** Whether the clause continues the level change before it in decibels or in percent onto another track. */
-function continuesLevelChange(
-    clause: PromptClause,
-    decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[],
-    previousScope: ActionPromptScope | undefined,
-    context: ProjectContext
-): boolean {
-    return (
-        isLevelContinuationClause(clause.masked, decibelLevelForms) ||
-        isPercentLevelContinuationClause(clause, previousScope, context)
-    );
 }
 
 /**
@@ -2952,28 +2884,6 @@ function getStatedDecibelFigures(
 }
 
 /**
- * Every named project object the scope text names, longest name first, one span per stretch of text.
- * A name is as long as the words {@link getReferenceRanges} matches, so symbols it never matches ("Chorus
- * ***") cannot rank a shorter name above a longer one ("Chorus 2").
- */
-function getNamedReferenceSpans(
-    scopeText: string,
-    objects: readonly { id: string; name: string }[]
-): PromptReferenceSpan[] {
-    const matchedLength = (name: string) => normalizePromptText(name).length;
-    const spans: PromptReferenceSpan[] = [];
-    for (const object of objects.toSorted((left, right) => matchedLength(right.name) - matchedLength(left.name))) {
-        for (const range of getReferenceRanges(scopeText, object.name)) {
-            if (spans.some((span) => range.start < span.end && range.end > span.start)) {
-                continue;
-            }
-            spans.push({ ...range, id: object.id });
-        }
-    }
-    return spans;
-}
-
-/**
  * The name of the one section the scope text names in whole; null when it names none, several, or a
  * name several sections share. Names are read longest first, so "Chorus Two" names that section
  * alone and never the "Chorus" inside it, while "Chorus or Chorus Two" names both.
@@ -2990,51 +2900,6 @@ function getWholeSectionReferenceName(
     const name = normalizePromptText(named[0]!.name);
     const sharingName = sections.filter((section) => normalizePromptText(section.name) === name);
     return sharingName.length === 1 ? named[0]!.name : null;
-}
-
-/**
- * The bus a `send:<busId>` automation target names. The request names that bus to say whose send
- * the level moves ("duck the Drums send to the Drum Bus to -12 dB"), so it is the send's
- * destination, never a second track competing for the figure.
- */
-function getSendLaneBusId(groundedArguments: Record<string, unknown>): string | undefined {
-    const parameterId = groundedArguments.parameterId;
-    return typeof parameterId === 'string' && parameterId.startsWith('send:')
-        ? parameterId.slice('send:'.length)
-        : undefined;
-}
-
-/** The track a call acts on and every track its scope names beside it, when the scope names two or more. */
-function getAnchorReferences(
-    actionScope: ActionPromptScope,
-    targetRules: GroundingRules['targetRules'],
-    groundedArguments: Record<string, unknown>,
-    context: ProjectContext
-): { anchorId: string; references: readonly PromptReferenceSpan[] } | undefined {
-    const anchorRule = targetRules.find(
-        (targetRule) =>
-            targetRule.promptRole !== 'destination' && typeof groundedArguments[targetRule.argument] === 'string'
-    );
-    const anchorId = anchorRule ? groundedArguments[anchorRule.argument] : undefined;
-    if (typeof anchorId !== 'string' || !context.tracks.some((track) => track.id === anchorId)) {
-        return undefined;
-    }
-    const otherTargetIds = new Set([
-        ...targetRules
-            .filter((targetRule) => targetRule !== anchorRule)
-            .map((targetRule) => groundedArguments[targetRule.argument]),
-        getSendLaneBusId(groundedArguments),
-    ]);
-    const references =
-        actionScope.coordinatedTargets?.references ??
-        getNamedReferenceSpans(
-            actionScope.text,
-            context.tracks.filter((track) => !otherTargetIds.has(track.id))
-        );
-    if (new Set(references.map((reference) => reference.id)).size < 2) {
-        return undefined;
-    }
-    return { anchorId, references };
 }
 
 /**
@@ -3055,65 +2920,6 @@ function getReferenceBoundDecibelFigures(
     }
     const figures = classifyPromptDecibelFigures(actionScope.masked, findPromptNumbers(actionScope.masked));
     return bindDecibelFiguresToReferences(actionScope.text, anchored.references, figures).get(anchored.anchorId) ?? [];
-}
-
-/**
- * The figures a scope gives the call's own track. In a scope that took in continuation clauses each
- * clause states its own track's figures, wherever they stand in it ("set the volume to 75% on Vocals,
- * Drums to 60%"), so the anchor reads the figures up to the end of the one clause naming it. Figures of
- * an earlier clause stay readable here: a continuation clause states its figure after its own track,
- * so the figures bound to the nearest track before them already keep that track to its own.
- * Otherwise a figure binds to the nearest track named before it.
- */
-function getAnchorNumbers<Figure extends { index: number }>(
-    actionScope: ActionPromptScope,
-    anchored: { anchorId: string; references: readonly PromptReferenceSpan[] },
-    numbers: readonly Figure[]
-): readonly Figure[] {
-    if (actionScope.continuationStarts === undefined) {
-        return (
-            bindDecibelFiguresToReferences(actionScope.text, anchored.references, numbers).get(anchored.anchorId) ?? []
-        );
-    }
-    const starts = [0, ...actionScope.continuationStarts];
-    const clauses = starts.map((start, index) => ({ start, end: starts[index + 1] ?? actionScope.text.length }));
-    const anchorClauses = clauses.filter((clause) =>
-        anchored.references.some(
-            (reference) =>
-                reference.id === anchored.anchorId && reference.start >= clause.start && reference.end <= clause.end
-        )
-    );
-    const anchorClause = anchorClauses[0];
-    if (anchorClauses.length !== 1 || anchorClause === undefined) {
-        return [];
-    }
-    return numbers.filter((number) => number.index < anchorClause.end);
-}
-
-/**
- * The scope a call's values are read from: where the scope names several tracks and gives the call's
- * own track a figure, the figures it gives the others are blanked, so in "set Vocals volume to 75%,
- * Drums to 60%" the Drums call reads 60% and never the 75% the request gives Vocals.
- */
-function getAnchorValueScope(
-    actionScope: ActionPromptScope,
-    targetRules: GroundingRules['targetRules'],
-    groundedArguments: Record<string, unknown>,
-    context: ProjectContext
-): ActionPromptScope {
-    const anchored = getAnchorReferences(actionScope, targetRules, groundedArguments, context);
-    if (anchored === undefined) {
-        return actionScope;
-    }
-    const numbers = findPromptNumbers(actionScope.masked);
-    const anchorNumbers = getAnchorNumbers(actionScope, anchored, numbers);
-    if (anchorNumbers.length === 0) {
-        return actionScope;
-    }
-    const otherNumbers = numbers.filter((number) => !anchorNumbers.includes(number));
-    const otherRanges = otherNumbers.map((number) => ({ start: number.index, end: number.end }));
-    const masked = blankRanges(actionScope.masked, otherRanges, ' ');
-    return { ...actionScope, masked };
 }
 
 /**
