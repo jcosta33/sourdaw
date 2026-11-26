@@ -23,6 +23,7 @@ import {
     type BacteriaNodeModAssignment,
     type BacteriaNodeResult,
 } from './BacteriaNode';
+import { createCrumbsPreparation } from './createCrumbsPreparation';
 import { isCrumbsDevice, createCrumbsNode, type CrumbsNodeResult } from './CrumbsNode';
 import { isCrustDevice, createCrustNode, type CrustNodeResult } from './CrustNode';
 import { attachFaustMeterBridge, detachFaustMeterBridge } from './faustMeterReadings';
@@ -682,13 +683,18 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                const preparation = createCrumbsPreparation(deviceId, deviceType, result.workletNode.port, signal);
+                const destroy = (): void => {
+                    preparation.dispose();
+                    result.destroy();
+                };
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    dispose: result.destroy,
+                    dispose: destroy,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -696,7 +702,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                     crumbsControls: {
                         ready: true,
@@ -706,8 +712,9 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setMode: result.setMode,
+                        refreshSample: preparation.refresh,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                 };
                 const accepted = onLoaded(loadedNode);
@@ -726,11 +733,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 // same use case the offline chain awaits, so the two registries
                 // cannot configure two different engines.
                 try {
-                    const outcome = await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
-                        deviceId,
-                        port: result.workletNode.port,
-                        signal,
-                    });
+                    const outcome = await preparation.start();
                     onContentLoadSettled?.(outcome);
                 } catch (error) {
                     onContentLoadSettled?.('failed');

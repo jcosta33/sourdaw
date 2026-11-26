@@ -6,6 +6,7 @@ import {
     classifyNoteReceivingDevice,
     isBuiltinSynthDevice,
     isDrumDevice,
+    isToasterDevice,
     type NoteReceivingInstrumentKind,
 } from '../NoteInputKindByDeviceType';
 
@@ -97,6 +98,30 @@ describe('isDrumDevice and isBuiltinSynthDevice', () => {
     it.each(EXPECTED_KIND)('answer %j from its kind %j', (deviceType, kind) => {
         expect(isDrumDevice(deviceType)).toBe(kind === 'drum');
         expect(isBuiltinSynthDevice(deviceType)).toBe(kind === 'builtin-synth');
+    });
+});
+
+describe('isToasterDevice', () => {
+    it.each(EXPECTED_KIND)('answers %j from its kind %j', (deviceType, kind) => {
+        expect(isToasterDevice(deviceType)).toBe(kind === 'toaster');
+    });
+
+    it.each(['toaster'])('answers true for %j', (deviceType) => {
+        expect(isToasterDevice(deviceType)).toBe(true);
+    });
+
+    it.each([
+        'Toaster',
+        'TOASTER',
+        'builtin-toaster',
+        'builtin-drum-kit',
+        'yeast',
+        'external-plugin',
+        '',
+        'constructor',
+        '__proto__',
+    ])('answers false for %j', (deviceType) => {
+        expect(isToasterDevice(deviceType)).toBe(false);
     });
 });
 
