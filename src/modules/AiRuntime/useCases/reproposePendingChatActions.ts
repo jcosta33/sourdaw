@@ -8,7 +8,7 @@ import {
 import { type AgentRunPhase } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
-import { appendChatMessage } from '../stores/chatStore';
+import { appendChatMessage, removeChatMessage } from '../stores/chatStore';
 import {
     type PendingAppActionConfirmation,
     getPendingActionConfirmation,
@@ -19,6 +19,7 @@ import { persistPromptActionConfirmation } from './agentRequestOrchestration/per
 import { readRePreviewedPlannedLines } from './agentRequestOrchestration/readRePreviewedPlannedLines';
 import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
 import { recordBatchPreviewEvidence } from './agentRequestOrchestration/recordBatchPreviewEvidence';
+import { reportRePreviewRefusal } from './agentRequestOrchestration/reportRePreviewRefusal';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { watchVibeBatchRePreview } from './agentRequestOrchestration/watchVibeBatchRePreview';
@@ -401,7 +402,7 @@ function persistReproposalConfirmation(
         timestamp: Date.now(),
         isCommandAction: true,
     });
-    return persistPromptActionConfirmation({
+    const persistedId = persistPromptActionConfirmation({
         runId: confirmation.runId,
         prompt: confirmation.prompt,
         assistantMessageId,
@@ -450,6 +451,11 @@ function persistReproposalConfirmation(
         content: card.content,
         supersedes: confirmation.id,
     });
+    if (persistedId === null) {
+        // The refusal is reported as one line; the replacement card never existed.
+        removeChatMessage(assistantMessageId);
+    }
+    return persistedId;
 }
 
 /**
@@ -518,7 +524,7 @@ async function refreshMetricProof(
  * revision. The run stays alive: the superseded proposal is invalidated and its prepared
  * resources discarded, but nothing cancels the run the musician is still steering.
  */
-export async function reproposePendingChatActions(
+async function reproposeWithoutReporting(
     input: ReproposePendingChatActionsInput
 ): Promise<ReproposePendingChatActionsResult> {
     void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId });
@@ -569,4 +575,13 @@ export async function reproposePendingChatActions(
         supersededConfirmationId: confirmation.id,
         includedIntentGroupIds: [...includedOriginalCommandIds],
     };
+}
+
+/** Re-preview a proposal, saying in the chat why when it cannot be replaced. */
+export async function reproposePendingChatActions(
+    input: ReproposePendingChatActionsInput
+): Promise<ReproposePendingChatActionsResult> {
+    const result = await reproposeWithoutReporting(input);
+    reportRePreviewRefusal(result);
+    return result;
 }

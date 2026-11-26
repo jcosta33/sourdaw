@@ -1,4 +1,7 @@
-export function lsofInspectionMatch(name: string, type: string | undefined): string | undefined {
+export function lsofInspectionMatch(name: string | undefined, type: string | undefined): string | undefined {
+    if (name === undefined) {
+        return undefined;
+    }
     const operation = /\((stat|readlink):/i.exec(name)?.[1];
     if (operation !== undefined) {
         return operation.toLowerCase();

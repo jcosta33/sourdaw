@@ -229,6 +229,7 @@ export type AudioDeviceRuntimeSink = {
         deviceId: string;
         port: MessagePort;
         signal?: AbortSignal;
+        sampleOnly?: boolean;
     }) => Promise<DeviceContentLoadOutcome>;
 };
 
