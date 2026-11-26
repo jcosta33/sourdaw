@@ -41,10 +41,8 @@ import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 import { createLegacyAgentRunPlan } from '../transformers/createLegacyAgentRunPlan';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
-import {
-    readAgentRunPlanBoundRefusal,
-    type AgentRunPlanBoundRefusal,
-} from '../validators/readAgentRunPlanBoundRefusal';
+import { readAgentRunBoundRefusal } from '../validators/readAgentRunBoundRefusal';
+import { type AgentRunPlanBoundRefusal } from '../validators/readAgentRunPlanBoundRefusal';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import {
@@ -64,9 +62,10 @@ import {
 } from './agentRequestOrchestration/settleAgentRunWorkLease';
 import { NO_AUDIBLE_CLAIM_REASON } from './deriveMeasuredAudibleImpact';
 import { derivePredictedAudibleImpact } from './derivePredictedAudibleImpact';
-import { describeAgentRunPlanBoundRefusal } from './describeAgentRunPlanBoundRefusal';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
+import { readBudgetReservationRefusal } from './readBudgetReservationRefusal';
+import { requireAdmittedAgentRun } from './requireAdmittedAgentRun';
 
 /** Batches a cancellation leaves as they settled: what committed, changed nothing, or was skipped stays so. */
 const SETTLED_BATCH_STATUSES: ReadonlySet<AgentRunBatch['status']> = new Set<AgentRunBatch['status']>([
@@ -201,7 +200,9 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
         throw new Error(`Unknown agent run: ${runId}`);
     }
     const current = state.runs[index]!;
-    const next = trackActiveSince(current, { ...update(structuredClone(current)), updatedAt }, updatedAt);
+    const next = requireAdmittedAgentRun(
+        trackActiveSince(current, { ...update(structuredClone(current)), updatedAt }, updatedAt)
+    );
     const runs = [...state.runs];
     runs[index] = next;
     persistAgentRunState({ ...state, runs }, updatedAt);
@@ -220,7 +221,9 @@ function updateAgentRunIfPresent(
         return null;
     }
     const current = state.runs[index]!;
-    const next = trackActiveSince(current, { ...update(structuredClone(current)), updatedAt }, updatedAt);
+    const next = requireAdmittedAgentRun(
+        trackActiveSince(current, { ...update(structuredClone(current)), updatedAt }, updatedAt)
+    );
     const runs = [...state.runs];
     runs[index] = next;
     persistAgentRunState({ ...state, runs }, updatedAt);
@@ -407,7 +410,7 @@ function createAgentRun(input: CreateAgentRunInput): CreateAgentRunResult {
         activeSince: AGENT_RUN_ACTIVE_PHASES.has(phase) ? createdAt : null,
         updatedAt: createdAt,
     };
-    persistAgentRunState({ ...state, runs: [...state.runs, run] }, createdAt);
+    persistAgentRunState({ ...state, runs: [...state.runs, requireAdmittedAgentRun(run)] }, createdAt);
     return { status: 'created' };
 }
 
@@ -460,17 +463,7 @@ function readAgentRunPlanWriteRefusal(
     if (run === null) {
         return null;
     }
-    const { plan } = write(run);
-    return plan === null ? null : readAgentRunPlanBoundRefusal(plan);
-}
-
-/** The write path itself refuses a plan its admission would refuse, before anything is persisted. */
-function requireAdmittedAgentRunPlan(run: AgentRun): AgentRun {
-    const refusal = run.plan === null ? null : readAgentRunPlanBoundRefusal(run.plan);
-    if (refusal !== null) {
-        throw new Error(describeAgentRunPlanBoundRefusal(refusal));
-    }
-    return run;
+    return readAgentRunBoundRefusal(write(run));
 }
 
 type RecordAgentRunPlanInput = {
@@ -491,9 +484,7 @@ type RecordAgentRunPlanInput = {
 };
 
 function recordAgentRunPlan(input: RecordAgentRunPlanInput): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) =>
-        requireAdmittedAgentRunPlan(withRecordedPlan(run, input))
-    );
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => withRecordedPlan(run, input));
 }
 
 function admitAgentRunPlan(input: RecordAgentRunPlanInput): AgentRunPlanBoundRefusal | null {
@@ -614,7 +605,7 @@ type RecordAgentRunApplicationToolEvidenceInput = {
 
 function recordAgentRunApplicationToolEvidence(input: RecordAgentRunApplicationToolEvidenceInput): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) =>
-        requireAdmittedAgentRunPlan(withApplicationToolEvidence(run, input))
+        withApplicationToolEvidence(run, input)
     );
 }
 
@@ -766,12 +757,9 @@ function reserveAgentRunBudgetBatch(input: {
             (additionalByCategory.get(attempt.category) ?? 0) + attempt.estimate
         );
     }
-    for (const [category, additional] of additionalByCategory) {
-        const limit = run.budgets.limits[category];
-        const consumed = run.budgets.consumed[category] ?? 0;
-        if (limit !== undefined && consumed + additional > limit) {
-            return { status: 'hard-limit-reached', reason: category };
-        }
+    const refusedReason = readBudgetReservationRefusal(run, newAttempts.length, additionalByCategory);
+    if (refusedReason !== null) {
+        return { status: 'hard-limit-reached', reason: refusedReason };
     }
     if (newAttempts.length === 0) {
         return { status: 'reserved' };
