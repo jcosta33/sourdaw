@@ -39,6 +39,7 @@ import { rememberSettledFreezeState } from './rememberSettledFreezeState';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 import { restoreCancelledFreeze } from './restoreCancelledFreeze';
 import { settledBeforeFreeze } from './settledBeforeFreeze';
+import { showsFreezeTaskState } from './showsFreezeTaskState';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -49,6 +50,8 @@ type FreezeTaskIdentity = {
     trackId: string;
     /** The freezing state this task wrote; null when the track vanished before it could be read. */
     pendingFreeze: FreezeStateSnapshot | null;
+    /** The settled state the document still holds when a rebase drops the freezing write. */
+    previousFreeze: FreezeStateSnapshot;
 };
 
 function isEligibleActiveProjectTrack({
@@ -81,7 +84,8 @@ function isRegisteredFreezeTask(task: FreezeTaskIdentity): boolean {
 /**
  * Gates every write that lands after an await. A synced write from a collaborator runs no local
  * action, so it never cancels this task: the live track must still show the freezing state this task
- * wrote, and any departure, local or remote, stops the write. The source-edit refusal and the failure
+ * wrote (or, once an inbound change rebased that write away, the settled state it started from), and
+ * any other freeze state, local or remote, stops the write. The source-edit refusal and the failure
  * path use `isRegisteredFreezeTask` instead, so a local edit that reset the track still reports why.
  */
 function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
@@ -89,7 +93,10 @@ function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
         return false;
     }
     const liveTrack = trackStore.value?.tracks.find((candidate) => candidate.id === task.trackId);
-    return liveTrack !== undefined && freezeStateSnapshotMatches(liveTrack, task.pendingFreeze);
+    return (
+        liveTrack !== undefined &&
+        showsFreezeTaskState(liveTrack, { pendingFreeze: task.pendingFreeze, previousFreeze: task.previousFreeze })
+    );
 }
 
 /**
@@ -175,7 +182,14 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
     }));
     const pendingFreeze = captureLiveFreezeState(trackId);
-    const taskIdentity: FreezeTaskIdentity = { abortController, projectId, rootIdentity, trackId, pendingFreeze };
+    const taskIdentity: FreezeTaskIdentity = {
+        abortController,
+        projectId,
+        rootIdentity,
+        trackId,
+        pendingFreeze,
+        previousFreeze,
+    };
 
     try {
         // One synchronous read of everything the render reads, signed as it is read. The render

@@ -1,5 +1,7 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { logger } from '#/infra/logger/appLogger';
 import {
@@ -21,9 +23,11 @@ import {
     createCrdtDoc,
     getCrdtDoc,
     markActionHistoryEntryReverted,
+    projectCrdtToStores,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
@@ -82,6 +86,54 @@ function rawTrack(): Track {
 
 function freeze(): Promise<void> {
     return executeAppAction({ type: 'freezeTrack', payload: { trackId: 'freeze-track' } });
+}
+
+type RootDocument = { tracks: { tracks: Track[] } };
+
+// A collaborator's change reaching this client: merged into the local document as the sync route does,
+// then projected to the stores. It runs no local action, so nothing cancels a running freeze.
+function applyInboundChange(change: (tracks: Track[]) => void): void {
+    const current = getCrdtDoc<RootDocument>('root');
+    if (!current) {
+        throw new Error('Expected the root document');
+    }
+    const peer = Automerge.change(Automerge.clone(current), (draft) => {
+        change(draft.tracks.tracks);
+    });
+    replaceCrdtDocInLineage({ id: 'root', doc: Automerge.merge(Automerge.clone(current), peer) });
+    projectCrdtToStores();
+}
+
+function inboundTrack(tracks: Track[], id: string): Track {
+    const track = tracks.find((candidate) => candidate.id === id);
+    if (!track) {
+        throw new Error(`Expected inbound track ${id}`);
+    }
+    return track;
+}
+
+function seedTracks(tracks: Track[]): void {
+    trackStore.set({ tracks, selectedTrackId: tracks[0]?.id ?? null, ghostClips: [] });
+    flushAutomergeStorageWrites();
+}
+
+const STALE_TAKE = {
+    frozen: true,
+    frozenBufferId: 'old-take',
+    freezeState: {
+        status: 'stale',
+        freezeId: 'old-freeze',
+        frozenBufferId: 'old-take',
+        sourceContentHash: 'old-hash',
+        compensationSeconds: 0.02,
+    },
+} satisfies Partial<Track>;
+
+function seedStaleTrack(): void {
+    seedTracks([
+        TrackDummy.create({ id: 'freeze-track', ...STALE_TAKE }),
+        TrackDummy.create({ id: 'other-track', name: 'Other' }),
+    ]);
 }
 
 function seedTrack(track: Track): void {
@@ -285,30 +337,32 @@ describe('freezeTrack started over a running freeze', () => {
         expect(render.mock.calls[0]?.[3]?.abortSignal?.aborted).toBe(true);
     });
 
-    // A synced write runs no local action, so no cancel reaches the task: the track simply changes under it.
-    const unfrozenByCollaborator: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+    // Not a sync: these write the store directly. They pin the commit guard against any departure from
+    // the freezing state, whatever route wrote it.
+    const unfrozenInStore: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
         frozen: false,
         freezeState: { status: 'unfrozen' },
     };
-    const refrozenByCollaborator: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+    const refrozenInStore: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
         frozen: true,
         frozenBufferId: 'remote-take',
         freezeState: { status: 'frozen', freezeId: 'remote-freeze', frozenBufferId: 'remote-take' },
     };
-    const failedByCollaborator: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
+    const failedInStore: Pick<Track, 'frozen' | 'frozenBufferId' | 'freezeState'> = {
         frozen: false,
         freezeState: { status: 'error', errorMessage: 'remote failure' },
     };
     it.each([
-        { name: 'an unfreeze', written: unfrozenByCollaborator },
-        { name: 'a different freeze take', written: refrozenByCollaborator },
-        { name: 'a failure', written: failedByCollaborator },
-    ])('keeps a collaborator write of $name when the local render finishes after it', async ({ written }) => {
+        { name: 'an unfreeze', written: unfrozenInStore },
+        { name: 'a different freeze take', written: refrozenInStore },
+        { name: 'a failure', written: failedInStore },
+    ])('keeps a store write of $name when the local render finishes after it', async ({ written }) => {
+        seedStaleTrack();
         const first = holdFirstRender();
         const running = freeze();
         await first.entered;
         expect(projectedTrack().freezeState.status).toBe('freezing');
-        updateTrack('freeze-track', (time) => ({ ...time, ...written }));
+        updateTrack('freeze-track', ({ frozenBufferId: _carried, ...time }) => ({ ...time, ...written }));
         flushAutomergeStorageWrites();
         expect(activeFreezeTasks.has('freeze-track')).toBe(true);
         first.release();
@@ -332,6 +386,105 @@ describe('freezeTrack started over a running freeze', () => {
         await running;
         expect(projectedTrack().freezeState.status).toBe('frozen');
         expect(projectedTrack().frozenBufferId).toBeDefined();
+    });
+
+    describe('with a collaborator change arriving while the render runs', () => {
+        beforeEach(() => {
+            registerProjectSlotProjections();
+        });
+
+        it('commits the take after an inbound edit to another track', async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                inboundTrack(tracks, 'other-track').name = 'Renamed by a collaborator';
+            });
+            expect(projectedTrack().freezeState.status).toBe('stale');
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).toBeDefined();
+                expect(track.frozenBufferId).not.toBe('old-take');
+            }
+            expect(trackStore.value?.tracks[1]?.name).toBe('Renamed by a collaborator');
+        });
+
+        it('commits the take after an inbound edit to another field of the same track', async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                inboundTrack(tracks, 'freeze-track').name = 'Renamed by a collaborator';
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState.status).toBe('frozen');
+                expect(track.frozenBufferId).not.toBe('old-take');
+                expect(track.name).toBe('Renamed by a collaborator');
+            }
+        });
+
+        it.each([
+            {
+                name: 'an unfreeze',
+                change: (track: Track) => {
+                    track.frozen = false;
+                    delete track.frozenBufferId;
+                    track.freezeState = { status: 'unfrozen' };
+                },
+                expected: { frozen: false, freezeState: { status: 'unfrozen' } },
+            },
+            {
+                name: 'a failure',
+                change: (track: Track) => {
+                    track.freezeState = { status: 'error', errorMessage: 'remote failure' };
+                },
+                expected: {
+                    frozen: true,
+                    frozenBufferId: 'old-take',
+                    freezeState: { status: 'error', errorMessage: 'remote failure' },
+                },
+            },
+        ])("keeps the collaborator's $name and commits no take", async ({ change, expected }) => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                change(inboundTrack(tracks, 'freeze-track'));
+            });
+            first.release();
+            await running;
+            for (const track of [rawTrack(), projectedTrack()]) {
+                expect(track.freezeState).toEqual(expected.freezeState);
+                expect(track.frozen).toBe(expected.frozen);
+                expect(track.frozenBufferId).toBe(expected.frozenBufferId);
+            }
+            expect(activeFreezeTasks.has('freeze-track')).toBe(false);
+            expect(settledBeforeFreeze.has('freeze-track')).toBe(false);
+        });
+
+        it("writes no render progress over the collaborator's state after it departs from freezing", async () => {
+            seedStaleTrack();
+            const first = holdFirstRender();
+            const running = freeze();
+            await first.entered;
+            applyInboundChange((tracks) => {
+                const track = inboundTrack(tracks, 'freeze-track');
+                track.frozen = false;
+                delete track.frozenBufferId;
+                track.freezeState = { status: 'unfrozen' };
+            });
+            render.mock.calls[0]?.[3]?.onProgress?.(0.7);
+            expect(projectedTrack().freezeState).toEqual({ status: 'unfrozen' });
+            first.release();
+            await running;
+        });
     });
 
     it('unfreezes a committed frozen track as before, with nothing running', async () => {
