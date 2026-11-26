@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    holdNextNativePreparation,
     installNativePreparationWorker,
     settleNativePreparationWorkers,
 } from '#/helpers/__tests__/nativePreparationWorker';
@@ -12,6 +13,8 @@ import type { ProjectData } from '../../../../models/ProjectData';
 
 const CREATED_AT = 1_700_000_000_000;
 const CASE_TIMEOUT_MS = 30_000;
+/** Longer than vi.waitFor's default 1000 ms, the window a loaded runner can spend preparing before the lock. */
+const SLOW_PRELOCK_PREPARATION_MS = 1_500;
 const REFUSAL_PREFIX = '[saveProject] Project or audio changed during snapshot persistence';
 
 type IndexedDbFixture = ReturnType<typeof installMultiDatabaseIndexedDb>;
@@ -147,9 +150,9 @@ async function startSaveHeldInPreflight(
         release = resolve;
     });
     void opened.withProjectAudioStorageLock(() => gate);
-    const requestedBefore = lockManager.requestedNames.length;
+    const lockRequested = lockManager.nextRequest();
     const saving = opened.project.saveProject();
-    await vi.waitFor(() => expect(lockManager.requestedNames.length).toBeGreaterThan(requestedBefore));
+    await lockRequested;
     return { release, saving };
 }
 
@@ -367,9 +370,9 @@ describe('saveProject snapshot continuation', () => {
             const opened = await openProjectWithCachedStereoClip();
             await vi.waitFor(() => expect(indexedDb.pendingAudioWriteSettlements()).toBe(1));
 
-            const requestedBefore = lockManager.requestedNames.length;
+            const lockRequested = lockManager.nextRequest();
             const saving = opened.project.saveProject();
-            await vi.waitFor(() => expect(lockManager.requestedNames.length).toBeGreaterThan(requestedBefore));
+            await lockRequested;
             expect(indexedDb.pendingAudioWriteSettlements()).toBe(1);
             indexedDb.resumeAudioWriteSettlements();
             while (indexedDb.pendingAudioWriteSettlements() > 0) {
@@ -379,6 +382,29 @@ describe('saveProject snapshot continuation', () => {
             expect(await saving).toBe(true);
             expect(opened.persistenceFailures()).toEqual([]);
             expect(indexedDb.get('sourdaw-audio', 'buffers', opened.bufferId)).toBeDefined();
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'holds the save in its preflight even when the work before its lock request outlasts one second',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+
+            const preparation = holdNextNativePreparation();
+            const releasePreparation = setTimeout(preparation.release, SLOW_PRELOCK_PREPARATION_MS);
+            try {
+                const save = await startSaveHeldInPreflight(opened);
+                expect(lockManager.requestedNames.at(-1)).toBe('sourdaw:project-audio-storage');
+                save.release();
+
+                expect(await save.saving).toBe(true);
+            } finally {
+                clearTimeout(releasePreparation);
+                preparation.release();
+            }
+            expect(opened.persistenceFailures()).toEqual([]);
         },
         CASE_TIMEOUT_MS
     );
