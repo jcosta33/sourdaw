@@ -312,7 +312,7 @@ function findHeadEnd(input: {
     if (input.closesOnRange) {
         openings.push(...findHeadRangeStarts(clause, figureIndex, context));
     }
-    return Math.min(figureIndex, ...openings.filter((start) => start !== null && start > headStart));
+    return Math.min(figureIndex, ...openings.filter((start): start is number => start !== null && start > headStart));
 }
 
 /**
