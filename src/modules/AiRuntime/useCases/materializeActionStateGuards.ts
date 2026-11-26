@@ -244,7 +244,6 @@ const materializerByActionType: { readonly [Type in RuntimeActionType]: ActionMa
     clearMidiOutput: passThrough,
     addNotes: passThrough,
     addChordEvent: passThrough,
-    removeChordEvent: passThrough,
     toggleChordTrack: passThrough,
     clearChordTrack: passThrough,
     toggleScratchPad: passThrough,

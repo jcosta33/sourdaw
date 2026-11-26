@@ -197,7 +197,6 @@ export const unawaitedAiActionByActionType: { readonly [Type in RuntimeActionTyp
     previousSetlistItem: false,
     quantizeTransients: false,
     redo: false,
-    removeChordEvent: false,
     removeFromVca: false,
     removeYeastProcessor: false,
     reorderYeastProcessor: false,

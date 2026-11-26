@@ -181,7 +181,6 @@ export const presetMayEmitByActionType: { readonly [Type in RuntimeActionType]: 
     clearMidiOutput: true,
     addNotes: true,
     addChordEvent: true,
-    removeChordEvent: true,
     toggleChordTrack: true,
     clearChordTrack: true,
     toggleScratchPad: true,

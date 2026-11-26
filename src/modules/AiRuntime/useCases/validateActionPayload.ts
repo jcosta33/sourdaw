@@ -1270,7 +1270,6 @@ const validators = {
         Object.hasOwn(CHORD_QUALITY_NAMES, param.quality) &&
         isOptionalOwn(param, 'duration', (value): value is number => isNumber(value) && value >= 0.25) &&
         isOptionalOwn(param, 'eventId', isNonEmptyString),
-    removeChordEvent: 'unchecked',
     clearChordTrack: hasNoPayload,
     toggleChordTrack: (param): param is PayloadOf<'toggleChordTrack'> =>
         isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',

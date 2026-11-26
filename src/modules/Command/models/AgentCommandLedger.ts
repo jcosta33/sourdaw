@@ -424,13 +424,6 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         kind: 'interim-unsupported',
         category: 'midi',
         packet: RUNTIME_ACTION_PACKET,
-        reason: 'A chord-track edit that names one chord event by id, which no target capability grounds yet.',
-        actionTypes: ['removeChordEvent'],
-    },
-    {
-        kind: 'interim-unsupported',
-        category: 'midi',
-        packet: RUNTIME_ACTION_PACKET,
         reason: 'Generative note actions that predate the MIDI transform route; the packet registers each as a transform that compiles to addNotes or retires it from the runtime vocabulary.',
         actionTypes: ['generateDrumPattern', 'generateMelody', 'generateChordProgression'],
     },

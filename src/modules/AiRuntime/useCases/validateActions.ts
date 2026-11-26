@@ -321,7 +321,6 @@ const vcaTargetAvailabilityByActionType: VcaTargetLookup = {
     previousSetlistItem: noVcaTargets,
     quantizeTransients: noVcaTargets,
     redo: noVcaTargets,
-    removeChordEvent: noVcaTargets,
     removeFromVca: trackExists,
     removeYeastProcessor: noVcaTargets,
     reorderYeastProcessor: noVcaTargets,

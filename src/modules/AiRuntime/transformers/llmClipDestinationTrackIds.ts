@@ -204,7 +204,6 @@ export const clipDestinationTrackIdsByActionType: ClipDestinationLookup = {
     previousSetlistItem: noDestinationTracks,
     quantizeTransients: noDestinationTracks,
     redo: noDestinationTracks,
-    removeChordEvent: noDestinationTracks,
     removeFromVca: noDestinationTracks,
     removeYeastProcessor: noDestinationTracks,
     reorderYeastProcessor: noDestinationTracks,
