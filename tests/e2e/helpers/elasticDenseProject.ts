@@ -45,6 +45,7 @@ export async function seedDenseElasticProject(targetClipId: string) {
     }
 
     // Make individual, retained edits before adding clips and notes, while projections are cheap.
+    const seedStarted = performance.now();
     const beforeEdits = getHeads(readRoot());
     for (let index = 0; index < EDITS; index++) {
         await executeAppAction({
@@ -55,6 +56,7 @@ export async function seedDenseElasticProject(targetClipId: string) {
             await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         }
     }
+    const editLoopMs = performance.now() - seedStarted;
     const edited = readRoot();
     const historyHeads = getHeads(edited);
     const historyChanges = getChangesMetaSince(edited, beforeEdits).length;
@@ -117,7 +119,13 @@ export async function seedDenseElasticProject(targetClipId: string) {
     for (const clipId of companionIds) {
         await executeAppAction({ type: 'detectTransients', payload: { clipId, sensitivity: 0.5 } });
     }
-    return { historyHeads, historyChanges, companionIds, targetTrackId: sourceTrack.id };
+    const timing = {
+        edits: EDITS,
+        editLoopMs,
+        meanEditMs: editLoopMs / EDITS,
+        seedMs: performance.now() - seedStarted,
+    };
+    return { historyHeads, historyChanges, companionIds, targetTrackId: sourceTrack.id, timing };
 }
 
 function retainsHistory(root: ReturnType<typeof readRoot>, heads: Heads): boolean {
