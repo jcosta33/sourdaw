@@ -7071,6 +7071,25 @@ describe('#5541 and #5479: a refinement asks a retraction, negation or mark it c
             });
         });
 
+        it.each([
+            ['actually keep it', 'on the Drum Bus'],
+            ['no wait', 'for the Bass'],
+        ])(
+            'asks "%s" after the clause "%s", which names its own object and does not continue the described addition',
+            (qualifier, objectClause) => {
+                expect(
+                    admitWithImport(
+                        `Remove the guitar pan and import the selected stems using the published gain values, ${objectClause}, ${qualifier}`
+                    )
+                ).toEqual({
+                    status: 'refused',
+                    reason: expect.stringContaining(
+                        `"${qualifier}" beside a removal does not say whether that change is removed`
+                    ),
+                });
+            }
+        );
+
         it('asks a qualifier beside a removal when the batch adds nothing the clause names', () => {
             expect(admit('Remove the guitar pan and import the selected stems')).toEqual({
                 status: 'refused',
