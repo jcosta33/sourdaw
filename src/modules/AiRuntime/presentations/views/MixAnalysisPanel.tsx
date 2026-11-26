@@ -10,6 +10,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type MixAnalysis } from '../../models/MixAnalysis';
 import { mixAnalysisStore, toggleMixAnalysisPanel } from '../../stores/mixAnalysisStore';
@@ -52,7 +53,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
     const handleAutoFix = async () => {
         setActionError(null);
         try {
-            await runAppAction({ type: 'autoFixMix' });
+            await executeUserAppAction({ type: 'autoFixMix' });
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             setActionError(`Mix action failed: ${reason}`);
