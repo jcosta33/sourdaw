@@ -51,10 +51,13 @@ import { projectNoteExpressionCurves } from '../noteExpression/projectNoteExpres
 import { builtinSynthVoice } from '../scheduling/builtinSynthVoice';
 
 import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
-import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
+import { YIELD_EVERY_N_NOTES } from './constants';
+import { drivesTrackMixer } from './drivesTrackMixer';
 import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
+import { type OfflineRenderSessionSource } from './OfflineRenderSource';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
+import { readPlayedFrozenBufferId } from './readPlayedFrozenBufferId';
 import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';
 import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
@@ -145,8 +148,11 @@ type OfflineProjectionDependencies = {
     projectChannelBend?: OfflineChannelBendProjector | null;
 };
 
+type OfflineModulators = OfflineRenderSessionSource['modulators'];
+
 export type ScheduleTrackClipsInput = {
-    captured?: ReturnType<typeof captureOfflineSchedulingInput>;
+    /** A render's captured input; `modulators` is the rack a subgraph render captured with it. */
+    captured?: ReturnType<typeof captureOfflineSchedulingInput> & { modulators?: OfflineModulators };
     offlineCtx: OfflineAudioContext;
     track: Track;
     midi: NonNullable<MidiStoreState>;
@@ -295,16 +301,12 @@ export async function scheduleTrackClips({
     const parameterLaw = captured?.deviceParameterLaw ?? offlineDeviceParameterLawState;
     const automationLanes = includeMixerAutomation
         ? allAutomationLanes
-        : allAutomationLanes.filter((lane) => {
-              const drivesThisTracksMixer =
-                  lane.trackId === track.id &&
-                  MIXER_AUTOMATION_PARAMETER_IDS.some((parameterId) => parameterId === lane.parameterId);
-              return !drivesThisTracksMixer;
-          });
+        : allAutomationLanes.filter((lane) => !drivesTrackMixer(lane, track.id));
     let deviceEntries: DeviceNodeEntry[] = [];
 
-    if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
-        const frozenBuf = buffers.get(track.freezeState.frozenBufferId);
+    const playedFrozenBufferId = readPlayedFrozenBufferId(track);
+    if (playedFrozenBufferId !== null) {
+        const frozenBuf = buffers.get(playedFrozenBufferId);
         if (frozenBuf) {
             // Frozen buffers render from the track's earliest clip startBeat
             // (scheduleFrozenTrack), not from timeline 0 — anchor the source
@@ -378,9 +380,10 @@ export async function scheduleTrackClips({
         // `applyModulationToEngine` has no automationMode gate (mode `off`
         // stops the track's lanes, never the mappings aimed at it), so a
         // track automated out still has its mappings evaluated here.
-        const modulatorPlans = buildOfflineModulatorPlans({ tracks: allTracks ?? [track] }).filter(
-            (plan) => plan.targetTrackId === track.id
-        );
+        const modulatorPlans = buildOfflineModulatorPlans({
+            tracks: allTracks ?? [track],
+            modulators: captured?.modulators,
+        }).filter((plan) => plan.targetTrackId === track.id);
         scheduleTrackAutomation({
             // The mode gate stops the track's own lanes; passing none is how
             // the scheduler skips them while the modulator plans — grouped
@@ -448,7 +451,7 @@ export async function scheduleTrackClips({
         });
     }
 
-    if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
+    if (playedFrozenBufferId !== null) {
         return;
     }
 
