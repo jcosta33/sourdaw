@@ -1,3 +1,4 @@
+import { getSingularForm } from './getSingularForm';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 
@@ -160,19 +161,6 @@ function getPluralForm(word: string): string {
         return `${word.slice(0, -1)}ies`;
     }
     return `${word}s`;
-}
-
-function getSingularForm(word: string): string | null {
-    if (word.endsWith('ies')) {
-        return `${word.slice(0, -3)}y`;
-    }
-    if (/(?:s|x|z|ch|sh)es$/u.test(word)) {
-        return word.slice(0, -2);
-    }
-    if (/[^siu]s$/u.test(word)) {
-        return word.slice(0, -1);
-    }
-    return null;
 }
 
 /** The word and, when it ends in a letter rather than a figure, its plural and its singular. */

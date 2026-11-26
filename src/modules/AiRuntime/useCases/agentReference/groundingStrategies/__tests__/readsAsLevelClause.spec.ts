@@ -77,39 +77,83 @@ const context: ProjectContext = {
     playheadPosition: 0,
 };
 
-function reads(prompt: string, actionType = 'setTrackGain'): boolean {
+/** The same project with no track called Mix, so "in the mix" names no reference. */
+const contextWithoutMixTrack: ProjectContext = {
+    ...context,
+    tracks: context.tracks.filter((track) => track.name !== 'Mix'),
+};
+
+function reads(prompt: string, actionType = 'setTrackGain', project = context): boolean {
     const entry = getExecutableAppActionGroundingCatalog().find((candidate) => candidate.actionType === actionType);
     if (entry === undefined) {
         throw new Error(`no catalog entry for ${actionType}`);
     }
     return readsAsLevelClause({
-        clause: { masked: maskProjectReferences(prompt, context), text: prompt },
+        clause: { masked: maskProjectReferences(prompt, project), text: prompt },
         closesOnRange: actionType === 'automateParameterRange',
-        context,
+        context: project,
         entry,
     });
 }
 
 describe('readsAsLevelClause', () => {
     it.each([
-        ['a figure the level starts from, before the one it lands on', 'set Drums from -12 dB to -6 dB'],
-        ['a scope word that lowers', 'attenuate Drums by 3 dB'],
-        ['a scope word that raises', 'boost Drums by 3 dB'],
-        ['a range phrase whose name holds a number before the figure', 'lift Drums in Verse 2 by 1.5 dB'],
+        [
+            'a figure the level starts from, before the one it lands on',
+            'set Drums from -12 dB to -6 dB',
+            'setTrackGain',
+        ],
+        ['a scope word that lowers', 'attenuate Drums by 3 dB', 'setTrackGain'],
+        ['a scope word that raises', 'boost Drums by 3 dB', 'setTrackGain'],
+        [
+            'a range phrase whose name holds a number before the figure',
+            'lift Drums in Verse 2 by 1.5 dB',
+            'automateParameterRange',
+        ],
         [
             'a subject opener whose determiner a subject and its predicate follow',
             'turn Drums up 2 dB so the vocal sits better',
+            'setTrackGain',
         ],
-        ['a subject opener whose determiner a subject and one verb follow', 'turn Drums up 2 dB so the vocal sits'],
-        ['a subject opener whose subject is a pronoun', 'turn Drums up 2 dB so it sits better'],
+        [
+            'a subject opener whose determiner a subject and one verb follow',
+            'turn Drums up 2 dB so the vocal sits',
+            'setTrackGain',
+        ],
+        ['a subject opener whose subject is a pronoun', 'turn Drums up 2 dB so it sits better', 'setTrackGain'],
         [
             'a two-word subject opener whose determiner a clause follows',
             'turn Drums up 2 dB so that the kick cuts through',
+            'setTrackGain',
         ],
-    ])('reads %s: "%s"', (_rule, prompt) => {
-        const actionType = prompt.startsWith('lift') ? 'automateParameterRange' : 'setTrackGain';
-
+        [
+            'a subject opener whose determiner a track and its predicate follow',
+            'turn Drums down 3 dB so the Vocals sit better',
+            'setTrackGain',
+        ],
+        ['a comparison against a track', 'turn Drums down 3 dB like Keys', 'setTrackGain'],
+        ['a comparison against a clip', 'turn Drums down 3 dB like Riff Take', 'setTrackGain'],
+        [
+            'a comparison against the current level',
+            'turn Drums down 3 dB relative to the current level',
+            'setTrackGain',
+        ],
+        ['a comparison against the level before', 'make Drums 3 dB quieter than before', 'setTrackGain'],
+        ['a closing phrase between the target and the figure', 'Lower Drums overall by 3 dB', 'setTrackGain'],
+        ['a closing phrase and courtesy after it', 'Lower Drums by 3 dB overall thanks', 'setTrackGain'],
+        ['a closing phrase naming who asks and courtesy after it', 'Lower Drums by 3 dB for me please', 'setTrackGain'],
+    ])('reads %s: "%s"', (_rule, prompt, actionType) => {
         expect(reads(prompt, actionType)).toBe(true);
+    });
+
+    it.each([
+        ['a comparison a closing phrase follows', 'turn Drums down 3 dB like Keys in the mix'],
+        ['a closing phrase before the figure', 'Lower Drums in the mix by 3 dB'],
+        ['a closing phrase after a direction before the figure', 'Turn Drums up in the mix by 2 dB'],
+        ['a closing phrase courtesy follows', 'Lower Drums by 3 dB in the mix please'],
+        ['courtesy a closing phrase follows', 'Lower Drums by 3 dB please, in the mix'],
+    ])('reads %s where no track is called Mix: "%s"', (_rule, prompt) => {
+        expect(reads(prompt, 'setTrackGain', contextWithoutMixTrack)).toBe(true);
     });
 
     it.each([
@@ -127,11 +171,20 @@ describe('readsAsLevelClause', () => {
         ['a determiner after a verb opener', 'turn Drums up 2 dB to the low band'],
         ['a determiner a whole clause follows after a verb opener', 'turn Drums up 2 dB to the level of Vocals'],
         ['a kind of object after a subject opener', 'turn Drums up 2 dB so the send'],
+        ['a track alone after a subject opener and its determiner', 'turn Drums down 3 dB so the Vocals'],
+        ['the master after a subject opener', 'turn Drums down 3 dB so the master'],
+        ['a plural kind of object after a subject opener', 'turn Drums up 2 dB so the buses sit'],
+        ['a singular kind of object after a subject opener', 'turn Drums up 2 dB so the bus sits'],
+        ['a control after the compared object', 'turn Drums down 3 dB like Keys on the send'],
+        ['a pan after the compared object', 'turn Drums down 3 dB like Keys panned hard left'],
+        ['a figure after the compared object', 'turn Drums down 3 dB relative to Keys at -12 dB'],
+        ['a stretch of the song between the target and the figure', 'Lower Drums in the chorus by 3 dB'],
+        ['a control between the target and the figure', 'Lower Drums on the send by 3 dB'],
     ])('refuses %s: "%s"', (_rule, prompt) => {
         expect(reads(prompt)).toBe(false);
     });
 
-    it('reads the words a head opening on its range holds, which are no level words', () => {
+    it('refuses the words a head opening on its range holds, which are no level words', () => {
         expect(reads('In Chorus Two lift Drums by 1.5 dB', 'automateParameterRange')).toBe(false);
     });
 });
