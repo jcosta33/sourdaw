@@ -14,6 +14,7 @@ import {
     executeAppAction,
     executeAppActionBatch,
     getMacroHandlers,
+    isAppActionConflictError,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -555,6 +556,57 @@ describe('clip edit compensation guards', () => {
 
             expect(currentClip()).toEqual(diverged);
             expect(undoStore.value?.past).toHaveLength(1);
+        });
+    });
+
+    describe('a fresh nudge refuses a placement it did not record', () => {
+        const placementOnly = (placement: Record<string, number>): AppAction =>
+            ({ type: 'nudgeClip', payload: { clipId: 'clip-1', beats: 0, placement } }) as AppAction;
+        const wholeClip = { startBeat: 0, endBeat: 8 };
+
+        it.each([
+            { name: 'a placement before beat 0', action: placementOnly({ startBeat: -4, endBeat: -2 }) },
+            { name: 'an inverted placement', action: placementOnly({ startBeat: 8, endBeat: 2 }) },
+            { name: 'an empty placement', action: placementOnly({ startBeat: 2, endBeat: 2 }) },
+            { name: 'a non-finite placement', action: placementOnly({ startBeat: 0, endBeat: Number.NaN }) },
+            {
+                name: 'a valid placement without the expectation a recording carries',
+                action: placementOnly({ startBeat: 1, endBeat: 3 }),
+            },
+            {
+                name: 'an invalid placement even with an expectation',
+                action: {
+                    type: 'nudgeClip',
+                    payload: {
+                        clipId: 'clip-1',
+                        beats: 0,
+                        expectedPlacement: wholeClip,
+                        placement: { startBeat: -4, endBeat: -2 },
+                    },
+                } satisfies AppAction,
+            },
+        ])('leaves the clip where it is for $name', async ({ action }) => {
+            registerHandlers();
+            seedClip(wholeClip);
+            const prior = structuredClone(currentClip());
+
+            await expect(executeAppAction(action, { source: 'prompt' })).rejects.toSatisfy(isAppActionConflictError);
+
+            expect(currentClip()).toEqual(prior);
+            expect(undoStore.value?.past).toHaveLength(0);
+        });
+
+        it('refuses the same payloads in a batch', async () => {
+            registerHandlers();
+            seedClip(wholeClip);
+            const prior = structuredClone(currentClip());
+
+            const result = await executeAppActionBatch([placementOnly({ startBeat: -4, endBeat: -2 })], {
+                source: 'prompt',
+            });
+
+            expect(result.status).not.toBe('committed');
+            expect(currentClip()).toEqual(prior);
         });
     });
 

@@ -43,10 +43,35 @@ function holdsExpectedPlacement(payload: NudgePayload, clip: Clip | undefined): 
     return true;
 }
 
+/** Whether a placement is one a clip can hold: finite beats, a positive span, and a start at or after beat 0. */
+function isHoldablePlacement(placement: ClipPlacement): boolean {
+    const anchors = [placement.loopOriginBeat, placement.audioLoopPassOriginBeat];
+    return (
+        Number.isFinite(placement.startBeat) &&
+        Number.isFinite(placement.endBeat) &&
+        placement.startBeat >= 0 &&
+        placement.endBeat > placement.startBeat &&
+        anchors.every((anchor) => anchor === undefined || Number.isFinite(anchor))
+    );
+}
+
+/** A placement is written verbatim, so only a recorded replay (which also carries its expectation) may name one, and only a holdable one. */
+function isAcceptablePlacement(payload: NudgePayload): boolean {
+    if (payload.placement === undefined) {
+        return true;
+    }
+    return payload.expectedPlacement !== undefined && isHoldablePlacement(payload.placement);
+}
+
 export const handleNudgeClip = createHandler<'nudgeClip'>({
     canReapplyAfterDivergence: (alpha) => hasExpectation(alpha.payload),
-    validate: (alpha, context) => holdsExpectedPlacement(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
+    validate: (alpha, context) =>
+        isAcceptablePlacement(alpha.payload) &&
+        holdsExpectedPlacement(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
     execute: (alpha) => {
+        if (!isAcceptablePlacement(alpha.payload)) {
+            return { status: 'conflict' };
+        }
         // An unguarded nudge never reads the live clip here; the writer owns its own malformed-state refusal.
         if (hasExpectation(alpha.payload) && !holdsExpectedPlacement(alpha.payload, liveClip(alpha.payload.clipId))) {
             return { status: 'conflict' };

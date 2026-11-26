@@ -540,7 +540,9 @@ export type ArrangementClipAppAction =
               };
               /**
                * The exact beats a recorded inverse or redo writes, so undo and redo restore them bit-for-bit
-               * instead of re-deriving them from `beats`. An absent anchor means the clip carries none.
+               * instead of re-deriving them from `beats`. An absent anchor means the clip carries none. Only
+               * recorded replays set it: a payload that carries it without `expectedPlacement`, or one whose beats
+               * are non-finite, start before beat 0 or do not end after they start, is refused.
                */
               placement?: {
                   startBeat: number;
