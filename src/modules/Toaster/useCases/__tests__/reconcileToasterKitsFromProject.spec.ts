@@ -87,6 +87,26 @@ describe('reconcileToasterKitsFromProject', () => {
         toasterStore.set({});
     });
 
+    it('reconciles a Master-only project change without replaying the kit', () => {
+        const initial = createDefaultKit();
+        projectWith(toasterDevice(toToasterKitState(initial)));
+        reconcileToasterKitsFromProject();
+        selectPad(DEVICE_ID, 3);
+        const stateBefore = toasterStore.value?.[DEVICE_ID];
+        const changed = { ...initial, masterGain: 0.42 };
+        projectWith(toasterDevice(toToasterKitState(changed)));
+        reconcileToasterKitsFromProject();
+        expect(toasterStore.value?.[DEVICE_ID]).toMatchObject({ ...stateBefore, kit: changed, selectedPadIndex: 3 });
+        expect(mocks.controls.setParam).toHaveBeenCalledExactlyOnceWith('master_gain', 0.42);
+        expect(mocks.controls.setPadParam).not.toHaveBeenCalled();
+        expect(mocks.writeNative).toHaveBeenCalledExactlyOnceWith({
+            trackId: TRACK_ID,
+            deviceId: DEVICE_ID,
+            messages: [{ type: 'param', name: 'master_gain', value: 0.42 }],
+        });
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
     it('applies a peer-committed kit to the store and the ready engine', () => {
         projectWith(toasterDevice(peerChunk()));
 

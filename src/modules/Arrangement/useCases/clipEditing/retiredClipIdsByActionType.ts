@@ -102,6 +102,7 @@ const retiredClipIdsByActionType: {
     setLevainIdentity: retiresNoClip,
     setGrandBouleDeviceState: retiresNoClip,
     setToasterFactoryKit: retiresNoClip,
+    setToasterMasterGain: retiresNoClip,
     setBacteriaFactoryPatch: retiresNoClip,
     setCrustFactoryPreset: retiresNoClip,
     setGlutenFactoryPreset: retiresNoClip,

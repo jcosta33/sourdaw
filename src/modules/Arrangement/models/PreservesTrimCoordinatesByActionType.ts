@@ -90,6 +90,7 @@ export const preservesTrimCoordinatesByActionType: {
     setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setToasterMasterGain: false,
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,

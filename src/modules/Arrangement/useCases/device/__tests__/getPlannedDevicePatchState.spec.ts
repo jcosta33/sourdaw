@@ -18,6 +18,7 @@ describe('plannedDeviceWriteStepByActionType', () => {
                 'createBus',
                 'setFermenterPatch',
                 'setToasterFactoryKit',
+                'setToasterMasterGain',
                 'setBacteriaFactoryPatch',
                 'setLevainIdentity',
                 'restoreTrack',

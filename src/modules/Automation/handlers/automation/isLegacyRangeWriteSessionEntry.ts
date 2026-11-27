@@ -101,6 +101,7 @@ export const legacyRangeRemovalByActionType: {
     setLevainIdentity: notLegacyRangeWrite,
     setGrandBouleDeviceState: notLegacyRangeWrite,
     setToasterFactoryKit: notLegacyRangeWrite,
+    setToasterMasterGain: notLegacyRangeWrite,
     setBacteriaFactoryPatch: notLegacyRangeWrite,
     setCrustFactoryPreset: notLegacyRangeWrite,
     setGlutenFactoryPreset: notLegacyRangeWrite,

@@ -101,6 +101,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     setLevainIdentity: noSupportPath,
     setGrandBouleDeviceState: noSupportPath,
     setToasterFactoryKit: noSupportPath,
+    setToasterMasterGain: noSupportPath,
     setBacteriaFactoryPatch: noSupportPath,
     setCrustFactoryPreset: noSupportPath,
     setGlutenFactoryPreset: noSupportPath,

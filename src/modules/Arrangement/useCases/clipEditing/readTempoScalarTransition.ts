@@ -103,6 +103,7 @@ const tempoScalarTransitionByActionType: {
     setLevainIdentity: notATempoAction,
     setGrandBouleDeviceState: notATempoAction,
     setToasterFactoryKit: notATempoAction,
+    setToasterMasterGain: notATempoAction,
     setBacteriaFactoryPatch: notATempoAction,
     setCrustFactoryPreset: notATempoAction,
     setGlutenFactoryPreset: notATempoAction,

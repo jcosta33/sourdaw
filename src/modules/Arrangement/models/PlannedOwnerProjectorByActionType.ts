@@ -102,6 +102,7 @@ export const plannedOwnerProjectorByActionType: {
     setLevainIdentity: projectCapturedPatchUnsupported,
     setGrandBouleDeviceState: projectEveryOwner,
     setToasterFactoryKit: projectCapturedPatchUnsupported,
+    setToasterMasterGain: projectCapturedPatchUnsupported,
     setBacteriaFactoryPatch: projectCapturedPatchUnsupported,
     setCrustFactoryPreset: projectCapturedPatchUnsupported,
     setGlutenFactoryPreset: projectCapturedPatchUnsupported,

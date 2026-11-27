@@ -30,6 +30,7 @@ export const ACTION_LABELS: Record<string, string> = {
     addClip: 'Add clip',
     addDevice: 'Add device',
     setDeviceParameter: 'Set parameter',
+    setToasterMasterGain: 'Set Toaster Master gain',
     setTrackGain: 'Set gain',
     setTrackPan: 'Set pan',
     setTrackColor: 'Set color',

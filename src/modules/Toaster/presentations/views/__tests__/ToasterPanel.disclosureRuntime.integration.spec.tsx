@@ -1,11 +1,18 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { initDeviceStateReconciliation } from '#/app/initDeviceStateReconciliation';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { createEventBus } from '#/infra/events/createEventBus';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { leaveSession } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+import * as commandUseCases from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
@@ -13,12 +20,21 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
+    setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import {
+    setNotificationEventBus,
+    type NotifyPayload,
+    type ConfirmPayload,
+    type PromptPayload,
+} from '#/utils/Notification/notificationEventBus';
 
 import { createDefaultKit } from '../../../models/ToasterKit';
 import { fromToasterKitState, toToasterKitState } from '../../../models/ToasterKitState';
 import { registerToasterDevice, resetToasterDeviceLifecycleState, toasterStore } from '../../../stores/toasterStore';
+import { getToasterHandlers } from '../../../useCases/getToasterHandlers';
 import { initToasterKitPersistence } from '../../../useCases/initToasterKitPersistence';
 import { activeNoteRepeatSessions } from '../../../useCases/noteRepeatState';
 import { stopSequencer } from '../../../useCases/stopSequencer';
@@ -48,6 +64,11 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 const DEVICE_ID = 'toaster-current';
 const OTHER_ID = 'toaster-other';
+const notificationBus = createEventBus<{
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+}>();
 function controls() {
     return {
         ready: true,
@@ -178,6 +199,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
     }
     beforeEach(() => {
         vi.clearAllMocks();
+        setNotificationEventBus(notificationBus);
         engine.getAudioTime.mockReturnValue(0);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Toaster disclosure');
@@ -186,9 +208,10 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
-        clearUndoHistory();
-        resetActionReplayAuthority();
-        setActionHistoryMetadataPort({
+        registerHandlerMap(getToasterHandlers());
+        commandUseCases.clearUndoHistory();
+        commandUseCases.resetActionReplayAuthority();
+        commandUseCases.setActionHistoryMetadataPort({
             record: () => [],
             markReverted: () => ({ status: 'unavailable' as const }),
             clear: () => undefined,
@@ -224,8 +247,8 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         raf.mockRestore();
         toasterStore.set({});
         resetToasterDeviceLifecycleState();
-        clearUndoHistory();
-        resetActionReplayAuthority();
+        commandUseCases.clearUndoHistory();
+        commandUseCases.resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         agentProjectRepairStateStore.set(null);
@@ -344,37 +367,210 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(screen.queryByTestId('toaster-step-0-0')).not.toBeInTheDocument();
         expect(screen.getAllByRole('slider', { name: 'Master' })).toHaveLength(1);
     });
-    it('keeps Master connected to the real owning bridge in both levels and isolates device identities', async () => {
-        render(<ToasterPanel deviceId={DEVICE_ID} />);
-        const untouched = toasterStore.value?.[OTHER_ID];
-        fireEvent.keyDown(screen.getByRole('slider', { name: 'Master' }), { key: 'Home' });
-        flushFrame();
-        expect(selectedState().kit.masterGain).toBe(0);
-        expect(current.setParam).toHaveBeenCalledExactlyOnceWith('master_gain', 0);
-        expect(engine.writeNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith('track-1', DEVICE_ID, {
-            master_gain: 0,
+    async function prepareMasterProject(): Promise<() => void> {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
+        trackStore.set({ tracks: [track()], selectedTrackId: 'track-1', ghostClips: [] });
+        registerToasterDevice(DEVICE_ID);
+        registerToasterDevice(OTHER_ID);
+        registerProjectSlotProjections();
+        projectStore.set({
+            ...defaultProjectStoreState,
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            initialized: true,
         });
-        await waitFor(() =>
-            expect(
-                trackStore.value?.tracks[0]?.devices.find((device) => device.id === DEVICE_ID)?.deviceState?.data
-            ).toHaveProperty('kit.masterGain', 0)
-        );
-        view('full');
-        fireEvent.keyDown(screen.getByRole('slider', { name: 'Master' }), { key: 'End' });
-        flushFrame();
-        expect(selectedState().kit.masterGain).toBe(2);
-        expect(current.setParam.mock.calls).toEqual([
-            ['master_gain', 0],
-            ['master_gain', 2],
-        ]);
-        expect(engine.writeNativeBuiltinParameters).toHaveBeenLastCalledWith('track-1', DEVICE_ID, { master_gain: 2 });
-        expect(other.setParam).not.toHaveBeenCalled();
-        expect(toasterStore.value?.[OTHER_ID]).toBe(untouched);
-        await waitFor(() =>
-            expect(
-                trackStore.value?.tracks[0]?.devices.find((device) => device.id === DEVICE_ID)?.deviceState?.data
-            ).toHaveProperty('kit.masterGain', 2)
-        );
+        flushAutomergeStorageWrites();
+        const stopReconciliation = initDeviceStateReconciliation();
+        const stopProjection = setupProjectionBridge();
+        return () => {
+            stopProjection();
+            stopReconciliation();
+        };
+    }
+    it('keeps Master connected to the real owning action in both levels and isolates device identities', async () => {
+        const disposeProject = await prepareMasterProject();
+        try {
+            render(<ToasterPanel deviceId={DEVICE_ID} />);
+            const untouched = toasterStore.value?.[OTHER_ID];
+            fireEvent.keyDown(screen.getByRole('slider', { name: 'Master' }), { key: 'Home' });
+            await waitFor(() => expect(selectedState().kit.masterGain).toBe(0));
+            expect(current.setParam).toHaveBeenCalledWith('master_gain', 0);
+            await waitFor(() =>
+                expect(
+                    trackStore.value?.tracks[0]?.devices.find((device) => device.id === DEVICE_ID)?.deviceState?.data
+                ).toHaveProperty('kit.masterGain', 0)
+            );
+            view('full');
+            fireEvent.keyDown(screen.getByRole('slider', { name: 'Master' }), { key: 'End' });
+            await waitFor(() => expect(selectedState().kit.masterGain).toBe(2));
+            expect(current.setParam).toHaveBeenLastCalledWith('master_gain', 2);
+            expect(other.setParam).not.toHaveBeenCalled();
+            expect(toasterStore.value?.[OTHER_ID]).toBe(untouched);
+            await waitFor(() =>
+                expect(
+                    trackStore.value?.tracks[0]?.devices.find((device) => device.id === DEVICE_ID)?.deviceState?.data
+                ).toHaveProperty('kit.masterGain', 2)
+            );
+        } finally {
+            disposeProject();
+        }
+    });
+    it.each([
+        { phase: 'queued', beforeCancel: [], afterCancel: [] },
+        {
+            phase: 'applied',
+            beforeCancel: [['master_gain', 1.4]],
+            afterCancel: [
+                ['master_gain', 1.4],
+                ['master_gain', 1],
+            ],
+        },
+    ])('cancels a $phase Master preview without writing', async ({ phase, beforeCancel, afterCancel }) => {
+        const disposeProject = await prepareMasterProject();
+        const executeBatch = vi.spyOn(commandUseCases, 'executeAppActionBatch');
+        try {
+            render(<ToasterPanel deviceId={DEVICE_ID} />);
+            const slider = screen.getByRole('slider', { name: 'Master' });
+            slider.setPointerCapture = vi.fn();
+            slider.releasePointerCapture = vi.fn();
+            const baseline = selectedState().kit.masterGain;
+            expect(baseline).toBe(1);
+            const before = trackStore.value?.tracks[0]?.devices[0]?.deviceState;
+            const peer = toasterStore.value?.[OTHER_ID];
+            const history = undoStore.value?.past.length ?? 0;
+            const revision = settlePendingProjectWritesAndCaptureRevision();
+            fireEvent.pointerDown(slider, { button: 0, pointerId: 7, clientY: 100 });
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 70 });
+            if (phase === 'applied') {
+                flushFrame();
+                fireEvent.pointerMove(slider, { pointerId: 7, clientY: 55 });
+            }
+            expect(current.setParam.mock.calls).toEqual(beforeCancel);
+            fireEvent.pointerCancel(slider, { pointerId: 7 });
+            expect(slider).toHaveAttribute('aria-valuenow', String(baseline));
+            expect(current.setParam.mock.calls).toEqual(afterCancel);
+            flushFrame();
+            expect(current.setParam.mock.calls).toEqual(afterCancel);
+            expect(executeBatch).not.toHaveBeenCalled();
+            expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toEqual(before);
+            expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
+            expect(undoStore.value?.past).toHaveLength(history);
+            expect(toasterStore.value?.[OTHER_ID]).toBe(peer);
+            expect(other.setParam).not.toHaveBeenCalled();
+        } finally {
+            executeBatch.mockRestore();
+            disposeProject();
+        }
+    });
+    it('coalesces Master samples and restores the gain on return-to-start release', async () => {
+        const disposeProject = await prepareMasterProject();
+        const executeBatch = vi.spyOn(commandUseCases, 'executeAppActionBatch');
+        try {
+            render(<ToasterPanel deviceId={DEVICE_ID} />);
+            const slider = screen.getByRole('slider', { name: 'Master' });
+            slider.setPointerCapture = vi.fn();
+            slider.releasePointerCapture = vi.fn();
+            const baseline = selectedState().kit.masterGain;
+            const before = trackStore.value?.tracks[0]?.devices[0]?.deviceState;
+            const peer = toasterStore.value?.[OTHER_ID];
+            const history = undoStore.value?.past.length ?? 0;
+            const revision = settlePendingProjectWritesAndCaptureRevision();
+            fireEvent.pointerDown(slider, { button: 0, pointerId: 7, clientY: 100 });
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 85 });
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 70 });
+            expect(current.setParam).not.toHaveBeenCalled();
+            flushFrame();
+            expect(current.setParam).toHaveBeenCalledExactlyOnceWith('master_gain', baseline + 0.4);
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 100 });
+            fireEvent.pointerUp(slider, { pointerId: 7 });
+            expect(current.setParam).toHaveBeenLastCalledWith('master_gain', baseline);
+            flushFrame();
+            expect(current.setParam).toHaveBeenCalledTimes(2);
+            expect(slider).toHaveAttribute('aria-valuenow', String(baseline));
+            expect(executeBatch).not.toHaveBeenCalled();
+            expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toEqual(before);
+            expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
+            expect(undoStore.value?.past).toHaveLength(history);
+            expect(toasterStore.value?.[OTHER_ID]).toBe(peer);
+            expect(other.setParam).not.toHaveBeenCalled();
+        } finally {
+            executeBatch.mockRestore();
+            disposeProject();
+        }
+    });
+    it.each(['rejected', 'thrown'] as const)('restores Master after a %s Command outcome', async (outcome) => {
+        const disposeProject = await prepareMasterProject();
+        const notifications: NotifyPayload[] = [];
+        const stopListening = notificationBus.on('ui.notify', (payload) => {
+            notifications.push(payload);
+        });
+        const executeBatch = vi.spyOn(commandUseCases, 'executeAppActionBatch');
+        if (outcome === 'rejected') {
+            executeBatch.mockResolvedValueOnce({ status: 'rejected', reason: 'Denied', actions: [] });
+        } else {
+            executeBatch.mockRejectedValueOnce(new Error('Command failed'));
+        }
+        try {
+            render(<ToasterPanel deviceId={DEVICE_ID} />);
+            const slider = screen.getByRole('slider', { name: 'Master' });
+            const before = trackStore.value?.tracks[0]?.devices[0]?.deviceState;
+            const peer = toasterStore.value?.[OTHER_ID];
+            const history = undoStore.value?.past.length ?? 0;
+            fireEvent.keyDown(slider, { key: 'Home' });
+            expect(current.setParam).toHaveBeenNthCalledWith(1, 'master_gain', 0);
+            await waitFor(() => expect(notifications).toHaveLength(1));
+            expect(notifications[0]).toEqual({
+                message:
+                    outcome === 'rejected'
+                        ? 'Could not set Toaster Master gain. Denied'
+                        : 'Could not set Toaster Master gain.',
+                level: outcome === 'rejected' ? 'warning' : 'error',
+                action: undefined,
+            });
+            expect(current.setParam).toHaveBeenLastCalledWith('master_gain', 1);
+            expect(slider).toHaveAttribute('aria-valuenow', '1');
+            expect(other.setParam).not.toHaveBeenCalled();
+            expect(toasterStore.value?.[OTHER_ID]).toBe(peer);
+            expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toEqual(before);
+            expect(undoStore.value?.past).toHaveLength(history);
+        } finally {
+            stopListening();
+            executeBatch.mockRestore();
+            disposeProject();
+        }
+    });
+    it('refuses a held Master drag after its runtime is replaced', async () => {
+        const disposeProject = await prepareMasterProject();
+        const executeBatch = vi.spyOn(commandUseCases, 'executeAppActionBatch');
+        try {
+            render(<ToasterPanel deviceId={DEVICE_ID} />);
+            const slider = screen.getByRole('slider', { name: 'Master' });
+            slider.setPointerCapture = vi.fn();
+            slider.releasePointerCapture = vi.fn();
+            const before = trackStore.value?.tracks[0]?.devices[0]?.deviceState;
+            const history = undoStore.value?.past.length;
+            const baseline = slider.getAttribute('aria-valuenow');
+            fireEvent.pointerDown(slider, { button: 0, pointerId: 7, clientY: 100 });
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 70 });
+            flushFrame();
+            expect(current.setParam).toHaveBeenCalledWith('master_gain', expect.any(Number));
+            expect(slider).not.toHaveAttribute('aria-valuenow', baseline);
+            const replacement = controls();
+            engine.getTrackStrip.mockReturnValue({
+                deviceNodes: [{ deviceId: DEVICE_ID, toasterControls: replacement }],
+            });
+            fireEvent.pointerUp(slider, { pointerId: 7 });
+            expect(replacement.setParam).not.toHaveBeenCalled();
+            expect(executeBatch).not.toHaveBeenCalled();
+            expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toEqual(before);
+            expect(undoStore.value?.past).toHaveLength(history ?? 0);
+            expect(slider).toHaveAttribute('aria-valuenow', baseline);
+        } finally {
+            executeBatch.mockRestore();
+            disposeProject();
+        }
     });
     it('switches levels without kit, project, history, engine or playback effects and keeps Stop and modes reachable', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);

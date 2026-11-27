@@ -238,6 +238,7 @@ const projectTakeLaneActionByActionType: {
     setLevainIdentity: keepLanes,
     setGrandBouleDeviceState: keepLanes,
     setToasterFactoryKit: keepLanes,
+    setToasterMasterGain: keepLanes,
     setBacteriaFactoryPatch: keepLanes,
     setCrustFactoryPreset: keepLanes,
     setGlutenFactoryPreset: keepLanes,

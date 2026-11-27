@@ -91,6 +91,7 @@ export const canonicalControlByActionType: { readonly [Type in AppActionType]: C
     setLevainIdentity: ownControl,
     setGrandBouleDeviceState: ownControl,
     setToasterFactoryKit: ownControl,
+    setToasterMasterGain: ownControl,
     setBacteriaFactoryPatch: ownControl,
     setCrustFactoryPreset: ownControl,
     setGlutenFactoryPreset: ownControl,

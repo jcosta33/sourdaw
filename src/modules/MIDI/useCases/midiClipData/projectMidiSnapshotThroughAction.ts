@@ -155,6 +155,7 @@ const midiSnapshotByActionType: {
     setLevainIdentity: unchangedSnapshot,
     setGrandBouleDeviceState: unchangedSnapshot,
     setToasterFactoryKit: unchangedSnapshot,
+    setToasterMasterGain: unchangedSnapshot,
     setBacteriaFactoryPatch: unchangedSnapshot,
     setCrustFactoryPreset: unchangedSnapshot,
     setGlutenFactoryPreset: unchangedSnapshot,

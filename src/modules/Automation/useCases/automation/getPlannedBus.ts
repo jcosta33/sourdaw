@@ -168,6 +168,7 @@ const plannedBusByActionType: {
     setLevainIdentity: unchangedBus,
     setGrandBouleDeviceState: unchangedBus,
     setToasterFactoryKit: unchangedBus,
+    setToasterMasterGain: unchangedBus,
     setBacteriaFactoryPatch: unchangedBus,
     setCrustFactoryPreset: unchangedBus,
     setGlutenFactoryPreset: unchangedBus,

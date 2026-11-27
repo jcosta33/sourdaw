@@ -281,6 +281,7 @@ describe('same-build persistence inspection entry', () => {
             ['audio', '../../src/modules/AudioEngine/useCases'],
             ['command', '../../src/modules/Command/useCases'],
             ['yeast', '../../src/modules/Yeast/stores'],
+            ['toaster', '../../src/modules/Toaster/stores'],
         ]);
     });
 

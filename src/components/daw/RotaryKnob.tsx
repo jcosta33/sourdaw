@@ -104,6 +104,8 @@ export type RotaryKnobProps = {
     gestureOwner?: string | number;
     /** Optional synchronous authority for controls that serialize competing gestures. */
     gestureAuthority?: GestureAuthority;
+    /** Cancel an active drag when its pointer or view is lost. */
+    onGestureCancel?: () => void;
     /**
      * R-C1: Active modulation sources displayed as colored conic-gradient halo arcs.
      * Each entry represents one modulator connected to this parameter.
@@ -144,6 +146,7 @@ export const RotaryKnob = ({
     scale = 'linear',
     gestureOwner,
     gestureAuthority,
+    onGestureCancel,
     'aria-label': ariaLabel,
     disabled = false,
     title,
@@ -160,9 +163,12 @@ export const RotaryKnob = ({
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
     const onChangeRef = useRef(onChange);
+    const onGestureCancelRef = useRef(onGestureCancel);
     const gestureOwnerAtStartRef = useRef<string | number | undefined>(gestureOwner);
     const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
+    const cancelDragRef = useRef<() => void>(() => {});
+    const settleGestureRef = useRef<() => void>(() => {});
 
     const releasePointerCapture = (pointerId: number | null): void => {
         if (pointerId === null || !rootRef.current) {
@@ -195,7 +201,23 @@ export const RotaryKnob = ({
 
     useLayoutEffect(() => {
         onChangeRef.current = onChange;
+        onGestureCancelRef.current = onGestureCancel;
         gestureAuthorityRef.current = gestureAuthority;
+
+        cancelDragRef.current = () => {
+            if (!draggingRef.current) {
+                return;
+            }
+            clearDragState();
+            onGestureCancelRef.current?.();
+        };
+        settleGestureRef.current = () => {
+            if (onGestureCancelRef.current) {
+                cancelDragRef.current();
+            } else {
+                finalizeDragRef.current();
+            }
+        };
 
         // A drag that is already in flight when `disabled` flips true has to be
         // dropped, not merely stopped from starting. `handlePointerDown` and
@@ -207,11 +229,11 @@ export const RotaryKnob = ({
         // discarded, which is the same treatment an owner change already gets
         // below.
         if (disabled && draggingRef.current) {
-            clearDragState();
+            cancelDragRef.current();
         }
 
         if (draggingRef.current && !gestureAuthority && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
-            clearDragState();
+            cancelDragRef.current();
         }
 
         finalizeDragRef.current = (pointerId?: number): boolean => {
@@ -243,6 +265,8 @@ export const RotaryKnob = ({
             // remains silent.
             if (ownsCurrentGesture && hasEmittedTransientRef.current) {
                 onChangeRef.current(gestureValue, false);
+            } else {
+                onGestureCancelRef.current?.();
             }
             return true;
         };
@@ -262,17 +286,17 @@ export const RotaryKnob = ({
 
     useEffect(() => {
         return () => {
-            finalizeDragRef.current();
+            settleGestureRef.current();
         };
     }, []);
 
     useEffect(() => {
         const handleWindowBlur = (): void => {
-            finalizeDragRef.current();
+            settleGestureRef.current();
         };
         const handleVisibilityChange = (): void => {
             if (document.visibilityState === 'hidden') {
-                finalizeDragRef.current();
+                settleGestureRef.current();
             }
         };
 
@@ -345,7 +369,7 @@ export const RotaryKnob = ({
             return;
         }
         if (!ownsGesture()) {
-            clearDragState();
+            cancelDragRef.current();
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -422,6 +446,14 @@ export const RotaryKnob = ({
         finalizeDragRef.current(event.pointerId);
     };
 
+    const handlePointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+        if (onGestureCancelRef.current && activePointerIdRef.current === event.pointerId) {
+            cancelDragRef.current();
+        } else {
+            handlePointerUp(event);
+        }
+    };
+
     const handleDoubleClick = () => {
         resetToDefault();
     };
@@ -437,7 +469,7 @@ export const RotaryKnob = ({
     const accessibleName = ariaLabel ?? label ?? paramId ?? 'Parameter control';
     const ariaValue = Math.max(min, Math.min(max, value));
     const handleFocusLoss = (): void => {
-        finalizeDragRef.current();
+        settleGestureRef.current();
     };
 
     return (
@@ -460,8 +492,8 @@ export const RotaryKnob = ({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onLostPointerCapture={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onLostPointerCapture={handlePointerCancel}
             onKeyDown={handleKeyDown}
             onBlur={handleFocusLoss}
             onDoubleClick={handleDoubleClick}

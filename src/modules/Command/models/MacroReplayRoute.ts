@@ -22,6 +22,11 @@ const levainIdentityRefusal: MacroReplayRoute = {
     reason: 'Levain identity changes are local edits.',
     precedence: 1,
 };
+const toasterMasterGainRefusal: MacroReplayRoute = {
+    kind: 'refuse',
+    reason: 'Toaster Master gain edits target their original kit.',
+    precedence: 2,
+};
 
 /** How a saved macro replays each action: dispatched as recorded, through the tempo map, or refused. */
 export const macroReplayRouteByActionType: { readonly [Type in AppActionType]: MacroReplayRoute } = {
@@ -106,6 +111,7 @@ export const macroReplayRouteByActionType: { readonly [Type in AppActionType]: M
     setLevainIdentity: levainIdentityRefusal,
     setGrandBouleDeviceState: replayRoute,
     setToasterFactoryKit: replayRoute,
+    setToasterMasterGain: toasterMasterGainRefusal,
     setBacteriaFactoryPatch: replayRoute,
     setCrustFactoryPreset: replayRoute,
     setGlutenFactoryPreset: replayRoute,

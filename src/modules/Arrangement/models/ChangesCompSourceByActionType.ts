@@ -86,6 +86,7 @@ export const changesCompSourceByActionType: { readonly [Type in AppActionType]: 
     setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setToasterMasterGain: false,
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,

@@ -88,6 +88,7 @@ export const productionBriefRefusalByActionType: { readonly [Type in AppActionTy
     setLevainIdentity: 'none',
     setGrandBouleDeviceState: 'none',
     setToasterFactoryKit: 'none',
+    setToasterMasterGain: 'none',
     setBacteriaFactoryPatch: 'none',
     setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',

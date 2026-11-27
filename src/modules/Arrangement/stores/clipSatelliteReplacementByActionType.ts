@@ -92,6 +92,7 @@ export const clipSatelliteReplacementByActionType: {
     setLevainIdentity: noReplacements,
     setGrandBouleDeviceState: noReplacements,
     setToasterFactoryKit: noReplacements,
+    setToasterMasterGain: noReplacements,
     setBacteriaFactoryPatch: noReplacements,
     setCrustFactoryPreset: noReplacements,
     setGlutenFactoryPreset: noReplacements,

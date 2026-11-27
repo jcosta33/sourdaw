@@ -246,6 +246,7 @@ const plannedSendByActionType: {
     setLevainIdentity: unchangedSend,
     setGrandBouleDeviceState: unchangedSend,
     setToasterFactoryKit: unchangedSend,
+    setToasterMasterGain: unchangedSend,
     setBacteriaFactoryPatch: unchangedSend,
     setCrustFactoryPreset: unchangedSend,
     setGlutenFactoryPreset: unchangedSend,

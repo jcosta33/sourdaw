@@ -98,6 +98,7 @@ const renderReceiptGateByActionType: GateLookup = {
     setLevainIdentity: notRenderReceiptGated,
     setGrandBouleDeviceState: notRenderReceiptGated,
     setToasterFactoryKit: notRenderReceiptGated,
+    setToasterMasterGain: notRenderReceiptGated,
     setBacteriaFactoryPatch: notRenderReceiptGated,
     setCrustFactoryPreset: notRenderReceiptGated,
     setGlutenFactoryPreset: notRenderReceiptGated,

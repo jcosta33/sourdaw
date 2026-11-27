@@ -227,6 +227,7 @@ const projectTakeLaneOwnersByActionType: {
     setLevainIdentity: keepOwners,
     setGrandBouleDeviceState: keepOwners,
     setToasterFactoryKit: keepOwners,
+    setToasterMasterGain: keepOwners,
     setBacteriaFactoryPatch: keepOwners,
     setCrustFactoryPreset: keepOwners,
     setGlutenFactoryPreset: keepOwners,

@@ -224,6 +224,7 @@ export const macroReplayRemapByActionType: {
     setLevainIdentity: leaveReferencesUnmapped,
     setGrandBouleDeviceState: leaveReferencesUnmapped,
     setToasterFactoryKit: leaveReferencesUnmapped,
+    setToasterMasterGain: leaveReferencesUnmapped,
     setBacteriaFactoryPatch: leaveReferencesUnmapped,
     setCrustFactoryPreset: leaveReferencesUnmapped,
     setGlutenFactoryPreset: leaveReferencesUnmapped,

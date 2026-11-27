@@ -202,6 +202,7 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     setLevainIdentity: describeFromRegistry,
     setGrandBouleDeviceState: describeFromRegistry,
     setToasterFactoryKit: describeFromRegistry,
+    setToasterMasterGain: describeFromRegistry,
     setBacteriaFactoryPatch: describeFromRegistry,
     setCrustFactoryPreset: describeFromRegistry,
     setGlutenFactoryPreset: describeFromRegistry,

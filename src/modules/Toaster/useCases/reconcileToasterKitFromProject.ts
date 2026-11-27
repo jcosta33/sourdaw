@@ -1,13 +1,22 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { type ToasterKit } from '../models/ToasterKit';
 import { markToasterKitCommitted } from '../models/ToasterKitCommitMarkers';
 import { fromToasterKitState } from '../models/ToasterKitState';
-import { discardPendingToasterKitUpdates, toasterStore } from '../stores/toasterStore';
+import { discardPendingToasterKitUpdates, loadKit, toasterStore } from '../stores/toasterStore';
 
+import { getToasterControls } from './getToasterControls';
 import { loadToasterKitPreset } from './loadToasterKit';
 import { observePublishedToasterKit } from './observePublishedToasterKit';
+import { writeToasterKitScalar } from './toasterParamBridge/writeToasterKitScalar';
 import { toasterRefusalEpisodes } from './toasterRefusalEpisodes';
+
+function isMasterGainOnlyChange(previous: ToasterKit, next: ToasterKit): boolean {
+    return (
+        previous.masterGain !== next.masterGain && jsonValuesEqual({ ...previous, masterGain: next.masterGain }, next)
+    );
+}
 
 export function reconcileToasterKitFromProject(
     deviceId: string,
@@ -32,5 +41,17 @@ export function reconcileToasterKitFromProject(
 
     toasterRefusalEpisodes.end(deviceId);
     markToasterKitCommitted(kit);
+    if (state && !committedReplacement && isMasterGainOnlyChange(state.kit, kit)) {
+        loadKit(deviceId, kit);
+        writeToasterKitScalar({
+            trackId: target.trackId,
+            deviceId,
+            controls: getToasterControls(deviceId),
+            name: 'master_gain',
+            value: kit.masterGain,
+            native: { kind: 'addressed' },
+        });
+        return;
+    }
     loadToasterKitPreset(deviceId, kit);
 }

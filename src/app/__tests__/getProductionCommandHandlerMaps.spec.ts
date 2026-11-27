@@ -103,6 +103,9 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(allHandlers.filter(({ actionType }) => actionType === 'setToasterFactoryKit')).toEqual([
             { actionType: 'setToasterFactoryKit', handler: getToasterHandlers().setToasterFactoryKit },
         ]);
+        expect(allHandlers.filter(({ actionType }) => actionType === 'setToasterMasterGain')).toEqual([
+            { actionType: 'setToasterMasterGain', handler: getToasterHandlers().setToasterMasterGain },
+        ]);
         expect(allHandlers.filter(({ actionType }) => actionType === 'setCrustFactoryPreset')).toEqual([
             { actionType: 'setCrustFactoryPreset', handler: getCrustHandlers().setCrustFactoryPreset },
         ]);
@@ -139,6 +142,7 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setBacteriaFactoryPatch');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setProofPatchSelection');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterFactoryKit');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('setToasterMasterGain');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setCrustFactoryPreset');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setGlutenFactoryPreset');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('setLevainIdentity');

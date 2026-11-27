@@ -83,6 +83,7 @@ export const changesTempoByActionType: { readonly [Type in AppActionType]: boole
     setLevainIdentity: false,
     setGrandBouleDeviceState: false,
     setToasterFactoryKit: false,
+    setToasterMasterGain: false,
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,

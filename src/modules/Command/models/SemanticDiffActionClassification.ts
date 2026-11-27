@@ -105,6 +105,7 @@ export const semanticDiffClassificationByActionType: {
     setLevainIdentity: NONE,
     setGrandBouleDeviceState: NONE,
     setToasterFactoryKit: NONE,
+    setToasterMasterGain: NONE,
     setBacteriaFactoryPatch: NONE,
     setCrustFactoryPreset: NONE,
     setGlutenFactoryPreset: NONE,

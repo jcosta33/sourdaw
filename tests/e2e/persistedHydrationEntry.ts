@@ -9,3 +9,4 @@ export * as inspection from '../../src/modules/CrdtDocument/useCases/agentProjec
 export * as audio from '../../src/modules/AudioEngine/useCases';
 export * as command from '../../src/modules/Command/useCases';
 export * as yeast from '../../src/modules/Yeast/stores';
+export * as toaster from '../../src/modules/Toaster/stores';

@@ -138,6 +138,7 @@ export const macroGeneratedIdByActionType: {
     setLevainIdentity: noGeneratedId,
     setGrandBouleDeviceState: noGeneratedId,
     setToasterFactoryKit: noGeneratedId,
+    setToasterMasterGain: noGeneratedId,
     setBacteriaFactoryPatch: noGeneratedId,
     setCrustFactoryPreset: noGeneratedId,
     setGlutenFactoryPreset: noGeneratedId,

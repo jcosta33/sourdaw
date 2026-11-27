@@ -125,6 +125,7 @@ const seedMaterializerByActionType: {
     setLevainIdentity: leaveSeedUnminted,
     setGrandBouleDeviceState: leaveSeedUnminted,
     setToasterFactoryKit: leaveSeedUnminted,
+    setToasterMasterGain: leaveSeedUnminted,
     setBacteriaFactoryPatch: leaveSeedUnminted,
     setCrustFactoryPreset: leaveSeedUnminted,
     setGlutenFactoryPreset: leaveSeedUnminted,

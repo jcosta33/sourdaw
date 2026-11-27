@@ -99,6 +99,7 @@ const restoredMidiOwnerIdsByActionType: {
     setLevainIdentity: noOwnerIds,
     setGrandBouleDeviceState: noOwnerIds,
     setToasterFactoryKit: noOwnerIds,
+    setToasterMasterGain: noOwnerIds,
     setBacteriaFactoryPatch: noOwnerIds,
     setCrustFactoryPreset: noOwnerIds,
     setGlutenFactoryPreset: noOwnerIds,

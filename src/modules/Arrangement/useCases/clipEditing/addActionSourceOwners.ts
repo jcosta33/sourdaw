@@ -259,6 +259,7 @@ const addActionSourceOwnersByActionType: {
     setLevainIdentity: addNoOwners,
     setGrandBouleDeviceState: addNoOwners,
     setToasterFactoryKit: addNoOwners,
+    setToasterMasterGain: addNoOwners,
     setBacteriaFactoryPatch: addNoOwners,
     setCrustFactoryPreset: addNoOwners,
     setGlutenFactoryPreset: addNoOwners,

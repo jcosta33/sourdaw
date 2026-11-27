@@ -105,6 +105,7 @@ export { discardDecodedAudioFileIfCurrent } from './discardDecodedAudioFileIfCur
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
 export { updateDeviceParameters } from './deviceControls/updateDeviceParameters';
 export { captureDeviceParameterRuntimeWriteAuthority } from './deviceControls/captureDeviceParameterRuntimeWriteAuthority';
+export { captureNativeBuiltinParameterWriter } from './deviceControls/captureNativeBuiltinParameterWriter';
 export { writeNativeBuiltinParameters } from './deviceControls/writeNativeBuiltinParameters';
 export { holdWebFallbackDeviceParam } from './deviceControls/holdWebFallbackDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';

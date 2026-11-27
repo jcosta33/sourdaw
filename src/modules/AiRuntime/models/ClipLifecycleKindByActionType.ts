@@ -88,6 +88,7 @@ export const clipLifecycleKindByActionType: { readonly [Type in AppActionType]: 
     setLevainIdentity: 'none',
     setGrandBouleDeviceState: 'none',
     setToasterFactoryKit: 'none',
+    setToasterMasterGain: 'none',
     setBacteriaFactoryPatch: 'none',
     setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',

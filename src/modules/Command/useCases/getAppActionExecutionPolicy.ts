@@ -150,6 +150,7 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     setLevainIdentity: defaultPolicy,
     setGrandBouleDeviceState: defaultPolicy,
     setToasterFactoryKit: defaultPolicy,
+    setToasterMasterGain: defaultPolicy,
     setBacteriaFactoryPatch: defaultPolicy,
     setCrustFactoryPreset: defaultPolicy,
     setGlutenFactoryPreset: defaultPolicy,

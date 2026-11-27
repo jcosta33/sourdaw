@@ -19,8 +19,11 @@ import {
     type AudioGraphSetDeviceModAssignmentsCommand,
     type AudioGraphSetDeviceParametersCommand,
 } from '../../../models/AudioGraphBackend';
+import { captureNativeBuiltinParameterWriter } from '../../deviceControls/captureNativeBuiltinParameterWriter';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { sendNativeDeviceParameters } from '../sendNativeDeviceParameters';
+
+vi.mock('../../deviceControls/deviceTypeOnStrip', () => ({ deviceTypeOnStrip: () => 'toaster' }));
 
 const APPLIED: AudioGraphApplyResult = {
     acceptance: 'accepted',
@@ -51,6 +54,9 @@ describe('sendNativeDeviceParameters', () => {
     afterEach(() => {
         nativeLiveGraphSession.backend = null;
         nativeLiveGraphSession.pending = Promise.resolve();
+        nativeLiveGraphSession.carriedStripIds = new Set();
+        nativeLiveGraphSession.nativeChainByStripId = new Map();
+        nativeLiveGraphSession.rearmEpoch = 0;
     });
 
     it('sends one record carrying the stated values while a session is armed', async () => {
@@ -71,6 +77,48 @@ describe('sendNativeDeviceParameters', () => {
                 },
             ],
         });
+    });
+
+    it('sends Master preview to the captured carried Toaster', async () => {
+        const apply = armedSession();
+        nativeLiveGraphSession.carriedStripIds = new Set(['track-1']);
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['track-1', ['device-a', 'device-b']]]);
+        expect(captureNativeBuiltinParameterWriter('track-1', 'missing')).toBeNull();
+        const write = captureNativeBuiltinParameterWriter('track-1', 'device-b');
+        if (!write) {
+            throw new Error('Expected a captured native Toaster carrier');
+        }
+
+        write({ master_gain: 0 });
+        await nativeLiveGraphSession.pending;
+
+        expect(apply).toHaveBeenCalledTimes(1);
+        expect(parameterRecords(apply.mock.calls[0]?.[0])).toEqual([
+            {
+                kind: 'set-device-parameters',
+                target: { trackId: 'track-1', deviceId: 'device-b' },
+                values: { master_gain: 0 },
+            },
+        ]);
+    });
+
+    it('drops a queued preview when the native chain is replaced with the same device ids', async () => {
+        const apply = armedSession();
+        nativeLiveGraphSession.carriedStripIds = new Set(['track-1']);
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['track-1', ['device-a']]]);
+        const write = captureNativeBuiltinParameterWriter('track-1', 'device-a');
+        if (!write) {
+            throw new Error('Expected a captured native Toaster carrier');
+        }
+        const blocked = Promise.withResolvers<void>();
+        nativeLiveGraphSession.pending = blocked.promise;
+
+        write({ master_gain: 0 });
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['track-1', ['device-a']]]);
+        blocked.resolve();
+        await nativeLiveGraphSession.pending;
+
+        expect(apply).not.toHaveBeenCalled();
     });
 
     // A patch past the ceiling is the case the split exists for: sent whole it

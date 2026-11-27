@@ -612,11 +612,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
             'reverbMix, delayMix, swing) are kit-level and live in the store the kit loader seeds; ' +
             '`models/ToasterKit.ts` exports pad identity (`DEFAULT_PAD_NAMES`, `DEFAULT_ENGINE_TYPES`, ' +
             '`PAD_COLORS`) and no parameter values at all.',
-        noPanelReason:
-            '`ToasterPanel` declares thirteen reset literals and binds every one through ' +
-            "`setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)`, where the id is the third " +
-            'argument. This scanner reads the first only; widening it would read `deviceId` and the pad index as ' +
-            'parameter names.',
+        noPanelReason: '',
     },
     levain: {
         moduleDir: 'src/modules/Levain',
@@ -1225,6 +1221,7 @@ const PANEL_FILES: readonly { readonly file: string; readonly declared?: number;
     { file: 'src/modules/Proof/presentations/components/ProofLimiterSection.tsx', readable: 0 },
     { file: 'src/modules/Proof/presentations/views/ProofPanel.tsx', readable: 0 },
     { file: 'src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx', declared: 18, readable: 17 },
+    { file: 'src/modules/Toaster/presentations/views/MasterKnob.tsx', declared: 1, readable: 1 },
     { file: 'src/modules/Toaster/presentations/views/ToasterPanel.tsx', readable: 0 },
     { file: 'src/modules/Tuner/presentations/views/TunerPanel.tsx', readable: 0 },
 ];

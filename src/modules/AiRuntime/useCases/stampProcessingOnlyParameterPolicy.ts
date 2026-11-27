@@ -123,6 +123,7 @@ const stampByActionType: Stamp = {
     setLevainIdentity: leaveUnstamped,
     setGrandBouleDeviceState: leaveUnstamped,
     setToasterFactoryKit: leaveUnstamped,
+    setToasterMasterGain: leaveUnstamped,
     setBacteriaFactoryPatch: leaveUnstamped,
     setCrustFactoryPreset: leaveUnstamped,
     setGlutenFactoryPreset: leaveUnstamped,
