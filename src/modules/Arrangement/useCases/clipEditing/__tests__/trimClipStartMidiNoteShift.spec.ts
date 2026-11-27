@@ -86,6 +86,24 @@ describe('trimClipStart keeps the surviving material where it was', () => {
     });
 });
 
+describe('trimClipStart refuses a MIDI clip it cannot plan', () => {
+    afterEach(() => {
+        trackStore.set(structuredClone(defaultTrackState));
+    });
+
+    it('writes nothing when the stored offset is not finite', () => {
+        const keys = createTrack({ id: 't-keys', name: 'Keys', kind: 'midi', withoutDefaultDevice: true });
+        const corrupted = { ...clip('c-keys', 't-keys', 'midi'), midiOffsetBeats: Number.POSITIVE_INFINITY };
+        trackStore.set({ ...defaultTrackState, tracks: [{ ...keys, clips: [corrupted] }] });
+
+        expect(trimClipStart('c-keys', 2)).toBe(false);
+
+        const untouched = readClip('c-keys');
+        expect(untouched.startBeat).toBe(0);
+        expect(untouched.midiOffsetBeats).toBe(Number.POSITIVE_INFINITY);
+    });
+});
+
 describe('trimClipStart keeps a looped MIDI clip inside its loop', () => {
     /** The scheduler reads a looped clip's notes at `note.startBeat - midiOffsetBeats` wrapped by the loop length. */
     function loopedClip(id: string, trackId: string, startBeat: number, endBeat: number): Clip {

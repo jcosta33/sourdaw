@@ -1,20 +1,18 @@
-import { createHandler } from '#/utils/createHandler';
+import { createExpectedValueHandler } from '#/utils/createExpectedValueHandler';
 
 import { renameClip } from '../../useCases/clipEditing/renameClip';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-export const handleRenameClip = createHandler<'renameClip'>({
-    execute: (alpha) => {
-        return toHandlerExecutionResult(renameClip(alpha.payload.clipId, alpha.payload.name));
-    },
-    describe: (alpha) => {
-        const state = getTrackStoreState();
-        const clip = state?.tracks.flatMap((time) => time.clips).find((context) => context.id === alpha.payload.clipId);
-        return {
-            label: `Rename clip to "${alpha.payload.name}"`,
-            inverseAction: clip ? { type: 'renameClip', payload: { clipId: clip.id, name: clip.name } } : null,
-        };
-    },
-    undoable: true,
+import { readPlannedClip } from './readPlannedClip';
+
+export const handleRenameClip = createExpectedValueHandler<'renameClip', string>({
+    label: (action) => `Rename clip to "${action.payload.name}"`,
+    requested: (action) => action.payload.name,
+    expected: (action) => action.payload.expectedName,
+    read: (action, context) => readPlannedClip(action.payload.clipId, context)?.name,
+    withExpected: (action, name, expectedName) => ({
+        type: 'renameClip',
+        payload: { clipId: action.payload.clipId, name, expectedName },
+    }),
+    write: (action) => toHandlerExecutionResult(renameClip(action.payload.clipId, action.payload.name)),
 });

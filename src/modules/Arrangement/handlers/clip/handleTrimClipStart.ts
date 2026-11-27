@@ -15,9 +15,11 @@ import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAud
 import { prepareLegacyAudioClipStartTrim } from '../../useCases/clipEditing/prepareLegacyAudioClipStartTrim';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { trimmedMidiOffset, trimmedStartBeat } from '../projectClipFieldActions';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
+import { audioSourceEditedEarlierInBatch, readPlannedClip } from './readPlannedClip';
 
 const rowReplay = createMidiRowCoordinateReplay('trimClipStart');
 
@@ -157,6 +159,8 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
         newStartBeat: number;
         loopOriginBeat: number | null;
         midiOffsetBeats?: number;
+        expectedStartBeat?: number;
+        expectedMidiOffsetBeats?: number;
     } = {
         clipId: clip.id,
         // The inverse records the pre-action anchor exactly (#5198): a
@@ -177,25 +181,55 @@ function describeScalarTrim(alpha: TrimClipStartAction, clip: Clip, label: strin
         // midi-only, the only type whose trim re-bases offset and rows
         // through the wrap law.
         inversePayload.midiOffsetBeats = clip.midiOffsetBeats ?? 0;
+        inversePayload.expectedMidiOffsetBeats = trimmedMidiOffset(clip, alpha.payload);
     }
+    // The writer moves the head only to a start before the clip's end, clamped at beat 0.
+    inversePayload.expectedStartBeat = trimmedStartBeat(clip, alpha.payload.newStartBeat);
     const inverseAction = { type: 'trimClipStart' as const, payload: inversePayload };
+    const redoAction = {
+        type: 'trimClipStart' as const,
+        payload: { ...structuredClone(alpha.payload), expectedStartBeat: clip.startBeat },
+    };
     if (clip.type === 'midi') {
-        return {
-            label,
-            ...rowReplay.describe(alpha, inverseAction, {
-                type: 'trimClipStart',
-                payload: structuredClone(alpha.payload),
-            }),
-        };
+        redoAction.payload.expectedMidiOffsetBeats = clip.midiOffsetBeats ?? 0;
     }
-    return { label, inverseAction };
+    if (clip.type === 'midi') {
+        return { label, ...rowReplay.describe(alpha, inverseAction, redoAction) };
+    }
+    return { label, inverseAction, redoAction };
+}
+
+function hasExpectation(payload: TrimClipStartAction['payload']): boolean {
+    return payload.expectedStartBeat !== undefined || payload.expectedMidiOffsetBeats !== undefined;
+}
+
+/** Whether the clip is where a recorded leg expects it: the head, and for MIDI the stored offset. */
+function holdsExpectedState(payload: TrimClipStartAction['payload'], clip: Clip | undefined): boolean {
+    if (payload.expectedStartBeat !== undefined && clip?.startBeat !== payload.expectedStartBeat) {
+        return false;
+    }
+    return (
+        payload.expectedMidiOffsetBeats === undefined ||
+        (clip?.midiOffsetBeats ?? 0) === payload.expectedMidiOffsetBeats
+    );
 }
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     canReportConflict: true,
+    canReapplyAfterDivergence: (alpha) => hasExpectation(alpha.payload),
+    // An unguarded trim never reads the live clip here; the writer owns its own malformed-state refusal.
+    validate: (alpha, context) =>
+        !hasExpectation(alpha.payload) ||
+        holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId, context)),
     validateSessionEntry: (entry) =>
         audioClipStartTrimState.isSessionEntry(entry) && rowReplay.validateSessionEntry(entry),
     execute: (alpha) => {
+        if (
+            hasExpectation(alpha.payload) &&
+            !holdsExpectedState(alpha.payload, readPlannedClip(alpha.payload.clipId))
+        ) {
+            return { status: 'conflict' };
+        }
         if (!rowReplay.canExecute(alpha)) {
             return { status: 'conflict' };
         }
@@ -220,11 +254,12 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
             preparedLegacyRedos.set(alpha, null);
         }
         try {
-            const state = getTrackStoreState();
-            const clip = state?.tracks
-                .flatMap((time) => time.clips)
-                .find((context) => context.id === alpha.payload.clipId);
+            const clip = readPlannedClip(alpha.payload.clipId, context);
             if (!clip) {
+                return { label, inverseAction: null };
+            }
+            // The capture is of the planned clip, which an earlier rename or mute leaves exact but a move does not.
+            if (clip.type === 'audio' && audioSourceEditedEarlierInBatch(clip.id, context)) {
                 return { label, inverseAction: null };
             }
 

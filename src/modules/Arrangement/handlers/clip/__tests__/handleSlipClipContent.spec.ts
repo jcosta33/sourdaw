@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type Clip } from '../../../models/Track';
+import { audioClipSlipOwner } from '../../../useCases/clipEditing/audioClipSlipOwner';
 import { handleSlipClipContent } from '../handleSlipClipContent';
 
 const mocks = vi.hoisted(() => ({
@@ -96,7 +97,7 @@ describe('handleSlipClipContent', () => {
         // offset (#5198 repair).
         expect(desc.inverseAction).toEqual({
             type: 'slipClipContent',
-            payload: { clipId: 'cm', clipType: 'midi', offset: 0, rowLiftBeats: 0 },
+            payload: { clipId: 'cm', clipType: 'midi', offset: 0, rowLiftBeats: 0, expectedOffset: 1 },
         });
     });
 
@@ -112,6 +113,25 @@ describe('handleSlipClipContent', () => {
             })
         ).toEqual({ status: 'conflict' });
         expect(mocks.slipClipContent).not.toHaveBeenCalled();
+    });
+
+    it('captures an audio slip from the live clip the store holds and refuses when the owner no longer matches', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [ClipDummy.create({ id: 'c1', trackId: 't1', type: 'audio' })] }],
+        });
+        const matches = vi.spyOn(audioClipSlipOwner, 'matches').mockReturnValue(false);
+
+        expect(
+            handleSlipClipContent.execute({
+                type: 'slipClipContent',
+                payload: { clipId: 'c1', clipType: 'audio', offset: 1 },
+            })
+        ).toEqual({ status: 'conflict' });
+        expect(matches).toHaveBeenCalledWith(
+            expect.objectContaining({ clip: expect.objectContaining({ id: 'c1' }) }),
+            expect.anything()
+        );
+        matches.mockRestore();
     });
 
     it('records the actual MIDI owner capture and passes reciprocal data on its real inverse', () => {
@@ -147,6 +167,22 @@ describe('handleSlipClipContent', () => {
             throw new Error('Expected a slip inverse');
         }
         mocks.slipClipContent.mockReturnValueOnce(true);
+        // The forward write is mocked, so the stored offset the inverse guards is set by hand.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        ClipDummy.create({
+                            id: 'cm',
+                            trackId: 't1',
+                            type: 'midi',
+                            midiOffsetBeats: description.inverseAction.payload.expectedOffset,
+                        }),
+                    ],
+                },
+            ],
+        });
         expect(handleSlipClipContent.execute(description.inverseAction)).toEqual({ status: 'written' });
         expect(mocks.slipClipContent).toHaveBeenLastCalledWith('cm', 'midi', 0, -8, { restore: capture });
     });

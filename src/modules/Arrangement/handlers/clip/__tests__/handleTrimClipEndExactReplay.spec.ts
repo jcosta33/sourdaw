@@ -84,7 +84,10 @@ describe('trimClipEnd writes the end it is given, past the source or not', () =>
         expect(handleTrimClipEnd.execute(trim)).toEqual({ status: 'written' });
         expect(endBeat()).toBe(6);
 
-        expect(inverseAction).toEqual({ type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 11 } });
+        expect(inverseAction).toEqual({
+            type: 'trimClipEnd',
+            payload: { clipId: 'clip-1', newEndBeat: 11, expectedEndBeat: 6 },
+        });
         if (inverseAction?.type !== 'trimClipEnd') {
             throw new Error('Expected a trimClipEnd inverse');
         }

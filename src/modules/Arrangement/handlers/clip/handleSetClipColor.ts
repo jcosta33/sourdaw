@@ -1,46 +1,20 @@
-import { createHandler } from '#/utils/createHandler';
+import { createExpectedValueHandler } from '#/utils/createExpectedValueHandler';
 
 import { setClipColor } from '../../useCases/clipEditing/setClipColor';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-export const handleSetClipColor = createHandler<'setClipColor'>({
-    // Conflicts when `expectedColor` no longer matches the live clip. Proven by
-    // the `canReportConflict` registry honesty spec; undo step-over (#2881)
-    // relies on it.
+import { readPlannedClip } from './readPlannedClip';
+
+export const handleSetClipColor = createExpectedValueHandler<'setClipColor', string>({
+    // Proven by the `canReportConflict` registry honesty spec; undo step-over (#2881) relies on it.
     canReportConflict: true,
-    execute: (action) => {
-        const clip = getTrackStoreState()
-            ?.tracks.flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        if (action.payload.expectedColor !== undefined && clip?.color !== action.payload.expectedColor) {
-            return { status: 'conflict' };
-        }
-        return toHandlerExecutionResult(setClipColor(action.payload.clipId, action.payload.color));
-    },
-    describe: (action) => {
-        const clip = getTrackStoreState()
-            ?.tracks.flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        return {
-            label: 'Set clip color',
-            inverseAction: clip
-                ? {
-                      type: 'setClipColor',
-                      payload: { clipId: clip.id, color: clip.color, expectedColor: action.payload.color },
-                  }
-                : null,
-            redoAction: clip
-                ? {
-                      type: 'setClipColor',
-                      payload: { clipId: clip.id, color: action.payload.color, expectedColor: clip.color },
-                  }
-                : action,
-        };
-    },
-    isNoop: (action) =>
-        getTrackStoreState()
-            ?.tracks.flatMap((track) => track.clips)
-            .find((clip) => clip.id === action.payload.clipId)?.color === action.payload.color,
-    undoable: true,
+    label: () => 'Set clip color',
+    requested: (action) => action.payload.color,
+    expected: (action) => action.payload.expectedColor,
+    read: (action, context) => readPlannedClip(action.payload.clipId, context)?.color,
+    withExpected: (action, color, expectedColor) => ({
+        type: 'setClipColor',
+        payload: { clipId: action.payload.clipId, color, expectedColor },
+    }),
+    write: (action) => toHandlerExecutionResult(setClipColor(action.payload.clipId, action.payload.color)),
 });

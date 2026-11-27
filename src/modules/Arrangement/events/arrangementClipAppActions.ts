@@ -172,7 +172,7 @@ export type ArrangementClipAppAction =
     | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'removeClip'; payload: { clipId: string; /** Internal captured replay preference. */ ripple?: boolean } }
-    | { type: 'renameClip'; payload: { clipId: string; name: string } }
+    | { type: 'renameClip'; payload: { clipId: string; name: string; expectedName?: string } }
     | {
           type: 'splitClip';
           payload: {
@@ -246,11 +246,22 @@ export type ArrangementClipAppAction =
                * and replay the re-wrapping law they always did.
                */
               midiOffsetBeats?: number;
+              /**
+               * The clip start a recorded inverse or redo requires before it writes, so a
+               * divergent edit of the start is a conflict. Only recorded replays set it.
+               */
+              expectedStartBeat?: number;
+              /**
+               * The stored `midiOffsetBeats` a recorded MIDI inverse or redo requires before it
+               * writes, so a peer slip between the trim and its replay is a conflict. Only
+               * recorded replays set it.
+               */
+              expectedMidiOffsetBeats?: number;
               /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
               midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
-    | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number; expectedEndBeat?: number } }
     | {
           /** Internal exact audio-head replay; never a public trim source override. */
           type: 'restoreAudioClipStartTrim';
@@ -294,6 +305,12 @@ export type ArrangementClipAppAction =
                * restoration (`rowLiftBeats: 0`).
                */
               rowLiftBeats?: number;
+              /**
+               * The stored `midiOffsetBeats` (0 when absent) a recorded inverse or redo
+               * requires before it writes, so a divergent slip is a conflict. Only recorded
+               * replays set it.
+               */
+              expectedOffset?: number;
               /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
               midiRowCoordinates?: MidiRowCoordinateCapture;
           };
@@ -509,7 +526,38 @@ export type ArrangementClipAppAction =
               replacement: ClipGlueActionSnapshot;
           };
       }
-    | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
+    | {
+          type: 'nudgeClip';
+          payload: {
+              clipId: string;
+              beats: number;
+              /** The start a recorded replay requires before it writes. A payload without `expectedPlacement` guards the start alone. */
+              expectedStartBeat?: number;
+              /**
+               * The whole placement a recorded inverse or redo requires before it writes, the one the other leg
+               * wrote, so a peer edit of the end or of a loop anchor refuses the replay. An absent anchor means
+               * the clip carries none. Only recorded replays set it.
+               */
+              expectedPlacement?: {
+                  startBeat: number;
+                  endBeat: number;
+                  loopOriginBeat?: number;
+                  audioLoopPassOriginBeat?: number;
+              };
+              /**
+               * The exact beats a recorded inverse or redo writes, so undo and redo restore them bit-for-bit
+               * instead of re-deriving them from `beats`. An absent anchor means the clip carries none. Only
+               * recorded replays set it: a payload that carries it without `expectedPlacement`, or one whose beats
+               * are non-finite, start before beat 0 or do not end after they start, is refused.
+               */
+              placement?: {
+                  startBeat: number;
+                  endBeat: number;
+                  loopOriginBeat?: number;
+                  audioLoopPassOriginBeat?: number;
+              };
+          };
+      }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats?: number } }
     | {
           type: 'restoreCrossfadeClips';

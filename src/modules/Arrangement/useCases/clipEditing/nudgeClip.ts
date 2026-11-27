@@ -1,12 +1,14 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
-import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
-import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 
-export function nudgeClip(clipId: string, beats: number): boolean {
+import { assignClipLoopAnchors } from './assignClipLoopAnchors';
+import { planClipNudge } from './planClipNudge';
+import { type ClipPlacement } from './readClipPlacement';
+
+export function nudgeClip(clipId: string, beats: number, placement?: ClipPlacement): boolean {
     if (!Number.isFinite(beats)) {
         return false;
     }
@@ -28,19 +30,14 @@ export function nudgeClip(clipId: string, beats: number): boolean {
         if (context.locked) {
             return context;
         }
-        const newStart = Math.max(0, context.startBeat + beats);
-        const duration = context.endBeat - context.startBeat;
-        appliedDelta = newStart - context.startBeat;
         // The nudge is a relocation, not a trim: the loop anchor moves with
         // the rectangle so the applied delta (clamped at zero) never re-derives
         // the loop window or the pass count from the new placement (#4988).
-        return {
-            ...context,
-            startBeat: newStart,
-            endBeat: newStart + duration,
-            ...shiftLoopOriginEntry(context, appliedDelta),
-            ...relocateAudioSourceTimeFields(context, appliedDelta),
-        };
+        const planned = planClipNudge(context, beats, placement);
+        appliedDelta = planned.startBeat - context.startBeat;
+        const placed = { ...context, startBeat: planned.startBeat, endBeat: planned.endBeat };
+        assignClipLoopAnchors(placed, planned);
+        return placed;
     });
 
     // Clip-scoped automation is stored at timeline-absolute beats and must

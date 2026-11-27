@@ -4,8 +4,21 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { type Track } from '../stores/trackStore';
 import { clampClipGain } from '../transformers/clampClipGain';
 import { clampTrackHeight } from '../useCases/clampTrackHeight';
+import { planRippleDelete } from '../useCases/rippleDelete/planRippleDelete';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
 import { clampTrackPan } from '../useCases/setTrackGainPan/clampTrackPan';
+
+import {
+    projectClipColor,
+    projectClipEnd,
+    projectClipFade,
+    projectClipLock,
+    projectClipMute,
+    projectClipName,
+    projectClipNudge,
+    projectClipSlip,
+    projectMidiClipStart,
+} from './projectClipFieldActions';
 
 type ActionOf<Type extends AppActionType> = Extract<AppAction, { type: Type }>;
 
@@ -15,6 +28,21 @@ function keepTrack(): void {
 
 function projectDiscardedClip(action: ActionOf<'discardDuplicatedClip'>, projected: Track): void {
     projected.clips = projected.clips.filter((clip) => clip.id !== action.payload.clipId);
+}
+
+function projectRemovedClip(action: ActionOf<'removeClip'>, projected: Track): void {
+    const clipId = action.payload.clipId;
+    if (!projected.clips.some((clip) => clip.id === clipId)) {
+        return;
+    }
+    // The removal closes the gap through the same plan the writer applies, so a later clip plans from where the ripple leaves it.
+    const plan = planRippleDelete(
+        { trackId: projected.id, clipIds: [clipId], ripple: action.payload.ripple },
+        { tracks: [projected] }
+    );
+    if (plan) {
+        projected.clips = plan.nextClips;
+    }
 }
 
 function projectTrackGain(action: ActionOf<'setTrackGain'>, projected: Track): void {
@@ -229,15 +257,15 @@ export const trackProjectionByActionType: {
     duplicateClip: keepTrack,
     duplicateClipToNextBar: keepTrack,
     duplicateTrack: keepTrack,
-    removeClip: keepTrack,
-    renameClip: keepTrack,
+    removeClip: projectRemovedClip,
+    renameClip: projectClipName,
     splitClip: keepTrack,
     restoreClipSplitState: keepTrack,
-    trimClipStart: keepTrack,
-    trimClipEnd: keepTrack,
+    trimClipStart: projectMidiClipStart,
+    trimClipEnd: projectClipEnd,
     restoreAudioClipStartTrim: keepTrack,
     restoreAudioClipSlip: keepTrack,
-    slipClipContent: keepTrack,
+    slipClipContent: projectClipSlip,
     drawClip: keepTrack,
     discardDrawnClip: keepTrack,
     restoreDrawnClip: keepTrack,
@@ -333,7 +361,7 @@ export const trackProjectionByActionType: {
     copyClip: keepTrack,
     cutClip: keepTrack,
     pasteClip: keepTrack,
-    setClipFade: keepTrack,
+    setClipFade: projectClipFade,
     importMidiFile: keepTrack,
     normalizeClip: keepTrack,
     relinkClipAudioSources: keepTrack,
@@ -344,12 +372,12 @@ export const trackProjectionByActionType: {
     setCompRegion: keepTrack,
     removeCompRegion: keepTrack,
     restoreCompRegionInterval: keepTrack,
-    nudgeClip: keepTrack,
+    nudgeClip: projectClipNudge,
     crossfadeClips: keepTrack,
     restoreCrossfadeClips: keepTrack,
     setClipGain: projectClipGain,
-    setClipColor: keepTrack,
-    lockClip: keepTrack,
+    setClipColor: projectClipColor,
+    lockClip: projectClipLock,
     consolidateSelection: keepTrack,
     bounceSelection: keepTrack,
     seekPlayhead: keepTrack,
@@ -429,7 +457,7 @@ export const trackProjectionByActionType: {
     audioToMidi: keepTrack,
     commitPitchEdit: keepTrack,
     restoreClipFileId: keepTrack,
-    muteClip: keepTrack,
+    muteClip: projectClipMute,
     clearSolos: keepTrack,
     restoreTrackSoloStates: keepTrack,
     setTrackNotes: keepTrack,
