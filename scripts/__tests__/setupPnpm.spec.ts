@@ -58,7 +58,7 @@ function fixture() {
     chmodSync(dest, 0o755);
     writeFileSync(join(workspace, 'package.json'), JSON.stringify({ packageManager: 'pnpm@12.18.0' }));
     writeFileSync(join(workspace, 'pnpm-lock.yaml'), 'unchanged project lock\n');
-    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH };
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot ?? 'C:\\Windows' };
     for (const name of ['GITHUB_PATH', 'GITHUB_ENV', 'GITHUB_OUTPUT']) {
         env[name] = join(workspace, name);
         writeFileSync(env[name], '');
@@ -483,6 +483,26 @@ describe('verified native pnpm setup', () => {
         );
         expect(input.run.mock.calls[2]?.[1]).toEqual(['--version']);
         expect(input.run.mock.calls.some(([file]) => /\.cmd$|cmd\.exe$/.test(file))).toBe(false);
+    });
+
+    it('uses only system tools for the verified downloader on a Windows runner with Git Bash on PATH', () => {
+        const input = fixture();
+        input.options.platform = 'win32';
+        delete input.options.env.SystemRoot;
+        input.options.env.sYsTeMrOoT = 'D:\\Windows';
+        input.options.env.PATH = 'C:\\Program Files\\Git\\usr\\bin;D:\\Windows\\System32';
+        input.options.env.Path = 'C:\\Other';
+
+        setupPnpm(input.options);
+
+        const pathEntries = (env: NodeJS.ProcessEnv) =>
+            Object.fromEntries(Object.entries(env).filter(([key]) => key.toUpperCase() === 'PATH'));
+        const paths = input.run.mock.calls.map(([, , { env }]) => pathEntries(env));
+        expect(paths).toEqual([
+            { PATH: input.options.env.PATH, Path: input.options.env.Path },
+            { PATH: 'D:\\Windows\\System32' },
+            { PATH: input.options.env.PATH, Path: input.options.env.Path },
+        ]);
     });
 
     it('validates a Windows PE header at its declared offset beyond the initial read', () => {

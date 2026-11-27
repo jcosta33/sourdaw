@@ -2,11 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 
+import {
+    CREATIVE_INTERPRETATION_TOOL_NAME,
+    createCreativeInterpretationToolSchema,
+    type CreativeInterpretationCatalog,
+} from '../../../models/CreativeInterpretation';
+import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateAnthropicToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { getApplicationOwnedToolSchemas } from '../../getApplicationOwnedToolSchemas';
+import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import {
     VIBE_BATCH_VALUE_CHOOSE_TOOL_NAME,
     VIBE_BATCH_VALUE_TOOLS,
@@ -146,44 +153,58 @@ function asOpenAiCall(call: ProviderCall): Record<string, unknown> {
     };
 }
 
-function anthropicResponse(call: ProviderCall, turn: number): Record<string, unknown> {
+type ScriptedTurn = ProviderCall | readonly ProviderCall[];
+
+function callsOf(turn: ScriptedTurn): readonly ProviderCall[] {
+    return 'name' in turn ? [turn] : turn;
+}
+
+function anthropicResponse(turn: ScriptedTurn, index: number): Record<string, unknown> {
+    const calls = callsOf(turn);
     return {
-        id: `message-${String(turn)}`,
+        id: `message-${String(index)}`,
         type: 'message',
         role: 'assistant',
-        content: [asAnthropicCall(call)],
+        content: calls.map(asAnthropicCall),
         model: 'scripted-model',
-        stop_reason: 'tool_use',
+        stop_reason: calls.length > 0 ? 'tool_use' : 'end_turn',
         stop_sequence: null,
         usage: { input_tokens: 1, output_tokens: 1 },
     };
 }
 
-function openAiResponse(call: ProviderCall, turn: number): Record<string, unknown> {
+function openAiResponse(turn: ScriptedTurn, index: number): Record<string, unknown> {
+    const calls = callsOf(turn);
+    const message: Record<string, unknown> = { role: 'assistant', content: null };
+    if (calls.length > 0) {
+        message.tool_calls = calls.map(asOpenAiCall);
+    }
     return {
-        id: `chatcmpl-${String(turn)}`,
+        id: `chatcmpl-${String(index)}`,
         object: 'chat.completion',
         model: 'scripted-model',
-        choices: [
-            {
-                index: 0,
-                finish_reason: 'tool_calls',
-                message: { role: 'assistant', content: null, tool_calls: [asOpenAiCall(call)] },
-            },
-        ],
+        choices: [{ index: 0, finish_reason: calls.length > 0 ? 'tool_calls' : 'stop', message }],
     };
 }
 
-async function runScriptedLoop(input: { transport: 'anthropic' | 'openai-compatible' }) {
+type ScriptedLoopInput = {
+    transport: 'anthropic' | 'openai-compatible';
+    toolSchemas?: readonly ToolSchema[];
+    loop?: Partial<Parameters<typeof runApplicationOwnedToolLoop>[0]>;
+    anthropicModel?: string;
+};
+
+async function runScriptedLoop(input: ScriptedLoopInput) {
     const controller = new AbortController();
     return runApplicationOwnedToolLoop({
         loopId: `scripted-${input.transport}`,
         terminalToolNames: new Set(['command.batch.propose']),
+        ...input.loop,
         requestTurn: async ({ history, budgetNote, directive }) => {
             const common = {
                 systemPrompt: 'Plan only through application-owned tools.',
                 userMessage: 'Mute the named track.',
-                toolSchemas: getApplicationOwnedToolSchemas(),
+                toolSchemas: input.toolSchemas ?? getApplicationOwnedToolSchemas(),
                 maxOutputTokens: 128,
                 directive,
                 history,
@@ -192,7 +213,10 @@ async function runScriptedLoop(input: { transport: 'anthropic' | 'openai-compati
             };
             let plan;
             if (input.transport === 'anthropic') {
-                plan = await generateAnthropicToolCalls({ ...common, runtime: ANTHROPIC_RUNTIME });
+                plan = await generateAnthropicToolCalls({
+                    ...common,
+                    runtime: { ...ANTHROPIC_RUNTIME, model: input.anthropicModel ?? ANTHROPIC_RUNTIME.model },
+                });
             } else {
                 plan = await generateOpenAiCompatibleToolCalls({ ...common, runtime: OPENAI_COMPATIBLE_RUNTIME });
             }
@@ -313,6 +337,236 @@ describe('scripted provider protocol through the application-owned planning loop
             expect(refusals).toEqual([]);
         }
     );
+    describe('a fixture that skips a mandatory planning step', () => {
+        type MeasurementExecutor = NonNullable<
+            Parameters<typeof runApplicationOwnedToolLoop>[0]['measurement']
+        >['execute'];
+
+        const CREATIVE_CATALOG: CreativeInterpretationCatalog = {
+            schemaVersion: 1,
+            catalogId: 'catalog-1',
+            revision: 'revision-1',
+            requestDigest: 'digest-1',
+            selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
+            unresolvedExplicitReferences: [],
+            modes: ['edit'],
+            targets: [],
+            dimensions: [],
+            constraints: [],
+            creationSlots: [],
+        };
+        const INTAKE: ProviderCall = {
+            id: 'scripted-intake',
+            name: CREATIVE_INTERPRETATION_TOOL_NAME,
+            arguments: {
+                catalogId: CREATIVE_CATALOG.catalogId,
+                modeId: 'edit',
+                targetCandidateIds: [],
+                editDimensionCandidateIds: [],
+                constraintCandidateIds: [],
+                creationSlotIds: [],
+                uncertainty: 'none',
+            },
+        };
+        const MEASURE: ProviderCall = {
+            id: 'scripted-measure',
+            name: 'analysis.measure',
+            arguments: { scope: { kind: 'master' }, range: { startBeat: 0, endBeat: 8 } },
+        };
+        const MEASURE_OPPORTUNITY = {
+            authorityId: 'authority-1',
+            callId: INTAKE.id,
+            turn: 1,
+            revision: 'revision-1',
+            required: true,
+            available: true,
+        };
+        const PROPOSAL: ProviderCall = {
+            id: 'scripted-proposal',
+            name: 'command.batch.propose',
+            arguments: { commands: [{ name: 'muteTrack', arguments: { trackId: 'track-1' } }] },
+        };
+
+        function reply(transport: Transport, turns: readonly ScriptedTurn[]) {
+            return turns.map((turn, index) => scriptedReply(transport, turn, index + 1));
+        }
+
+        function toolNamesOf(transport: Transport, request: Record<string, unknown>): string[] {
+            return readOfferedToolNames(transport, request);
+        }
+
+        function expectForcedChoice(transport: Transport, request: Record<string, unknown>, single: boolean): void {
+            const anthropicChoice = single ? { type: 'any', disable_parallel_tool_use: true } : { type: 'any' };
+            expect(request.tool_choice).toEqual(transport === 'anthropic' ? anthropicChoice : 'required');
+        }
+
+        function readNativeResult(transport: Transport, request: Record<string, unknown>, callId: string): string {
+            const messages = readMessages(request);
+            if (transport === 'anthropic') {
+                const block = messages
+                    .flatMap((message) => readBlocks(message, 'tool_result'))
+                    .find((candidate) => candidate.tool_use_id === callId);
+                return JSON.stringify(block ?? null);
+            }
+            return JSON.stringify(
+                messages.find((message) => message.role === 'tool' && message.tool_call_id === callId) ?? null
+            );
+        }
+
+        function measuredRead(call: { name: string }, identity: { callId: string; turn: number }) {
+            return {
+                commands: null,
+                measuredPreview: null,
+                receipt: {
+                    schema: 'sourdaw.application-tool-receipt' as const,
+                    schemaVersion: 1 as const,
+                    callId: identity.callId,
+                    toolName: call.name,
+                    turn: identity.turn,
+                    status: 'success' as const,
+                    revision: MEASURE_OPPORTUNITY.revision,
+                    data: {},
+                    summary: 'Measured.',
+                    warnings: [],
+                    error: null,
+                },
+            } satisfies Awaited<ReturnType<MeasurementExecutor>>;
+        }
+
+        // Red when the loop stops withholding a proposal that skipped measurement: the run would then complete
+        // on the proposing turn, with no measurement step and no measurement settlement.
+        it.each(['anthropic', 'openai-compatible'] as const)(
+            '%s withholds a proposal that skipped measurement until the measurement runs',
+            async (transport) => {
+                const { requests, refusals } = installStrictResponses(
+                    transport,
+                    reply(transport, [INTAKE, [PROVIDER_CALLS[0]!, PROVIDER_CALLS[1]!], PROPOSAL, MEASURE])
+                );
+                let requestCountAtMeasurement = 0;
+                const execute = vi.fn<MeasurementExecutor>(async (call, identity) => {
+                    requestCountAtMeasurement = requests.length;
+                    return measuredRead(call, identity);
+                });
+
+                const result = await runScriptedLoop({
+                    transport,
+                    toolSchemas: [
+                        ...getPlanningProviderToolSchemas(),
+                        createCreativeInterpretationToolSchema(CREATIVE_CATALOG),
+                    ],
+                    loop: {
+                        interpretation: {
+                            toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
+                            admit: () => ({ status: 'admitted', receipt: { data: {}, summary: 'Admitted.' } }),
+                        },
+                        readMeasurementOpportunity: () => MEASURE_OPPORTUNITY,
+                        measurement: {
+                            toolName: 'analysis.measure',
+                            companionToolNames: ['analysis.compareReference'],
+                            revision: MEASURE_OPPORTUNITY.revision,
+                            execute,
+                        },
+                    },
+                });
+
+                // The proposal came on an ordinary auto turn; the run went on to a fourth request instead of completing.
+                expect(requests).toHaveLength(4);
+                expect(toolNamesOf(transport, requests[2]!)).toContain('command_batch_propose');
+                // That request is the single-measurement step: one tool on the wire, a forced choice, and the held
+                // proposal answered with the deferred-completion control receipt, never a measurement.
+                expect(toolNamesOf(transport, requests[3]!)).toEqual(['analysis_measure']);
+                expectForcedChoice(transport, requests[3]!, true);
+                const heldReceipt = readNativeResult(transport, requests[3]!, PROPOSAL.id);
+                expect(heldReceipt).toContain('measurement-required');
+                expect(heldReceipt).toContain(
+                    'Proposal completion is deferred until an application measurement receipt is admitted.'
+                );
+                expect(requestCountAtMeasurement).toBe(4);
+                // The proposal is released only after the measurement ran, once, and carries its settlement.
+                expect(execute).toHaveBeenCalledOnce();
+                expect(execute.mock.calls[0]?.[1]).toMatchObject({ callId: MEASURE.id, turn: 4 });
+                expect(result).toMatchObject({
+                    status: 'complete',
+                    turns: 4,
+                    toolCalls: [{ id: PROPOSAL.id, name: 'command.batch.propose' }],
+                });
+                if (result.status !== 'complete' || result.terminalMeasurementSettlement === undefined) {
+                    throw new Error(`Expected a settled held release, got ${JSON.stringify(result)}`);
+                }
+                expect(JSON.parse(result.terminalMeasurementSettlement)).toMatchObject({
+                    deferredCalls: [{ callId: PROPOSAL.id, turn: 3 }],
+                    measurement: { callId: MEASURE.id, toolName: 'analysis.measure', turn: 4 },
+                });
+                expect(result.receipts.find((receipt) => receipt.callId === MEASURE.id)).toMatchObject({
+                    status: 'success',
+                });
+                expect(refusals).toEqual([]);
+            }
+        );
+
+        // Red when a proposal adopting a recipe expansion no turn produced is accepted.
+        it.each(['anthropic', 'openai-compatible'] as const)(
+            '%s refuses a proposal that adopts a recipe expansion the fixture never requested',
+            async (transport) => {
+                const adopting: ProviderCall = {
+                    ...PROPOSAL,
+                    id: 'scripted-adopting-proposal',
+                    arguments: { commands: [], compiledCallIds: ['scripted-recipe-expand'] },
+                };
+                const { requests } = installStrictResponses(
+                    transport,
+                    reply(transport, [PROVIDER_CALLS[0]!, adopting])
+                );
+
+                const result = await runScriptedLoop({ transport });
+
+                expect(result).toMatchObject({
+                    status: 'rejected',
+                    reason: 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion, or measured preview.',
+                    turns: 2,
+                });
+                expect(result).not.toHaveProperty('toolCalls');
+                expect(requests).toHaveLength(2);
+            }
+        );
+
+        // Red when a run whose provider never proposes completes. The final turn offers only the terminal tool, so a
+        // provider that does not propose can only end its reply empty. Each row is a reply its wire permits: the
+        // Anthropic model refuses a forced choice, so its final turn is sent with automatic choice, and the
+        // OpenAI-compatible endpoint is one that ignores `tool_choice`. The loop must end rejected with its own reason.
+        it.each(['anthropic', 'openai-compatible'] as const)(
+            '%s ends the loop rejected when the provider reads on every auto turn and sends no tool call on the final turn',
+            async (transport) => {
+                const lateRead: ProviderCall = {
+                    id: 'scripted-late-read',
+                    name: 'agent.command-index.search',
+                    arguments: { intent: 'solo track' },
+                };
+                const { requests } = installStrictResponses(
+                    transport,
+                    reply(transport, [PROVIDER_CALLS[0]!, lateRead, []])
+                );
+
+                const result = await runScriptedLoop({
+                    transport,
+                    anthropicModel: 'claude-sonnet-5-5',
+                    loop: { limits: { maxTurns: 3 } },
+                });
+
+                expect(requests).toHaveLength(3);
+                expect(toolNamesOf(transport, requests[1]!)).toContain('agent_command-index_search');
+                expect(toolNamesOf(transport, requests[2]!)).toEqual(['command_batch_propose']);
+                const finalTurnChoice = { anthropic: undefined, 'openai-compatible': 'required' }[transport];
+                expect(requests[2]!.tool_choice).toEqual(finalTurnChoice);
+                expect(result).toMatchObject({
+                    status: 'rejected',
+                    reason: 'Provider returned no tool call on the final application tool-loop turn.',
+                    turns: 3,
+                });
+                expect(result).not.toHaveProperty('toolCalls');
+            }
+        );
+    });
 });
 
 type Transport = 'anthropic' | 'openai-compatible';
@@ -432,6 +686,49 @@ function withMismatchedToolResultIds(transport: Transport, request: Record<strin
     return { ...request, messages };
 }
 
+function readOfferedToolNames(transport: Transport, request: Record<string, unknown>): string[] {
+    const tools = Array.isArray(request.tools) ? request.tools.filter(isRecord) : [];
+    if (transport === 'anthropic') {
+        return tools.flatMap((tool) => (typeof tool.name === 'string' ? [tool.name] : []));
+    }
+    return tools.flatMap((tool) =>
+        isRecord(tool.function) && typeof tool.function.name === 'string' ? [tool.function.name] : []
+    );
+}
+
+function readCalledToolNames(transport: Transport, response: Record<string, unknown>): string[] {
+    if (transport === 'anthropic') {
+        const blocks = Array.isArray(response.content) ? response.content.filter(isRecord) : [];
+        return blocks.flatMap((block) =>
+            block.type === 'tool_use' && typeof block.name === 'string' ? [block.name] : []
+        );
+    }
+    const choices = Array.isArray(response.choices) ? response.choices.filter(isRecord) : [];
+    const message = choices[0]?.message;
+    const calls = isRecord(message) && Array.isArray(message.tool_calls) ? message.tool_calls.filter(isRecord) : [];
+    return calls.flatMap((call) =>
+        isRecord(call.function) && typeof call.function.name === 'string' ? [call.function.name] : []
+    );
+}
+
+/**
+ * The rule both real APIs enforce on a reply: it may only call a tool its own request offered. The
+ * request's `tools` list is the whole truth here, since the loop narrows it per directive.
+ */
+function findUnofferedToolProblem(
+    transport: Transport,
+    requestIndex: number,
+    request: Record<string, unknown>,
+    response: Record<string, unknown>
+): string | null {
+    const offered = readOfferedToolNames(transport, request);
+    const unoffered = readCalledToolNames(transport, response).find((name) => !offered.includes(name));
+    if (unoffered === undefined) {
+        return null;
+    }
+    return `Scripted response for request ${String(requestIndex)} calls ${unoffered}, which that request did not offer (offered: ${offered.join(', ')}).`;
+}
+
 type StrictDoubleOptions = { mismatchToolResultIds?: boolean };
 
 /**
@@ -463,13 +760,17 @@ function installStrictResponses(
         if (response === undefined) {
             throw new Error('Scripted provider response fixture was exhausted.');
         }
+        const unofferedTool = findUnofferedToolProblem(transport, requests.length - 1, request, response);
+        if (unofferedTool !== null) {
+            throw new Error(unofferedTool);
+        }
         input.onBodyChunk(new TextEncoder().encode(JSON.stringify(response)));
         return { status: 200, contentType: 'application/json' };
     });
     return { requests, refusals };
 }
 
-function scriptedReply(transport: Transport, call: ProviderCall, turn: number): Record<string, unknown> {
+function scriptedReply(transport: Transport, call: ScriptedTurn, turn: number): Record<string, unknown> {
     return transport === 'anthropic' ? anthropicResponse(call, turn) : openAiResponse(call, turn);
 }
 

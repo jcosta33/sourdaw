@@ -429,7 +429,6 @@ export const plannedTrackByActionType: {
     variationMidi: noPlannedTrack,
     generateBassline: noPlannedTrack,
     replayGeneratedMidi: noPlannedTrack,
-    stemSeparate: noPlannedTrack,
     autoOrganizeProject: noPlannedTrack,
     addChordEvent: noPlannedTrack,
     moveChordEvent: noPlannedTrack,

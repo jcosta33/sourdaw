@@ -343,7 +343,6 @@ const seedMaterializerByActionType: {
     variationMidi: leaveSeedUnminted,
     generateBassline: leaveSeedUnminted,
     replayGeneratedMidi: leaveSeedUnminted,
-    stemSeparate: leaveSeedUnminted,
     autoOrganizeProject: leaveSeedUnminted,
     addChordEvent: leaveSeedUnminted,
     moveChordEvent: leaveSeedUnminted,

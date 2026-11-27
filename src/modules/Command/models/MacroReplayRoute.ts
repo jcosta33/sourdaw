@@ -324,7 +324,6 @@ export const macroReplayRouteByActionType: { readonly [Type in AppActionType]: M
     variationMidi: replayRoute,
     generateBassline: replayRoute,
     replayGeneratedMidi: replayRoute,
-    stemSeparate: replayRoute,
     autoOrganizeProject: replayRoute,
     addChordEvent: replayRoute,
     moveChordEvent: replayRoute,

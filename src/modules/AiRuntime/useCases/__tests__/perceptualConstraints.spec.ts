@@ -397,6 +397,68 @@ describe('compiling perceptual constraints', () => {
     });
 });
 
+/** The metric state a literal intake leaves a card before its batch compiles: one authority, no goal. */
+function literalIntakeState(): string {
+    return JSON.stringify({
+        schemaVersion: 1,
+        authorities: [
+            {
+                schemaVersion: 1,
+                authorityId: 'literal-intake-authority',
+                origin: 'configured-joint-intake',
+                callId: 'literal-intake',
+                turn: 1,
+                catalogId: 'literal-intake-catalog',
+                requestDigest: 'literal-intake-digest',
+                revision: captureProjectRevision(),
+                projectId: captureProjectIdentity(),
+                selection: { activeView: 'arrange', clipId: null, clipIds: [], trackId: null },
+                kind: 'literal',
+                goals: [],
+                creativeAuthority: null,
+            },
+        ],
+        steps: [],
+        proofs: [],
+        binding: null,
+    });
+}
+
+describe('a literal intake and the protections its request records', () => {
+    const lowerTrim = setParameter('vocal-trim', 'gain-level', -1);
+    const lockVocalClip: AppAction = { type: 'lockClip', payload: { clipId: 'vocal-clip', locked: true } };
+
+    it('keeps an unsupported protection unverified and Confirm blocked, naming the clause', () => {
+        const compiled = compile('Lower the Vocal Trim and keep the vocal warm', [lowerTrim], {
+            metricGoalState: literalIntakeState(),
+        });
+        const state = metricGoalStateCodec(compiled.metricGoalState);
+        expect(state?.authorities.map((authority) => authority.origin)).toEqual([
+            'configured-joint-intake',
+            'perceptual-constraint-reader',
+        ]);
+        const evaluation = evaluateMetricGoalAdmission({ state, commandBatch: compiled.commandBatch });
+        expect(evaluation).toMatchObject({ status: 'blocked', failure: 'incomparable' });
+        expect(evaluation.reason).toContain('“keep the vocal warm”');
+    });
+
+    it('leaves a batch that changes no sound without the protection authority', () => {
+        const compiled = compile('Lock the vocal clip and keep the vocal warm', [lockVocalClip], {
+            metricGoalState: literalIntakeState(),
+        });
+        expect(
+            metricGoalStateCodec(compiled.metricGoalState)?.authorities.map((authority) => authority.origin)
+        ).toEqual(['configured-joint-intake']);
+    });
+
+    it('adds no authority for a request that records no protection', () => {
+        const compiled = compile('Lower the Vocal Trim', [lowerTrim], { metricGoalState: literalIntakeState() });
+        expect(
+            metricGoalStateCodec(compiled.metricGoalState)?.authorities.map((authority) => authority.origin)
+        ).toEqual(['configured-joint-intake']);
+    });
+});
+
 const bypassEq: AppAction = { type: 'bypassDevice', payload: { deviceId: 'bass-eq', bypassed: true } };
 
 describe('excluded dimensions', () => {

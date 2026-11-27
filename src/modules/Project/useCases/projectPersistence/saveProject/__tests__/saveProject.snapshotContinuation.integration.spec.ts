@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    holdNextNativePreparation,
     installNativePreparationWorker,
     settleNativePreparationWorkers,
 } from '#/helpers/__tests__/nativePreparationWorker';
@@ -13,6 +14,9 @@ import type { ProjectData } from '../../../../models/ProjectData';
 
 const CREATED_AT = 1_700_000_000_000;
 const CASE_TIMEOUT_MS = 30_000;
+const STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
+/** The window the retired polling wait allowed (vi.waitFor's default timeout). */
+const RETIRED_POLL_WINDOW_MS = 1_000;
 const REFUSAL_PREFIX = '[saveProject] Project or audio changed during snapshot persistence';
 
 type IndexedDbFixture = ReturnType<typeof installMultiDatabaseIndexedDb>;
@@ -140,18 +144,38 @@ async function openProjectWithCachedStereoClip() {
 
 type OpenedProject = Awaited<ReturnType<typeof openProjectWithCachedStereoClip>>;
 
+/** Resolves once the save asks for the storage lock; fails by name when the save ends without asking. */
+async function awaitStorageLockRequest(lockRequested: Promise<void>, saving: Promise<boolean>): Promise<void> {
+    const outcome = await Promise.race([
+        lockRequested.then(() => 'requested' as const),
+        saving.then(
+            () => 'settled' as const,
+            () => 'settled' as const
+        ),
+    ]);
+    if (outcome === 'settled') {
+        throw new Error(`the save settled without requesting the ${STORAGE_LOCK_NAME} lock`);
+    }
+}
+
+/** Holds the project audio storage lock, then starts a save that has not yet reached its own lock request. */
+function startSaveBeforeItsLockRequest(opened: OpenedProject): {
+    release: () => void;
+    saving: Promise<boolean>;
+    lockRequested: Promise<void>;
+} {
+    const gate = Promise.withResolvers<void>();
+    void opened.withProjectAudioStorageLock(() => gate.promise);
+    const lockRequested = lockManager.nextRequest(STORAGE_LOCK_NAME);
+    return { release: gate.resolve, saving: opened.project.saveProject(), lockRequested };
+}
+
 /** Holds the project audio storage lock, so a save that starts now stops inside its preflight. */
 async function startSaveHeldInPreflight(
     opened: OpenedProject
 ): Promise<{ release: () => void; saving: Promise<boolean> }> {
-    let release = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    void opened.withProjectAudioStorageLock(() => gate);
-    const requestedBefore = lockManager.requestedNames.length;
-    const saving = opened.project.saveProject();
-    await vi.waitFor(() => expect(lockManager.requestedNames.length).toBeGreaterThan(requestedBefore));
+    const { release, saving, lockRequested } = startSaveBeforeItsLockRequest(opened);
+    await awaitStorageLockRequest(lockRequested, saving);
     return { release, saving };
 }
 
@@ -473,9 +497,9 @@ describe('saveProject snapshot continuation', () => {
             const opened = await openProjectWithCachedStereoClip();
             await vi.waitFor(() => expect(indexedDb.pendingAudioWriteSettlements()).toBe(1));
 
-            const requestedBefore = lockManager.requestedNames.length;
+            const lockRequested = lockManager.nextRequest(STORAGE_LOCK_NAME);
             const saving = opened.project.saveProject();
-            await vi.waitFor(() => expect(lockManager.requestedNames.length).toBeGreaterThan(requestedBefore));
+            await awaitStorageLockRequest(lockRequested, saving);
             expect(indexedDb.pendingAudioWriteSettlements()).toBe(1);
             indexedDb.resumeAudioWriteSettlements();
             while (indexedDb.pendingAudioWriteSettlements() > 0) {
@@ -485,6 +509,54 @@ describe('saveProject snapshot continuation', () => {
             expect(await saving).toBe(true);
             expect(opened.persistenceFailures()).toEqual([]);
             expect(indexedDb.get('sourdaw-audio', 'buffers', opened.bufferId)).toBeDefined();
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'requests the project audio storage lock only after its Worker preparation settles, however long that takes',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const preparation = holdNextNativePreparation();
+            let preparationReached = false;
+            void preparation.requested.then(() => {
+                preparationReached = true;
+                return preparationReached;
+            });
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+            const save = startSaveBeforeItsLockRequest(opened);
+            try {
+                const firstToHappen = await Promise.race([
+                    preparation.requested.then(() => 'preparation reached' as const),
+                    save.saving.then(
+                        () => 'save settled' as const,
+                        () => 'save settled' as const
+                    ),
+                ]);
+                expect(firstToHappen).toBe('preparation reached');
+                expect(preparationReached).toBe(true);
+                const requestsWhileHeld = lockManager.requestedNames.length;
+                const retiredWindowElapsed = vi.fn();
+                setTimeout(retiredWindowElapsed, RETIRED_POLL_WINDOW_MS + 1);
+                await vi.advanceTimersByTimeAsync(RETIRED_POLL_WINDOW_MS * 2);
+                expect(retiredWindowElapsed).toHaveBeenCalledOnce();
+                expect(lockManager.requestedNames).toHaveLength(requestsWhileHeld);
+                // The save's later yields wait on real timers; fake time only spans the held window.
+                vi.useRealTimers();
+
+                preparation.release();
+                await awaitStorageLockRequest(save.lockRequested, save.saving);
+                expect(lockManager.requestedNames.slice(requestsWhileHeld)).toContain(STORAGE_LOCK_NAME);
+                save.release();
+
+                expect(await save.saving).toBe(true);
+            } finally {
+                save.release();
+                preparation.release();
+                vi.useRealTimers();
+            }
+            expect(opened.persistenceFailures()).toEqual([]);
         },
         CASE_TIMEOUT_MS
     );

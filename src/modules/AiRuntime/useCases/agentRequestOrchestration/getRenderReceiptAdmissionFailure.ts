@@ -316,7 +316,6 @@ const renderReceiptGateByActionType: GateLookup = {
     variationMidi: notRenderReceiptGated,
     generateBassline: notRenderReceiptGated,
     replayGeneratedMidi: notRenderReceiptGated,
-    stemSeparate: notRenderReceiptGated,
     autoOrganizeProject: notRenderReceiptGated,
     addChordEvent: notRenderReceiptGated,
     moveChordEvent: notRenderReceiptGated,

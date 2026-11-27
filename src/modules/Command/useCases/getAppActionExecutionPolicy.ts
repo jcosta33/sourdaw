@@ -368,7 +368,6 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     variationMidi: defaultPolicy,
     generateBassline: defaultPolicy,
     replayGeneratedMidi: defaultPolicy,
-    stemSeparate: defaultPolicy,
     autoOrganizeProject: defaultPolicy,
     addChordEvent: defaultPolicy,
     moveChordEvent: defaultPolicy,

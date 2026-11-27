@@ -181,10 +181,8 @@ impl InputOpenRefusal {
 
 /// Accept a device's shape for the engine, or name what makes it unusable.
 ///
-/// The rate check lives on the seam rather than inside a backend so every
-/// backend answers a mismatch identically, and so the refusal is provable
-/// without a device attached.
-#[cfg(any(not(windows), test))]
+/// Capture admission applies this check before it sizes the ring or starts
+/// a stream, regardless of how the backend obtained the device shape.
 pub(crate) fn accept_input(
     device: NegotiatedInput,
     request: InputOpenRequest,
@@ -222,8 +220,8 @@ pub(crate) trait InputBackend {
     type Open: OpenInput;
 
     /// Open the default input and negotiate format. No audio flows yet: the
-    /// caller reads [`OpenInput::negotiated`], sizes its capture ring on
-    /// those facts, then starts the stream.
+    /// caller validates [`OpenInput::negotiated`] before sizing its capture
+    /// ring and starting the stream.
     fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal>;
 }
 

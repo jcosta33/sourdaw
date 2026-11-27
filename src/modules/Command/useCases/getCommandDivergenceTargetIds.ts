@@ -352,7 +352,6 @@ const extraTargetsByActionType: {
     variationMidi: noExtraTargets,
     generateBassline: noExtraTargets,
     replayGeneratedMidi: noExtraTargets,
-    stemSeparate: noExtraTargets,
     autoOrganizeProject: noExtraTargets,
     addChordEvent: noExtraTargets,
     moveChordEvent: noExtraTargets,

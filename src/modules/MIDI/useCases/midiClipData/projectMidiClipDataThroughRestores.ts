@@ -347,7 +347,6 @@ const controllerRestoresByActionType: {
     variationMidi: noControllerRestores,
     generateBassline: noControllerRestores,
     replayGeneratedMidi: noControllerRestores,
-    stemSeparate: noControllerRestores,
     autoOrganizeProject: noControllerRestores,
     addChordEvent: noControllerRestores,
     moveChordEvent: noControllerRestores,

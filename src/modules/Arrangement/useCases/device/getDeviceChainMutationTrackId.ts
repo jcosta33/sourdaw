@@ -334,7 +334,6 @@ export const deviceChainMutationTrackIdByActionType: {
     variationMidi: noMutatedTrack,
     generateBassline: noMutatedTrack,
     replayGeneratedMidi: noMutatedTrack,
-    stemSeparate: noMutatedTrack,
     autoOrganizeProject: noMutatedTrack,
     addChordEvent: noMutatedTrack,
     moveChordEvent: noMutatedTrack,

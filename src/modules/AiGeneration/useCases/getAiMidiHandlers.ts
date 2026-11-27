@@ -3,7 +3,6 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 import { handleCompleteMidi } from '../handlers/aiMidi/handleCompleteMidi';
 import { handleGenerateBassline } from '../handlers/aiMidi/handleGenerateBassline';
 import { handleReplayGeneratedMidi } from '../handlers/aiMidi/handleReplayGeneratedMidi';
-import { handleStemSeparate } from '../handlers/aiMidi/handleStemSeparate';
 import { handleVariationMidi } from '../handlers/aiMidi/handleVariationMidi';
 
 /**
@@ -17,8 +16,7 @@ type AiMidiAppAction =
     | Extract<AppAction, { type: 'completeMidi' }>
     | Extract<AppAction, { type: 'variationMidi' }>
     | Extract<AppAction, { type: 'generateBassline' }>
-    | Extract<AppAction, { type: 'replayGeneratedMidi' }>
-    | Extract<AppAction, { type: 'stemSeparate' }>;
+    | Extract<AppAction, { type: 'replayGeneratedMidi' }>;
 
 export type AiMidiHandlersMap = {
     [Action in AiMidiAppAction as Action['type']]: ActionHandler<Action>;
@@ -33,6 +31,5 @@ export function getAiMidiHandlers(): AiMidiHandlersMap {
         variationMidi: handleVariationMidi,
         generateBassline: handleGenerateBassline,
         replayGeneratedMidi: handleReplayGeneratedMidi,
-        stemSeparate: handleStemSeparate,
     };
 }

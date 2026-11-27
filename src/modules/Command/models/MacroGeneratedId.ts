@@ -356,7 +356,6 @@ export const macroGeneratedIdByActionType: {
     variationMidi: noGeneratedId,
     generateBassline: noGeneratedId,
     replayGeneratedMidi: noGeneratedId,
-    stemSeparate: noGeneratedId,
     autoOrganizeProject: noGeneratedId,
     addChordEvent: eventIdOf,
     moveChordEvent: noGeneratedId,

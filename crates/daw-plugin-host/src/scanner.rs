@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
 use std::mem;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
 use clap_sys::entry::clap_plugin_entry;
@@ -1117,6 +1117,11 @@ fn path_has_symlink_component(path: &Path) -> Result<bool, ScanError> {
 
     for component in path.components() {
         current_path.push(component.as_os_str());
+        // A verbatim Windows prefix such as `\\?\C:` is not an inspectable
+        // path. Keep the prefix and root for each named component's check.
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            continue;
+        }
         match fs::symlink_metadata(&current_path) {
             Ok(metadata) => {
                 if metadata.file_type().is_symlink() {
@@ -1150,6 +1155,36 @@ mod tests {
             "sourdaw-{test_name}-{}-{unique_suffix}",
             std::process::id()
         ))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn scan_directory_accepts_a_canonicalized_windows_root() {
+        let temp_root = unique_temp_scan_root("scanner-canonical-windows-root");
+        fs::create_dir_all(temp_root.join("Vendor")).expect("scan directory should exist");
+        let root =
+            fs::canonicalize(&temp_root).expect("scan root should resolve to a verbatim path");
+        let plugin = root.join("Vendor").join("Fixture.clap");
+        fs::write(&plugin, b"enumeration fixture").expect("fixture should be written");
+
+        let mut candidates = Vec::new();
+        let mut errors = Vec::new();
+        let mut notices = Vec::new();
+        scan_directory(&root, &mut candidates, &mut errors, &mut notices);
+        let _ = fs::remove_dir_all(&temp_root);
+
+        assert!(
+            errors.is_empty(),
+            "canonicalized root should scan: {errors:?}"
+        );
+        assert!(notices.is_empty(), "CLAP should be supported: {notices:?}");
+        assert_eq!(
+            candidates,
+            vec![ScanCandidate {
+                path: plugin,
+                format: PluginFormat::Clap,
+            }]
+        );
     }
 
     #[cfg(unix)]

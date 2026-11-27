@@ -1,9 +1,15 @@
 // @vitest-environment node
 import { runInNewContext } from 'node:vm';
 
-import { describe, expect, it } from 'vitest';
+import { type Page } from 'playwright';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { assertBlackHoleInput, cardDeviceId } from '../desktopGrandBouleAuditionDrive.ts';
+import {
+    assertBlackHoleInput,
+    blackHoleCaptureAllowsHiddenDefault,
+    cardDeviceId,
+    driveDesktopGrandBouleAudition,
+} from '../desktopGrandBouleAuditionDrive.ts';
 import {
     auditionFailure,
     freshAuditionObservations,
@@ -12,7 +18,25 @@ import {
     type AuditionObservations,
     type SignalWindow,
 } from '../desktopGrandBouleAuditionEvidence.ts';
-import { RECEIVE_WORKLET } from '../desktopGrandBouleCapture.ts';
+import {
+    captureAdmissionFailure,
+    captureBlackHole,
+    openBlackHoleMedia,
+    RECEIVE_WORKLET,
+} from '../desktopGrandBouleCapture.ts';
+
+const appBoundary = vi.hoisted(() => ({
+    launchEditorSession: vi.fn(),
+    readyWorkspace: vi.fn(),
+    quitEditorSession: vi.fn(),
+}));
+const execFileSync = vi.hoisted(() => vi.fn());
+
+vi.mock('node:child_process', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('node:child_process')>()),
+    execFileSync,
+}));
+vi.mock('../desktopFermenterDrive.ts', () => appBoundary);
 
 function signal(firstFrame = 0, frames = 32768, preview = 0.01, sentinel = 0.02): SignalWindow {
     return measureSignalWindow({
@@ -233,5 +257,281 @@ describe('read-only BlackHole input admission', () => {
     );
     it('narrows the exact generated inspector identity', () => {
         expect(cardDeviceId('device-card-owned-123')).toBe('owned-123');
+    });
+});
+
+describe('packaged audition capture admission', () => {
+    const device = 'BlackHole 2ch';
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
+        vi.resetAllMocks();
+    });
+
+    it.each([
+        ['local host', undefined, device, false],
+        ['self-hosted runner', 'self-hosted', device, false],
+        ['hosted runner with a competing input', 'github-hosted', `${device}\nBuilt-in Microphone`, false],
+        ['hosted runner with only BlackHole', 'github-hosted', device, true],
+    ] as const)(
+        'routes concealed capture through host admission on a %s',
+        async (_host, environment, inputs, allowed) => {
+            vi.stubEnv('RUNNER_ENVIRONMENT', environment);
+            execFileSync.mockImplementation((command: string, args: string[]) => {
+                expect(command).toBe('SwitchAudioSource');
+                switch (args.join(' ')) {
+                    case '-c -t output':
+                    case '-c -t input':
+                        return `${device}\n`;
+                    case '-a -t input':
+                        return `${inputs}\n`;
+                    default:
+                        throw new Error('unexpected audio command');
+                }
+            });
+            const getUserMedia = vi
+                .fn()
+                .mockRejectedValue(new DOMException('controlled capture boundary', 'NotReadableError'));
+            vi.stubGlobal('navigator', {
+                mediaDevices: {
+                    enumerateDevices: vi
+                        .fn()
+                        .mockResolvedValue([{ kind: 'audioinput', deviceId: '', label: '', groupId: '' }]),
+                    getUserMedia,
+                },
+            });
+            const page = {
+                setDefaultTimeout: vi.fn(),
+                getByRole: vi.fn(),
+                evaluateHandle: vi.fn(
+                    async (evaluate: typeof openBlackHoleMedia, options: Parameters<typeof openBlackHoleMedia>[0]) => {
+                        try {
+                            return await evaluate(options);
+                        } catch (error) {
+                            throw new Error(`page.evaluateHandle: ${String(error)}`, { cause: error });
+                        }
+                    }
+                ),
+            };
+            const app = { page };
+            appBoundary.launchEditorSession.mockResolvedValue(app);
+            const observations = freshAuditionObservations();
+
+            await driveDesktopGrandBouleAudition('packaged-binary', observations);
+
+            const rawDefault: MediaStreamConstraints = {
+                audio: {
+                    deviceId: { exact: 'default' },
+                    echoCancellation: { exact: false },
+                    noiseSuppression: { exact: false },
+                    autoGainControl: { exact: false },
+                },
+                video: false,
+            };
+            expect(getUserMedia.mock.calls).toEqual(allowed ? [[rawDefault]] : []);
+            expect(observations.unavailable).toBe(
+                allowed ? 'capture-input-NotReadableError' : 'capture-named-input-unavailable'
+            );
+            expect(page.evaluateHandle).toHaveBeenCalledExactlyOnceWith(openBlackHoleMedia, {
+                device,
+                allowHiddenDefault: allowed,
+            });
+            expect(appBoundary.quitEditorSession).toHaveBeenCalledExactlyOnceWith(app);
+            expect(observations.appQuit).toBe(true);
+        }
+    );
+});
+
+describe('BlackHole renderer capture admission', () => {
+    const name = 'BlackHole 2ch';
+
+    function input(deviceId: string, label: string, groupId: string) {
+        return { kind: 'audioinput', deviceId, label, groupId };
+    }
+
+    function renderer({
+        before = [input('', '', '')],
+        after = [
+            input('default', 'Standard – BlackHole 2ch', 'virtual'),
+            input('virtual-id', name, 'virtual'),
+        ] as readonly ReturnType<typeof input>[],
+        label = 'Standard – BlackHole 2ch',
+        deviceId = 'default',
+        groupId = 'virtual',
+        echoCancellation = false,
+    } = {}) {
+        const stop = vi.fn();
+        const track = {
+            label,
+            stop,
+            getSettings: () => ({ deviceId, groupId, echoCancellation }),
+        };
+        const getUserMedia = vi.fn((_constraints: MediaStreamConstraints) =>
+            Promise.resolve({ getTracks: () => [track], getAudioTracks: () => [track] })
+        );
+        const enumerateDevices = vi.fn().mockResolvedValueOnce(before).mockResolvedValue(after);
+        vi.stubGlobal('navigator', { mediaDevices: { enumerateDevices, getUserMedia } });
+        vi.stubGlobal('AudioContext', class {});
+        return { getUserMedia, enumerateDevices, stop, track };
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('refuses concealed input without explicit host isolation before any media request', async () => {
+        const route = renderer();
+
+        await expect(openBlackHoleMedia({ device: name })).rejects.toThrow('capture-named-input-unavailable');
+        expect(route.getUserMedia).not.toHaveBeenCalled();
+    });
+
+    function host(current = name, available = name) {
+        return vi.fn((args: string[]) => {
+            if (args.join(' ') === '-a -t input') {
+                return available;
+            }
+            if (args.join(' ') === '-c -t input') {
+                return current;
+            }
+            throw new Error('unexpected audio command');
+        });
+    }
+
+    it.each([
+        ['local host', '', name, [['-c', '-t', 'input']]],
+        ['self-hosted runner', 'self-hosted', name, [['-c', '-t', 'input']]],
+        [
+            'hosted runner with a competing input',
+            'github-hosted',
+            `${name}\nBuilt-in Microphone`,
+            [
+                ['-a', '-t', 'input'],
+                ['-c', '-t', 'input'],
+            ],
+        ],
+        [
+            'hosted runner with duplicate virtual inputs',
+            'github-hosted',
+            `${name}\n${name}`,
+            [
+                ['-a', '-t', 'input'],
+                ['-c', '-t', 'input'],
+            ],
+        ],
+    ] as const)(
+        'refuses hidden capture on a %s before any media request',
+        async (_host, environment, available, calls) => {
+            const route = renderer();
+            const run = host(name, available);
+            const allowHiddenDefault = blackHoleCaptureAllowsHiddenDefault(run, environment);
+
+            await expect(openBlackHoleMedia({ device: name, allowHiddenDefault })).rejects.toThrow(
+                'capture-named-input-unavailable'
+            );
+            expect(run.mock.calls).toEqual(calls.map((args) => [args]));
+            expect(route.getUserMedia).not.toHaveBeenCalled();
+        }
+    );
+
+    it('checks the current input after the hosted inventory and refuses a drifted default', () => {
+        const run = host('Built-in Microphone');
+
+        expect(() => blackHoleCaptureAllowsHiddenDefault(run, 'github-hosted')).toThrow();
+        expect(run.mock.calls).toEqual([[['-a', '-t', 'input']], [['-c', '-t', 'input']]]);
+    });
+
+    it('pins the hosted singleton default and freshly binds its revealed group to BlackHole', async () => {
+        const route = renderer();
+        const run = host();
+        const allowHiddenDefault = blackHoleCaptureAllowsHiddenDefault(run, 'github-hosted');
+
+        await expect(openBlackHoleMedia({ device: name, allowHiddenDefault })).resolves.toMatchObject({
+            input: name,
+            track: route.track,
+        });
+        expect(run.mock.calls).toEqual([[['-a', '-t', 'input']], [['-c', '-t', 'input']]]);
+        expect(route.getUserMedia).toHaveBeenCalledExactlyOnceWith({
+            audio: {
+                deviceId: { exact: 'default' },
+                echoCancellation: { exact: false },
+                noiseSuppression: { exact: false },
+                autoGainControl: { exact: false },
+            },
+            video: false,
+        });
+        expect(route.enumerateDevices).toHaveBeenCalledTimes(2);
+        expect(route.stop).not.toHaveBeenCalled();
+    });
+
+    it('pins the concrete BlackHole identifier when visible, despite a different OS default label', async () => {
+        const route = renderer({
+            before: [
+                input('default', 'Default - Built-in Microphone', 'physical'),
+                input('virtual-id', name, 'virtual'),
+            ],
+            label: name,
+            deviceId: 'virtual-id',
+        });
+        await expect(openBlackHoleMedia({ device: name })).resolves.toMatchObject({ input: name, track: route.track });
+        expect(route.getUserMedia).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ audio: expect.objectContaining({ deviceId: { exact: 'virtual-id' } }) })
+        );
+        expect(route.enumerateDevices).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['visible unrelated input', [input('built-in', 'Built-in Microphone', 'physical')]],
+        ['two same-named inputs', [input('left', name, 'one'), input('right', name, 'two')]],
+    ] as const)('rejects %s before any media request', async (_case, before) => {
+        const route = renderer({ before: [...before] });
+        await expect(openBlackHoleMedia({ device: name })).rejects.toThrow('capture-named-input-unavailable');
+        expect(route.getUserMedia).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['a changed route', { deviceId: 'built-in' }],
+        ['a returned track with the wrong group', { groupId: 'physical' }],
+        ['a returned track with the wrong label', { label: 'Built-in Microphone' }],
+        [
+            'an alias now bound to another group',
+            {
+                after: [input('default', 'Standard – BlackHole 2ch', 'physical'), input('virtual-id', name, 'virtual')],
+            },
+        ],
+        ['a missing concrete input', { after: [input('default', 'Standard – BlackHole 2ch', 'virtual')] }],
+    ] as const)('stops capture when there is %s', async (_case, options) => {
+        const route = renderer(options);
+        await expect(openBlackHoleMedia({ device: name, allowHiddenDefault: true })).rejects.toThrow(
+            'capture-returned-input-mismatch'
+        );
+        expect(route.stop).toHaveBeenCalledOnce();
+    });
+
+    it('stops a processed stream and does not admit it as raw output evidence', async () => {
+        const route = renderer({ echoCancellation: true });
+        await expect(openBlackHoleMedia({ device: name, allowHiddenDefault: true })).rejects.toThrow(
+            'capture-raw-input-unavailable'
+        );
+        expect(route.stop).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['NotReadableError: Could not start audio source', 'capture-input-NotReadableError'],
+        ['OverconstrainedError: audio constraint failed', 'capture-input-OverconstrainedError'],
+        ['NotAllowedError: Permission denied', 'capture-input-NotAllowedError'],
+        ['Error: capture-returned-input-mismatch', 'capture-returned-input-mismatch'],
+        ['Error: permission denied while opening private renderer path', 'capture-input-failed'],
+    ])('records a bounded reason for input failure %s', async (detail, code) => {
+        const page = {
+            evaluateHandle: vi
+                .fn<Page['evaluateHandle']>()
+                .mockRejectedValue(new Error(`page.evaluateHandle: ${detail}\n    at private renderer path`)),
+        };
+        const failure = await captureBlackHole(page, true).catch(captureAdmissionFailure);
+        expect(page.evaluateHandle).toHaveBeenCalledExactlyOnceWith(openBlackHoleMedia, {
+            device: name,
+            allowHiddenDefault: true,
+        });
+        expect(failure).toBe(code);
     });
 });

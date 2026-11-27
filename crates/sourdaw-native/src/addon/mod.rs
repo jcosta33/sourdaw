@@ -267,7 +267,7 @@ impl SourdawNative {
         Ok(())
     }
 
-    /// Give the Linux VST3 `IRunLoop` one pass on the shell's main thread.
+    /// Give the Linux VST3 and CLAP editor run loops one pass on the shell's main thread.
     ///
     /// The shell calls this from its own loop while any editor is open. A
     /// plugin's X11 event handlers and timers are the host's to dispatch, and
@@ -276,11 +276,19 @@ impl SourdawNative {
     /// costs a poll with a zero timeout. Returns how many callbacks ran, which
     /// is what makes the wiring observable from the shell's specs.
     ///
-    /// Present on every platform so the shell has one surface to call; nothing
-    /// registers a run loop off Linux, so the pass finds nothing there.
+    /// Present on every platform so the shell has one surface to call. The
+    /// Unix pump has no registered loops off Linux, and other platforms
+    /// return zero without polling.
     #[napi]
     pub fn service_plugin_editor_run_loops(&self) -> u32 {
-        daw_plugin_host::vst3_run_loop::service_editor_run_loops() as u32
+        #[cfg(unix)]
+        {
+            daw_plugin_host::editor_run_loop::service_editor_run_loops() as u32
+        }
+        #[cfg(not(unix))]
+        {
+            0
+        }
     }
 
     /// The shell reports that the OS ended a plugin editor window (title-bar

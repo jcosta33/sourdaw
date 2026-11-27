@@ -1029,6 +1029,13 @@ impl PluginRuntimeLifecycle {
         self.state.load(Ordering::SeqCst) == PLUGIN_LIFECYCLE_ACTIVE
     }
 
+    /// Whether the unload that closed this instance has finished. Unlike an
+    /// unloading instance, which a cancelled unload returns to service, a
+    /// retired one never serves again.
+    fn is_retired(&self) -> bool {
+        self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_RETIRED
+    }
+
     fn begin_unload(&self) {
         let _ = self.state.compare_exchange(
             PLUGIN_LIFECYCLE_ACTIVE,
@@ -1563,6 +1570,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
     pub fn retire(&self) {
         self.lifecycle.retire();
+    }
+
+    pub fn is_retired(&self) -> bool {
+        self.lifecycle.is_retired()
     }
 
     pub fn ensure_public_control_allowed(&self) -> Result<(), PluginControlRefusal> {

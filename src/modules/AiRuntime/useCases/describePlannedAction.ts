@@ -464,7 +464,6 @@ const describerByActionType: { readonly [Type in AppActionType]: PlannedActionDe
     variationMidi: describeFromRegistry,
     generateBassline: describeFromRegistry,
     replayGeneratedMidi: describeFromRegistry,
-    stemSeparate: describeFromRegistry,
     autoOrganizeProject: describeFromRegistry,
     addChordEvent: describeFromRegistry,
     moveChordEvent: describeFromRegistry,
