@@ -421,10 +421,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                     refs.memContainer.current.style.display = memMb > 0 ? 'flex' : 'none';
                 }
                 updateTextNode(refs.memText.current, `${memMb} MB`);
-            } else {
-                if (refs.memContainer.current) {
-                    refs.memContainer.current.style.display = 'none';
-                }
+            } else if (refs.memContainer.current) {
+                refs.memContainer.current.style.display = 'none';
             }
 
             // ── Sample rate ─────────────────────────────────────────────

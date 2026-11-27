@@ -128,7 +128,7 @@ export function localConstructor() {
     }
 }, 45_000);
 
-it('reports a lone if in an else block across shared handwritten product layers', () => {
+it('reports a lone if in an else block across handwritten product layers', () => {
     const source = `export function selectTrack(flags: { primary: boolean; fallback: boolean }, update: (id: string) => void) {
     if (flags.primary) {
         update('primary');
@@ -165,20 +165,31 @@ export function unavailable(): number | undefined {
 `;
     const directories: string[] = [];
     try {
-        const layers = ['src/app', 'src/helpers', 'src/infra', 'src/routes', 'src/utils'];
-        const productTargets = layers.flatMap((layer) => {
+        const layers = [
+            ['src/app', 'product.ts'],
+            ['src/components', 'product.tsx'],
+            ['src/helpers', 'product.ts'],
+            ['src/infra', 'product.ts'],
+            ['src/modules', 'product.ts'],
+            ['src/routes', 'product.tsx'],
+            ['src/utils', 'product.ts'],
+        ] as const;
+        const productTargets = layers.flatMap(([layer, file]) => {
             const directory = mkdtempSync(join(root, layer, 'lint-product-guardrails-'));
             directories.push(directory);
-            const file = layer === 'src/routes' ? 'product.tsx' : 'product.ts';
             return writeFixtureProject(directory, [file], source);
         });
-        const testDirectory = mkdtempSync(join(root, 'src/utils/lint-product-guardrails-'));
+        const testDirectory = mkdtempSync(join(root, 'src/modules/lint-product-guardrails-'));
         directories.push(testDirectory);
         const otherProductDirectory = mkdtempSync(join(root, 'src/lint-product-guardrails-'));
         directories.push(otherProductDirectory);
         const targets = [
             ...productTargets,
-            ...writeFixtureProject(testDirectory, ['product.spec.ts'], source),
+            ...writeFixtureProject(
+                testDirectory,
+                ['product.spec.ts', 'product.test.tsx', 'product.mock.ts', 'setupTests.ts'],
+                source
+            ),
             ...writeFixtureProject(otherProductDirectory, ['product.ts'], source),
         ];
         const result = spawnSync(resolve(root, 'node_modules/.bin/oxlint'), buildQualityLintArgv(targets).slice(2), {

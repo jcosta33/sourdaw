@@ -1548,6 +1548,66 @@ describe('ProofPanel', () => {
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
+    it('announces and clears each Lab meter warning at its own threshold for the selected Proof', () => {
+        seedState({ uiLevel: 5 });
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        const lab = within(screen.getByRole('region', { name: 'Lab controls' }));
+        const boundaryFrame = { ...METER_FRAME, integratedLufs: -14.5, truePeakDb: -1, correlation: 0.3 };
+        const truePeakWarning = /^True Peak out of range:/;
+        const correlationWarning = /^Correlation out of range:/;
+
+        act(() => {
+            updateProofMeters(DEVICE_ID, boundaryFrame);
+            updateProofMeters('other-proof', { ...boundaryFrame, truePeakDb: -0.2, correlation: -0.5 });
+        });
+        expect(lab.getByText('True Peak').parentElement).toHaveTextContent(/-1\.0\s*dBTP$/);
+        expect(lab.getByText('Correlation').parentElement).toHaveTextContent(/0\.30$/);
+        expect(lab.queryByRole('alert', { name: truePeakWarning })).not.toBeInTheDocument();
+        expect(lab.queryByRole('alert', { name: correlationWarning })).not.toBeInTheDocument();
+
+        act(() => updateProofMeters(DEVICE_ID, { ...boundaryFrame, truePeakDb: -0.6 }));
+        expect(lab.getByRole('alert', { name: 'True Peak out of range: -0.6 dBTP' })).toHaveAttribute(
+            'aria-live',
+            'polite'
+        );
+        expect(lab.queryByRole('alert', { name: correlationWarning })).not.toBeInTheDocument();
+
+        act(() => updateProofMeters(DEVICE_ID, { ...boundaryFrame, correlation: 0.24 }));
+        expect(lab.queryByRole('alert', { name: truePeakWarning })).not.toBeInTheDocument();
+        expect(lab.getByRole('alert', { name: 'Correlation out of range: 0.24' })).toHaveAttribute(
+            'aria-live',
+            'polite'
+        );
+
+        act(() => updateProofMeters(DEVICE_ID, boundaryFrame));
+        expect(lab.queryByRole('alert', { name: correlationWarning })).not.toBeInTheDocument();
+    });
+
+    it('shows signed Lab gain from live input and output only when both readings are available', () => {
+        seedState({ uiLevel: 5 });
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        const lab = within(screen.getByRole('region', { name: 'Lab controls' }));
+        const gain = lab.getByText('Gain Applied').parentElement;
+        const frame = { ...METER_FRAME, integratedLufs: -14.5 };
+
+        act(() => updateProofMeters(DEVICE_ID, { ...frame, inputLufs: -19.2, outputLufs: -15.7 }));
+        expect(lab.getByText('Input').parentElement).toHaveTextContent(/-19\.2\s*LUFS$/);
+        expect(lab.getByText('Output').parentElement).toHaveTextContent(/-15\.7\s*LUFS$/);
+        expect(gain).toHaveTextContent(/\+3\.5\s*dB$/);
+
+        act(() => updateProofMeters(DEVICE_ID, { ...frame, inputLufs: -12.5, outputLufs: -14.2 }));
+        expect(gain).toHaveTextContent(/-1\.7\s*dB$/);
+
+        act(() => updateProofMeters(DEVICE_ID, { ...frame, inputLufs: -100, outputLufs: -14.2 }));
+        expect(gain).toHaveTextContent(/—\s*dB$/);
+
+        act(() => updateProofMeters(DEVICE_ID, { ...frame, inputLufs: -12.5, outputLufs: -12.5 }));
+        expect(gain).toHaveTextContent(/Gain Applied\s*0\.0\s*dB$/);
+
+        act(() => updateProofMeters(DEVICE_ID, { ...frame, inputLufs: -12.5, outputLufs: -100 }));
+        expect(gain).toHaveTextContent(/—\s*dB$/);
+    });
+
     it('leaves the desk unrendered by a meter frame and still updates the readouts', () => {
         const snapshot = vi.mocked(getProofPatchSnapshot);
         seedState({ uiLevel: 3 });

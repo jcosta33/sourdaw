@@ -21,7 +21,6 @@ type SearchPresetsOutput = Array<{
             | 'Device'
             | 'Workspace'
             | 'Mix'
-            | 'Generate'
             | 'File'
             | 'Automation'
             | 'Collaboration';

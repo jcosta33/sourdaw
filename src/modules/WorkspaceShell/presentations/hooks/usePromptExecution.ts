@@ -31,17 +31,7 @@ export type SelectionTag = {
 };
 
 type PromptPresetCategory =
-    | 'Transport'
-    | 'Track'
-    | 'Clip'
-    | 'MIDI'
-    | 'Device'
-    | 'Workspace'
-    | 'Mix'
-    | 'Generate'
-    | 'File'
-    | 'Automation'
-    | 'Collaboration';
+    'Transport' | 'Track' | 'Clip' | 'MIDI' | 'Device' | 'Workspace' | 'Mix' | 'File' | 'Automation' | 'Collaboration';
 
 export type PromptFuzzyResult = {
     preset: {

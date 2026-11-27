@@ -161,6 +161,30 @@ describe('schedulePendingSuspends', () => {
         expect(noteOff).not.toHaveBeenCalled();
     });
 
+    it('releases explicit and legacy Toaster pads at their sample frames and skips unmapped pitches', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        const legacy: PendingWorkletEvent = {
+            time: 0.5,
+            type: 'off',
+            pitch: 37,
+            velocity: 0,
+            instrumentControls: { noteOn, noteOff },
+            isToaster: true,
+            toasterPadIndex: -1,
+        };
+        const unmapped: PendingWorkletEvent = { ...legacy, time: 0.75, pitch: 52 };
+        const explicit: PendingWorkletEvent = { ...unmapped, time: 1, toasterPadIndex: 4 };
+
+        schedulePendingSuspends({ sampleRate: 48_000 } as OfflineAudioContext, [legacy, unmapped, explicit], 10);
+
+        expect(noteOff.mock.calls).toEqual([
+            [{ noteOrPad: 1, sampleFrame: 24_000 }],
+            [{ noteOrPad: 4, sampleFrame: 48_000 }],
+        ]);
+        expect(noteOn).not.toHaveBeenCalled();
+    });
+
     it('should sort events correctly (off before on at same time)', () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();

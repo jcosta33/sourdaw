@@ -127,10 +127,6 @@ describe('trackStrategy', () => {
             });
         });
 
-        it('leaves zoomTracksVertical to no provider route while it is withdrawn from agent commands', () => {
-            expect(bridge('zoomTracksVertical', { delta: -20 })).toBeNull();
-        });
-
         const FOLD_REASON = 'Expected an available folder trackId and boolean folded value';
         const HIDE_REASON = 'Expected an available trackId and boolean hidden value';
         const HEIGHT_REASON = 'Expected an available trackId and a height from 30 through 300';

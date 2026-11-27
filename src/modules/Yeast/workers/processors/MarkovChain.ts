@@ -74,16 +74,12 @@ export class MarkovChain extends BaseMidiProcessor {
                 const val = (() => {
                     if (dist === 0) {
                         return 0.05;
+                    } else if (dist === 1) {
+                        return 0.35;
+                    } else if (dist === 2) {
+                        return 0.15;
                     } else {
-                        if (dist === 1) {
-                            return 0.35;
-                        } else {
-                            if (dist === 2) {
-                                return 0.15;
-                            } else {
-                                return 0.05;
-                            }
-                        }
+                        return 0.05;
                     }
                 })();
                 row[jIndex] = val;

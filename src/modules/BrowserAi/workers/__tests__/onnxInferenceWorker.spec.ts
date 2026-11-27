@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type WorkerRequest, type WorkerResponse } from '../../models/InferenceRequest';
+import { type TensorData, type WorkerRequest, type WorkerResponse } from '../../models/InferenceRequest';
 
 const createSession = vi.hoisted(() => vi.fn());
 
 vi.mock('onnxruntime-web', () => ({
     InferenceSession: { create: createSession },
-    Tensor: class {},
+    Tensor: class {
+        constructor(type: string, data: TensorData['data'], dims: readonly number[]) {
+            Object.assign(this, { type, data, dims });
+        }
+    },
     env: { wasm: { numThreads: 1 }, logLevel: 'error' },
 }));
 
@@ -57,6 +61,43 @@ describe('onnxInferenceWorker session provider reporting', () => {
             requestId: 'second',
             modelId: 'model-1',
             executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+    });
+
+    it('passes the type, values, and shape of each worker feed to the runtime session', async () => {
+        const audio = { data: new Float32Array([0.25, -0.5]), dims: [1, 2], type: 'float32' } satisfies TensorData;
+        const run = vi.fn().mockResolvedValue({ audio });
+        createSession.mockResolvedValue({ run, release: vi.fn() });
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        await onmessage(
+            new MessageEvent<WorkerRequest>('message', {
+                data: {
+                    type: 'create-session',
+                    requestId: 'load',
+                    modelId: 'model-1',
+                    modelData: new ArrayBuffer(8),
+                    options: {},
+                },
+            })
+        );
+
+        const feeds = {
+            tokens: { type: 'int64', data: new BigInt64Array([12n, 9007199254740993n]), dims: [1, 2] },
+            lengths: { type: 'int32', data: new Int32Array([2, 3]), dims: [2] },
+            mask: { type: 'bool', data: new Uint8Array([0, 1, 1]), dims: [1, 3] },
+            gain: { type: 'float32', data: new Float32Array([0.5]), dims: [] },
+        } satisfies Record<string, TensorData>;
+        await onmessage(
+            new MessageEvent<WorkerRequest>('message', {
+                data: { type: 'run-inference', requestId: 'render', modelId: 'model-1', feeds },
+            })
+        );
+
+        expect(run).toHaveBeenCalledExactlyOnceWith(feeds);
+        expect(self.postMessage).toHaveBeenLastCalledWith({
+            type: 'inference-result',
+            requestId: 'render',
+            outputs: { audio },
         } satisfies WorkerResponse);
     });
 

@@ -40,7 +40,7 @@ import {
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
-import { MAX_TRACK_HEIGHT, MAX_TRACK_ZOOM_DELTA, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
+import { MAX_TRACK_HEIGHT, MIN_TRACK_HEIGHT } from '#/utils/trackHeightLimits';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
@@ -383,8 +383,6 @@ const validators = {
     freezeTrack: hasTrackId,
     unfreezeTrack: hasTrackId,
     flattenTrack: hasTrackId,
-    bounceInPlace: hasTrackId,
-    bounceToNewTrack: hasTrackId,
 
     // Clip lifecycle
     addClip: (param): param is PayloadOf<'addClip'> =>
@@ -763,12 +761,6 @@ const validators = {
     setSnapValue: 'unchecked',
     zoomToFit: 'unchecked',
     zoomToSelection: 'unchecked',
-    // A delta of zero would write nothing, and a larger one than the height range only saturates.
-    zoomTracksVertical: (param): param is PayloadOf<'zoomTracksVertical'> =>
-        isObj(param) &&
-        hasExactKeys(param, ['delta']) &&
-        isInRange(param.delta, -MAX_TRACK_ZOOM_DELTA, MAX_TRACK_ZOOM_DELTA) &&
-        param.delta !== 0,
     // The writer clamps a height, so an out-of-range one is refused here rather than silently moved.
     setTrackHeight: (param): param is PayloadOf<'setTrackHeight'> =>
         isObj(param) &&
@@ -1016,8 +1008,6 @@ const validators = {
         isNonEmptyString(param.clipBId) &&
         param.clipAId !== param.clipBId &&
         isOptional(param.durationBeats, isNonNegativeNumber),
-    consolidateSelection: 'unchecked',
-    bounceSelection: 'unchecked',
     // A provider names the clip and the detection settings; the plan is application-materialized.
     stripSilence: (param): param is PayloadOf<'stripSilence'> =>
         isObj(param) &&
@@ -1183,14 +1173,8 @@ const validators = {
 
     // Preset / template
     savePreset: 'unchecked',
-    loadTrackTemplate: 'unchecked',
     saveTrackTemplate: 'unchecked',
     deleteTrackTemplate: 'unchecked',
-
-    // AI generation
-    generateDrumPattern: 'unchecked',
-    generateMelody: 'unchecked',
-    generateChordProgression: 'unchecked',
 
     // Analysis
     analyzeMix: 'unchecked',
@@ -1200,7 +1184,6 @@ const validators = {
     scanPlugins: 'unchecked',
     detectTempo: 'unchecked',
     detectKey: 'unchecked',
-    consolidateAllTracks: 'unchecked',
 
     // Scratch pad
     toggleScratchPad: 'unchecked',
