@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     addClip,
     addTrack,
-    captureRemovedTrackPluginRelease,
+    captureTrackRemovalRuntimeAuthority,
     getTrackStoreState,
     removeTrack,
 } from '#/modules/Arrangement/useCases';
@@ -22,6 +22,22 @@ type StemSelection = (typeof VALID_STEMS)[number];
 
 function isValidStem(value: string): value is StemSelection {
     return (VALID_STEMS as readonly string[]).includes(value);
+}
+
+type ReplacedTrackRemoval = { trackId: string; finalizeRuntimeRemoval: () => Promise<void> };
+
+/** The replaced tracks' engine strips and hosted plugins are released once the removal commits; a failure
+ *  there is retried by the reconcile and otherwise surfaces from the action. */
+function createReplacedTracksFinalizer(
+    removals: readonly ReplacedTrackRemoval[],
+    runtimeAuthority: ReturnType<typeof captureTrackRemovalRuntimeAuthority>
+): () => Promise<void> {
+    return () =>
+        runAllAsyncEffects(
+            removals.map(({ trackId, finalizeRuntimeRemoval }) =>
+                runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval)
+            )
+        );
 }
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({
@@ -63,13 +79,15 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
             throw new Error('Audio buffer not found in cache');
         }
 
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
+        const replacedTrackRemovals: ReplacedTrackRemoval[] = [];
+
         try {
             const wavData = await audioBufferToWav(sourceBuffer);
 
             const stemResults = await doSeparateStems(wavData, stems);
 
             const durationBeats = clip.endBeat - clip.startBeat;
-            const pluginReleases: Array<() => Promise<void>> = [];
             for (const [stemName, stemBuffer] of Object.entries(stemResults)) {
                 const stemTrackName = `${clip.name} — ${stemName}`;
 
@@ -80,12 +98,14 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
                 const existingStemTracks = (getTrackStoreState()?.tracks ?? []).filter(
                     (existing) => existing.name === stemTrackName
                 );
-                // Read before removeTrack: a replaced track's hosted instances are unreachable once it leaves the store.
-                pluginReleases.push(
-                    captureRemovedTrackPluginRelease(existingStemTracks.map((existing) => existing.id))
-                );
                 for (const existing of existingStemTracks) {
-                    removeTrack(existing.id);
+                    const removal = removeTrack(existing.id, { deferRuntimeEffects: true });
+                    if (removal.removed) {
+                        replacedTrackRemovals.push({
+                            trackId: existing.id,
+                            finalizeRuntimeRemoval: removal.finalizeRuntimeRemoval,
+                        });
+                    }
                 }
 
                 const stemTrack = addTrack({ name: stemTrackName, kind: 'audio' });
@@ -104,11 +124,11 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
             }
 
             logger.info(`[Audio AI] Separated into ${String(Object.keys(stemResults).length)} stems`);
-            const releaseReplacedPlugins = () => runAllAsyncEffects(pluginReleases);
+            const finalizeReplacedTracks = createReplacedTracksFinalizer(replacedTrackRemovals, runtimeAuthority);
             return {
                 status: 'written',
-                afterCommit: releaseReplacedPlugins,
-                afterAmbiguousCommit: releaseReplacedPlugins,
+                afterCommit: finalizeReplacedTracks,
+                afterAmbiguousCommit: finalizeReplacedTracks,
             };
         } catch (error) {
             logger.warn(`[Audio AI] Stem separation failed: ${String(error)}`);

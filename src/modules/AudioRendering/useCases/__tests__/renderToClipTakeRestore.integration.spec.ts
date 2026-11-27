@@ -4,7 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { defaultTrackState, takeLaneStore, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { macroStore, undoHistoryStore } from '#/modules/Command/stores';
 import {
@@ -23,6 +23,15 @@ import {
 
 import { renderToClip } from '../renderToClip';
 
+const mocks = vi.hoisted(() => ({
+    unloadPluginCarryingLiveState: vi.fn<(instanceId: string) => Promise<void>>(),
+}));
+
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    unloadPluginCarryingLiveState: mocks.unloadPluginCarryingLiveState,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: vi.fn(),
@@ -33,6 +42,22 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+function withHostedPlugin(track: Track, trackId: string): Track {
+    if (track.id !== trackId) {
+        return track;
+    }
+    const device = {
+        id: 'render-plugin',
+        name: 'Reverb',
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalPluginId: 'plugin-abc',
+        externalInstanceId: 'render-plugin-instance',
+    };
+    return { ...track, devices: [...track.devices, device] };
+}
 
 function clipIds(): string[] {
     return (trackStore.value?.tracks[0]?.clips ?? []).map((clip) => clip.id);
@@ -48,6 +73,8 @@ function clipIdsNamedByLiveTakes(): string[] {
 
 describe('renderToClip take restore', () => {
     beforeEach(() => {
+        mocks.unloadPluginCarryingLiveState.mockReset();
+        mocks.unloadPluginCarryingLiveState.mockResolvedValue(undefined);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('render to clip take restore integration');
         removeCrdtDoc('root');
@@ -114,6 +141,40 @@ describe('renderToClip take restore', () => {
         await undo();
         expect(clipIds()).toEqual(['clip-1']);
         expect(takeIdsInLiveLanes()).toEqual([]);
+    });
+
+    it('releases the hosted plugin of the track a render created when the render is undone', async () => {
+        const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
+        const rendered = renderToClip({
+            targetTrackId: 'new',
+            startBeat: 4,
+            endBeat: 8,
+            tailSeconds: 0,
+            buffer,
+            name: 'Rendered',
+        });
+        if (!rendered) {
+            throw new Error('expected the rendered clip');
+        }
+        const state = trackStore.value;
+        const createdTrack = state?.tracks.find((track) => track.name === 'Rendered');
+        if (!state || !createdTrack) {
+            throw new Error('expected the render to create a track');
+        }
+        // The user adds a plugin to the rendered track after the render.
+        setTrackStoreState({
+            ...state,
+            tracks: state.tracks.map((track) => withHostedPlugin(track, createdTrack.id)),
+        });
+        flushAutomergeStorageWrites();
+        expect(mocks.unloadPluginCarryingLiveState).not.toHaveBeenCalled();
+
+        await undo();
+
+        expect(trackStore.value?.tracks.some((track) => track.id === createdTrack.id)).toBe(false);
+        await vi.waitFor(() => {
+            expect(mocks.unloadPluginCarryingLiveState.mock.calls).toEqual([['render-plugin-instance']]);
+        });
     });
 
     it('refuses the redo when it cannot re-create its clip', async () => {

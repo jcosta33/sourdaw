@@ -168,4 +168,28 @@ describe('track removal releases its hosted plugin instances', () => {
             expect([...activatedInstanceIds()].sort()).toEqual([...expectedInstanceIds].sort());
         });
     }
+
+    it('removeTrack: a failed unload is retried by the reconcile and the instances end up released', async () => {
+        pluginHostMocks.unloadPluginCarryingLiveState.mockRejectedValueOnce(new Error('host gone'));
+        pluginHostMocks.unloadPluginCarryingLiveState.mockResolvedValue(undefined);
+
+        await executeAppAction({ type: 'removeTrack', payload: { trackId: 'track-1' } }, { source: 'manual' });
+
+        expect(pluginHostMocks.unloadPluginCarryingLiveState.mock.calls.map(([id]) => id)).toEqual([
+            'track-1-instance-1',
+            'track-1-instance-2',
+            'track-1-instance-1',
+            'track-1-instance-2',
+        ]);
+    });
+
+    it('removeTrack: an unload that fails in the commit and again in the reconcile is reported', async () => {
+        pluginHostMocks.unloadPluginCarryingLiveState.mockRejectedValue(new Error('host gone'));
+
+        await expect(
+            executeAppAction({ type: 'removeTrack', payload: { trackId: 'track-1' } }, { source: 'manual' })
+        ).rejects.toThrow();
+
+        expect(trackIds()).toEqual(['track-2']);
+    });
 });

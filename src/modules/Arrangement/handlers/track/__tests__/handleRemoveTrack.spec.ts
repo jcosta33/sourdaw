@@ -84,7 +84,6 @@ const mocks = vi.hoisted(() => ({
     midiStoreValue: { value: null } as any,
     takeLaneStoreValue: { value: null } as any,
     readClipSatelliteEntry: vi.fn(),
-    unloadDiscardedHostedPlugins: vi.fn(),
 }));
 
 const noActionHistoryMetadataPort = {
@@ -108,9 +107,6 @@ vi.mock('../../../useCases/removeTrackModulationReferences', () => ({
 }));
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
-}));
-vi.mock('../../../useCases/device/unloadDiscardedHostedPlugins', () => ({
-    unloadDiscardedHostedPlugins: mocks.unloadDiscardedHostedPlugins,
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -221,12 +217,12 @@ describe('handleRemoveTrack', () => {
                 expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
                 expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
                 expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
-                expect(mocks.unloadDiscardedHostedPlugins).not.toHaveBeenCalled();
             }
         );
 
-        // #6557: a peer that restores the track before the unload runs keeps its plugins in use.
-        it('keeps hosted plugins loaded when committed truth holds the track again before afterCommit', async () => {
+        // #6557: a peer that restores the track before the release runs keeps its plugins in use. The release
+        // is part of the use case's runtime removal, so holding that back holds the plugins back.
+        it('holds the runtime removal back when committed truth holds the track again before afterCommit', async () => {
             const track = TrackDummy.create({ id: 't1', devices: [hostedDevice()] });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
             const result = await handleRemoveTrack.execute({ type: 'removeTrack', payload: { trackId: 't1' } });
@@ -239,11 +235,11 @@ describe('handleRemoveTrack', () => {
 
             await result?.afterCommit?.();
 
-            expect(mocks.unloadDiscardedHostedPlugins).not.toHaveBeenCalled();
+            expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
             expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
         });
 
-        it('keeps hosted plugins loaded when an ambiguous commit leaves the track in committed truth only', async () => {
+        it('holds the runtime removal back when an ambiguous commit leaves the track in committed truth only', async () => {
             const track = TrackDummy.create({ id: 't1', devices: [hostedDevice()] });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
             const result = await handleRemoveTrack.execute({ type: 'removeTrack', payload: { trackId: 't1' } });
@@ -257,7 +253,7 @@ describe('handleRemoveTrack', () => {
 
             await result?.afterAmbiguousCommit?.();
 
-            expect(mocks.unloadDiscardedHostedPlugins).not.toHaveBeenCalled();
+            expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
             expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
         });
 
@@ -384,15 +380,12 @@ describe('handleRemoveTrack', () => {
             expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
         });
 
-        // #6557: an ambiguous commit releases the plugins only of a track committed truth no longer holds.
+        // #6557: an ambiguous commit finalizes the runtime removal, which releases the plugins, only of a
+        // track committed truth no longer holds.
         it.each([
-            {
-                committed: 'absent',
-                committedTracks: [],
-                unloadCalls: [[[{ deviceId: 't1-plugin', instanceId: 't1-instance' }]]],
-            },
-            { committed: 'present', committedTracks: ['t1'], unloadCalls: [] },
-        ])('releases hosted plugins after an ambiguous commit only when the track is $committed', async (row) => {
+            { committed: 'absent', committedTracks: [], finalizeCalls: 1 },
+            { committed: 'present', committedTracks: ['t1'], finalizeCalls: 0 },
+        ])('finalizes the runtime removal after an ambiguous commit only when the track is $committed', async (row) => {
             const track = TrackDummy.create({ id: 't1', devices: [hostedDevice()] });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
             const result = await handleRemoveTrack.execute({ type: 'removeTrack', payload: { trackId: 't1' } });
@@ -403,7 +396,7 @@ describe('handleRemoveTrack', () => {
 
             await result?.afterAmbiguousCommit?.();
 
-            expect(mocks.unloadDiscardedHostedPlugins.mock.calls).toEqual(row.unloadCalls);
+            expect(mocks.finalizeRuntimeRemoval).toHaveBeenCalledTimes(row.finalizeCalls);
         });
 
         it('rebuilds a track that remains in durable truth after an ambiguous commit', async () => {

@@ -6,8 +6,7 @@ const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
     removeTrack: vi.fn(),
-    captureRemovedTrackPluginRelease: vi.fn<(trackIds: readonly string[]) => () => Promise<void>>(),
-    releaseReplacedPlugins: vi.fn<() => Promise<void>>(),
+    guardAbsent: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     info: vi.fn(),
@@ -22,9 +21,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mocks.addClip,
     addTrack: mocks.addTrack,
-    captureRemovedTrackPluginRelease: mocks.captureRemovedTrackPluginRelease,
     getTrackStoreState: mocks.getTrackStoreState,
     removeTrack: mocks.removeTrack,
+    captureTrackRemovalRuntimeAuthority: () => ({ guardAbsent: mocks.guardAbsent }),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -54,8 +53,7 @@ describe('handleStemSeparate', () => {
         vi.clearAllMocks();
         mocks.isStemSeparationAvailable.mockReturnValue(true);
         mocks.getTrackStoreState.mockReturnValue(null);
-        mocks.releaseReplacedPlugins.mockResolvedValue(undefined);
-        mocks.captureRemovedTrackPluginRelease.mockReturnValue(mocks.releaseReplacedPlugins);
+        mocks.guardAbsent.mockImplementation((_trackId: string, effect: () => unknown) => effect);
     });
 
     it('rejects before processing when no model is admitted', async () => {
@@ -221,6 +219,7 @@ describe('handleStemSeparate', () => {
         mocks.separateStems.mockResolvedValue({ vocals: vocalsBuffer });
         mocks.addTrack.mockReturnValue({ id: 't-new' });
         mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
+        mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: vi.fn() });
 
         await handleStemSeparate.execute({
             type: 'stemSeparate',
@@ -228,86 +227,79 @@ describe('handleStemSeparate', () => {
         });
 
         expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
-        expect(mocks.removeTrack).toHaveBeenCalledWith('t-old');
+        expect(mocks.removeTrack).toHaveBeenCalledWith('t-old', { deferRuntimeEffects: true });
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — vocals', kind: 'audio' });
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: vocalsBuffer });
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ audioBufferId: 'stem-buffer' }));
     });
 
-    it('releases a replaced stem track hosted plugins once the re-run commits', async () => {
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                {
-                    id: 'src',
-                    clips: [
-                        { id: 'c1', name: 'Vocals', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 },
-                    ],
-                },
-                { id: 't-old', name: 'Vocals — vocals', clips: [] },
-                { id: 't-old-2', name: 'Vocals — vocals', clips: [] },
-            ],
-        });
-        mocks.getCachedAudioBuffer.mockReturnValue({});
-        mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
-        mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer });
-        mocks.addTrack.mockReturnValue({ id: 't-new' });
-        mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
-
-        const result = await handleStemSeparate.execute({
-            type: 'stemSeparate',
-            payload: { clipId: 'c1', stems: ['vocals'] },
-        });
-
-        expect(mocks.captureRemovedTrackPluginRelease).toHaveBeenCalledWith(['t-old', 't-old-2']);
-        expect(mocks.captureRemovedTrackPluginRelease.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.removeTrack.mock.invocationCallOrder[0] ?? 0
-        );
-        expect(mocks.releaseReplacedPlugins).not.toHaveBeenCalled();
-        if (!result || result.status !== 'written') {
-            throw new Error('expected a written result');
+    describe('replacing a prior stem track', () => {
+        async function rerun() {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    {
+                        id: 'src',
+                        clips: [
+                            {
+                                id: 'c1',
+                                name: 'Vocals',
+                                type: 'audio',
+                                audioBufferId: 'buf1',
+                                startBeat: 0,
+                                endBeat: 4,
+                            },
+                        ],
+                    },
+                    { id: 't-old-1', name: 'Vocals — vocals', clips: [] },
+                    { id: 't-old-2', name: 'Vocals — vocals', clips: [] },
+                ],
+            });
+            mocks.getCachedAudioBuffer.mockReturnValue({});
+            mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
+            mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer });
+            mocks.addTrack.mockReturnValue({ id: 't-new' });
+            mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
+            return handleStemSeparate.execute({
+                type: 'stemSeparate',
+                payload: { clipId: 'c1', stems: ['vocals'] },
+            });
         }
-        await result.afterCommit?.();
-        expect(mocks.releaseReplacedPlugins).toHaveBeenCalledTimes(1);
-        await result.afterAmbiguousCommit?.();
-        expect(mocks.releaseReplacedPlugins).toHaveBeenCalledTimes(2);
-    });
 
-    it('releases the replaced tracks of every stem a re-run produces', async () => {
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                {
-                    id: 'src',
-                    clips: [{ id: 'c1', name: 'Mix', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 }],
-                },
-                { id: 't-vocals', name: 'Mix — vocals', clips: [] },
-                { id: 't-drums', name: 'Mix — drums', clips: [] },
-            ],
-        });
-        mocks.getCachedAudioBuffer.mockReturnValue({});
-        mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
-        mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer, drums: {} as AudioBuffer });
-        mocks.addTrack.mockReturnValue({ id: 't-new' });
-        mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
-        const releases = new Map<string, ReturnType<typeof vi.fn<() => Promise<void>>>>();
-        mocks.captureRemovedTrackPluginRelease.mockImplementation((trackIds) => {
-            const release = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-            releases.set(trackIds.join(','), release);
-            return release;
+        it('defers each replaced track runtime removal to afterCommit and afterAmbiguousCommit', async () => {
+            const finalizers = [vi.fn().mockResolvedValue(undefined), vi.fn().mockResolvedValue(undefined)];
+            mocks.removeTrack
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizers[0] })
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizers[1] });
+
+            const result = await rerun();
+            if (!result || result.status !== 'written' || !result.afterCommit) {
+                throw new Error('Expected a written result with post-commit effects');
+            }
+            expect(finalizers[0]).not.toHaveBeenCalled();
+
+            await result.afterCommit();
+            expect(finalizers[0]).toHaveBeenCalledTimes(1);
+            expect(finalizers[1]).toHaveBeenCalledTimes(1);
+
+            await result.afterAmbiguousCommit();
+            expect(finalizers[0]).toHaveBeenCalledTimes(2);
+            expect(finalizers[1]).toHaveBeenCalledTimes(2);
         });
 
-        const result = await handleStemSeparate.execute({
-            type: 'stemSeparate',
-            payload: { clipId: 'c1', stems: ['vocals', 'drums'] },
-        });
-        if (!result || result.status !== 'written') {
-            throw new Error('expected a written result');
-        }
-        await result.afterCommit?.();
+        it('rejects afterCommit when a replaced track runtime removal fails', async () => {
+            const failure = new Error('host gone');
+            mocks.removeTrack
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: vi.fn().mockRejectedValue(failure) })
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: vi.fn().mockResolvedValue(undefined) });
 
-        expect([...releases.keys()]).toEqual(['t-vocals', 't-drums']);
-        expect(releases.get('t-vocals')).toHaveBeenCalledTimes(1);
-        expect(releases.get('t-drums')).toHaveBeenCalledTimes(1);
+            const result = await rerun();
+            if (!result || result.status !== 'written' || !result.afterCommit) {
+                throw new Error('Expected a written result with post-commit effects');
+            }
+
+            await expect(result.afterCommit()).rejects.toBe(failure);
+        });
     });
 
     it('logs warning if separation throws', async () => {

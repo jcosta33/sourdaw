@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     captureProjectRootIdentity,
     DOC_PREFIX_ROOT,
@@ -7,18 +8,26 @@ import {
 
 import { sanitizeTrackSnapshot, trackStore } from '../stores/trackStore';
 
-/** Direct removals share Command's committed-absence fence without changing their history route. */
+/**
+ * Direct removals share Command's committed-absence fence without changing their history route.
+ * No caller awaits a direct removal, so a failed teardown is logged where it settles.
+ */
 export function finalizeCommittedTrackRuntimeRemoval(
     trackId: string,
-    finalizeRuntimeRemoval: () => void,
+    finalizeRuntimeRemoval: () => Promise<void>,
     isCurrent: () => boolean
 ): void {
+    const finalize = (): void => {
+        finalizeRuntimeRemoval().catch((error: unknown) => {
+            logger.warn(`[Arrangement] the runtime teardown of removed track ${trackId} failed: ${String(error)}`);
+        });
+    };
     if (!isCurrent()) {
         return;
     }
     const document = getCrdtDoc(DOC_PREFIX_ROOT);
     if (!document || !sanitizeTrackSnapshot(document.tracks).tracks.some((track) => track.id === trackId)) {
-        finalizeRuntimeRemoval();
+        finalize();
         return;
     }
     const rootIdentity = captureProjectRootIdentity();
@@ -41,7 +50,7 @@ export function finalizeCommittedTrackRuntimeRemoval(
         }
         if (!sanitizeTrackSnapshot(current.tracks).tracks.some((track) => track.id === trackId)) {
             retire();
-            finalizeRuntimeRemoval();
+            finalize();
             return;
         }
         // Abort republishes the committed row. This removal then owns no future cleanup.
