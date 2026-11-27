@@ -544,6 +544,7 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
             stopped: 0,
             stopHold: 2,
         },
+        pauseCapture: { trusted: true, ageMs: 30, clickTimeMs: 1000 },
         trackBefore: 'track-1',
         trackAfter: 'track-1',
         deviceBefore: 'device-1',
@@ -578,6 +579,30 @@ describe('packaged editor workspace proof', () => {
         expect(record.failureCode).toBe('workspace-observations-incomplete');
     });
     it.each([
+        [
+            'missing click capture',
+            (timeline) => {
+                delete timeline.pauseCapture;
+            },
+        ],
+        [
+            'untrusted click',
+            (timeline) => {
+                timeline.pauseCapture = { trusted: false, ageMs: 30, clickTimeMs: 1000 };
+            },
+        ],
+        [
+            'stale click readout',
+            (timeline) => {
+                timeline.pauseCapture = { trusted: true, ageMs: 125.01, clickTimeMs: 1000 };
+            },
+        ],
+        [
+            'missing click age',
+            (timeline) => {
+                timeline.pauseCapture = { trusted: true, ageMs: null, clickTimeMs: 1000 };
+            },
+        ],
         [
             'missing sample',
             (timeline) => {

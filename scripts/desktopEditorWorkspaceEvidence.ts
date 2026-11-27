@@ -32,6 +32,7 @@ export type WorkspaceObservation = {
     instanceIds: string[];
     timeline?: {
         samples: Record<string, number>;
+        pauseCapture?: { trusted: boolean; ageMs: number | null; clickTimeMs: number | null };
         trackBefore?: string;
         trackAfter?: string;
         deviceBefore?: string;
@@ -86,9 +87,17 @@ export function workspaceFailure(
 }
 
 function validTimeline(timeline: NonNullable<WorkspaceObservation['timeline']>): boolean {
-    const { samples, trackBefore, trackAfter, deviceBefore, deviceAfter } = timeline;
+    const { samples, pauseCapture, trackBefore, trackAfter, deviceBefore, deviceAfter } = timeline;
     const validId = (value: string | undefined): boolean => value !== undefined && /^[a-zA-Z0-9_-]{1,80}$/u.test(value);
     return (
+        pauseCapture?.trusted === true &&
+        typeof pauseCapture.clickTimeMs === 'number' &&
+        Number.isFinite(pauseCapture.clickTimeMs) &&
+        pauseCapture.clickTimeMs >= 0 &&
+        typeof pauseCapture.ageMs === 'number' &&
+        Number.isFinite(pauseCapture.ageMs) &&
+        pauseCapture.ageMs >= 0 &&
+        pauseCapture.ageMs <= 125 &&
         validId(trackBefore) &&
         trackBefore === trackAfter &&
         validId(deviceBefore) &&
