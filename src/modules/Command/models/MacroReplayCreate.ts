@@ -484,7 +484,6 @@ export const macroReplayCreateByActionType: {
     variationMidi: notAGeneratedCreate,
     generateBassline: notAGeneratedCreate,
     replayGeneratedMidi: notAGeneratedCreate,
-    stemSeparate: notAGeneratedCreate,
     autoOrganizeProject: notAGeneratedCreate,
     addChordEvent: beginChordEventCreate,
     moveChordEvent: notAGeneratedCreate,

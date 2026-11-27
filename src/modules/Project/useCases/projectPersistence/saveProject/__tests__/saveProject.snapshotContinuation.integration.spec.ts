@@ -5,6 +5,7 @@ import {
     settleNativePreparationWorkers,
 } from '#/helpers/__tests__/nativePreparationWorker';
 import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
 
@@ -126,6 +127,7 @@ async function openProjectWithCachedStereoClip() {
     return {
         audioBufferCache,
         bufferId,
+        clip,
         cacheAudioBuffer,
         persistenceFailures,
         project,
@@ -151,6 +153,96 @@ async function startSaveHeldInPreflight(
     const saving = opened.project.saveProject();
     await vi.waitFor(() => expect(lockManager.requestedNames.length).toBeGreaterThan(requestedBefore));
     return { release, saving };
+}
+
+type ArrangementStore = typeof import('../../../../stores/arrangementStore').arrangementStore;
+
+type SlowWorkerRequest = {
+    signal: AbortSignal;
+    /** Runs the callback in a later task, so a write is not part of the save's own action. */
+    afterTask: (callback: () => void) => void;
+};
+
+function rejectWhenAborted(signal: AbortSignal): Promise<never> {
+    return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('Worker request abandoned')), { once: true });
+    });
+}
+
+/**
+ * Scripts the Worker round trip of the first save preparation and records every attempt: how many
+ * preparations were planned, which Worker requests were made, and which attempts materialized.
+ * Later attempts keep the fixture's own local materialization, so a retry can complete.
+ */
+async function stubSlowMaterializationWorker(behaviour: (request: SlowWorkerRequest) => Promise<void>) {
+    const arrangementStoreModule = await import('../../../../stores/arrangementStore');
+    const prepare = arrangementStoreModule.prepareArrangementStoreState;
+    const signals: AbortSignal[] = [];
+    const materializedAttempts: number[] = [];
+    let attempts = 0;
+    vi.spyOn(arrangementStoreModule, 'prepareArrangementStoreState').mockImplementation((...args) => {
+        const plan = prepare(...args);
+        if (!plan) {
+            return plan;
+        }
+        attempts += 1;
+        const attempt = attempts;
+        const materialize = (): void => {
+            materializedAttempts.push(attempt);
+            plan.materialize();
+        };
+        if (attempt > 1) {
+            // Observe the retry without copying the plan, which would evaluate its Worker request.
+            const materializeRetry = plan.materialize.bind(plan);
+            vi.spyOn(plan, 'materialize').mockImplementation(() => {
+                materializedAttempts.push(attempt);
+                materializeRetry();
+            });
+            return plan;
+        }
+        return {
+            ...plan,
+            requestMaterialization: (signal: AbortSignal) => {
+                signals.push(signal);
+                return behaviour({
+                    signal,
+                    afterTask: (callback) => {
+                        setTimeout(callback, 0);
+                    },
+                });
+            },
+            materialize,
+        };
+    });
+    return { signals, attempts: () => attempts, materializedAttempts: () => materializedAttempts };
+}
+
+/** Counts the live subscriptions a save's preparation holds to watch for edits: CRDT changes and the project store. */
+async function countCrdtChangeSubscriptions() {
+    const [crdtModule, { projectStore }] = await Promise.all([
+        import('#/modules/CrdtDocument/useCases'),
+        import('../../../../stores/projectStore'),
+    ]);
+    let live = 0;
+    function counted<Listener>(subscribe: (listener: Listener) => () => void): (listener: Listener) => () => void {
+        return (listener) => {
+            live += 1;
+            const unsubscribe = subscribe(listener);
+            let released = false;
+            return () => {
+                if (!released) {
+                    released = true;
+                    live -= 1;
+                }
+                unsubscribe();
+            };
+        };
+    }
+    const subscribeToCrdtChanges = counted(crdtModule.subscribeToCrdtChanges);
+    const subscribeToProject = counted(projectStore.subscribe.bind(projectStore));
+    vi.spyOn(crdtModule, 'subscribeToCrdtChanges').mockImplementation(subscribeToCrdtChanges);
+    vi.spyOn(projectStore, 'subscribe').mockImplementation(subscribeToProject);
+    return { active: (): number => live };
 }
 
 const SERIAL_SNAPSHOT_WORK = ['capture', 'build', 'first save settled', 'capture', 'build'];
@@ -206,6 +298,20 @@ function savedTrackNames(indexedDb: IndexedDbFixture, opened: OpenedProject): st
         throw new TypeError('expected a saved project snapshot');
     }
     return (JSON.parse(json) as ProjectData).arrangement.tracks.map((track) => track.name);
+}
+
+function savedWarpEnabled(indexedDb: IndexedDbFixture, opened: OpenedProject): boolean | undefined {
+    const json = indexedDb.get('sourdaw-projects', 'projects', opened.project.getProjectSnapshotKey(CREATED_AT));
+    if (typeof json !== 'string') {
+        throw new TypeError('expected a saved project snapshot');
+    }
+    const snapshot: unknown = JSON.parse(json);
+    if (!isRecord(snapshot) || !Array.isArray(snapshot.warpStates)) {
+        throw new TypeError('expected warp states in the saved project snapshot');
+    }
+    const states: unknown[] = snapshot.warpStates;
+    const state = states.find((value) => isRecord(value) && value.clipId === opened.clip.id);
+    return isRecord(state) && typeof state.enabled === 'boolean' ? state.enabled : undefined;
 }
 
 describe('saveProject snapshot continuation', () => {
@@ -396,6 +502,273 @@ describe('saveProject snapshot continuation', () => {
             expect(await save.saving).toBe(false);
             expect(opened.projectStore.value?.dirty).toBe(true);
             expect(opened.persistenceFailures()).toEqual([`${REFUSAL_PREFIX}: the project revision moved`]);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'abandons a Worker materialization as soon as an edit lands, then saves the latest revision (#7500)',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const workerFinished = Promise.withResolvers<void>();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    // Detect publishes its markers while the Worker still materializes the save's rows.
+                    opened.renameTrack(opened.track.id, 'Edited while the Worker materialized');
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            // The Worker has not answered, so only the edit itself can have told the save to stop waiting for it.
+            await vi.waitFor(() => expect(worker.signals[0]?.aborted).toBe(true));
+            workerFinished.resolve();
+
+            expect(await saving).toBe(true);
+            // One abandoned Worker request, then one retry that materializes and saves the edit.
+            expect(worker.signals).toHaveLength(1);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited while the Worker materialized']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'keeps waiting for the Worker when a watched store is set to the value it already holds',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const workerFinished = Promise.withResolvers<void>();
+            const sameValueSet = Promise.withResolvers<void>();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    opened.projectStore.set(opened.projectStore.value);
+                    sameValueSet.resolve();
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await sameValueSet.promise;
+            expect(worker.signals[0]?.aborted).toBe(false);
+            workerFinished.resolve();
+
+            // The stub cannot supply a real Worker answer, so the first attempt ends at materialization; it must
+            // get that far, with no second attempt, because the same-value set left its inputs current.
+            await saving;
+            expect(worker.signals).toHaveLength(1);
+            expect(worker.attempts()).toBe(1);
+            expect(worker.materializedAttempts()).toEqual([1]);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'never materializes a stale Worker answer and saves the edit that made it stale',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const worker = await stubSlowMaterializationWorker(async ({ afterTask }) => {
+                afterTask(() => {
+                    opened.renameTrack(opened.track.id, 'Edited after admission');
+                });
+                // The Worker answers although the edit already made that answer stale.
+                await new Promise<void>((resolve) => afterTask(resolve));
+            });
+
+            expect(await opened.project.saveProject()).toBe(true);
+
+            // The first answer is never materialized; the retry materializes against the edit.
+            expect(worker.signals).toHaveLength(1);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(savedTrackNames(indexedDb, opened)).toEqual(['Edited after admission']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it.each([
+        {
+            changed: 'the project',
+            change: (opened: OpenedProject) => {
+                opened.project.renameProject('Renamed during preparation');
+            },
+        },
+        {
+            changed: 'the arrangements',
+            change: (_opened: OpenedProject, arrangementStore: ArrangementStore) => {
+                const current = arrangementStore.value!;
+                arrangementStore.set({
+                    ...current,
+                    arrangements: current.arrangements.map((row) =>
+                        row.id === current.activeArrangementId ? { ...row, name: 'Renamed during preparation' } : row
+                    ),
+                });
+            },
+        },
+    ])(
+        'abandons the Worker request when only $changed changes, then saves the latest value',
+        async ({ change }) => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const { arrangementStore } = await import('../../../../stores/arrangementStore');
+            const workerFinished = Promise.withResolvers<void>();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    change(opened, arrangementStore);
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await vi.waitFor(() => expect(worker.signals[0]?.aborted).toBe(true));
+            workerFinished.resolve();
+
+            expect(await saving).toBe(true);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
+            expect(opened.persistenceFailures()).toEqual([]);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'abandons the Worker request in the next task when only a project key outside the document changes',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const workerFinished = Promise.withResolvers<void>();
+            let abortedOneTaskLater: boolean | undefined;
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    // `dirty` is not stored in the document, so no document change announces this edit.
+                    const current = opened.projectStore.value!;
+                    opened.projectStore.set({ ...current, dirty: !current.dirty });
+                    afterTask(() => {
+                        abortedOneTaskLater = signal.aborted;
+                    });
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await vi.waitFor(() => expect(abortedOneTaskLater).toBeDefined());
+            workerFinished.resolve();
+
+            expect(abortedOneTaskLater).toBe(true);
+            expect(await saving).toBe(true);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
+            expect(opened.persistenceFailures()).toEqual([]);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'holds the CRDT and project store subscriptions while the Worker request is open, and releases them after',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const subscriptions = await countCrdtChangeSubscriptions();
+            const before = subscriptions.active();
+            let heldDuringRequest = 0;
+            await stubSlowMaterializationWorker(() => {
+                heldDuringRequest = subscriptions.active();
+                return Promise.reject(new Error('Worker failed'));
+            });
+
+            expect(await opened.project.saveProject()).toBe(false);
+
+            expect(heldDuringRequest).toBe(before + 2);
+            expect(subscriptions.active()).toBe(before);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'abandons the Worker request when a warp state is written, then saves the latest state (#7500)',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const { getWarpState, setWarpState } = await import('#/modules/Arrangement/stores');
+            const enabled = !getWarpState(opened.clip.id).enabled;
+            const workerFinished = Promise.withResolvers<void>();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    // Elastic Detect commits its markers through the warp state store.
+                    setWarpState(opened.clip.id, { ...getWarpState(opened.clip.id), enabled });
+                });
+                await Promise.race([workerFinished.promise, rejectWhenAborted(signal)]);
+            });
+
+            const saving = opened.project.saveProject();
+            await vi.waitFor(() => expect(worker.signals[0]?.aborted).toBe(true));
+            workerFinished.resolve();
+
+            expect(await saving).toBe(true);
+            expect(worker.attempts()).toBe(2);
+            expect(worker.materializedAttempts()).toEqual([2]);
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(savedWarpEnabled(indexedDb, opened)).toBe(enabled);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it.each([
+        {
+            outcome: 'an answered request',
+            behaviour: async () => undefined,
+            // Only a real Worker answer lets materialization complete; the subscriptions must still be released.
+            failure: 'Prospective mutation Worker has not completed',
+        },
+        {
+            outcome: 'a failed request',
+            behaviour: () => Promise.reject(new Error('Worker failed')),
+            failure: 'Worker failed',
+        },
+    ])(
+        'leaves no watched store subscribed after $outcome',
+        async ({ behaviour, failure }) => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const subscriptions = await countCrdtChangeSubscriptions();
+            const worker = await stubSlowMaterializationWorker(behaviour);
+            const before = subscriptions.active();
+
+            const result = await opened.project.saveProject();
+
+            expect(opened.persistenceFailures()).toEqual([failure]);
+            expect(result).toBe(false);
+            expect(worker.signals).toHaveLength(1);
+            expect(worker.attempts()).toBe(1);
+            expect(subscriptions.active()).toBe(before);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'leaves no watched store subscribed after an edit aborted the request',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const subscriptions = await countCrdtChangeSubscriptions();
+            const worker = await stubSlowMaterializationWorker(async ({ signal, afterTask }) => {
+                afterTask(() => {
+                    opened.renameTrack(opened.track.id, 'Edited while the Worker materialized');
+                });
+                await rejectWhenAborted(signal);
+            });
+            const before = subscriptions.active();
+
+            expect(await opened.project.saveProject()).toBe(true);
+
+            expect(worker.signals[0]?.aborted).toBe(true);
+            expect(worker.attempts()).toBe(2);
+            expect(subscriptions.active()).toBe(before);
         },
         CASE_TIMEOUT_MS
     );

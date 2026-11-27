@@ -319,7 +319,6 @@ const retiredClipIdsByActionType: {
     variationMidi: retiresNoClip,
     generateBassline: retiresNoClip,
     replayGeneratedMidi: retiresNoClip,
-    stemSeparate: retiresNoClip,
     autoOrganizeProject: retiresNoClip,
     addChordEvent: retiresNoClip,
     moveChordEvent: retiresNoClip,

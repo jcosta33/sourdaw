@@ -1596,11 +1596,6 @@
             "count": 3
         }
     },
-    "src/modules/AiGeneration/handlers/aiMidi/handleStemSeparate.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/AiGeneration/handlers/aiMidi/handleVariationMidi.ts": {
         "sourdaw-craft/no-useless-clone-spread": {
             "count": 5

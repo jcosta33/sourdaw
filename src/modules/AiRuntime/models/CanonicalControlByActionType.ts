@@ -308,7 +308,6 @@ export const canonicalControlByActionType: { readonly [Type in AppActionType]: C
     variationMidi: ownControl,
     generateBassline: ownControl,
     replayGeneratedMidi: ownControl,
-    stemSeparate: ownControl,
     autoOrganizeProject: ownControl,
     addChordEvent: ownControl,
     moveChordEvent: ownControl,
