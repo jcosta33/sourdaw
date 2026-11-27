@@ -981,7 +981,7 @@ describe('applyAutomation', () => {
             vi.mocked(getCompensationDelay).mockReturnValue(0.5);
 
             applyAutomation(2.5);
-            applyModulationToEngine(2.5, undefined, new Map(), deviceReadBeatByTrack);
+            applyModulationToEngine(2.5, undefined, new Map(), { deviceReadBeats: deviceReadBeatByTrack });
 
             // Playhead 2.5 is past the square's falling edge at beat 2 (low
             // half); the compensated read beat 1.5 is still before it (high

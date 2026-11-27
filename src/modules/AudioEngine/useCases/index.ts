@@ -107,6 +107,7 @@ export { updateDeviceParameters } from './deviceControls/updateDeviceParameters'
 export { captureDeviceParameterRuntimeWriteAuthority } from './deviceControls/captureDeviceParameterRuntimeWriteAuthority';
 export { writeNativeBuiltinParameters } from './deviceControls/writeNativeBuiltinParameters';
 export { holdWebFallbackDeviceParam } from './deviceControls/holdWebFallbackDeviceParam';
+export { applyRuntimeGrinderPreset } from './deviceControls/applyRuntimeGrinderPreset';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
 export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';

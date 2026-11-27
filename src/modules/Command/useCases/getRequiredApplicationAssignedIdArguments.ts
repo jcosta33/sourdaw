@@ -122,6 +122,7 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     setBacteriaFactoryPatch: ruleDrivenArguments,
     setCrustFactoryPreset: ruleDrivenArguments,
     setGlutenFactoryPreset: ruleDrivenArguments,
+    setGrinderFactoryPreset: ruleDrivenArguments,
     setProofPatchSelection: ruleDrivenArguments,
     createBus: () => ['busId', 'initialAlternativeId'],
     createFolder: ruleDrivenArguments,

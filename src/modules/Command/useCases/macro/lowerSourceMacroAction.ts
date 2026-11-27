@@ -147,6 +147,7 @@ const lowerByActionType: {
     setBacteriaFactoryPatch: cloneForReplay,
     setCrustFactoryPreset: cloneForReplay,
     setGlutenFactoryPreset: cloneForReplay,
+    setGrinderFactoryPreset: cloneForReplay,
     setProofPatchSelection: cloneForReplay,
     createBus: cloneForReplay,
     createFolder: cloneForReplay,

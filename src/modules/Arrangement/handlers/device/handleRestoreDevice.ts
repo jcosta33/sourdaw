@@ -1,6 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
+import { captureDeviceHistoryCommitValidation } from '../../useCases/device/captureDeviceHistoryCommitValidation';
 import { restoreDevice } from '../../useCases/device/restoreDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
@@ -34,7 +36,28 @@ function restoreDeviceGuardMatches(action: RestoreDeviceAction, context?: Handle
     );
 }
 
+function captureRestoreValidation(action: RestoreDeviceAction, context?: HandlerValidationContext) {
+    const rebind = context?.rebindDeviceHistory;
+    const { removedOwner, trackId, deviceSnapshot } = action.payload;
+    if (!rebind || !removedOwner || context.executionMode === 'isolated-preview') {
+        return undefined;
+    }
+    const target = { trackId, deviceId: deviceSnapshot.id };
+    return captureDeviceHistoryCommitValidation({ kind: 'restore', target, removed: removedOwner, rebind });
+}
+
 export const handleRestoreDevice = createHandler<'restoreDevice'>({
+    rebindDeviceOwner: (action, owner) => {
+        const { payload } = action;
+        if (
+            payload.trackId !== owner.trackId ||
+            payload.deviceSnapshot.id !== owner.deviceId ||
+            !valuesEqual(payload.removedOwner, owner.previous)
+        ) {
+            return action;
+        }
+        return { ...action, payload: { ...payload, removedOwner: owner.current } };
+    },
     canReapplyAfterDivergence: (action) => action.payload.expectedDeviceIds !== undefined,
     // The removal this undoes recorded the plugin state a save captured after the snapshot was taken.
     materializeCommandArguments: (action, context) => {
@@ -55,6 +78,10 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
         const batchRestoreDevices = action.payload.batchRestoreDevices ?? [];
         if (!restoreDeviceGuardMatches(action)) {
             return { status: 'conflict' };
+        }
+        const commitValidation = captureRestoreValidation(action, context);
+        if (commitValidation === null) {
+            return { status: 'conflict', reason: 'The recorded Grinder restoration owner changed.' };
         }
         const missingEarlierSiblingCount = batchRestoreDevices.filter(
             (candidate) =>
@@ -81,6 +108,7 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
         }
         return {
             status: outcome.outcome,
+            commitValidation,
             afterCommit: forgettingDiscardedPluginStates(context?.undoEntryId, outcome.afterCommit),
             afterAmbiguousCommit: outcome.afterAmbiguousCommit,
         };

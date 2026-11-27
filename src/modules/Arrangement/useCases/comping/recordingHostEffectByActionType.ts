@@ -99,6 +99,7 @@ export const recordingHostEffectByActionType: {
     setBacteriaFactoryPatch: leaveHosts,
     setCrustFactoryPreset: leaveHosts,
     setGlutenFactoryPreset: leaveHosts,
+    setGrinderFactoryPreset: leaveHosts,
     setProofPatchSelection: leaveHosts,
     createBus: leaveHosts,
     createFolder: leaveHosts,

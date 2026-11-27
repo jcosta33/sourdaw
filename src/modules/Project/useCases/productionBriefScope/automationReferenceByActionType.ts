@@ -100,6 +100,7 @@ export const automationReferenceByActionType: {
     setBacteriaFactoryPatch: automationReferenceRules.namesLaneOrContent,
     setCrustFactoryPreset: automationReferenceRules.namesLaneOrContent,
     setGlutenFactoryPreset: automationReferenceRules.namesLaneOrContent,
+    setGrinderFactoryPreset: automationReferenceRules.namesLaneOrContent,
     setProofPatchSelection: automationReferenceRules.namesLaneOrContent,
     createBus: automationReferenceRules.namesLaneOrContent,
     createFolder: automationReferenceRules.namesLaneOrContent,

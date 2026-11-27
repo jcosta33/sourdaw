@@ -86,6 +86,7 @@ export const macroRecordingExcludesActionType: { readonly [Type in AppActionType
     setBacteriaFactoryPatch: true,
     setCrustFactoryPreset: true,
     setGlutenFactoryPreset: true,
+    setGrinderFactoryPreset: true,
     setProofPatchSelection: true,
     createBus: false,
     createFolder: false,

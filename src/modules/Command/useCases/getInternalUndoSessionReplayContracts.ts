@@ -50,6 +50,7 @@ function createCapturedDeviceReplayContract(
         | 'setCrustFactoryPreset'
         | 'setGlutenFactoryPreset'
         | 'setGrandBouleDeviceState'
+        | 'setGrinderFactoryPreset'
         | 'setLevainIdentity'
         | 'setProofPatchSelection'
         | 'setToasterFactoryKit'
@@ -62,6 +63,7 @@ function createCapturedDeviceReplayContract(
             validateVersionedCommandArguments(actionType, payload) &&
             getHandlerByType(actionType)?.validateSessionActionArguments?.(payload) === true,
         validateEntry: (entry) => getHandlerByType(actionType)?.validateSessionEntry?.(entry) === true,
+        restoreEntry: (entry) => getHandlerByType(actionType)?.restoreSessionEntry?.(entry),
     };
 }
 
@@ -123,6 +125,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createCapturedDeviceReplayContract('setCrustFactoryPreset'),
         createCapturedDeviceReplayContract('setGlutenFactoryPreset'),
         createCapturedDeviceReplayContract('setGrandBouleDeviceState'),
+        createCapturedDeviceReplayContract('setGrinderFactoryPreset'),
         createCapturedDeviceReplayContract('setLevainIdentity'),
         createCapturedDeviceReplayContract('setProofPatchSelection'),
         createCapturedDeviceReplayContract('setToasterFactoryKit'),
@@ -148,6 +151,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('discardCreatedTrack'),
         createInternalReplayContract('discardDuplicatedClip'),
         createInternalReplayContract('discardDrawnClip'),
+        createInternalReplayContract('restoreDevice'),
         createInternalReplayContract('restoreClipMoves'),
         createInternalReplayContract('restoreClip'),
         createInternalReplayContract('restoreClipPlacement'),

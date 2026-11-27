@@ -9,49 +9,31 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { GRINDER_LIVE_PARAMETER_IDS, isGrinderRuntimeParameter } from '../models/GrinderRuntimeControl';
+import { GRINDER_PARAMETER_TIME_CONSTANT } from '../models/GrinderTimedParameterControl';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { GRINDER_PRESET_RESULT, type RuntimeGrinderPresetInput } from '../models/RuntimeGrinderPreset';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import { compileRuntimeGrinderNeuralPatch } from '../services/compileRuntimeGrinderNeuralPatch';
 import grinderProcessorUrl from '../worklets/grinderProcessor.ts?worker&url';
 
+import { createGrinderNodeMeter, type GrinderMeterData } from './createGrinderNodeMeter';
+import {
+    createGrinderPresetControl,
+    createGrinderTimedParameters,
+    type GrinderPresetControl,
+} from './GrinderPresetControl';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, createTelemetryReader, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { telemetryAllocator, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
-export type GrinderMeterData = {
-    inputDb: number;
-    preampDb: number;
-    powerAmpDb: number;
-    outputDb: number;
-    gateOpen: number;
-    gateEnvelopeDb: number;
-    sagVoltage: number;
-    latency: number;
-    neuralCpuPercent: number;
-    neuralWarmupProgress: number;
-};
-
-/** Slot floats → meter snapshot. Pure: the seqlock reader may re-run it on retry. */
-function projectGrinderMeter(view: Float32Array): GrinderMeterData {
-    return {
-        inputDb: view[GRINDER_IDX.inputDb] ?? 0,
-        preampDb: view[GRINDER_IDX.preampDb] ?? 0,
-        powerAmpDb: view[GRINDER_IDX.powerAmpDb] ?? 0,
-        outputDb: view[GRINDER_IDX.outputDb] ?? 0,
-        gateOpen: view[GRINDER_IDX.gateOpen] ?? 0,
-        gateEnvelopeDb: view[GRINDER_IDX.gateEnvelopeDb] ?? 0,
-        sagVoltage: view[GRINDER_IDX.sagVoltage] ?? 0,
-        latency: view[GRINDER_IDX.latency] ?? 0,
-        neuralCpuPercent: view[GRINDER_IDX.neuralCpuPercent] ?? 0,
-        neuralWarmupProgress: view[GRINDER_IDX.neuralWarmupProgress] ?? 0,
-    };
-}
+export type { GrinderMeterData } from './createGrinderNodeMeter';
 
 export type GrinderNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number, sampleFrame?: number) => void;
     setPatch: (patch: Record<string, unknown>) => void;
+    applyPreset?: (input: RuntimeGrinderPresetInput) => Promise<void>;
     setBypass: (bypassed: boolean) => void;
     reset: () => void;
     onMeterData: (cb: (data: GrinderMeterData) => void) => void;
@@ -71,6 +53,14 @@ type PendingParamPost = Readonly<{
     targetFrame: number | null;
     deadlineFrame: number | null;
 }>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSampleFrame(value: number | undefined): value is number {
+    return value !== undefined && Number.isSafeInteger(value) && value >= 0;
+}
 
 function allocateWorkletControlGeneration(): number {
     const generation = nextWorkletControlGeneration;
@@ -169,6 +159,12 @@ export function isGrinderDevice(deviceType: string): boolean {
     return deviceType === 'grinder';
 }
 
+function attachPresetControl(result: GrinderNodeResult, control: GrinderPresetControl | null): void {
+    if (control) {
+        result.applyPreset = (input) => control.applyPreset(input);
+    }
+}
+
 export async function createGrinderNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
@@ -192,6 +188,9 @@ export async function createGrinderNode(
 
     signal?.throwIfAborted();
 
+    const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+    const fallbackControlTarget = createGrinderFallbackControlTarget({ target: controlTarget, offline });
+    const timedParameters = createGrinderTimedParameters(fallbackControlTarget, offline);
     let node: AudioWorkletNode;
     try {
         node = new AudioWorkletNode(ctx, 'grinder-processor', {
@@ -200,7 +199,7 @@ export async function createGrinderNode(
             outputChannelCount: [STEREO_CHANNEL_COUNT],
             channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
-            processorOptions: { wasmModule: wasmLease.module },
+            processorOptions: { wasmModule: wasmLease.module, grinderTimedParameters: timedParameters?.buffer },
         });
         wasmLease.commit();
     } catch (error) {
@@ -209,17 +208,8 @@ export async function createGrinderNode(
     }
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
-    let meterRafId: number | null = null;
-    let latencyCallback: ((latency: number) => void) | null = null;
-    let lastReportedLatency: number | null = null;
+    const meter = createGrinderNodeMeter(slot);
     let destroyed = false;
-    const reportLatencyChange = (latency: number): void => {
-        if (latency === lastReportedLatency) {
-            return;
-        }
-        lastReportedLatency = latency;
-        latencyCallback?.(latency);
-    };
 
     if (slot) {
         node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
@@ -230,18 +220,16 @@ export async function createGrinderNode(
     // sample-frame contract and is posted in call order without coalescing.
     const pendingParamPosts = new Map<string, PendingParamPost>();
     let paramFlushRafId: number | null = null;
-    const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
     const canCoalesce = !offline && typeof requestAnimationFrame === 'function';
     const workletGeneration = allocateWorkletControlGeneration();
-    const fallbackControlTarget = createGrinderFallbackControlTarget({ target: controlTarget, offline });
-    let nextControlSequence = 1;
+    const sequence = { next: 1 };
     let setupHandshake: ReturnType<typeof createReadyHandshake> | null = null;
     let setupSequence = 0;
     let setupPromise: Promise<void> | undefined;
     let runtimeError: Error | null = null;
 
     const postFallbackControl = (name: string, pending: PendingParamPost): void => {
-        if (!fallbackControlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
+        if (!fallbackControlTarget || sequence.next > Number.MAX_SAFE_INTEGER) {
             return;
         }
         const result = compileRuntimeDeviceControl(
@@ -257,7 +245,7 @@ export async function createGrinderNode(
                 value: pending.value,
                 correlation: {
                     workletGeneration,
-                    controlSequence: nextControlSequence,
+                    controlSequence: sequence.next,
                 },
                 scheduling: {
                     targetFrame: pending.targetFrame,
@@ -269,12 +257,12 @@ export async function createGrinderNode(
         if (result.status !== 'compiled') {
             return;
         }
-        nextControlSequence++;
+        sequence.next++;
         node.port.postMessage(result.control);
     };
 
     const postNeuralPatch = (patch: Record<string, unknown>): void => {
-        if (!fallbackControlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
+        if (!fallbackControlTarget || sequence.next > Number.MAX_SAFE_INTEGER) {
             return;
         }
         const result = compileRuntimeGrinderNeuralPatch({
@@ -288,24 +276,45 @@ export async function createGrinderNode(
             patch,
             correlation: {
                 workletGeneration,
-                controlSequence: nextControlSequence,
+                controlSequence: sequence.next,
             },
             scheduling: { targetFrame: null, deadlineFrame: null },
         });
         if (result.status !== 'compiled') {
             return;
         }
-        nextControlSequence++;
+        sequence.next++;
         node.port.postMessage(result.patch);
     };
 
     const flushParamPosts = (): void => {
+        if (paramFlushRafId !== null) {
+            cancelAnimationFrame(paramFlushRafId);
+        }
         paramFlushRafId = null;
         for (const [name, pending] of pendingParamPosts) {
             postFallbackControl(name, pending);
         }
         pendingParamPosts.clear();
     };
+
+    const presetControl = createGrinderPresetControl({
+        node,
+        ctx,
+        target: fallbackControlTarget,
+        offline,
+        workletGeneration,
+        controlSequence: sequence,
+        timedParameters,
+        getRuntimeError: () => {
+            if (destroyed || ctx.state === 'closed') {
+                return new Error('Grinder preset requires an open, bound live target');
+            }
+            return runtimeError;
+        },
+        flushParamPosts,
+        onInstalledLatency: meter.reportPresetLatency,
+    });
 
     const queueParamPost = (name: string, value: number, sampleFrame?: number): void => {
         const scheduling = toControlScheduling(sampleFrame);
@@ -339,9 +348,14 @@ export async function createGrinderNode(
     const handshake = createReadyHandshake({ pluginName: 'GrinderNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
         const data = event.data;
+        if (isRecord(data) && data.type === GRINDER_PRESET_RESULT) {
+            presetControl?.receivePresetReply(data);
+            return;
+        }
         if (data && typeof data === 'object' && 'type' in data && data.type === 'error') {
             runtimeError = new Error('message' in data ? String(data.message) : 'GrinderNode processor failed');
             setupHandshake?.reject(runtimeError);
+            presetControl?.rejectPendingPresets(runtimeError);
         }
         if (data && typeof data === 'object' && 'phase' in data && data.phase === 'offline-grinder-setup') {
             if (!setupHandshake) {
@@ -364,7 +378,7 @@ export async function createGrinderNode(
                 'latency' in data &&
                 typeof data.latency === 'number'
             ) {
-                reportLatencyChange(data.latency);
+                meter.reportLatencyChange(data.latency);
             }
             return;
         }
@@ -381,13 +395,29 @@ export async function createGrinderNode(
         }
     };
     const readyPromise = handshake.promise;
-    if (offline) {
-        node.onprocessorerror = () => {
-            runtimeError = new Error('GrinderNode offline processor failed');
-            handshake.reject(runtimeError);
-            setupHandshake?.reject(runtimeError);
-        };
-    }
+    node.onprocessorerror = () => {
+        runtimeError = new Error(
+            offline ? 'GrinderNode offline processor failed' : 'GrinderNode live processor failed'
+        );
+        if (handshake.reject(runtimeError) === 'late' && !offline) {
+            onRuntimeFailure?.(runtimeError.message);
+        }
+        setupHandshake?.reject(runtimeError);
+        presetControl?.rejectPendingPresets(runtimeError);
+    };
+
+    const writeContinuousParam = (name: string, param: AudioParam, value: number, sampleFrame?: number): void => {
+        const targetTime = toAudioParamTime(ctx, sampleFrame);
+        if (isSampleFrame(sampleFrame)) {
+            presetControl?.postContinuousSchedule(name, value, targetTime);
+        } else if (presetControl?.isRequestedPresetRate(name)) {
+            // Keep this write ordered even while the worklet's preset receipt is in flight.
+            postFallbackControl(name, { value, targetFrame: null, deadlineFrame: null });
+        }
+        if (!presetControl?.isInstalledRate(name)) {
+            param.setTargetAtTime(value, targetTime, GRINDER_PARAMETER_TIME_CONSTANT);
+        }
+    };
 
     const completeOfflineSetup = (): Promise<void> => {
         if (destroyed || runtimeError) {
@@ -404,7 +434,7 @@ export async function createGrinderNode(
         // strategy returns and its caller can start the render.
         const pending = createReadyHandshake({ pluginName: 'GrinderNode offline setup' });
         setupHandshake = pending;
-        setupSequence = nextControlSequence - 1;
+        setupSequence = sequence.next - 1;
         setupPromise = pending.promise
             .then(() => undefined)
             .finally(() => {
@@ -448,12 +478,10 @@ export async function createGrinderNode(
     const result: GrinderNodeResult = {
         workletNode: node,
         setParam(name: string, value: number, sampleFrame?: number) {
-            if (Number.isFinite(value) && isGrinderRuntimeParameter(name)) {
+            if (!destroyed && ctx.state !== 'closed' && Number.isFinite(value) && isGrinderRuntimeParameter(name)) {
                 const param = node.parameters.get(name);
                 if (param) {
-                    // Immediate UI writes smooth from now; scheduled writes use
-                    // TrackNode's sample-frame time, bounded at the live context.
-                    param.setTargetAtTime(value, toAudioParamTime(ctx, sampleFrame), 0.01);
+                    writeContinuousParam(name, param, value, sampleFrame);
                 } else {
                     // Message-port params: coalesce per frame to avoid flooding the
                     // worklet port on rapid automation/knob drags.
@@ -476,29 +504,12 @@ export async function createGrinderNode(
             }
             node.port.postMessage({ type: 'reset' });
         },
-        onMeterData(cb: (data: GrinderMeterData) => void) {
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
+        onMeterData(callback) {
+            if (!destroyed) {
+                meter.start(callback);
             }
-            if (!slot) {
-                return;
-            }
-            // Read under the slot seqlock (audit RT-2): without it a poll could pair
-            // a gate state with a latency reported from a different quantum. Built
-            // once, outside the poll, since it retains the last consistent snapshot.
-            const readMeter = createTelemetryReader({ slot, project: projectGrinderMeter });
-            const poll = () => {
-                const data = readMeter();
-                reportLatencyChange(data.latency);
-                cb(data);
-                meterRafId = requestAnimationFrame(poll);
-            };
-            meterRafId = requestAnimationFrame(poll);
         },
-        onLatencyChanged(cb: (latency: number) => void) {
-            latencyCallback = cb;
-        },
+        onLatencyChanged: meter.onLatencyChanged,
         connect(dest: AudioNode) {
             node.connect(dest);
         },
@@ -515,10 +526,9 @@ export async function createGrinderNode(
             }
             destroyed = true;
             setupHandshake?.reject(new Error('GrinderNode destroyed during offline setup'));
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
-            }
+            presetControl?.rejectPendingPresets(new Error('GrinderNode destroyed during preset installation'));
+            presetControl?.stopWatchingContext();
+            meter.stop();
             // Cancel a scheduled param flush and drop any buffered posts so the
             // destroyed node does not post into a closed port on the next frame.
             if (paramFlushRafId !== null) {
@@ -542,5 +552,6 @@ export async function createGrinderNode(
     if (offline) {
         result.completeOfflineSetup = completeOfflineSetup;
     }
+    attachPresetControl(result, presetControl);
     return result;
 }

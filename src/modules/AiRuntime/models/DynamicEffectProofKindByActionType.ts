@@ -90,6 +90,7 @@ export const dynamicEffectProofKindByActionType: { readonly [Type in AppActionTy
     setBacteriaFactoryPatch: 'none',
     setCrustFactoryPreset: 'none',
     setGlutenFactoryPreset: 'none',
+    setGrinderFactoryPreset: 'none',
     setProofPatchSelection: 'none',
     createBus: 'none',
     createFolder: 'none',

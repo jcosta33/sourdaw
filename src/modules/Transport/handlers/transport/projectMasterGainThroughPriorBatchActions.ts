@@ -118,6 +118,7 @@ export const masterGainProjectionByActionType: {
     setBacteriaFactoryPatch: keepMasterPercent,
     setCrustFactoryPreset: keepMasterPercent,
     setGlutenFactoryPreset: keepMasterPercent,
+    setGrinderFactoryPreset: keepMasterPercent,
     setProofPatchSelection: keepMasterPercent,
     createBus: keepMasterPercent,
     createFolder: keepMasterPercent,

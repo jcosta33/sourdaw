@@ -142,6 +142,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     setBacteriaFactoryPatch: NONE,
     setCrustFactoryPreset: NONE,
     setGlutenFactoryPreset: NONE,
+    setGrinderFactoryPreset: NONE,
     setProofPatchSelection: NONE,
     createBus: { create: true, routing: true, createdTracks: countOne },
     createFolder: NONE,

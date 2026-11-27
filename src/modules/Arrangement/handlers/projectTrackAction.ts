@@ -259,6 +259,7 @@ export const trackProjectionByActionType: {
     setBacteriaFactoryPatch: keepTrack,
     setCrustFactoryPreset: keepTrack,
     setGlutenFactoryPreset: keepTrack,
+    setGrinderFactoryPreset: keepTrack,
     setProofPatchSelection: keepTrack,
     createBus: keepTrack,
     createFolder: keepTrack,

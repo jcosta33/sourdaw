@@ -79,7 +79,10 @@ describe('grinderControlRateParams', () => {
     });
 
     it('sends newly selected known controls but rejects unsaved neural and arbitrary metadata', async () => {
-        const context = { currentTime: 2, state: 'running' } as unknown as BaseAudioContext;
+        const context = Object.assign(new EventTarget(), {
+            currentTime: 2,
+            state: 'running',
+        }) as unknown as BaseAudioContext;
         const grinder = await createGrinderNode(context, undefined, undefined, {
             trackId: 'track-1',
             deviceId: 'grinder-1',
@@ -111,7 +114,10 @@ describe('grinderControlRateParams', () => {
     });
 
     it('keeps non-continuous parameters on the validated message path without rebuilding the graph', async () => {
-        const context = { currentTime: 2, state: 'running' } as unknown as BaseAudioContext;
+        const context = Object.assign(new EventTarget(), {
+            currentTime: 2,
+            state: 'running',
+        }) as unknown as BaseAudioContext;
         const grinder = await createGrinderNode(context, undefined, undefined, {
             trackId: 'track-1',
             deviceId: 'grinder-1',

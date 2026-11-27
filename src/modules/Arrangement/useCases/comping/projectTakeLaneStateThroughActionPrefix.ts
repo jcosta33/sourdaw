@@ -241,6 +241,7 @@ const projectTakeLaneActionByActionType: {
     setBacteriaFactoryPatch: keepLanes,
     setCrustFactoryPreset: keepLanes,
     setGlutenFactoryPreset: keepLanes,
+    setGrinderFactoryPreset: keepLanes,
     setProofPatchSelection: keepLanes,
     createBus: keepLanes,
     createFolder: keepLanes,

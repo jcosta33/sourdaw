@@ -1043,6 +1043,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/engine/CrustNode.ts': 3,
         'src/modules/AudioEngine/engine/GlutenNode.ts': 3,
         'src/modules/AudioEngine/engine/GrinderNode.ts': 6,
+        // The named import, module path and call all name `compileRuntimeGrinderPreset`.
+        // The control validates the packet before posting to its live worklet and
+        // correlates the reply with the target, worklet generation and sequence.
+        'src/modules/AudioEngine/engine/GrinderPresetControl.ts': 3,
         // Count provenance: new file entry, measured 3 with `grep -oE` over the
         // family pattern — all three are `compileRuntimeDeviceControl`
         // (`compileRuntimeGraphDelta` 0, `compileRuntimeGrinderNeuralPatch` 0),
@@ -1074,6 +1078,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Device-list admission extracts a pure compiler helper and its call.
         'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 22,
         'src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts': 3,
+        // The declaration of `compileRuntimeGrinderPreset` plus the named import,
+        // module path and call of `compileRuntimeGrinderNeuralPatch`. This compiler
+        // validates the whole packet and freezes its output without writing project
+        // or runtime state.
+        'src/modules/AudioEngine/services/compileRuntimeGrinderPreset.ts': 4,
         'src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts': 2,
         // UI: compileLoadPresetActions / compileReorderDevicesAction /
         // compileToasterTrackStackActions in browser, mixer, and inspector.
@@ -1196,6 +1205,10 @@ const DEVICE_DATA_COUNTS = {
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // for the registered load-external-plugin handler.
         'src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts': 1,
+        // The `devices:` field on the reorder handler's projected after-track
+        // snapshot uses a detached chain. The existing `reorderDevicesInProject`
+        // writer publishes it through the registered action.
+        'src/modules/Arrangement/handlers/device/handleReorderDevices.ts': 1,
         // Count provenance: measured 8 — lexical `devices:` / `parameterValues:`
         // in payload types and replacement topology. Writes go through the
         // registered loadPreset handler after executeAppAction, not a raw store

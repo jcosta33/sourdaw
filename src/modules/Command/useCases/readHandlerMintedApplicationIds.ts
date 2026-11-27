@@ -149,6 +149,7 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     setBacteriaFactoryPatch: noHandlerMintedIds,
     setCrustFactoryPreset: noHandlerMintedIds,
     setGlutenFactoryPreset: noHandlerMintedIds,
+    setGrinderFactoryPreset: noHandlerMintedIds,
     setProofPatchSelection: noHandlerMintedIds,
     createBus: noHandlerMintedIds,
     createFolder: noHandlerMintedIds,

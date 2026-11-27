@@ -109,10 +109,12 @@ export function replaceGrinderPatchLocally(deviceId: string, patch: GrinderPatch
 
 export function replaceGrinderProjectParameters(
     deviceId: string,
-    parameterValues: Readonly<Record<string, unknown>>
+    parameterValues: Readonly<Record<string, unknown>>,
+    presetName?: string
 ): void {
     const instances = grinderStore.value ?? {};
     const state = normalizeGrinderState(instances[deviceId]);
+    const patch = presetName === undefined ? state.patch : { ...state.patch, name: presetName };
     grinderStore.set({
         ...instances,
         [deviceId]: {
@@ -121,7 +123,7 @@ export function replaceGrinderProjectParameters(
             // capture's `neuralCustom*` keys can resolve back to its library
             // entry's full profile and name on project reload.
             patch: applyGrinderProjectParameters(
-                state.patch,
+                patch,
                 parameterValues,
                 grinderNeuralLibraryStore.value?.entries ?? []
             ),

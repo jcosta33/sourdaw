@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
+import { appliedAutomationBases } from '../../scheduling/applyAutomation/appliedAutomationBases';
+import { readAppliedAutomationValue } from '../../scheduling/applyAutomation/readAppliedAutomationValue';
 import { holdNoteExpression } from '../../scheduling/holdNoteExpression';
 import { postStoredControllerMove } from '../../scheduling/postStoredControllerMove';
 import { takeHeldNoteExpression } from '../../scheduling/takeHeldNoteExpression';
@@ -52,6 +54,13 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
         vi.clearAllMocks();
         deviceNodesByTrack.clear();
         forgetStoredControllerEngagements();
+    });
+
+    it('retires the previous scheduler automation observation on stop', () => {
+        appliedAutomationBases.set('device', new Map([['param', 0.75]]));
+        expect(readAppliedAutomationValue('device', 'param')?.value).toBe(0.75);
+        stopPlayheadScheduler();
+        expect(readAppliedAutomationValue('device', 'param')).toBeUndefined();
     });
 
     it('lifts a pedal stored playback left down on that device only, never one the user holds live', () => {

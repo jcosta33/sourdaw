@@ -18,6 +18,7 @@ import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { getFermenterHandlers } from '#/modules/Fermenter/useCases';
 import { getGlutenHandlers } from '#/modules/Gluten/useCases';
 import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
+import { getGrinderHandlers } from '#/modules/Grinder/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';
 import { getLevainHandlers } from '#/modules/Levain/useCases';
 import {
@@ -80,6 +81,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getToasterHandlers(),
         getCrustHandlers(),
         getGlutenHandlers(),
+        getGrinderHandlers(),
         getProofHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),

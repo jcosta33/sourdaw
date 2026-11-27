@@ -267,6 +267,7 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     setBacteriaFactoryPatch: readEffectDeclaredEdits,
     setCrustFactoryPreset: readEffectDeclaredEdits,
     setGlutenFactoryPreset: readEffectDeclaredEdits,
+    setGrinderFactoryPreset: readEffectDeclaredEdits,
     setProofPatchSelection: readEffectDeclaredEdits,
     createBus: readEffectDeclaredEdits,
     createFolder: readEffectDeclaredEdits,

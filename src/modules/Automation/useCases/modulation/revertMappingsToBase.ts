@@ -3,7 +3,7 @@ import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type ModulatorMapping } from '../../models/Modulator';
 
 import { modulationDependenciesPort } from './modulationDependencies';
-import { modulationParamSlew } from './modulationSlewState';
+import { appliedModulationValues, modulationParamSlew } from './modulationSlewState';
 import { resolveModulationBinding } from './resolveModulationBinding';
 
 /**
@@ -21,6 +21,7 @@ export function revertMappingsToBase(mappings: readonly ModulatorMapping[]): voi
     const reverted = new Set<string>();
     for (const mapping of mappings) {
         const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
+        appliedModulationValues.delete(key);
         if (reverted.has(key)) {
             continue;
         }

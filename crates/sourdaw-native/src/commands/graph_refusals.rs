@@ -26,9 +26,10 @@ use daw_engine::timeline::{
 
 use super::graph::{
     BACTERIA_MOD_SOURCE_COUNT, BACTERIA_MOD_TARGET_COUNT, GRAND_BOULE_PREVIEW_LIVE_ONLY,
-    MAX_BACTERIA_MOD_ASSIGNMENTS, MAX_BATCH_COMMANDS, MAX_IMMEDIATE_DEVICE_PARAMETERS,
-    MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH, MAX_MIDI_CONTROLLER, MAX_MIDI_CONTROLLER_VALUE,
-    MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES, OFFLINE_RENDER_SAMPLE_RATES,
+    MAX_BACTERIA_MOD_ASSIGNMENTS, MAX_BATCH_COMMANDS, MAX_GRINDER_PRESET_PARAMETERS,
+    MAX_IMMEDIATE_DEVICE_PARAMETERS, MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH,
+    MAX_MIDI_CONTROLLER, MAX_MIDI_CONTROLLER_VALUE, MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES,
+    OFFLINE_RENDER_SAMPLE_RATES,
 };
 use super::offline_plugins::OfflineRenderError;
 
@@ -347,6 +348,13 @@ pub(crate) enum GraphRefusal {
     },
     GrinderModelUnknownDevice,
     GrinderModelTargetMismatch,
+    GrinderPresetParameterCeiling {
+        parameters: usize,
+    },
+    GrinderPresetUnknownParameter {
+        parameter_id: String,
+    },
+    GrinderPresetInvalidDefaults,
     HostedParametersElsewhere {
         device_id: String,
     },
@@ -761,6 +769,17 @@ impl fmt::Display for GraphRefusal {
             Self::GrinderModelUnknownDevice => f.write_str("set-grinder-model: unknown device"),
             Self::GrinderModelTargetMismatch => {
                 f.write_str("set-grinder-model: target is not the requested Grinder")
+            }
+            Self::GrinderPresetParameterCeiling { parameters } => write!(
+                f,
+                "set-grinder-model: preset carries {parameters} parameters, past the ceiling of {MAX_GRINDER_PRESET_PARAMETERS}"
+            ),
+            Self::GrinderPresetUnknownParameter { parameter_id } => write!(
+                f,
+                "set-grinder-model: unknown Grinder preset parameter '{parameter_id}'"
+            ),
+            Self::GrinderPresetInvalidDefaults => {
+                f.write_str("set-grinder-model: preset default resets must name unique supported parameters")
             }
             Self::HostedParametersElsewhere { device_id } => write!(
                 f,

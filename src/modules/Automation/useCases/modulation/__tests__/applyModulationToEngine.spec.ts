@@ -63,7 +63,9 @@ import { automationStore } from '../../../stores/automationStore';
 import { modulationStore } from '../../../stores/modulationStore';
 import { applyModulationToEngine } from '../applyModulationToEngine';
 import { setModulationDependencies } from '../modulationDependencies';
+import { readAppliedModulationValue } from '../readAppliedModulationValue';
 import { resetModulationSlew } from '../resetModulationSlew';
+import { revertMappingsToBase } from '../revertMappingsToBase';
 
 function createAutomationLaneFixture(input: {
     id: string;
@@ -197,6 +199,49 @@ describe('applyModulationToEngine', () => {
 
         const tracks = mocks.trackStore.value?.tracks;
         expect(tracks?.[0]?.devices[0]?.parameterValues.cutoff).toBe(500);
+    });
+
+    it('reads the held delivered value and retires it on release, missing owner, and reset', () => {
+        applyModulationToEngine(1);
+        const delivered = mocks.updateDeviceParam.mock.calls[0]![3];
+        applyModulationToEngine(1);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(delivered);
+        expect(readAppliedModulationValue('other', 'd1', 'cutoff')).toBeUndefined();
+
+        revertMappingsToBase([{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0.5 }]);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+        applyModulationToEngine(1);
+        resetModulationSlew();
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+        applyModulationToEngine(1);
+        mocks.trackStore.value = { tracks: [] };
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+        applyModulationToEngine(1);
+        resetModulationSlew();
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
+    });
+
+    it('observes an automation write that overwrites a suppressed modulation write', () => {
+        applyModulationToEngine(1);
+        const delivered = mocks.updateDeviceParam.mock.calls[0]![3];
+        const bases = new Map([['d1', new Map([['cutoff', 900]])]]);
+        applyModulationToEngine(1, undefined, bases, { didWriteAutomation: () => false });
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(delivered);
+
+        applyModulationToEngine(1, undefined, bases, {
+            didWriteAutomation: (deviceId, parameterId) => deviceId === 'd1' && parameterId === 'cutoff',
+        });
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBe(900);
+    });
+
+    it('retires a destination when no mapping is active on the next tick', () => {
+        applyModulationToEngine(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeDefined();
+        modulationStore.set({ modulators: [] });
+        applyModulationToEngine(1);
+        expect(readAppliedModulationValue('t1', 'd1', 'cutoff')).toBeUndefined();
     });
 
     it('clamps the engine value inside the param range', () => {
@@ -566,7 +611,7 @@ describe('applyModulationToEngine', () => {
             // itself wrote nothing for this param this tick either.
             const readBeats = new Map([['t1', 3.75]]);
 
-            applyModulationToEngine(4.25, undefined, new Map(), readBeats);
+            applyModulationToEngine(4.25, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             const [trackId, deviceId, paramId, value] = mocks.updateDeviceParam.mock.calls[0]!;
@@ -581,7 +626,7 @@ describe('applyModulationToEngine', () => {
             // Playhead 4.6, compensated beat 4.1 — inside [4, 8].
             const readBeats = new Map([['t1', 4.1]]);
 
-            applyModulationToEngine(4.6, undefined, new Map(), readBeats);
+            applyModulationToEngine(4.6, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
@@ -640,7 +685,7 @@ describe('applyModulationToEngine', () => {
             // (#4684), so indexAutomatedBases must resolve the same value.
             const readBeats = new Map([['t1', 4.1]]);
 
-            applyModulationToEngine(5.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(5.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
@@ -680,7 +725,7 @@ describe('applyModulationToEngine', () => {
             // tempo) is still before it (high half).
             const readBeats = new Map([['t1', 1.5]]);
 
-            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(2.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(1000);
@@ -690,7 +735,7 @@ describe('applyModulationToEngine', () => {
             seedSquareLfo();
             const readBeats = new Map([['t1', 2.5]]);
 
-            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(2.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);
@@ -709,7 +754,7 @@ describe('applyModulationToEngine', () => {
             seedSquareLfo();
             const readBeats = new Map([['other-track', 1.5]]);
 
-            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+            applyModulationToEngine(2.5, undefined, new Map(), { deviceReadBeats: readBeats });
 
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);

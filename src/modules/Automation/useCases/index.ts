@@ -54,6 +54,8 @@ export { selectPointsInRange } from './automationSelection/selectPointsInRange';
 
 export { applyModulation } from './modulation/applyModulation';
 export { applyModulationToEngine } from './modulation/applyModulationToEngine';
+export { readAppliedModulationValue } from './modulation/readAppliedModulationValue';
+export { clearAppliedModulationValues } from './modulation/clearAppliedModulationValues';
 export { addModulator } from './modulation/addModulator';
 export { removeModulator } from './modulation/removeModulator';
 export { updateModulator } from './modulation/updateModulator';

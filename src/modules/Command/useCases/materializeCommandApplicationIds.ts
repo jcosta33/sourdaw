@@ -244,6 +244,7 @@ const applicationIdMaterializerByActionType: {
     setBacteriaFactoryPatch: materializeByIdRule,
     setCrustFactoryPreset: materializeByIdRule,
     setGlutenFactoryPreset: materializeByIdRule,
+    setGrinderFactoryPreset: materializeByIdRule,
     setProofPatchSelection: materializeByIdRule,
     createBus: materializeBusCreationIds,
     createFolder: materializeByIdRule,

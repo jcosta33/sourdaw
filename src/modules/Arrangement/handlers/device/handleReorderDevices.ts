@@ -1,10 +1,12 @@
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerCommitValidation, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { projectReorderedDevice } from '../../models/DeviceChainProjectors';
 import { type Track } from '../../models/Track';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
+import { captureDeviceHistoryCommitValidation } from '../../useCases/device/captureDeviceHistoryCommitValidation';
 import { reorderDevicesInProject } from '../../useCases/device/reorderDevices';
 import {
     getRuntimeDeviceDeltaPostCommitFailure,
@@ -69,14 +71,53 @@ function resolveReorder(
     return { track, sourceIndex: sourceIndices[0]! };
 }
 
-function moveDevice(track: Track, sourceIndex: number, targetIndex: number): Track {
-    const devices = [...track.devices];
-    const [device] = devices.splice(sourceIndex, 1);
-    if (!device) {
-        return track;
+function projectGroupedReorderFinalChain(after: Track, context: HandlerValidationContext): Track | null {
+    const devices = [...after.devices];
+    // Only the first reorder on this rack can bind its published pre-batch owner.
+    // Rename preserves that owner. An unproved sibling may retire or replace it.
+    for (const [index, action] of context.actions.entries()) {
+        if (action.type === 'renameTrack') {
+            continue;
+        }
+        if (action.type !== 'reorderDevices') {
+            return null;
+        }
+        if (action.payload.trackId !== after.id) {
+            continue;
+        }
+        if (index < context.actionIndex) {
+            return null;
+        }
+        if (index > context.actionIndex) {
+            projectReorderedDevice(devices, action);
+        }
     }
-    devices.splice(targetIndex, 0, device);
-    return { ...track, devices };
+    return { ...after, devices };
+}
+
+function captureReorderValidation(
+    before: Track,
+    after: Track,
+    context?: HandlerValidationContext
+): HandlerCommitValidation | undefined {
+    const rebind = context?.rebindDeviceHistory;
+    if (!rebind || context.executionMode === 'isolated-preview') {
+        return undefined;
+    }
+    const singleAction = context.actions.length === 1;
+    const finalChain = singleAction ? after : projectGroupedReorderFinalChain(after, context);
+    if (!finalChain) {
+        return undefined;
+    }
+    return (
+        captureDeviceHistoryCommitValidation({
+            kind: 'reorder',
+            before,
+            after: finalChain,
+            rebind,
+            proof: singleAction ? 'required' : 'optional',
+        }) ?? undefined
+    );
 }
 
 function moveTopology(
@@ -109,7 +150,8 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
         }
 
         const before = structuredClone(resolution.track);
-        const after = moveDevice(before, resolution.sourceIndex, action.payload.targetIndex);
+        const after = { ...before, devices: projectReorderedDevice([...before.devices], action) };
+        const commitValidation = captureReorderValidation(before, after, context);
         // The initial dispatch's revision is intentionally consumed once. Its
         // inverse and redo retain exact topology proofs and may run at a later
         // project revision through the same guarded handler.
@@ -117,7 +159,7 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
         reorderDevicesInProject(before.id, after.devices);
 
         if (!shouldCreateLiveTrackStrip(before)) {
-            return { status: 'written' as const };
+            return { status: 'written' as const, commitValidation };
         }
 
         let postCommitFailure: RuntimeDeviceDeltaPostCommitError | undefined;
@@ -146,6 +188,7 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
 
         return {
             status: 'written' as const,
+            commitValidation,
             afterCommit: applyRuntimeEffect,
             afterAmbiguousCommit: applyRuntimeEffect,
         };

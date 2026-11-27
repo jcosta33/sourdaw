@@ -5846,11 +5846,6 @@
             "count": 2
         }
     },
-    "src/modules/Arrangement/models/CapturedDevicePatchProjection.ts": {
-        "eslint/complexity": {
-            "count": 1
-        }
-    },
     "src/modules/Arrangement/models/DeviceParameter.ts": {
         "typescript/no-non-null-assertion": {
             "count": 1
@@ -7421,9 +7416,6 @@
         }
     },
     "src/modules/Arrangement/useCases/device/captureDevicePatchCommitValidation.ts": {
-        "eslint/complexity": {
-            "count": 1
-        },
         "eslint/max-lines-per-function": {
             "count": 1
         },
@@ -10001,13 +9993,10 @@
     },
     "src/modules/AudioEngine/worklets/grinderProcessor.ts": {
         "eslint/complexity": {
-            "count": 8
+            "count": 6
         },
         "eslint/max-lines-per-function": {
             "count": 1
-        },
-        "typescript/no-non-null-assertion": {
-            "count": 2
         }
     },
     "src/modules/AudioEngine/worklets/kneadProcessor.ts": {

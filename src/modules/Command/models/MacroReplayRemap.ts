@@ -227,6 +227,7 @@ export const macroReplayRemapByActionType: {
     setBacteriaFactoryPatch: leaveReferencesUnmapped,
     setCrustFactoryPreset: leaveReferencesUnmapped,
     setGlutenFactoryPreset: leaveReferencesUnmapped,
+    setGrinderFactoryPreset: leaveReferencesUnmapped,
     setProofPatchSelection: leaveReferencesUnmapped,
     createBus: leaveReferencesUnmapped,
     createFolder: leaveReferencesUnmapped,

@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:4f12cda83cbf4e3c614d5399d4920dc22795b8fbb8b4633105991cca4116cc90
+// @wasm-bindgen-dts crate-source: sha256:fb1c7d552df5678adaebae04d5a3b61fd20495ad9202cb6ef086934386a90e84
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -146,6 +146,7 @@ export const grinderinstance_new: (a: number) => number;
 export const grinderinstance_process: (a: number, b: number) => number;
 export const grinderinstance_process_automated: (a: number, b: number) => number;
 export const grinderinstance_reset: (a: number) => void;
+export const grinderinstance_restore_parameter_default: (a: number, b: number, c: number) => number;
 export const grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const init_panic_hook: () => void;
 export const kneadinstance_get_f0: (a: number) => number;

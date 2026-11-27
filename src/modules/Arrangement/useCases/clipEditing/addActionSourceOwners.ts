@@ -262,6 +262,7 @@ const addActionSourceOwnersByActionType: {
     setBacteriaFactoryPatch: addNoOwners,
     setCrustFactoryPreset: addNoOwners,
     setGlutenFactoryPreset: addNoOwners,
+    setGrinderFactoryPreset: addNoOwners,
     setProofPatchSelection: addNoOwners,
     createBus: addNoOwners,
     createFolder: addNoOwners,

@@ -12,11 +12,28 @@ import {
     isGrinderLiveParameter,
     isGrinderRuntimeParameter,
 } from '../models/GrinderRuntimeControl';
+import {
+    GrinderTimedParameterControl,
+    MAX_GRINDER_TIMED_PARAMETER_TICKET,
+    getGrinderTimedParameterName,
+} from '../models/GrinderTimedParameterControl';
 import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
+import { APPLY_GRINDER_PRESET_COMMAND, GRINDER_PRESET_RESULT } from '../models/RuntimeGrinderPreset';
 import grinderAudioParamContract from '../services/grinderAudioParamContract.json';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
+import { GrinderPresetAutomation } from './grinderPresetAutomation';
+import {
+    applyGrinderPreset,
+    applyNeuralPatch,
+    isGrinderNeuralPatch,
+    isPresetCorrelation,
+    isPresetData,
+    isPresetTarget,
+    type LoadedNeuralModelDigest,
+    type PresetAddress,
+} from './grinderPresetControl';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 
 /**
@@ -45,6 +62,16 @@ const GRINDER_AUDIO_PARAM_DESCRIPTORS: readonly GrinderAudioParamDescriptor[] = 
         automationRate: 'a-rate',
     })
 );
+const GRINDER_TIMED_PARAM_DESCRIPTORS: readonly GrinderAudioParamDescriptor[] = grinderAudioParamContract.map(
+    ({ name }) => ({
+        name: getGrinderTimedParameterName(name),
+        defaultValue: 0,
+        minValue: 0,
+        maxValue: MAX_GRINDER_TIMED_PARAMETER_TICKET,
+        automationRate: 'a-rate',
+    })
+);
+const GRINDER_PARAM_DESCRIPTORS = [...GRINDER_AUDIO_PARAM_DESCRIPTORS, ...GRINDER_TIMED_PARAM_DESCRIPTORS];
 
 const PARAM_MAP: Record<string, string> = {
     engineMode: 'engineMode',
@@ -189,7 +216,6 @@ const GRINDER_AUTOMATION_BUFFER_SIZE =
 
 const MAX_PENDING_FALLBACK_CONTROLS = 32;
 const MAX_RUNTIME_CONTROL_ID_LENGTH = 128;
-const MAX_NEURAL_CONV_LAYERS = 10;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -217,35 +243,6 @@ type FallbackControlTarget = {
     allowUncapturedImmediate: boolean;
 };
 
-type GrinderNeuralPatch =
-    | { neuralModelMode: 'builtin' }
-    | {
-          neuralModelMode: 'imported';
-          profile: {
-              preferredTier?: keyof typeof NEURAL_TIER_INDEX;
-              inputDrive?: number | null;
-              asymmetry?: number | null;
-              outputTrim?: number | null;
-              contourMix?: number | null;
-              recurrentBias?: number | null;
-              convWeights?: readonly (readonly [number, number, number])[];
-          };
-          /** The imported `.nam` model as JSON (#3774), when the sender proved one. */
-          modelJson?: string;
-          /** The model's digest, when carried — the re-load gate below reads it. */
-          modelDigest?: string;
-      };
-
-/** The digest of the model the worklet has already parsed and loaded. */
-type LoadedNeuralModelDigest = { current: string | null };
-
-const NEURAL_TIER_INDEX: Record<string, number> = {
-    standard: 0,
-    lite: 1,
-    nano: 2,
-    recurrent: 3,
-};
-
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -267,149 +264,9 @@ function isPositiveSafeInteger(value: unknown): value is number {
     return isNonNegativeSafeInteger(value) && value > 0;
 }
 
-function applyNeuralPatch(
-    instance: GrinderInstance,
-    patch: GrinderNeuralPatch,
-    loadedModelDigest: LoadedNeuralModelDigest
-): void {
-    if (patch.neuralModelMode === 'builtin') {
-        // The runtime discards the imported model on the mode write below, so
-        // the gate must forget it too: the next imported patch reloads.
-        loadedModelDigest.current = null;
-        instance.set_param('neuralModelMode', 0);
-        return;
-    }
-
-    // A model-carrying patch loads the real imported network first (#3774):
-    // the runtime parses the `.nam` JSON and `process_capture` then runs it
-    // directly, ignoring the scalar substitute shaping below. The sender
-    // validated the same document against the mirrored rejection set, so a
-    // rejection here means the two validators diverged — surfaced loudly
-    // through the processor's fault path, never substituted over.
-    //
-    // The parse runs on this render thread, so a patch whose digest matches
-    // the model already loaded is skipped entirely: the sender re-posts the
-    // patch on every patch sync, and only a genuinely new capture justifies
-    // re-parsing and re-arming the warmup. A patch without a digest cannot
-    // prove identity and reloads every time.
-    if (patch.modelJson !== undefined) {
-        const alreadyLoaded = patch.modelDigest !== undefined && patch.modelDigest === loadedModelDigest.current;
-        if (!alreadyLoaded) {
-            instance.load_neural_model(patch.modelJson);
-            loadedModelDigest.current = patch.modelDigest ?? null;
-        }
-    }
-
-    instance.set_param('neuralCustomTier', NEURAL_TIER_INDEX[patch.profile.preferredTier ?? 'standard'] ?? 0);
-
-    if (patch.profile.inputDrive !== null && patch.profile.inputDrive !== undefined) {
-        instance.set_param('neuralCustomInputDrive', patch.profile.inputDrive);
-    }
-    if (patch.profile.asymmetry !== null && patch.profile.asymmetry !== undefined) {
-        instance.set_param('neuralCustomAsymmetry', patch.profile.asymmetry);
-    }
-    if (patch.profile.outputTrim !== null && patch.profile.outputTrim !== undefined) {
-        instance.set_param('neuralCustomOutputTrim', patch.profile.outputTrim);
-    }
-    if (patch.profile.contourMix !== null && patch.profile.contourMix !== undefined) {
-        instance.set_param('neuralCustomContourMix', patch.profile.contourMix);
-    }
-    if (patch.profile.recurrentBias !== null && patch.profile.recurrentBias !== undefined) {
-        instance.set_param('neuralCustomLstmBias', patch.profile.recurrentBias);
-    }
-    const convWeights = patch.profile.convWeights ?? [];
-    for (let layer_index = 0; layer_index < convWeights.length; layer_index++) {
-        const weights = convWeights[layer_index]!;
-        for (let weight_index = 0; weight_index < 3; weight_index++) {
-            instance.set_param(`neuralCustomConvWeight${layer_index}_${weight_index}`, weights[weight_index]!);
-        }
-    }
-
-    instance.set_param('neuralModelMode', 1);
-}
-
-function isGrinderNeuralPatch(value: unknown): value is GrinderNeuralPatch {
-    if (!isRecord(value)) {
-        return false;
-    }
-    if (value.neuralModelMode === 'builtin') {
-        return Object.keys(value).length === 1;
-    }
-    const payloadKeys = ['neuralModelMode', 'profile'];
-    if (value.modelJson !== undefined) {
-        payloadKeys.push('modelJson');
-    }
-    if (value.modelDigest !== undefined) {
-        payloadKeys.push('modelDigest');
-    }
-    if (value.neuralModelMode !== 'imported' || !hasOnlyKeys(value, payloadKeys) || !isRecord(value.profile)) {
-        return false;
-    }
-    // The compiled model transport (#3774): optional, but present only as a
-    // non-empty string — anything else is a corrupt message, dropped whole.
-    if (value.modelJson !== undefined && (typeof value.modelJson !== 'string' || value.modelJson.length === 0)) {
-        return false;
-    }
-    // The re-load gate's comparison key: same contract as modelJson, optional,
-    // and only ever a non-empty bounded string.
-    if (value.modelDigest !== undefined && !isBoundedId(value.modelDigest)) {
-        return false;
-    }
-    const profile = value.profile;
-    if (
-        !Object.keys(profile).every((key) =>
-            [
-                'preferredTier',
-                'inputDrive',
-                'asymmetry',
-                'outputTrim',
-                'contourMix',
-                'recurrentBias',
-                'convWeights',
-            ].includes(key)
-        ) ||
-        (profile.preferredTier !== undefined &&
-            (typeof profile.preferredTier !== 'string' || !(profile.preferredTier in NEURAL_TIER_INDEX)))
-    ) {
-        return false;
-    }
-    for (const value of [
-        profile.inputDrive,
-        profile.asymmetry,
-        profile.outputTrim,
-        profile.contourMix,
-        profile.recurrentBias,
-    ]) {
-        if (value !== null && value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
-            return false;
-        }
-    }
-    if (
-        profile.convWeights !== undefined &&
-        (!Array.isArray(profile.convWeights) || profile.convWeights.length > MAX_NEURAL_CONV_LAYERS)
-    ) {
-        return false;
-    }
-    for (const layer of profile.convWeights ?? []) {
-        if (
-            !Array.isArray(layer) ||
-            layer.length !== 3 ||
-            typeof layer[0] !== 'number' ||
-            !Number.isFinite(layer[0]) ||
-            typeof layer[1] !== 'number' ||
-            !Number.isFinite(layer[1]) ||
-            typeof layer[2] !== 'number' ||
-            !Number.isFinite(layer[2])
-        ) {
-            return false;
-        }
-    }
-    return true;
-}
-
 class GrinderProcessor extends AudioWorkletProcessor {
     static get parameterDescriptors() {
-        return GRINDER_AUDIO_PARAM_DESCRIPTORS;
+        return GRINDER_PARAM_DESCRIPTORS;
     }
 
     _instance: GrinderInstance | null = null;
@@ -430,6 +287,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _fallbackControlTarget: FallbackControlTarget | null = null;
     _lastFallbackControlSequence = 0;
     _hasFallbackControlSequenceGap = false;
+    private readonly presetAutomation: GrinderPresetAutomation;
     /** Digest of the model already parsed into the instance — the re-load gate's state. */
     _loadedNeuralModelDigest: LoadedNeuralModelDigest = { current: null };
     _pendingFallbackControls: Array<ScheduledFallbackControl | null> = Array.from(
@@ -440,6 +298,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
     constructor(...args: unknown[]) {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
+        const timedParameters = GrinderTimedParameterControl.fromProcessorOptions(args[0]);
+        this.presetAutomation = new GrinderPresetAutomation(timedParameters, MAX_GRINDER_BLOCK_SIZE);
         this.port.onmessage = (event: MessageEvent<unknown>) => {
             const msg = event.data;
             try {
@@ -472,6 +332,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     return;
                 } else if (this._handleNeuralPatch(msg)) {
                     return;
+                } else {
+                    this._handlePreset(msg);
                 }
             } catch (error) {
                 // Same policy as the process() catch below. A throw at the wasm
@@ -693,13 +555,77 @@ class GrinderProcessor extends AudioWorkletProcessor {
         return true;
     }
 
+    private _handlePreset(message: UnknownRecord): boolean {
+        if (message.command !== APPLY_GRINDER_PRESET_COMMAND) {
+            return false;
+        }
+        if (
+            message.schemaVersion !== 1 ||
+            !isPresetTarget(message.target) ||
+            !isPresetCorrelation(message.correlation)
+        ) {
+            return true;
+        }
+        const address = { target: message.target, correlation: message.correlation };
+        if (!this._ownsPresetAddress(address)) {
+            return true;
+        }
+        this._lastFallbackControlSequence = address.correlation.controlSequence;
+        const instance = this._instance;
+        if (instance === null || this._faulted || !this._ready) {
+            this._replyToPreset(address, 'Grinder preset target is unavailable');
+            return true;
+        }
+        if (!isPresetData(message)) {
+            this._replyToPreset(address, 'Grinder preset payload is invalid');
+            return true;
+        }
+        const rejection = applyGrinderPreset({
+            instance,
+            preset: message,
+            loadedModelDigest: this._loadedNeuralModelDigest,
+            automation: this.presetAutomation,
+        });
+        this._refreshWasmViewsIfMemoryChanged();
+        this._replyToPreset(address, rejection ?? instance.get_latency_samples());
+        return true;
+    }
+
+    private _ownsPresetAddress({ target, correlation }: PresetAddress): boolean {
+        const bound = this._fallbackControlTarget;
+        return (
+            bound !== null &&
+            bound.allowUncapturedImmediate &&
+            target.trackId === bound.trackId &&
+            target.deviceId === bound.deviceId &&
+            target.deviceType === bound.deviceType &&
+            correlation.workletGeneration === this._fallbackControlGeneration &&
+            correlation.controlSequence === this._lastFallbackControlSequence + 1
+        );
+    }
+
+    private _replyToPreset(address: PresetAddress, result: number | string): void {
+        const base = { type: GRINDER_PRESET_RESULT, schemaVersion: 1, ...address };
+        if (typeof result === 'number') {
+            this.port.postMessage({ ...base, status: 'installed', latency: result });
+            return;
+        }
+        this.port.postMessage({ ...base, status: 'refused', reason: result });
+    }
+
     _applyFallbackControl(parameterId: string, value: number, reportLatency: boolean): void {
         if (this._instance === null || this._faulted) {
+            return;
+        }
+        if (this.presetAutomation.setManualTarget(parameterId, value)) {
             return;
         }
         const rustName = PARAM_MAP[parameterId] ?? parameterId;
         const oldLatency = this._instance.get_latency_samples();
         this._instance.set_param(rustName, value);
+        if (parameterId === 'neuralModelSlot' || (parameterId === 'neuralModelMode' && value <= 0.5)) {
+            this._loadedNeuralModelDigest.current = null;
+        }
         const newLatency = this._instance.get_latency_samples();
         if (reportLatency && newLatency !== oldLatency) {
             this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
@@ -781,6 +707,43 @@ class GrinderProcessor extends AudioWorkletProcessor {
         }
     }
 
+    private _writeAutomation(automation: Float32Array, parameters: Record<string, Float32Array>, frames: number): void {
+        for (let index = 0; index < GRINDER_AUTOMATABLE_PARAM_COUNT; index++) {
+            const timed = GRINDER_TIMED_PARAM_DESCRIPTORS[index];
+            if (
+                this.presetAutomation.writeOwned(index, timed ? parameters[timed.name] : undefined, automation, frames)
+            ) {
+                continue;
+            }
+            const descriptor = GRINDER_AUDIO_PARAM_DESCRIPTORS[index];
+            this._writeNativeAutomation(
+                index,
+                descriptor ? parameters[descriptor.name] : undefined,
+                automation,
+                frames
+            );
+        }
+    }
+
+    private _writeNativeAutomation(
+        index: number,
+        values: Float32Array | undefined,
+        automation: Float32Array,
+        frames: number
+    ): void {
+        if (!values || values.length === 0) {
+            automation[index] = 0;
+            return;
+        }
+        const valueCount = values.length === 1 ? 1 : Math.min(values.length, frames);
+        this.presetAutomation.observeNative(index, values[valueCount - 1] ?? 0);
+        automation[index] = valueCount;
+        const offset = GRINDER_AUTOMATABLE_PARAM_COUNT + index * MAX_GRINDER_BLOCK_SIZE;
+        for (let frame = 0; frame < valueCount; frame++) {
+            automation[offset + frame] = values[frame] ?? 0;
+        }
+    }
+
     process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
         const input = inputs[0];
         const output = outputs[0];
@@ -806,6 +769,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         }
 
         try {
+            this._applyDueFallbackControls();
             // Revalidate cached WASM-memory views each quantum: a Rust-side
             // allocation can grow the linear memory and detach the old buffer,
             // leaving the init-time views zero-length (audit RT-7). This is a
@@ -830,8 +794,6 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
-            this._applyDueFallbackControls();
-
             const in0 = input[0];
             if (!in0) {
                 this._passthrough(input, output);
@@ -843,25 +805,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
             wasmInputLeft.set(in0);
             wasmInputRight.set(in1);
 
-            for (let paramIndex = 0; paramIndex < GRINDER_AUTOMATABLE_PARAM_COUNT; paramIndex++) {
-                const descriptor = GRINDER_AUDIO_PARAM_DESCRIPTORS[paramIndex];
-                const values = descriptor ? parameters[descriptor.name] : undefined;
-                if (!values || values.length === 0) {
-                    wasmAutomationValues[paramIndex] = 0;
-                    continue;
-                }
-
-                const valueCount = values.length === 1 ? 1 : Math.min(values.length, frames);
-                wasmAutomationValues[paramIndex] = valueCount;
-                const valueOffset = GRINDER_AUTOMATABLE_PARAM_COUNT + paramIndex * MAX_GRINDER_BLOCK_SIZE;
-                if (valueCount === 1) {
-                    wasmAutomationValues[valueOffset] = values[0] ?? 0;
-                    continue;
-                }
-                for (let frame = 0; frame < valueCount; frame++) {
-                    wasmAutomationValues[valueOffset + frame] = values[frame] ?? 0;
-                }
-            }
+            this._writeAutomation(wasmAutomationValues, parameters, frames);
 
             if (!inst.process_automated(frames)) {
                 this._passthrough(input, output);

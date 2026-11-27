@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 
+import { getGrinderTimedParameterName } from '../../models/GrinderTimedParameterControl';
+import { type RuntimeGrinderPreset } from '../../models/RuntimeGrinderPreset';
 import { createGrinderNode, isGrinderDevice } from '../GrinderNode';
+import { GRINDER_IDX, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
 
 // Mock the worklet-init helpers so createGrinderNode resolves without a real
 // AudioContext / worklet module / WASM fetch. The ready handshake resolves
@@ -79,7 +82,7 @@ describe('createGrinderNode', () => {
     });
 
     function makeCtx(state: 'running' | 'suspended' = 'running') {
-        class FakeAudioContext {
+        class FakeAudioContext extends EventTarget {
             state = state;
             currentTime = 0;
             resume = resume;
@@ -87,6 +90,307 @@ describe('createGrinderNode', () => {
         vi.stubGlobal('AudioContext', FakeAudioContext);
         return new FakeAudioContext() as unknown as BaseAudioContext;
     }
+
+    const presetTarget = {
+        trackId: 'track-1',
+        deviceId: 'grinder-1',
+        deviceType: 'grinder',
+        parameterIds: ['channel'],
+    };
+    const presetInput = {
+        parameters: [
+            { parameterId: 'gain', value: 9 },
+            { parameterId: 'channel', value: 2 },
+        ],
+        overrides: [{ parameterId: 'gain', value: 2.5 }],
+        neural: { neuralModelMode: 'builtin' },
+    };
+
+    function postedPreset(): RuntimeGrinderPreset {
+        const group = postMessage.mock.calls.find(
+            ([value]) => (value as { command?: string }).command === 'apply-grinder-preset'
+        )?.[0] as RuntimeGrinderPreset | undefined;
+        if (!group) {
+            throw new Error('The node did not post a grouped preset');
+        }
+        return group;
+    }
+
+    function replyToPreset(group: RuntimeGrinderPreset, overrides: Record<string, unknown> = {}): MessageEvent {
+        return new MessageEvent('message', {
+            data: {
+                schemaVersion: 1,
+                type: 'grinder-preset-result',
+                target: group.target,
+                correlation: group.correlation,
+                status: 'installed',
+                latency: 96,
+                ...overrides,
+            },
+        });
+    }
+
+    async function createLivePresetNode(ctx = makeCtx()) {
+        const node = await createGrinderNode(ctx, undefined, undefined, presetTarget);
+        const { applyPreset } = node;
+        if (!applyPreset) {
+            throw new Error('The bound live node did not expose grouped presets');
+        }
+        postMessage.mockClear();
+        return { node, applyPreset };
+    }
+
+    it('flushes older scalar writes and posts one correlated group before later manual writes', async () => {
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn(() => 13)
+        );
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, presetTarget);
+        const applyPreset = node.applyPreset;
+        if (!applyPreset) {
+            throw new Error('The bound live node did not expose grouped presets');
+        }
+        const setTargetAtTime = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime });
+        const latency = vi.fn();
+        node.onLatencyChanged(latency);
+        postMessage.mockClear();
+
+        node.setParam('channel', 1);
+        const installed = applyPreset(presetInput);
+        const group = postedPreset();
+        node.setParam('gain', 6);
+
+        expect(postMessage.mock.calls.map(([message]) => (message as { command?: string }).command)).toEqual([
+            'set-fallback-param',
+            'apply-grinder-preset',
+            'set-fallback-param',
+        ]);
+        expect(group).toMatchObject({
+            parameters: presetInput.parameters,
+            overrides: presetInput.overrides,
+            resetParameterIds: [],
+        });
+        node.workletNode.port.onmessage?.(
+            replyToPreset(group, {
+                correlation: { ...group.correlation, workletGeneration: group.correlation.workletGeneration + 1 },
+            })
+        );
+        expect(latency).not.toHaveBeenCalled();
+        const reply = replyToPreset(group);
+        node.workletNode.port.onmessage?.(reply);
+        node.workletNode.port.onmessage?.(reply);
+        await installed;
+        expect(latency).toHaveBeenCalledExactlyOnceWith(96);
+
+        setTargetAtTime.mockClear();
+        node.setParam('gain', 7);
+        expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ value: 7 }));
+        expect(setTargetAtTime).not.toHaveBeenCalled();
+    });
+
+    it('queues unique native tickets for explicit equal-time a-rate writes before and after adoption', async () => {
+        const ctx = Object.assign(makeCtx(), { sampleRate: 48_000 });
+        const node = await createGrinderNode(ctx, undefined, undefined, presetTarget);
+        const applyPreset = node.applyPreset;
+        if (!applyPreset) {
+            throw new Error('The bound live node did not expose grouped presets');
+        }
+        const params = node.workletNode.parameters as Map<string, unknown>;
+        const setTargetAtTime = vi.fn();
+        const setValueAtTime = vi.fn();
+        params.set('gain', { setTargetAtTime });
+        params.set(getGrinderTimedParameterName('gain'), { setValueAtTime });
+        postMessage.mockClear();
+
+        node.setParam('gain', 4, 48_000);
+        node.setParam('gain', 4, 48_000);
+        const installed = applyPreset(presetInput);
+        node.workletNode.port.onmessage?.(replyToPreset(postedPreset()));
+        await installed;
+        node.setParam('gain', 4, 48_000);
+
+        expect(setValueAtTime.mock.calls.map(([, time]) => time)).toEqual([1, 1, 1]);
+        expect(new Set(setValueAtTime.mock.calls.map(([ticket]) => ticket)).size).toBe(3);
+        expect(setTargetAtTime.mock.calls).toEqual([
+            [4, 1, 0.01],
+            [4, 1, 0.01],
+        ]);
+        expect(postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the acknowledged latency through an older meter frame and accepts a later publication', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        const sab = new SharedArrayBuffer(128);
+        const view = new Float32Array(sab);
+        const seqView = new Int32Array(sab);
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValueOnce({ sab, byteOffset: 0, view, seqView });
+        let poll: FrameRequestCallback | undefined;
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+            poll = callback;
+            return 1;
+        });
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, presetTarget);
+        const applyPreset = node.applyPreset;
+        if (!applyPreset) {
+            throw new Error('The bound live node did not expose grouped presets');
+        }
+        const latency = vi.fn();
+        const meter = vi.fn();
+        node.onLatencyChanged(latency);
+        node.onMeterData(meter);
+        view[GRINDER_IDX.latency] = 64;
+        Atomics.store(seqView, TELEMETRY_SEQ_IDX, 2);
+        poll?.(0);
+        expect(latency).toHaveBeenCalledWith(64);
+
+        const installed = applyPreset(presetInput);
+        node.workletNode.port.onmessage?.(replyToPreset(postedPreset()));
+        await installed;
+        poll?.(1);
+        expect(latency.mock.calls).toEqual([[64], [96]]);
+        expect(meter).toHaveBeenLastCalledWith(expect.objectContaining({ latency: 96 }));
+
+        view[GRINDER_IDX.latency] = 128;
+        Atomics.store(seqView, TELEMETRY_SEQ_IDX, 4);
+        poll?.(2);
+        expect(latency.mock.calls).toEqual([[64], [96], [128]]);
+        expect(meter).toHaveBeenLastCalledWith(expect.objectContaining({ latency: 128 }));
+    });
+
+    it('applies an immediate group and later manual writes without the optional timed carrier', async () => {
+        vi.stubGlobal('SharedArrayBuffer', undefined);
+        const ctx = Object.assign(makeCtx(), { sampleRate: 48_000, currentTime: 0 });
+        const node = await createGrinderNode(ctx, undefined, undefined, presetTarget);
+        const applyPreset = node.applyPreset;
+        if (!applyPreset) {
+            throw new Error('The bound live node did not expose grouped presets');
+        }
+        const setTargetAtTime = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime });
+        postMessage.mockClear();
+
+        node.setParam('gain', 5, 48_000);
+        expect(setTargetAtTime).toHaveBeenCalledExactlyOnceWith(5, 1, 0.01);
+        await expect(applyPreset(presetInput)).rejects.toThrow('untracked timed write');
+        expect(postMessage).not.toHaveBeenCalled();
+
+        ctx.currentTime = 1.5;
+        const installed = applyPreset(presetInput);
+        node.workletNode.port.onmessage?.(replyToPreset(postedPreset()));
+        await installed;
+
+        node.setParam('gain', 7);
+        expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ value: 7 }));
+        expect(() => node.setParam('gain', 8, 96_000)).toThrow('Grinder timed control is unavailable');
+        expect(setTargetAtTime).toHaveBeenCalledTimes(1);
+    });
+
+    it('settles a matched refusal without adopting the a-rate control and rejects pending work on close', async () => {
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, presetTarget);
+        const applyPreset = node.applyPreset;
+        if (!applyPreset) {
+            throw new Error('The bound live node did not expose grouped presets');
+        }
+        const setTargetAtTime = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime });
+        postMessage.mockClear();
+        const refused = expect(applyPreset(presetInput)).rejects.toThrow('NAM refused');
+        node.workletNode.port.onmessage?.(replyToPreset(postedPreset(), { status: 'refused', reason: 'NAM refused' }));
+        await refused;
+        node.setParam('gain', 7);
+        expect(setTargetAtTime).toHaveBeenCalledExactlyOnceWith(7, 0, 0.01);
+
+        const onClose = expect(applyPreset(presetInput)).rejects.toThrow(
+            'GrinderNode destroyed during preset installation'
+        );
+        node.destroy();
+        await onClose;
+        await expect(applyPreset(presetInput)).rejects.toThrow('Grinder preset requires an open, bound live target');
+    });
+
+    it('bounds pending installations and rejects them when the audio context closes', async () => {
+        const ctx = makeCtx();
+        const { node, applyPreset } = await createLivePresetNode(ctx);
+        const latency = vi.fn();
+        node.onLatencyChanged(latency);
+        const pending = Array.from({ length: 16 }, () => applyPreset(presetInput));
+        const closed = Promise.all(
+            pending.map((request) =>
+                expect(request).rejects.toThrow('Grinder preset target closed before installation was acknowledged')
+            )
+        );
+        await expect(applyPreset(presetInput)).rejects.toThrow('Grinder preset reply capacity exhausted');
+        expect(postMessage).toHaveBeenCalledTimes(16);
+
+        Object.assign(ctx, { state: 'closed' });
+        ctx.dispatchEvent(new Event('statechange'));
+        await closed;
+        node.workletNode.port.onmessage?.(replyToPreset(postedPreset()));
+        expect(latency).not.toHaveBeenCalled();
+    });
+
+    it('keeps both parameter carriers after a reply timeout until a current installation is acknowledged', async () => {
+        const { node, applyPreset } = await createLivePresetNode();
+        const setTargetAtTime = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('gain', { setTargetAtTime });
+        const latency = vi.fn();
+        node.onLatencyChanged(latency);
+        vi.useFakeTimers();
+        try {
+            const timedOut = expect(applyPreset(presetInput)).rejects.toThrow('installation acknowledgement timed out');
+            const expired = postedPreset();
+            node.workletNode.port.onmessage?.(replyToPreset(expired, { correlation: null }));
+            node.workletNode.port.onmessage?.(replyToPreset(expired, { latency: -1 }));
+            await vi.advanceTimersByTimeAsync(5_000);
+            await timedOut;
+
+            node.workletNode.port.onmessage?.(replyToPreset(expired));
+            expect(latency).not.toHaveBeenCalled();
+            node.setParam('gain', 6);
+            expect(postMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({ command: 'set-fallback-param', value: 6 })
+            );
+            expect(setTargetAtTime).toHaveBeenCalledExactlyOnceWith(6, 0, 0.01);
+
+            postMessage.mockClear();
+            const installed = applyPreset(presetInput);
+            node.workletNode.port.onmessage?.(replyToPreset(postedPreset()));
+            await installed;
+            expect(latency).toHaveBeenCalledExactlyOnceWith(96);
+            node.setParam('gain', 7);
+            expect(postMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({ command: 'set-fallback-param', value: 7 })
+            );
+            expect(setTargetAtTime).toHaveBeenCalledTimes(1);
+        } finally {
+            node.destroy();
+            vi.useRealTimers();
+        }
+    });
+
+    it('refuses a malformed preset and allows a failed port post to retry on the same sequence', async () => {
+        const { node, applyPreset } = await createLivePresetNode();
+        await expect(
+            applyPreset({ ...presetInput, parameters: [{ parameterId: 'gain', value: Number.NaN }] })
+        ).rejects.toThrow('Runtime Grinder preset scalar vectors are invalid');
+        expect(postMessage).not.toHaveBeenCalled();
+
+        postMessage.mockImplementationOnce(() => {
+            throw new Error('Preset could not be sent');
+        });
+        await expect(applyPreset(presetInput)).rejects.toThrow('Preset could not be sent');
+        const failed = postedPreset();
+        postMessage.mockClear();
+
+        const installed = applyPreset(presetInput);
+        const retry = postedPreset();
+        expect(retry).toStrictEqual(failed);
+        node.workletNode.port.onmessage?.(replyToPreset(retry));
+        await installed;
+    });
 
     it('should resume the context only when it starts out suspended', async () => {
         await createGrinderNode(makeCtx('suspended'));
@@ -617,7 +921,10 @@ describe('GrinderNode setParam coalescing', () => {
     }
 
     async function makeNode() {
-        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const ctx = Object.assign(new EventTarget(), {
+            currentTime: 0,
+            state: 'running',
+        }) as unknown as BaseAudioContext;
         return createGrinderNode(ctx, undefined, undefined, {
             trackId: 'track-1',
             deviceId: 'grinder-1',

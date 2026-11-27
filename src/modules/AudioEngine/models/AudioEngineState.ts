@@ -6,6 +6,7 @@ import type {
     RuntimeGraphProjectRevisionValidator,
     RuntimeGraphTopologyValidator,
 } from './RuntimeGraphDelta';
+import type { RuntimeGrinderPresetInput } from './RuntimeGrinderPreset';
 
 export type AudioEngineState = {
     isReady: boolean;
@@ -207,6 +208,7 @@ export type DeviceController = {
     setParam(name: string, value: number, sampleFrame?: number): void;
     scheduleParam?(name: string, value: number, time: number): void;
     setPatch?(patch: Record<string, unknown>): void;
+    applyGrinderPreset?(input: RuntimeGrinderPresetInput): Promise<void>;
     setBypass?(bypassed: boolean): void;
     destroy?(): void;
 
@@ -595,6 +597,7 @@ export type AudioEngine = {
     getBusPeakLevel(busId: string): number;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
+    applyGrinderPreset(trackId: string, deviceId: string, input: RuntimeGrinderPresetInput): Promise<void>;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
     scheduleDeviceKeyOn(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;
     scheduleDeviceKeyOff(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;

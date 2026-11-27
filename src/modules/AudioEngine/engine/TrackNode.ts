@@ -8,12 +8,19 @@ import { projectPersistentRuntimeDevices } from '../services/matchesRuntimeDevic
 
 import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { createHostedPluginControls, type HostedPluginControls } from './hostedPluginControls';
+import {
+    captureGrinderPresetReceipts,
+    discardPendingParameterWrites,
+    replayPendingParameterWrite,
+    type PendingParameterWrite,
+} from './trackPendingParameterWrites';
 import { findReleasedWasmDescriptor } from './wasmDeviceRegistry';
 
 import type { TrackChannelStrip, BuiltinDeviceNode, DeviceController, SendNode } from '../models/AudioEngineState';
 import type { DeviceParameterWriteReceipt, EngineDeviceCollaborators } from '../models/EngineDeviceCollaborators';
 import type { OfflineDeviceNode } from '../models/OfflineDeviceNode';
 import type { RuntimeGraphDeviceChainDelta } from '../models/RuntimeGraphDelta';
+import type { RuntimeGrinderPresetInput } from '../models/RuntimeGrinderPreset';
 import type {
     createDeviceReadinessDiagnostics,
     DeviceReadinessFailureStage,
@@ -174,15 +181,6 @@ export class RuntimeGraphMutationRejected extends Error {
         this.rejection = Object.freeze({ reason });
     }
 }
-
-type PendingParameterWrite =
-    | Readonly<{
-          kind: 'immediate';
-          name: string;
-          value: number;
-          receipt: DeviceParameterWriteReceipt;
-      }>
-    | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
 
 type PendingDeviceLoad = {
     abortController: AbortController;
@@ -777,6 +775,11 @@ export class TrackNode {
         }
     }
 
+    private managesPlaceholderController(deviceType: string, controller: DeviceController | undefined): boolean {
+        // Grinder's scalar, patch and grouped writes must share the same promotion queue.
+        return deviceType === 'grinder' || controller === undefined;
+    }
+
     private createPlaceholderController(
         deviceId: string,
         pendingLoad: PendingDeviceLoad,
@@ -863,7 +866,7 @@ export class TrackNode {
         } else if (!pendingLoad.resolved) {
             this.deps.readinessDiagnostics.cancel(pendingLoad.readinessToken);
         }
-        pendingLoad.parameterWrites.length = 0;
+        discardPendingParameterWrites(pendingLoad.parameterWrites);
         if (!pendingLoad.resolved || abortPublished) {
             pendingLoad.abortController.abort();
         }
@@ -892,13 +895,9 @@ export class TrackNode {
         try {
             finalDn.parameterIds = pendingLoad.parameterIds;
             for (const pending of pendingLoad.parameterWrites) {
-                if (pending.kind === 'scheduled') {
-                    finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
-                } else if (finalDn.controller) {
-                    const complete = pending.receipt.begin();
-                    finalDn.controller.setParam(pending.name, pending.value);
-                    complete();
-                }
+                replayPendingParameterWrite(finalDn.controller, pending, (input, receipts) =>
+                    this.writeGrinderPreset(deviceId, finalDn.controller, input, receipts)
+                );
             }
             // Descriptors with their own placeholder controller replay before onLoaded.
             for (const receipt of pendingLoad.parameterReceipts.values()) {
@@ -1302,8 +1301,12 @@ export class TrackNode {
                     this.failDeviceConstruction(readinessToken, error);
                 }
                 const { placeholder, loadPromise } = created;
-                if (!placeholder.controller) {
-                    placeholder.controller = this.createPlaceholderController(deviceId, pendingLoad);
+                if (this.managesPlaceholderController(deviceType, placeholder.controller)) {
+                    placeholder.controller = this.createPlaceholderController(
+                        deviceId,
+                        pendingLoad,
+                        placeholder.controller
+                    );
                 }
                 dn = placeholder;
                 pendingLoad.placeholder = placeholder;
@@ -1524,7 +1527,10 @@ export class TrackNode {
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (pendingLoad && !pendingLoad.resolved) {
             // The generic placeholder already retains one receipt per actual queued write.
-            if (!pendingLoad.parameterWrites.some((write) => write.name === paramId) && receipt.pending()) {
+            if (
+                !pendingLoad.parameterWrites.some((write) => 'name' in write && write.name === paramId) &&
+                receipt.pending()
+            ) {
                 pendingLoad.parameterReceipts.set(paramId, receipt);
             }
             return;
@@ -1541,9 +1547,47 @@ export class TrackNode {
         if (!dn || !dn.controller) {
             return;
         }
-        if (dn.controller.setPatch) {
-            dn.controller.setPatch(patch);
+        const load = this._pendingDeviceLoads.get(deviceId);
+        if (dn.type.toLowerCase() === 'grinder' && load && !load.resolved) {
+            load.parameterWrites.push({ kind: 'grinder-patch', patch });
+            return;
         }
+        dn.controller.setPatch?.(patch);
+    }
+
+    private async writeGrinderPreset(
+        deviceId: string,
+        controller: DeviceController | undefined,
+        input: RuntimeGrinderPresetInput,
+        receipts: readonly DeviceParameterWriteReceipt[]
+    ): Promise<void> {
+        if (!controller?.applyGrinderPreset) {
+            throw new Error('Grinder preset controls are unavailable');
+        }
+        const completions = receipts.map((receipt) => receipt.begin());
+        await controller.applyGrinderPreset(input);
+        const current = this.strip.deviceNodes.find((device) => device.deviceId === deviceId);
+        if (current?.controller !== controller) {
+            throw new Error('Grinder was replaced during preset installation');
+        }
+        for (const complete of completions) {
+            complete();
+        }
+    }
+
+    public applyGrinderPreset(deviceId: string, input: RuntimeGrinderPresetInput): Promise<void> {
+        const node = this.strip.deviceNodes.find((device) => device.deviceId === deviceId);
+        if (node?.type.toLowerCase() !== 'grinder') {
+            return Promise.reject(new Error('Grinder preset target is unavailable'));
+        }
+        const receipts = captureGrinderPresetReceipts(this.deps.collaborators, this.trackId, deviceId, input);
+        const load = this._pendingDeviceLoads.get(deviceId);
+        if (load && !load.resolved) {
+            return new Promise<void>((resolve, reject) => {
+                load.parameterWrites.push({ kind: 'grinder-preset', input, receipts, resolve, reject });
+            });
+        }
+        return this.writeGrinderPreset(deviceId, node.controller, input, receipts);
     }
 
     public scheduleParam(deviceId: string, paramId: string, value: number, time: number): void {
@@ -1625,7 +1669,7 @@ export class TrackNode {
         this._outputDestination = null;
         this._analyserFallbackMeter = null;
         for (const pendingLoad of pendingLoads) {
-            pendingLoad.parameterWrites.length = 0;
+            discardPendingParameterWrites(pendingLoad.parameterWrites);
             if (pendingLoad.loadPromise) {
                 this.deps.pendingDevicePromises.delete(pendingLoad.loadPromise);
             }

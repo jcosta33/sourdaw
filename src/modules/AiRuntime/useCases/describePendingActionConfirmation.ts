@@ -158,6 +158,7 @@ const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActio
     setBacteriaFactoryPatch: describeAsPlanned,
     setCrustFactoryPreset: describeAsPlanned,
     setGlutenFactoryPreset: describeAsPlanned,
+    setGrinderFactoryPreset: describeAsPlanned,
     setProofPatchSelection: describeAsPlanned,
     createBus: (action, context) => describeExactBus(action) ?? describeAsPlanned(action, context),
     createFolder: describeAsPlanned,

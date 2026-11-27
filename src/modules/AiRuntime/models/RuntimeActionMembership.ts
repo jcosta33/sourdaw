@@ -293,6 +293,7 @@ const runtimeActionMembershipByActionType = {
     setBacteriaFactoryPatch: false,
     setCrustFactoryPreset: false,
     setGlutenFactoryPreset: false,
+    setGrinderFactoryPreset: false,
     setProofPatchSelection: false,
     restoreTrackInput: false,
     renameMarker: false,

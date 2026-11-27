@@ -106,6 +106,27 @@ describe('Grinder project parameter projection', () => {
         expect(projected.neuralModelProfile).toBeNull();
     });
 
+    it('clears the previous imported profile when the project explicitly switches to the built-in source', () => {
+        const previous = {
+            ...DEFAULT_PATCH,
+            neuralModelSource: 'imported' as const,
+            neuralModelId: 'test-import',
+            neuralModelName: 'Test import',
+            neuralModelProfile: IMPORTED_PROFILE,
+        };
+        const patch = applyGrinderProjectParameters(previous, {
+            ...persistRecordForImportedPatch(),
+            neuralModelMode: 0,
+        });
+
+        expect(patch).toMatchObject({
+            neuralModelSource: 'builtin',
+            neuralModelProfile: null,
+            neuralModelId: DEFAULT_PATCH.neuralModelId,
+            neuralModelName: DEFAULT_PATCH.neuralModelName,
+        });
+    });
+
     it('restores an imported capture across a sync → persist → project-reload round trip', () => {
         const record = persistRecordForImportedPatch();
 

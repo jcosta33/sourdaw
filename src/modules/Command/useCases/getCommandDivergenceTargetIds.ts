@@ -137,6 +137,7 @@ const extraTargetsByActionType: {
     setBacteriaFactoryPatch: noExtraTargets,
     setCrustFactoryPreset: noExtraTargets,
     setGlutenFactoryPreset: noExtraTargets,
+    setGrinderFactoryPreset: noExtraTargets,
     setProofPatchSelection: noExtraTargets,
     createBus: noExtraTargets,
     createFolder: noExtraTargets,

@@ -109,6 +109,7 @@ export const macroReplayRouteByActionType: { readonly [Type in AppActionType]: M
     setBacteriaFactoryPatch: replayRoute,
     setCrustFactoryPreset: replayRoute,
     setGlutenFactoryPreset: replayRoute,
+    setGrinderFactoryPreset: replayRoute,
     setProofPatchSelection: replayRoute,
     createBus: replayRoute,
     createFolder: replayRoute,

@@ -270,6 +270,7 @@ export const macroReplayCreateByActionType: {
     setBacteriaFactoryPatch: notAGeneratedCreate,
     setCrustFactoryPreset: notAGeneratedCreate,
     setGlutenFactoryPreset: notAGeneratedCreate,
+    setGrinderFactoryPreset: notAGeneratedCreate,
     setProofPatchSelection: notAGeneratedCreate,
     createBus: notAGeneratedCreate,
     createFolder: notAGeneratedCreate,

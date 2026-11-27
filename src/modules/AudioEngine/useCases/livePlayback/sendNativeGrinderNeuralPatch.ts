@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
+    type AudioGraphSetGrinderModelCommand,
     type NativeGrinderModelReceipt,
 } from '../../models/AudioGraphBackend';
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
@@ -18,6 +19,7 @@ type Input =
           deviceId: string;
           modelJson: string | null;
           values: Readonly<Record<string, number>>;
+          resetParameterIds?: readonly string[];
       }>
     | Readonly<{ kind: 'drain'; backend: AudioGraphBackend; result: AudioGraphApplyResult; session?: SessionWitness }>;
 const latestByBackend = new WeakMap<AudioGraphBackend, Map<string, object>>();
@@ -128,6 +130,23 @@ async function drain(
     throw new Error('Native NAM matching callback drain timed out');
 }
 
+function grinderModelCommand(
+    input: Extract<Input, { kind: 'write' }>,
+    requestId: string
+): AudioGraphSetGrinderModelCommand {
+    const command = {
+        kind: 'set-grinder-model' as const,
+        target: { trackId: input.trackId, deviceId: input.deviceId },
+        requestId,
+        modelJson: input.modelJson,
+        values: input.values,
+    };
+    if (!input.resetParameterIds) {
+        return command;
+    }
+    return { ...command, resetParameterIds: input.resetParameterIds };
+}
+
 /** A queued admission is only the beginning; completion belongs to the same live callback. */
 export async function sendNativeGrinderNeuralPatch(input: Input): Promise<void> {
     if (input.kind === 'drain') {
@@ -174,15 +193,7 @@ export async function sendNativeGrinderNeuralPatch(input: Input): Promise<void> 
             current();
             return backend.apply({
                 schemaVersion: 1,
-                commands: [
-                    {
-                        kind: 'set-grinder-model',
-                        target: { trackId: input.trackId, deviceId: input.deviceId },
-                        requestId,
-                        modelJson: input.modelJson,
-                        values: input.values,
-                    },
-                ],
+                commands: [grinderModelCommand(input, requestId)],
             });
         });
         current();

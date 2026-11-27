@@ -68,6 +68,7 @@ import { hydrateGrinderPatchFromProject } from '../../useCases/hydrateGrinderPat
 import { importGrinderNeuralModels } from '../../useCases/importGrinderNeuralModels';
 import { removeGrinderNeuralModel } from '../../useCases/removeGrinderNeuralModel';
 import { restoreGrinderNeuralLibrary } from '../../useCases/restoreGrinderNeuralLibrary';
+import { selectRectifierHeavyPreset } from '../../useCases/selectRectifierHeavyPreset';
 import { setGrinderPanelUiLevel } from '../../useCases/setGrinderPanelUiLevel';
 import { ImportedNeuralLibraryCard } from '../components/ImportedNeuralLibraryCard';
 
@@ -1084,7 +1085,13 @@ function BrowserRail({
                                         ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/10'
                                         : ''
                                 }`}
-                                onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
+                                onClick={() => {
+                                    if (preset.id === 'gr-rectifier-heavy') {
+                                        void selectRectifierHeavyPreset(deviceId);
+                                        return;
+                                    }
+                                    replacePatch({ ...preset.patch, uiSection: patch.uiSection });
+                                }}
                             >
                                 <Row justify="between" wrap gap={1} className="w-full">
                                     <span className="text-compact font-medium wrap-anywhere text-text-primary">

@@ -105,6 +105,7 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     setBacteriaFactoryPatch: anyArguments,
     setCrustFactoryPreset: anyArguments,
     setGlutenFactoryPreset: anyArguments,
+    setGrinderFactoryPreset: anyArguments,
     setProofPatchSelection: anyArguments,
     createBus: (value) =>
         isNonEmptyString(value.busId) && isNonEmptyString(value.initialAlternativeId) && isNonEmptyString(value.color),

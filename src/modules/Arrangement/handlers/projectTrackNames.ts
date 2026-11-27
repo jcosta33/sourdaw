@@ -156,6 +156,7 @@ export const trackNameProjectionByActionType: {
     setBacteriaFactoryPatch: keepTrackNames,
     setCrustFactoryPreset: keepTrackNames,
     setGlutenFactoryPreset: keepTrackNames,
+    setGrinderFactoryPreset: keepTrackNames,
     setProofPatchSelection: keepTrackNames,
     createBus: projectCreatedBusName,
     createFolder: keepTrackNames,

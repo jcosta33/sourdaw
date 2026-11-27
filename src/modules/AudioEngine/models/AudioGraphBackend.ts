@@ -574,6 +574,7 @@ export type AudioGraphSetGrinderModelCommand = Readonly<{
     requestId: string;
     modelJson: string | null;
     values: Readonly<Record<string, number>>;
+    resetParameterIds?: readonly string[];
 }>;
 
 export type AudioGraphSetDeviceParametersCommand = Readonly<{

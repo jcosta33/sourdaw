@@ -126,6 +126,7 @@ const stampByActionType: Stamp = {
     setBacteriaFactoryPatch: leaveUnstamped,
     setCrustFactoryPreset: leaveUnstamped,
     setGlutenFactoryPreset: leaveUnstamped,
+    setGrinderFactoryPreset: leaveUnstamped,
     setProofPatchSelection: leaveUnstamped,
     createBus: leaveUnstamped,
     createFolder: leaveUnstamped,

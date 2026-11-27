@@ -32,6 +32,7 @@ import {
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
 import { bindCanonicalRedoAction } from './bindCanonicalRedoAction';
+import { captureDeviceHistoryRebind } from './captureDeviceHistoryRebind';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import {
     type CommandBatchPostconditionValidation,
@@ -146,6 +147,7 @@ type PreparedBatchAction = {
     afterAmbiguousCommit: HandlerAfterCommit | null;
     postCommitEffect: HandlerPostCommitEffect | null;
     commitValidation: HandlerCommitValidation | null;
+    rebindDeviceHistory: HandlerValidationContext['rebindDeviceHistory'];
     requiresAbortCompensation: boolean;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
@@ -426,6 +428,7 @@ async function executePreparedBatch(
                     actions: preparedActions.map((candidate) => candidate.action),
                     actionIndex,
                     undoEntryId: undoEntryIds?.[actionIndex] ?? prepared.envelope.commandId,
+                    rebindDeviceHistory: prepared.rebindDeviceHistory,
                     signal,
                     onDeferredEffectAttempt,
                     workOwner,
@@ -654,6 +657,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             actions: readonly AppAction[],
             options?: ExecuteAppActionBatchOptions
         ): Promise<ExecuteAppActionBatchResult> {
+            const { signal, undoEntryIds } = options ?? {};
             const recordedRedos = new Map<AppAction, HandlerValidationContext['recordedRedo']>();
             if (options?.skipUndo) {
                 for (const action of actions) {
@@ -689,8 +693,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                                 .slice(0, actionIndex)
                                 .map((prior, index) => admissionMaterializedActions[index]?.action ?? prior),
                             actionIndex,
-                            ...(options?.undoEntryIds?.[actionIndex] !== undefined
-                                ? { undoEntryId: options.undoEntryIds[actionIndex] }
+                            ...(undoEntryIds?.[actionIndex] !== undefined
+                                ? { undoEntryId: undoEntryIds[actionIndex] }
                                 : {}),
                             ...(recordedRedos.get(action) !== undefined
                                 ? { recordedRedo: recordedRedos.get(action) }
@@ -839,7 +843,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         let context: HandlerValidationContext = {
                             actions: canonicalActions,
                             actionIndex: index,
-                            signal: options?.signal,
+                            signal,
                         };
                         const recordedRedo = recordedRedos.get(canonicalized.requestedAction);
                         if (recordedRedo) {
@@ -901,6 +905,10 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     afterAmbiguousCommit: null,
                     postCommitEffect: null,
                     commitValidation: null,
+                    rebindDeviceHistory: captureDeviceHistoryRebind(
+                        canonicalized.requestedAction,
+                        undoEntryIds?.[index]
+                    ),
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
                     description,
@@ -1001,10 +1009,10 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         attemptedActions,
                         options?.shouldExecute,
                         options?.authorizeFirstHandler,
-                        options?.signal,
+                        signal,
                         options?.onDeferredEffectAttempt,
                         options?.workOwner,
-                        options?.undoEntryIds
+                        undoEntryIds
                     ),
                 };
             });

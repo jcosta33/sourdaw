@@ -258,6 +258,7 @@ vi.mock('#/modules/Automation/useCases', async () => {
     );
     return {
         buildOfflineModulatorPlans: actual.buildOfflineModulatorPlans,
+        clearAppliedModulationValues: actual.clearAppliedModulationValues,
         getAutomationLaneCeiling: actual.getAutomationLaneCeiling,
         applyModulation: vi.fn(),
         applyModulationToEngine: vi.fn(),

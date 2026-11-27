@@ -83,6 +83,74 @@ describe('applyDevicePatchState', () => {
         expect(io.publish).toHaveBeenCalledOnce();
     });
 
+    it('clamps authored writes and restores captured legacy values and absence exactly', () => {
+        const chunk = { version: 1, data: { disclosureTier: 'lab' } };
+        track.devices[0] = {
+            ...track.devices[0]!,
+            type: 'grinder',
+            deviceState: chunk,
+            parameterValues: { master: 999, unrelatedLeaf: 0.7 },
+        };
+        const before = structuredClone(track);
+        const captured = { deviceState: chunk, parameterValues: { master: 999, gain: null } };
+        const authored = { deviceState: chunk, parameterValues: { master: 999, gain: 9 } };
+        const written = { deviceState: chunk, parameterValues: { master: 10, gain: 9 } };
+        expect(applyDevicePatchState({ deviceId: 'synth', expected: captured, next: authored })).toBe(true);
+        expect(track.devices[0].parameterValues).toEqual({ master: 10, gain: 9, unrelatedLeaf: 0.7 });
+        expect(io.publish).toHaveBeenCalledOnce();
+
+        expect(
+            applyDevicePatchState({ deviceId: 'synth', expected: written, next: captured, mode: 'restore-captured' })
+        ).toBe(true);
+        expect(track).toEqual(before);
+        expect(Object.hasOwn(track.devices[0].parameterValues, 'gain')).toBe(false);
+        expect(io.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a captured restore on a frozen owner', () => {
+        track.frozen = true;
+        const before = structuredClone(track);
+        expect(
+            applyDevicePatchState({
+                deviceId: 'synth',
+                expected: { deviceState: null, parameterValues: { filterCutoff: 600 } },
+                next: { deviceState: null, parameterValues: { filterCutoff: 999999 } },
+                mode: 'restore-captured',
+            })
+        ).toBe(false);
+        expect(io.publish).not.toHaveBeenCalled();
+        expect(track).toEqual(before);
+    });
+
+    it.each(['presence', 'value', 'chunk', 'footprint', 'invalid value'])(
+        'restore mode refuses a changed %s without publishing any partial write',
+        (change) => {
+            const expected: Parameters<typeof applyDevicePatchState>[0]['expected'] = {
+                deviceState: null,
+                parameterValues: { filterCutoff: 600, filterModel: null },
+            };
+            const next: Parameters<typeof applyDevicePatchState>[0]['next'] = {
+                deviceState: null,
+                parameterValues: { filterCutoff: 999999, filterModel: 2 },
+            };
+            if (change === 'presence') {
+                track.devices[0]!.parameterValues.filterModel = 0;
+            } else if (change === 'value') {
+                track.devices[0]!.parameterValues.filterCutoff = 700;
+            } else if (change === 'chunk') {
+                track.devices[0]!.deviceState = { version: 1, data: { label: 'successor' } };
+            } else if (change === 'footprint') {
+                next.parameterValues.other = 1;
+            } else {
+                next.parameterValues.filterModel = Number.NaN;
+            }
+            const before = structuredClone(track);
+            expect(applyDevicePatchState({ deviceId: 'synth', expected, next, mode: 'restore-captured' })).toBe(false);
+            expect(io.publish).not.toHaveBeenCalled();
+            expect(track).toEqual(before);
+        }
+    );
+
     it.each(['presence', 'value', 'chunk', 'footprint', 'invalid value'])(
         'refuses a changed %s without publishing any partial write',
         (change) => {

@@ -75,6 +75,10 @@ impl GrinderInstance {
         self.engine.set_param(name, value);
     }
 
+    pub fn restore_parameter_default(&mut self, name: &str) -> bool {
+        self.engine.restore_parameter_default(name)
+    }
+
     /// Load a real .nam capture into the neural stage. Control-path only:
     /// parses the full model (weights, config, architecture) and prewarms it.
     /// Returns the named rejection reason for unsupported or inconsistent

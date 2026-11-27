@@ -89,6 +89,7 @@ pub struct TriodeStage {
 }
 
 impl TriodeStage {
+    const DEFAULT_COUPLING_CAP_TAU: f64 = 0.01;
     pub fn new(sample_rate: f32) -> Self {
         let mut stage = Self {
             params: TubeParams::ax7(),
@@ -101,7 +102,7 @@ impl TriodeStage {
             grid_current: 0.0,
             grid_conduction_amount: 0.5,
             coupling_cap_charge: 0.0,
-            coupling_cap_tau: 0.01, // 10ms RC time constant
+            coupling_cap_tau: Self::DEFAULT_COUPLING_CAP_TAU,
             oversampler: StageOversampler2x::new(),
             miller_cap_factor: 0.5,
             miller_lp_state: 0.0,
@@ -267,7 +268,36 @@ pub struct Preamp {
     sample_rate: f32,
 }
 
+#[cfg(test)]
+mod restore_default_tests {
+    use super::Preamp;
+
+    #[test]
+    fn restores_coupling_time_without_touching_history_or_channel() {
+        let original = Preamp::new(48_000.0);
+        let mut preamp = Preamp::new(48_000.0);
+        preamp.set_param("channel", 2.0);
+        preamp.process_sample(0.4);
+        let charge = preamp.stages[0].coupling_cap_charge;
+        preamp.set_param("couplingCapCharge", 0.5);
+        for (stage, initial) in preamp.stages.iter().zip(&original.stages) {
+            assert_ne!(stage.coupling_cap_tau, initial.coupling_cap_tau);
+        }
+        preamp.restore_coupling_cap_default();
+        for (stage, initial) in preamp.stages.iter().zip(&original.stages) {
+            assert_eq!(stage.coupling_cap_tau, initial.coupling_cap_tau);
+        }
+        assert_eq!(preamp.stages[0].coupling_cap_charge, charge);
+        assert_eq!(preamp.channel, 2);
+    }
+}
+
 impl Preamp {
+    pub(super) fn restore_coupling_cap_default(&mut self) {
+        for stage in &mut self.stages {
+            stage.coupling_cap_tau = TriodeStage::DEFAULT_COUPLING_CAP_TAU;
+        }
+    }
     pub fn new(sample_rate: f32) -> Self {
         Self {
             stages: vec![

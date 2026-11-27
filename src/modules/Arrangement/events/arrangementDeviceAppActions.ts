@@ -1,5 +1,6 @@
 import { type AutomationRecordingPolicy } from '#/modules/Automation/events';
 import { type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
+import { type DeviceOwnerIncarnation } from '#/utils/handlerContract';
 
 import { type DeviceSnapshot } from '../models/DeviceSnapshot';
 
@@ -44,6 +45,8 @@ export type ArrangementDeviceAppAction =
               deviceSnapshot: DeviceSnapshot;
               deviceIndex: number;
               expectedDeviceIds?: readonly string[];
+              /** Raw owner retired by a locally recorded Grinder removal. */
+              removedOwner?: DeviceOwnerIncarnation;
               /** Internal grouped-history context for compositionally restoring sibling devices. */
               batchRestoreDevices?: readonly BatchRestoreDeviceSnapshot[];
           };

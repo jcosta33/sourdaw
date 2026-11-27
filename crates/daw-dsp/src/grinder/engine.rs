@@ -135,6 +135,23 @@ pub struct GrinderEngine {
 }
 
 impl GrinderEngine {
+    /// Restore the constructor configuration for a control whose default cannot
+    /// be represented by its ordinary numeric setter. Runtime history is retained.
+    pub fn restore_parameter_default(&mut self, name: &str) -> bool {
+        match name {
+            "gateAttack" | "gateRelease" => self.gate.restore_parameter_default(name),
+            "transformerDrive" | "transformerHysteresis" | "transformerLfSaturation" => {
+                self.transformer.restore_parameter_default(name);
+                self.dual_transformer.restore_parameter_default(name);
+                true
+            }
+            "couplingCapCharge" => {
+                self.preamp.restore_coupling_cap_default();
+                true
+            }
+            _ => false,
+        }
+    }
     pub fn new(sample_rate: f32) -> Self {
         let mut cab = CabinetConvolver::new(sample_rate);
         cab.load_builtin(0); // Default 4x12 cabinet
@@ -833,6 +850,43 @@ impl GrinderEngine {
         } else {
             self.speaker.process_sample(input)
         }
+    }
+}
+
+#[cfg(test)]
+mod restore_default_tests {
+    use super::GrinderEngine;
+
+    #[test]
+    fn restored_configuration_matches_same_history_in_dual_amp_mode() {
+        let mut reference = GrinderEngine::new(48_000.0);
+        let mut restored = GrinderEngine::new(48_000.0);
+        for engine in [&mut reference, &mut restored] {
+            engine.set_param("routingMode", 3.0);
+            engine.set_param("gateEnabled", 1.0);
+            let mut left = [0.2; 64];
+            let mut right = [0.2; 64];
+            engine.process_block(&mut left, &mut right);
+        }
+        for (name, value) in [
+            ("gateAttack", 2.0),
+            ("gateRelease", 120.0),
+            ("transformerDrive", 0.3),
+            ("transformerHysteresis", 0.3),
+            ("transformerLfSaturation", 0.3),
+            ("couplingCapCharge", 0.5),
+        ] {
+            restored.set_param(name, value);
+            assert!(restored.restore_parameter_default(name));
+        }
+        let mut expected_left = [0.1; 64];
+        let mut expected_right = [0.1; 64];
+        let mut actual_left = expected_left;
+        let mut actual_right = expected_right;
+        reference.process_block(&mut expected_left, &mut expected_right);
+        restored.process_block(&mut actual_left, &mut actual_right);
+        assert_eq!(actual_left, expected_left);
+        assert_eq!(actual_right, expected_right);
     }
 }
 

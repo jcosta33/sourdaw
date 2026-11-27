@@ -249,6 +249,7 @@ const plannedSendByActionType: {
     setBacteriaFactoryPatch: unchangedSend,
     setCrustFactoryPreset: unchangedSend,
     setGlutenFactoryPreset: unchangedSend,
+    setGrinderFactoryPreset: unchangedSend,
     setProofPatchSelection: unchangedSend,
     createBus: unchangedSend,
     createFolder: unchangedSend,

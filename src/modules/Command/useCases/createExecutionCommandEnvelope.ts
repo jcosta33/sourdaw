@@ -128,6 +128,7 @@ const seedMaterializerByActionType: {
     setBacteriaFactoryPatch: leaveSeedUnminted,
     setCrustFactoryPreset: leaveSeedUnminted,
     setGlutenFactoryPreset: leaveSeedUnminted,
+    setGrinderFactoryPreset: leaveSeedUnminted,
     setProofPatchSelection: leaveSeedUnminted,
     createBus: leaveSeedUnminted,
     createFolder: leaveSeedUnminted,

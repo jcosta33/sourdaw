@@ -1,10 +1,12 @@
 import { deviceFactoryPresetSources } from '#/modules/Arrangement/useCases';
 import {
+    applyRuntimeGrinderPreset,
     builtinSynthVoice,
     engineAttachmentTracking,
     nativeBodyVocabularyRegistry,
     neuralModelContent,
 } from '#/modules/AudioEngine/useCases';
+import { readAppliedModulationValue } from '#/modules/Automation/useCases';
 import { readAttachedCrumbsInstanceIds } from '#/modules/Crumbs/stores';
 import { markCrumbsEngineAttached, panicCrumbs, retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import {
@@ -16,6 +18,7 @@ import {
 } from '#/modules/Fermenter/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { readGrinderNeuralModelContent } from '#/modules/Grinder/stores';
+import { applyRectifierHeavyRuntime, grinderFactoryPresetRuntimePort } from '#/modules/Grinder/useCases';
 import { createLevainTemplateDeviceState, getLevainArticulationId } from '#/modules/Levain/useCases';
 import { articulationIdResolvers, velocityCalibration } from '#/modules/MIDI/useCases';
 import {
@@ -39,6 +42,7 @@ import {
     kitSwing,
     liveMidiProcessor,
     notePanicParticipants,
+    readAppliedAutomationValue,
 } from '#/modules/Transport/useCases';
 import { readYeastRack, setActiveYeastDevice } from '#/modules/Yeast/stores';
 import { addYeastProcessor, processYeastMidi, setYeastProcessorParam, yeastPanic } from '#/modules/Yeast/useCases';
@@ -162,4 +166,14 @@ export function registerDeviceEnginePorts(): void {
     templateDeviceContent.configure(productionPorts.templateDeviceContent);
     storedDrumVoices.configure(productionPorts.storedDrumVoices);
     builtinSynthVoice.configure(productionPorts.builtinSynthVoice);
+    grinderFactoryPresetRuntimePort.setEffect(syncGrinderPreset);
+}
+
+function syncGrinderPreset(payload: Parameters<typeof applyRectifierHeavyRuntime>[0]): void {
+    void applyRectifierHeavyRuntime(payload, {
+        play: applyRuntimeGrinderPreset,
+        readEffectiveValue: (trackId, deviceId, parameterId) =>
+            readAppliedModulationValue(trackId, deviceId, parameterId) ??
+            readAppliedAutomationValue(deviceId, parameterId)?.value,
+    });
 }

@@ -39,14 +39,66 @@ pub struct NoiseGate {
     sample_rate: f32,
 }
 
+#[cfg(test)]
+mod restore_default_tests {
+    use super::NoiseGate;
+
+    #[test]
+    fn restores_gate_timing_without_touching_history() {
+        let original = NoiseGate::new(48_000.0);
+        let mut gate = NoiseGate::new(48_000.0);
+        gate.set_param("gateEnabled", 1.0);
+        gate.process_sample(0.4);
+        let history = (
+            gate.envelope,
+            gate.gate_gain,
+            gate.is_open,
+            gate.hold_counter,
+            gate.enabled,
+        );
+        gate.set_param("gateAttack", 2.0);
+        gate.set_param("gateRelease", 120.0);
+        assert_ne!(gate.detector_attack_coeff, original.detector_attack_coeff);
+        assert_ne!(gate.gain_attack_coeff, original.gain_attack_coeff);
+        assert_ne!(gate.detector_release_coeff, original.detector_release_coeff);
+        assert_ne!(gate.gain_release_coeff, original.gain_release_coeff);
+        assert!(gate.restore_parameter_default("gateAttack"));
+        assert!(gate.restore_parameter_default("gateRelease"));
+        assert_eq!(gate.detector_attack_coeff, original.detector_attack_coeff);
+        assert_eq!(gate.gain_attack_coeff, original.gain_attack_coeff);
+        assert_eq!(gate.detector_release_coeff, original.detector_release_coeff);
+        assert_eq!(gate.gain_release_coeff, original.gain_release_coeff);
+        assert_eq!(
+            (
+                gate.envelope,
+                gate.gate_gain,
+                gate.is_open,
+                gate.hold_counter,
+                gate.enabled
+            ),
+            history
+        );
+    }
+}
+
 impl NoiseGate {
+    const DEFAULT_DETECTOR_ATTACK_MS: f32 = 0.5;
+    const DEFAULT_DETECTOR_RELEASE_MS: f32 = 50.0;
+    const DEFAULT_GAIN_ATTACK_MS: f32 = 0.5;
+    const DEFAULT_GAIN_RELEASE_MS: f32 = 90.0;
     pub fn new(sample_rate: f32) -> Self {
         Self {
             threshold_linear: db_to_linear(-60.0),
-            detector_attack_coeff: Self::time_to_coeff(0.5, sample_rate),
-            detector_release_coeff: Self::time_to_coeff(50.0, sample_rate),
-            gain_attack_coeff: Self::time_to_coeff(0.5, sample_rate),
-            gain_release_coeff: Self::time_to_coeff(90.0, sample_rate),
+            detector_attack_coeff: Self::time_to_coeff(
+                Self::DEFAULT_DETECTOR_ATTACK_MS,
+                sample_rate,
+            ),
+            detector_release_coeff: Self::time_to_coeff(
+                Self::DEFAULT_DETECTOR_RELEASE_MS,
+                sample_rate,
+            ),
+            gain_attack_coeff: Self::time_to_coeff(Self::DEFAULT_GAIN_ATTACK_MS, sample_rate),
+            gain_release_coeff: Self::time_to_coeff(Self::DEFAULT_GAIN_RELEASE_MS, sample_rate),
             hysteresis_linear: db_to_linear(2.0) - 1.0,
             floor_gain: db_to_linear(-72.0),
             envelope: 0.0,
@@ -61,6 +113,25 @@ impl NoiseGate {
 
     fn time_to_coeff(ms: f32, sample_rate: f32) -> f32 {
         pole_from_ms(ms.max(0.01), sample_rate)
+    }
+
+    pub(super) fn restore_parameter_default(&mut self, name: &str) -> bool {
+        match name {
+            "gateAttack" => {
+                self.detector_attack_coeff =
+                    Self::time_to_coeff(Self::DEFAULT_DETECTOR_ATTACK_MS, self.sample_rate);
+                self.gain_attack_coeff =
+                    Self::time_to_coeff(Self::DEFAULT_GAIN_ATTACK_MS, self.sample_rate);
+            }
+            "gateRelease" => {
+                self.detector_release_coeff =
+                    Self::time_to_coeff(Self::DEFAULT_DETECTOR_RELEASE_MS, self.sample_rate);
+                self.gain_release_coeff =
+                    Self::time_to_coeff(Self::DEFAULT_GAIN_RELEASE_MS, self.sample_rate);
+            }
+            _ => return false,
+        }
+        true
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

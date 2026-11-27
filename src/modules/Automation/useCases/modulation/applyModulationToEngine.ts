@@ -9,7 +9,12 @@ import { makeKey } from '../automationRecording/makeKey';
 
 import { computeModulatorValue } from './computeModulatorValue';
 import { modulationDependenciesPort } from './modulationDependencies';
-import { modulationParamSlew, modulationSlewEpoch } from './modulationSlewState';
+import {
+    appliedModulationValues,
+    modulationParamSlew,
+    modulationSlewEpoch,
+    visitedModulationValues,
+} from './modulationSlewState';
 import { resolveModulationBinding } from './resolveModulationBinding';
 
 const SLEW_ALPHA = 0.4;
@@ -227,26 +232,51 @@ function indexAutomatedBases(currentBeat: number, deviceReadBeats?: DeviceReadBe
  * onto used — instead of the raw playhead beat every other caller still gets
  * by omitting it.
  */
+type DidWriteAutomation = (deviceId: string, parameterId: string) => boolean;
+
+function trackAutomationOverwrite({
+    key,
+    mapping,
+    appliedBase,
+    alreadyVisited,
+    didWriteAutomation,
+}: {
+    key: string;
+    mapping: Readonly<{ targetDeviceId: string; targetParamId: string }>;
+    appliedBase: number | undefined;
+    alreadyVisited: boolean;
+    didWriteAutomation: DidWriteAutomation | undefined;
+}): void {
+    if (
+        !alreadyVisited &&
+        appliedBase !== undefined &&
+        didWriteAutomation?.(mapping.targetDeviceId, mapping.targetParamId)
+    ) {
+        appliedModulationValues.set(key, appliedBase);
+    }
+}
+
+function retireUnvisitedModulation(): void {
+    for (const key of appliedModulationValues.keys()) {
+        if (!visitedModulationValues.has(key)) {
+            appliedModulationValues.delete(key);
+        }
+    }
+}
+
 export function applyModulationToEngine(
     currentBeat: number,
     discontinuityEpoch?: number,
     appliedAutomationBases?: AppliedAutomationBases,
-    deviceReadBeats?: DeviceReadBeatByTrack
+    timing?: Readonly<{ deviceReadBeats?: DeviceReadBeatByTrack; didWriteAutomation?: DidWriteAutomation }>
 ): void {
+    visitedModulationValues.clear();
     const state = modulationStore.value;
-    if (!state || state.modulators.length === 0) {
+    if (!state?.modulators.some((modulator) => modulator.enabled && modulator.mappings.length > 0)) {
+        appliedModulationValues.clear();
         return;
     }
-    let hasEnabledMapping = false;
-    for (const modulator of state.modulators) {
-        if (modulator.enabled && modulator.mappings.length > 0) {
-            hasEnabledMapping = true;
-            break;
-        }
-    }
-    if (!hasEnabledMapping) {
-        return;
-    }
+    const { deviceReadBeats, didWriteAutomation } = timing ?? {};
 
     // Snap every modulated target on the first tick after a transport
     // discontinuity (seek, loop-wrap, follow-action jump) instead of gliding
@@ -341,11 +371,17 @@ export function applyModulationToEngine(
             // parameter `delivered === smoothed`, so nothing changes there.
             const movedPastEpsilon = Math.abs(smoothed - prev) > SLEW_EPSILON && delivered !== previousDelivered;
 
+            const alreadyVisited = visitedModulationValues.has(key);
+            visitedModulationValues.add(key);
             if (!hadPrev || isDiscontinuity || movedPastEpsilon || hasCompetingAutomationWrites) {
                 modulationDependenciesPort
                     .read()
                     .updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, mapping.targetParamId, delivered);
+                appliedModulationValues.set(key, delivered);
+            } else {
+                trackAutomationOverwrite({ key, mapping, appliedBase, alreadyVisited, didWriteAutomation });
             }
         }
     }
+    retireUnvisitedModulation();
 }
