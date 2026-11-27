@@ -1,5 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
-import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
+import { deepFreeze } from '#/utils/deepFreeze';
 
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
@@ -61,6 +61,8 @@ import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePrepared
 import { readAgentRunAudibleImpact } from '../validators/readAgentRunAudibleImpact';
 import { readPerceptualConstraintReading } from '../validators/readPerceptualConstraintReading';
 import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan';
+
+import { createAgentRunLocalStorage } from './agentRunLocalStorage';
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
@@ -2073,6 +2075,30 @@ function readAgentRun(value: unknown): AgentRun | null {
     };
 }
 
+/**
+ * Runs this store has admitted: each one the sanitizer's own reading of a candidate, cloned so it
+ * shares nothing with the caller's object and frozen so no reader can change it. Readers share
+ * these objects, so a run the store already holds is read again only when a writer replaces it.
+ */
+const admittedAgentRuns = new WeakSet<object>();
+
+function isAdmittedAgentRun(value: unknown): value is AgentRun {
+    return isRecord(value) && admittedAgentRuns.has(value);
+}
+
+function readAdmittedAgentRun(candidate: unknown): AgentRun | null {
+    if (isAdmittedAgentRun(candidate)) {
+        return candidate;
+    }
+    const run = readAgentRun(candidate);
+    if (run === null) {
+        return null;
+    }
+    const admitted = deepFreeze(structuredClone(run));
+    admittedAgentRuns.add(admitted);
+    return admitted;
+}
+
 export function sanitizeAgentRunState(value: unknown): AgentRunState {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION || !Array.isArray(value.runs)) {
         return createEmptyAgentRunState();
@@ -2080,7 +2106,7 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
     const runs: AgentRun[] = [];
     const seenRunIds = new Set<string>();
     for (const candidate of value.runs.slice(-AGENT_RUN_RETENTION_POLICY.maxCount)) {
-        const run = readAgentRun(candidate);
+        const run = readAdmittedAgentRun(candidate);
         if (run === null || seenRunIds.has(run.runId)) {
             continue;
         }
@@ -2187,15 +2213,18 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
 
 export const agentRunStore = createStore<AgentRunState>({
     initialData: createEmptyAgentRunState(),
-    storage: createLocalStorage<AgentRunState>('sourdaw-agent-runs', {
-        preserveSanitizedSourceWhen: (value) =>
-            isRecord(value) && 'schemaVersion' in value && value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION,
-    }),
+    storage: createAgentRunLocalStorage(),
     sanitize: sanitizeAgentRunState,
 });
 
+/**
+ * The current state for a writer to derive the next one from. Everything but the runs is a copy;
+ * the runs are the store's own frozen objects in a fresh array, so a writer replaces a run rather
+ * than changing it.
+ */
 export function readAgentRunState(): AgentRunState {
-    return structuredClone(agentRunStore.value ?? createEmptyAgentRunState());
+    const state = agentRunStore.value ?? createEmptyAgentRunState();
+    return { ...structuredClone({ ...state, runs: [] }), runs: [...state.runs] };
 }
 
 /**
@@ -2335,5 +2364,8 @@ export function persistAgentRunState(state: AgentRunState, now: number = Date.no
 }
 
 export function resetAgentRunState(): void {
+    // Clearing first lifts any write refusal the adapter holds (a read another tab interrupted,
+    // a quarantined schema), so clearing history always succeeds.
+    agentRunStore.clear();
     persistAgentRunState(createEmptyAgentRunState());
 }

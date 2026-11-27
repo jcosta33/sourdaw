@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -228,7 +229,7 @@ describe('agent run work leases', () => {
             });
         }
         agentRunLifecycle.transitionPhase({ runId: 'run-lease', phase: 'executing', transitionedAt: 112 });
-        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const durableBefore = readPersistedAgentRunText();
         const persistenceFailure = new Error('storage refused command terminalization');
         const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
             throw persistenceFailure;
@@ -251,7 +252,7 @@ describe('agent run work leases', () => {
             ],
             workLeases: [{ workId: 'command-atomic', terminalState: 'failed' }],
         });
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(readPersistedAgentRunText()).toBe(durableBefore);
         setItem.mockRestore();
     });
 

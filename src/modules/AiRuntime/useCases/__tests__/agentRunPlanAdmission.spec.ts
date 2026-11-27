@@ -1,6 +1,7 @@
 import { parse } from 'superjson';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { type AgentRunPlan, type AgentRunState } from '../../models/AgentRun';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
@@ -8,7 +9,6 @@ import { recordBatchPreviewEvidence } from '../agentRequestOrchestration/recordB
 import { agentRunLifecycle } from '../agentRunLifecycle';
 
 const RUN_ID = 'bounded-plan-run';
-const STORAGE_KEY = 'sourdaw-agent-runs';
 const RECEIPT_BOUND = 1024;
 const CAPABILITY_BOUND = 1280;
 const RECEIPT_MAX_BYTES = 16_384;
@@ -90,7 +90,7 @@ function liveRun() {
 }
 
 function rawStoredState(): string | null {
-    return window.localStorage.getItem(STORAGE_KEY);
+    return readPersistedAgentRunText();
 }
 
 /** What the next session reads: the stored text, decoded and sanitized exactly as the store loads it. */

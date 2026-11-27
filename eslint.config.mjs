@@ -329,6 +329,7 @@ export default tseslint.config(
             // Browser end-to-end helpers seed and read page storage the way a spec does.
             'tests/e2e/**/*.ts',
             'src/infra/store/storage/createLocalStorage.ts',
+            'src/infra/store/storage/createPartitionedLocalStorage.ts',
             'src/infra/store/storage/createPlainJsonLocalStorage.ts',
             'src/modules/Command/stores/undoSessionMirror.ts',
         ],

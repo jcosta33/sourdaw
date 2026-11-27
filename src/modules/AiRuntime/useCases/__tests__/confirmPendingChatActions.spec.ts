@@ -63,6 +63,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type ActionHandler, type AppAction, type AppActionType } from '#/utils/handlerContract';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunStore, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -4522,7 +4523,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             }),
         ]);
 
-        const persistedState = window.localStorage.getItem('sourdaw-agent-runs');
+        const persistedState = readPersistedAgentRunText();
         if (!persistedState) {
             throw new Error('Expected mixed pending-effect recovery to be persisted.');
         }

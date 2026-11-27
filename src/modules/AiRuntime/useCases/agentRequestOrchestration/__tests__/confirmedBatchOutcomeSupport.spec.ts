@@ -9,6 +9,7 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { readPersistedAgentRunText } from '../../../__tests__/readPersistedAgentRunText';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunExecutionSettlement } from '../agentRunExecutionSettlement';
@@ -148,8 +149,8 @@ describe('confirmedBatchOutcomeSupport', () => {
             committedWork: [{ workId: 'batch-1', receiptIdentity }],
             errors: [expect.objectContaining({ workId: null })],
         });
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('partially-completed');
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain(receiptIdentity);
+        expect(readPersistedAgentRunText()).toContain('partially-completed');
+        expect(readPersistedAgentRunText()).toContain(receiptIdentity);
     });
 
     it('returns the persistence warning when atomic receipt recording rejects before recording work', () => {

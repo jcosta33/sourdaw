@@ -30,6 +30,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { type AgentRunBatchSchedule } from '../../models/AgentRun';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
@@ -2032,7 +2033,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             facts: { protectedUnchanged: [{ id: vocalsId, name: 'Vocals' }], protectedControls: [] },
         });
         expect(schedule?.requestProtections?.resolvedTrackClauses.length).toBeGreaterThan(0);
-        const persistedText = window.localStorage.getItem('sourdaw-agent-runs');
+        const persistedText = readPersistedAgentRunText();
         if (persistedText === null) {
             throw new Error('Expected the scheduled run to be persisted.');
         }

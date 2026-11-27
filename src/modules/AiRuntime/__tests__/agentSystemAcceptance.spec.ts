@@ -133,6 +133,7 @@ import { skipPendingVibeBatch } from '../useCases/skipPendingVibeBatch';
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
 import { installProviderHostGuard } from './acceptanceProviderHostGuard';
 import { createAcceptanceRenderLaw } from './acceptanceRenderLaw';
+import { readPersistedAgentRunText } from './readPersistedAgentRunText';
 
 registerDeviceEnginePorts();
 
@@ -3211,7 +3212,7 @@ describe('agent acceptance corpora', () => {
                 if (!committed) {
                     throw new Error('Expected a committed reading before the reload');
                 }
-                const persisted = localStorage.getItem('sourdaw-agent-runs');
+                const persisted = readPersistedAgentRunText();
                 expect(persisted).toContain(batchId);
 
                 clearChatMessages();

@@ -124,6 +124,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     getVersionedCommandBatchCommitProof: mocks.getVersionedCommandBatchCommitProof,
 }));
 
+import { readPersistedAgentRunText } from '../../../__tests__/readPersistedAgentRunText';
 import { persistAgentRunState, readAgentRunState } from '../../../stores/agentRunStore';
 import {
     clearPendingActionConfirmations,
@@ -380,7 +381,7 @@ describe('prepared stem import resource cleanup', () => {
                 commandBatch: createRecoveryCommandBatch(runId, 'batch-transfer-2'),
             },
         });
-        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const durableBefore = readPersistedAgentRunText();
         const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
             throw new Error('prepared stem transfer persistence failed');
         });
@@ -390,11 +391,11 @@ describe('prepared stem import resource cleanup', () => {
         );
         expect(agentRunLifecycle.get(runId)).toMatchObject({ temporaryAssets: [], preparedStemImports: [] });
         expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(readPersistedAgentRunText()).toBe(durableBefore);
 
         preparedStemImportResources.release({ runId, stems: twoStems });
-        expect(setItem).toHaveBeenCalledTimes(2);
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
+        expect(setItem.mock.calls.filter(([key]) => key === 'sourdaw-agent-runs:index')).toHaveLength(1);
+        expect(readPersistedAgentRunText()).not.toBe(durableBefore);
 
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
@@ -447,7 +448,7 @@ describe('prepared stem import resource cleanup', () => {
         ];
         agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
         preparedStemImportResources.register({ runId, stems: twoStems });
-        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const durableBefore = readPersistedAgentRunText();
         const setItem = vi
             .spyOn(Storage.prototype, 'setItem')
             .mockImplementationOnce(() => {
@@ -463,11 +464,11 @@ describe('prepared stem import resource cleanup', () => {
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).rejects.toThrow(
             'Agent run state could not be persisted locally'
         );
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(readPersistedAgentRunText()).toBe(durableBefore);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
 
         await expect(preparedStemImportResources.discard({ runId, stems: [twoStems[0]!] })).resolves.toBeUndefined();
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
+        expect(readPersistedAgentRunText()).not.toBe(durableBefore);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalledWith('decoded-buffer-2');
 

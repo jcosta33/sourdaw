@@ -13,6 +13,7 @@ import {
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
@@ -1101,7 +1102,7 @@ describe('submitAdmittedPromptRequest', () => {
         if (result.status !== 'awaiting-approval') {
             throw new Error(`Expected an approval preview, received ${result.status}`);
         }
-        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const durableBefore = readPersistedAgentRunText();
         const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
             throw new Error('Cancellation storage unavailable');
         });
@@ -1110,11 +1111,11 @@ describe('submitAdmittedPromptRequest', () => {
             'Agent run state could not be persisted locally'
         );
         expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(readPersistedAgentRunText()).toBe(durableBefore);
         await cancelPendingChatActions({ confirmationId: result.confirmationId });
 
         expect(setItem).toHaveBeenCalledTimes(2);
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+        expect(readPersistedAgentRunText()).toContain('cancelled');
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         setItem.mockRestore();
     });
@@ -1130,7 +1131,7 @@ describe('submitAdmittedPromptRequest', () => {
             throw new Error(`Expected an approval preview, received ${result.status}`);
         }
         const cleanup = vi.fn(() => {
-            expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+            expect(readPersistedAgentRunText()).toContain('cancelled');
         });
         agentRunLifecycle.registerTemporaryAsset({
             runId: RUN_ID,

@@ -326,11 +326,11 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts",
-                    "digest": "2bd77175d2ab84702e6cc23db8a9ce22397782b1a515cfa98b4192d71d3c130a"
+                    "digest": "b39ea1cfacf3f259c2b42f48c6aa9e5e1ab01ff81259367f01199d481dac838b"
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts",
-                    "digest": "7d6ea2dd3da8a26e79491e603a8d4851909c06986f70109cba235ffdd3583940"
+                    "digest": "328e27b2768941d847f4427c4cce9f0de9d669a86d9c88cafed301ab42fc2f70"
                 }
             ]
         },
@@ -342,7 +342,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts",
-                    "digest": "7d6ea2dd3da8a26e79491e603a8d4851909c06986f70109cba235ffdd3583940"
+                    "digest": "328e27b2768941d847f4427c4cce9f0de9d669a86d9c88cafed301ab42fc2f70"
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/cancelAgentRun.spec.ts",
@@ -394,7 +394,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts",
-                    "digest": "2bd77175d2ab84702e6cc23db8a9ce22397782b1a515cfa98b4192d71d3c130a"
+                    "digest": "b39ea1cfacf3f259c2b42f48c6aa9e5e1ab01ff81259367f01199d481dac838b"
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts",
@@ -578,7 +578,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentErrorAndSaga.spec.ts",
-                    "digest": "faa32e5df6217707dd71dd78bd257bc562c239bd94c0922ae7d21d648623e70a"
+                    "digest": "0dbdce013b03ffb5801946171cdc45a7998983b174c387416d7337959c673d74"
                 }
             ]
         },
@@ -802,7 +802,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "a0b9611946ab1bf7c0a28b908cfd76e31ec63ec17e09789cd045464fe3bedd9e"
+                    "digest": "aa24d2e1a9fbb4d9e46983ef64b173af117fce06c2f50574c06fca2c839bd2f1"
                 }
             ]
         },

@@ -13,6 +13,7 @@ import {
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 
+import { readPersistedAgentRunText } from '../../__tests__/readPersistedAgentRunText';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { createAgentSagaStep } from '../../useCases/createAgentSagaStep';
 import { prepareAgentRunPendingEffectContinuation } from '../../useCases/prepareAgentRunPendingEffectContinuation';
@@ -185,9 +186,11 @@ describe('retained section render review hydration', () => {
             expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
             expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
             expect(mocks.disposeExact).not.toHaveBeenCalled();
-            expect(setItem).toHaveBeenCalledTimes(2);
-            expect(setItem.mock.calls[1]?.[1]).toContain('batch-hydrate-review');
+            // The refused write is the index, the commit point, so the stored ledger never moved and
+            // restoring the live cache has nothing left to write.
+            expect(setItem.mock.calls[0]?.[0]).toBe('sourdaw-agent-runs:index');
             setItem.mockRestore();
+            expect(readPersistedAgentRunText()).toContain('batch-hydrate-review');
             restartFrom(durableBefore);
             expect(readAgentRunState().pendingEffectRecoveryLedger).toHaveLength(1);
             expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toHaveLength(1);
@@ -670,7 +673,7 @@ describe('retained section render review hydration', () => {
 
     it('hydrates an unsettled source-revision-bound review from serialized localStorage', async () => {
         createObligation();
-        const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
+        const serializedState = readPersistedAgentRunText();
         if (!serializedState) {
             throw new Error('Expected the persisted agent run payload.');
         }
