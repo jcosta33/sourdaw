@@ -310,7 +310,6 @@ export const clipSatelliteReplacementByActionType: {
     variationMidi: noReplacements,
     generateBassline: noReplacements,
     replayGeneratedMidi: noReplacements,
-    stemSeparate: noReplacements,
     autoOrganizeProject: noReplacements,
     addChordEvent: noReplacements,
     moveChordEvent: noReplacements,

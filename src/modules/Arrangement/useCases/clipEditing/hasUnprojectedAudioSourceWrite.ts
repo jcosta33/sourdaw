@@ -361,7 +361,6 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     variationMidi: noUnprojectedWrite,
     generateBassline: noUnprojectedWrite,
     replayGeneratedMidi: noUnprojectedWrite,
-    stemSeparate: noUnprojectedWrite,
     autoOrganizeProject: noUnprojectedWrite,
     addChordEvent: noUnprojectedWrite,
     moveChordEvent: noUnprojectedWrite,

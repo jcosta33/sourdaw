@@ -464,7 +464,6 @@ const plannedSendByActionType: {
     variationMidi: unchangedSend,
     generateBassline: unchangedSend,
     replayGeneratedMidi: unchangedSend,
-    stemSeparate: unchangedSend,
     autoOrganizeProject: unchangedSend,
     addChordEvent: unchangedSend,
     moveChordEvent: unchangedSend,

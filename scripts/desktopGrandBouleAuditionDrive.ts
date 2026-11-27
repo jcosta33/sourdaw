@@ -11,17 +11,35 @@ import {
     type AuditionObservations,
     type AuditionTrial,
 } from './desktopGrandBouleAuditionEvidence.ts';
-import { captureBlackHole } from './desktopGrandBouleCapture.ts';
+import { captureAdmissionFailure, captureBlackHole } from './desktopGrandBouleCapture.ts';
 import { STEP_TIMEOUT_MS, step } from './packagedAppSession.ts';
 
 const DEVICE = 'BlackHole 2ch';
 function audio(args: string[]): string {
-    return execFileSync('SwitchAudioSource', args, { encoding: 'utf8', timeout: 5000 }).trim();
+    return execFileSync('SwitchAudioSource', args, { encoding: 'utf8', timeout: 5000 }).replace(/\r?\n$/u, '');
 }
 type AudioCommand = (args: string[]) => string;
 
 export function assertBlackHoleInput(run: AudioCommand = audio): void {
     assert.equal(run(['-c', '-t', 'input']), DEVICE);
+}
+
+export function blackHoleCaptureAllowsHiddenDefault(
+    run: AudioCommand = audio,
+    runnerEnvironment = process.env.RUNNER_ENVIRONMENT
+): boolean {
+    // GitHub-hosted macOS VMs have no attachable physical microphone.
+    let isolated = false;
+    if (runnerEnvironment === 'github-hosted') {
+        try {
+            isolated = run(['-a', '-t', 'input']) === DEVICE;
+        } catch {
+            // Without the input inventory, only a visible BlackHole ID can be used.
+            isolated = false;
+        }
+    }
+    assertBlackHoleInput(run);
+    return isolated;
 }
 
 export function cardDeviceId(testId: string | null): string {
@@ -281,14 +299,21 @@ export async function driveDesktopGrandBouleAudition(
                 ),
             8 * STEP_TIMEOUT_MS
         );
+        let allowHiddenDefault: boolean;
         try {
-            assertBlackHoleInput();
-            capture = await step('admit BlackHole media capture', () => captureBlackHole(page), STEP_TIMEOUT_MS);
+            allowHiddenDefault = blackHoleCaptureAllowsHiddenDefault();
+        } catch {
+            observations.unavailable = 'exact-blackhole-device-unavailable';
+            return;
+        }
+        try {
+            capture = await step(
+                'admit BlackHole media capture',
+                () => captureBlackHole(page, allowHiddenDefault),
+                STEP_TIMEOUT_MS
+            );
         } catch (error) {
-            observations.unavailable =
-                error instanceof Error && /NotAllowedError|Permission denied|Permission dismissed/u.test(error.message)
-                    ? 'microphone-permission-denied'
-                    : 'capture-bootstrap-unavailable';
+            observations.unavailable = captureAdmissionFailure(error);
             return;
         }
         const observer = capture;

@@ -354,7 +354,6 @@ const projectClipActionByActionType: {
     variationMidi: keepState,
     generateBassline: keepState,
     replayGeneratedMidi: keepState,
-    stemSeparate: keepState,
     autoOrganizeProject: keepState,
     addChordEvent: keepState,
     moveChordEvent: keepState,

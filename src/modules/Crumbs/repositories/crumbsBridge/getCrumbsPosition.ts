@@ -5,5 +5,12 @@ import { ensureNative } from './helpers';
 export async function getCrumbsPosition(instanceId: string): Promise<number> {
     ensureNative('get_crumbs_position');
     const result = await desktopInvoke('get_crumbs_position', { instanceId });
-    return result as number;
+    if (typeof result !== 'number' && typeof result !== 'bigint') {
+        throw new TypeError('Invalid Crumbs position');
+    }
+    const frame = Number(result);
+    if (!Number.isSafeInteger(frame) || frame < 0) {
+        throw new Error('Invalid Crumbs position');
+    }
+    return frame;
 }

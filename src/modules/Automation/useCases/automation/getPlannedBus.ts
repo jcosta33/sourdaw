@@ -386,7 +386,6 @@ const plannedBusByActionType: {
     variationMidi: unchangedBus,
     generateBassline: unchangedBus,
     replayGeneratedMidi: unchangedBus,
-    stemSeparate: unchangedBus,
     autoOrganizeProject: unchangedBus,
     addChordEvent: unchangedBus,
     moveChordEvent: unchangedBus,

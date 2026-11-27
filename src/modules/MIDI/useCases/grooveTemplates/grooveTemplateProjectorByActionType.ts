@@ -485,7 +485,6 @@ export const grooveTemplateProjectorByActionType: {
     variationMidi: leaveGrooveTemplateStateUnchanged,
     generateBassline: leaveGrooveTemplateStateUnchanged,
     replayGeneratedMidi: leaveGrooveTemplateStateUnchanged,
-    stemSeparate: leaveGrooveTemplateStateUnchanged,
     autoOrganizeProject: leaveGrooveTemplateStateUnchanged,
     addChordEvent: leaveGrooveTemplateStateUnchanged,
     moveChordEvent: leaveGrooveTemplateStateUnchanged,

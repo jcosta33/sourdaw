@@ -85,10 +85,6 @@ export type AiGenerationAppAction =
     | { type: 'variationMidi'; payload: { clipId: string; amount?: number } }
     | { type: 'generateBassline'; payload: { clipId: string; style?: string; trackId?: string } }
     | { type: 'replayGeneratedMidi'; payload: { operation: GeneratedMidiReplayOperation } }
-    | {
-          type: 'stemSeparate';
-          payload: { clipId: string; stems?: string[] };
-      }
     | { type: 'generateFill'; payload: { atBeat: number; durationBeats?: number; style?: string } }
     | { type: 'generateAllTransitions'; payload?: undefined };
 

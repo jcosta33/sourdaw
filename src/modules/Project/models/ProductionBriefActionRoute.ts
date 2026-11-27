@@ -306,7 +306,6 @@ export const productionBriefRouteByActionType: { readonly [Type in AppActionType
     variationMidi: 'content',
     generateBassline: 'content',
     replayGeneratedMidi: 'content',
-    stemSeparate: 'content',
     autoOrganizeProject: 'content',
     addChordEvent: 'content',
     moveChordEvent: 'content',

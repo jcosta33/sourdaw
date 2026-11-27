@@ -482,7 +482,6 @@ const editsByActionType: { readonly [Type in AppActionType]: EditReader<Type> } 
     variationMidi: readEffectDeclaredEdits,
     generateBassline: readEffectDeclaredEdits,
     replayGeneratedMidi: readEffectDeclaredEdits,
-    stemSeparate: readEffectDeclaredEdits,
     autoOrganizeProject: readEffectDeclaredEdits,
     addChordEvent: readEffectDeclaredEdits,
     moveChordEvent: readEffectDeclaredEdits,

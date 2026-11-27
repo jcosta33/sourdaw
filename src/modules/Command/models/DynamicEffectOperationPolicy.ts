@@ -301,7 +301,6 @@ export const commandRequiresDynamicEffectsByActionType: { readonly [Type in AppA
     variationMidi: false,
     generateBassline: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     autoOrganizeProject: false,
     addChordEvent: false,
     moveChordEvent: false,

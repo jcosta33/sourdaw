@@ -5,12 +5,32 @@ type PendingLock = {
 export type ControlledLockManager = {
     locks: Pick<LockManager, 'request'>;
     requestedNames: string[];
+    /** Resolves when the next request (for `name`, when given) arrives; requests made earlier never count. */
+    nextRequest: (name?: string) => Promise<void>;
 };
 
 export function createControlledLockManager(): ControlledLockManager {
     const activeNames = new Set<string>();
     const queues = new Map<string, PendingLock[]>();
     const requestedNames: string[] = [];
+    const requestWaiters: { name: string | undefined; resolve: () => void }[] = [];
+
+    const nextRequest = (name?: string): Promise<void> => {
+        const { promise, resolve } = Promise.withResolvers<void>();
+        requestWaiters.push({ name, resolve });
+        return promise;
+    };
+
+    const notifyRequested = (name: string): void => {
+        const waiting = requestWaiters.splice(0);
+        for (const waiter of waiting) {
+            if (waiter.name === undefined || waiter.name === name) {
+                waiter.resolve();
+                continue;
+            }
+            requestWaiters.push(waiter);
+        }
+    };
 
     const drain = (name: string): void => {
         if (activeNames.has(name)) {
@@ -56,6 +76,7 @@ export function createControlledLockManager(): ControlledLockManager {
                 return Promise.reject(new Error('Controlled lock manager supports exclusive locks only'));
             }
             requestedNames.push(name);
+            notifyRequested(name);
             if (options.ifAvailable === true && !isGrantableNow(name)) {
                 // Not queued, deliberately: `ifAvailable` either takes the lock
                 // now or reports that it could not, and a caller that ends up
@@ -73,5 +94,5 @@ export function createControlledLockManager(): ControlledLockManager {
         }
     }
 
-    return { locks: new ControlledExclusiveLockManager(), requestedNames };
+    return { locks: new ControlledExclusiveLockManager(), requestedNames, nextRequest };
 }

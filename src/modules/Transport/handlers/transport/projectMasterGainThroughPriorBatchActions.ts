@@ -333,7 +333,6 @@ export const masterGainProjectionByActionType: {
     variationMidi: keepMasterPercent,
     generateBassline: keepMasterPercent,
     replayGeneratedMidi: keepMasterPercent,
-    stemSeparate: keepMasterPercent,
     autoOrganizeProject: keepMasterPercent,
     addChordEvent: keepMasterPercent,
     moveChordEvent: keepMasterPercent,

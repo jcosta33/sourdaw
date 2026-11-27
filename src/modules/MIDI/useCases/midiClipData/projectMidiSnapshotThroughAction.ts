@@ -373,7 +373,6 @@ const midiSnapshotByActionType: {
     variationMidi: unchangedSnapshot,
     generateBassline: unchangedSnapshot,
     replayGeneratedMidi: unchangedSnapshot,
-    stemSeparate: unchangedSnapshot,
     autoOrganizeProject: unchangedSnapshot,
     addChordEvent: unchangedSnapshot,
     moveChordEvent: unchangedSnapshot,

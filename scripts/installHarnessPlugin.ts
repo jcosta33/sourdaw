@@ -15,7 +15,7 @@
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve, win32 } from 'node:path';
+import { join, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export function cdylibFileName(platform: NodeJS.Platform): string {
@@ -28,26 +28,23 @@ export function cdylibFileName(platform: NodeJS.Platform): string {
     return 'libsourdaw_harness_tone.so';
 }
 
-/**
- * The per-user CLAP root's `Sourdaw Harness Tone.clap` destination for
- * `platform`, matching `crates/sourdaw-native/src/host/plugin_scan_policy.rs`'s
- * `default_plugin_scan_roots`: darwin and linux root under `home`. win32 is
- * not per-user there — `default_plugin_scan_roots` roots it at the literal
- * `C:\Program Files\Common Files\CLAP`, reading no environment variable, so
- * this returns that same literal and `home` goes unused on that branch.
- *
- * The win32 branch joins with `path.win32` rather than the platform-default
- * `join`, so the backslash-separated result this function returns is correct
- * even under test, where the host running it is never actually Windows.
- */
-export function harnessPluginDestination(platform: NodeJS.Platform, home: string): string {
-    if (platform === 'darwin') {
-        return join(home, 'Library', 'Audio', 'Plug-Ins', 'CLAP', 'Sourdaw Harness', 'Sourdaw Harness Tone.clap');
-    }
+/** The per-user destination must match `default_plugin_scan_roots` in the native scan policy. */
+export function harnessPluginDestination(
+    platform: NodeJS.Platform,
+    home: string,
+    localAppData = process.env.LOCALAPPDATA
+): string {
+    const fixture = ['Sourdaw Harness', 'Sourdaw Harness Tone.clap'];
     if (platform === 'win32') {
-        return win32.join('C:\\Program Files\\Common Files\\CLAP', 'Sourdaw Harness', 'Sourdaw Harness Tone.clap');
+        if (localAppData === undefined || !win32.isAbsolute(localAppData)) {
+            throw new Error('The Windows harness plugin needs an absolute LOCALAPPDATA directory');
+        }
+        return win32.join(localAppData, 'Programs', 'Common', 'CLAP', ...fixture);
     }
-    return join(home, '.clap', 'Sourdaw Harness', 'Sourdaw Harness Tone.clap');
+    if (platform === 'darwin') {
+        return posix.join(home, 'Library', 'Audio', 'Plug-Ins', 'CLAP', ...fixture);
+    }
+    return posix.join(home, '.clap', ...fixture);
 }
 
 function main(): number {

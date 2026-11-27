@@ -455,7 +455,6 @@ const affectedIdsByActionType: { readonly [Type in AppActionType]: AffectedIdRea
     variationMidi: unaffected,
     generateBassline: unaffected,
     replayGeneratedMidi: unaffected,
-    stemSeparate: unaffected,
     autoOrganizeProject: unaffected,
     addChordEvent: unaffected,
     moveChordEvent: unaffected,

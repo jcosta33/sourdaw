@@ -11,7 +11,7 @@ const STORAGE_KEY = 'sourdaw:macros';
 // Persist at most MAX_MACROS, each truncated to MAX_MACRO_ACTIONS actions.
 const MAX_MACROS = 100;
 const MAX_MACRO_ACTIONS = 500;
-const RETIRED_MACRO_ACTION_TYPES = new Set(['restoreDsoSnapshot']);
+const RETIRED_MACRO_ACTION_TYPES = new Set(['restoreDsoSnapshot', 'stemSeparate']);
 
 /** Trim the macro list for persistence: keep the most recent macros and cap each one's action count. */
 function trimMacrosForPersist(macros: Macro[]): Macro[] {

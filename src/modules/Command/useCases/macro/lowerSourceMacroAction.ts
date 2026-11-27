@@ -362,7 +362,6 @@ const lowerByActionType: {
     variationMidi: cloneForReplay,
     generateBassline: cloneForReplay,
     replayGeneratedMidi: cloneForReplay,
-    stemSeparate: cloneForReplay,
     autoOrganizeProject: cloneForReplay,
     addChordEvent: cloneForReplay,
     moveChordEvent: cloneForReplay,
