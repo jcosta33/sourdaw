@@ -3,14 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { CATEGORY_ORDER, PRESET_ACTIONS } from '../Registry';
 
 describe('CATEGORY_ORDER', () => {
-    it('is the 11-category display-order tuple', () => {
+    it('is the 10-category display-order tuple', () => {
         expect(CATEGORY_ORDER).toEqual([
             'Transport',
             'Track',
             'Clip',
             'MIDI',
             'Device',
-            'Generate',
             'Workspace',
             'Mix',
             'Automation',

@@ -9,7 +9,6 @@ type ToPromptPresetInput = {
         | 'Device'
         | 'Workspace'
         | 'Mix'
-        | 'Generate'
         | 'File'
         | 'Automation'
         | 'Collaboration';

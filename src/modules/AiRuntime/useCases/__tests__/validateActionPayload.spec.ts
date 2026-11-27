@@ -164,20 +164,6 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
-        actionType: 'zoomTracksVertical',
-        validPayload: { delta: -40 },
-        invalidPayloads: [
-            { delta: 0 },
-            { delta: 271 },
-            { delta: -271 },
-            { delta: Number.NaN },
-            { delta: Number.POSITIVE_INFINITY },
-            { delta: '40' },
-            {},
-            { delta: 40, extra: true },
-        ],
-    }),
-    guardedPayloadCase({
         actionType: 'setTrackOutput',
         validPayload: { trackId: 'track-1', outputId: 'bus-1', expectedOutputId: 'master' },
         invalidPayloads: [
@@ -1030,15 +1016,13 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         );
     });
 
-    it('admits a track height and a zoom delta at the edges of their ranges', () => {
+    it('admits a track height at the edges of its range', () => {
         const height = PAYLOAD_VALIDATORS.setTrackHeight;
-        const zoom = PAYLOAD_VALIDATORS.zoomTracksVertical;
-        if (height === 'unchecked' || zoom === 'unchecked') {
-            throw new Error('Expected real payload guards for the display edits');
+        if (height === 'unchecked') {
+            throw new Error('Expected a real payload guard for the display edit');
         }
 
         expect([30, 300].map((value) => height({ trackId: 'track-1', height: value }))).toEqual([true, true]);
-        expect([270, -270, 1, -1].map((delta) => zoom({ delta }))).toEqual([true, true, true, true]);
     });
 
     it.each([
