@@ -321,12 +321,10 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
             } else {
                 startNoteRepeat(deviceId, index, 100, bpm, repeatRate);
             }
+        } else if (is16Levels) {
+            trigger16Level(index, deviceId);
         } else {
-            if (is16Levels) {
-                trigger16Level(index, deviceId);
-            } else {
-                triggerToasterPad(deviceId, index, 100);
-            }
+            triggerToasterPad(deviceId, index, 100);
         }
     }
 

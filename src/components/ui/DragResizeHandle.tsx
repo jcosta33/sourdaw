@@ -79,12 +79,10 @@ const computeKeyboardDelta = ({
         } else if (key === 'ArrowLeft') {
             delta = -step;
         }
-    } else {
-        if (key === 'ArrowDown') {
-            delta = step;
-        } else if (key === 'ArrowUp') {
-            delta = -step;
-        }
+    } else if (key === 'ArrowDown') {
+        delta = step;
+    } else if (key === 'ArrowUp') {
+        delta = -step;
     }
 
     if (delta !== null) {

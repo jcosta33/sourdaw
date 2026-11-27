@@ -344,17 +344,15 @@ export async function scheduleTrackClips({
                     `Try unfreezing and re-freezing the track.`
             );
         }
-    } else {
+    } else if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
         // Use pre-built device chain if provided (Pass 2 of mixdown), otherwise build it (Stems export).
-        if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
-            deviceEntries = deviceEntriesByTrack.get(track.id)!;
-        } else {
-            deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode, {
-                trackName: track.name,
-                onWarning,
-            });
-            trackPanNode.connect(destination);
-        }
+        deviceEntries = deviceEntriesByTrack.get(track.id)!;
+    } else {
+        deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode, {
+            trackName: track.name,
+            onWarning,
+        });
+        trackPanNode.connect(destination);
     }
 
     // Apply the same region/latency corrections clip scheduling gets, so

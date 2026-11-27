@@ -173,12 +173,10 @@ export const drawClip = (
     const typeLabel = (() => {
         if (clip.isLinkedInstance) {
             return `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`;
+        } else if (clip.type === 'midi') {
+            return 'MIDI';
         } else {
-            if (clip.type === 'midi') {
-                return 'MIDI';
-            } else {
-                return 'AUDIO';
-            }
+            return 'AUDIO';
         }
     })();
     ctx.fillStyle = clip.isLinkedInstance ? 'rgba(120, 180, 255, 0.5)' : 'rgba(255, 255, 255, 0.25)';
