@@ -345,6 +345,7 @@ describe('packaged audition capture admission', () => {
 
 describe('BlackHole renderer capture admission', () => {
     const name = 'BlackHole 2ch';
+    const virtualLabel = 'BlackHole 2ch (Virtual)';
 
     function input(deviceId: string, label: string, groupId: string) {
         return { kind: 'audioinput', deviceId, label, groupId };
@@ -440,8 +441,12 @@ describe('BlackHole renderer capture admission', () => {
         expect(run.mock.calls).toEqual([[['-a', '-t', 'input']], [['-c', '-t', 'input']]]);
     });
 
-    it('pins the hosted singleton default and freshly binds its revealed group to BlackHole', async () => {
-        const route = renderer();
+    it.each([name, virtualLabel])('binds the hosted singleton default to the revealed %s group', async (label) => {
+        const alias = `Standard – ${label}`;
+        const route = renderer({
+            after: [input('default', alias, 'virtual'), input('virtual-id', label, 'virtual')],
+            label: alias,
+        });
         const run = host();
         const allowHiddenDefault = blackHoleCaptureAllowsHiddenDefault(run, 'github-hosted');
 
@@ -463,29 +468,47 @@ describe('BlackHole renderer capture admission', () => {
         expect(route.stop).not.toHaveBeenCalled();
     });
 
-    it('pins the concrete BlackHole identifier when visible, despite a different OS default label', async () => {
-        const route = renderer({
-            before: [
-                input('default', 'Default - Built-in Microphone', 'physical'),
-                input('virtual-id', name, 'virtual'),
-            ],
-            label: name,
-            deviceId: 'virtual-id',
-        });
-        await expect(openBlackHoleMedia({ device: name })).resolves.toMatchObject({ input: name, track: route.track });
-        expect(route.getUserMedia).toHaveBeenCalledExactlyOnceWith(
-            expect.objectContaining({ audio: expect.objectContaining({ deviceId: { exact: 'virtual-id' } }) })
-        );
-        expect(route.enumerateDevices).toHaveBeenCalledTimes(1);
-    });
+    it.each([name, virtualLabel])(
+        'pins the concrete %s identifier despite a different OS default label',
+        async (label) => {
+            const route = renderer({
+                before: [
+                    input('default', 'Default - Built-in Microphone', 'physical'),
+                    input('virtual-id', label, 'virtual'),
+                ],
+                label,
+                deviceId: 'virtual-id',
+            });
+            await expect(openBlackHoleMedia({ device: name })).resolves.toMatchObject({
+                input: name,
+                track: route.track,
+            });
+            expect(route.getUserMedia).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ audio: expect.objectContaining({ deviceId: { exact: 'virtual-id' } }) })
+            );
+            expect(route.enumerateDevices).toHaveBeenCalledTimes(1);
+        }
+    );
 
     it.each([
         ['visible unrelated input', [input('built-in', 'Built-in Microphone', 'physical')]],
+        ['a lookalike label', [input('lookalike', 'Other BlackHole 2ch (Virtual)', 'other')]],
+        ['an extended suffix', [input('lookalike', 'BlackHole 2ch (Virtual) Extra', 'other')]],
         ['two same-named inputs', [input('left', name, 'one'), input('right', name, 'two')]],
+        ['bare and decorated inputs', [input('left', name, 'one'), input('right', virtualLabel, 'two')]],
     ] as const)('rejects %s before any media request', async (_case, before) => {
         const route = renderer({ before: [...before] });
         await expect(openBlackHoleMedia({ device: name })).rejects.toThrow('capture-named-input-unavailable');
         expect(route.getUserMedia).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['a wrong device id', { label: virtualLabel, deviceId: 'other-id' }],
+        ['a lookalike track label', { label: 'BlackHole 2ch (Virtual) Extra', deviceId: 'virtual-id' }],
+    ] as const)('stops the concrete stream with %s', async (_case, options) => {
+        const route = renderer({ ...options, before: [input('virtual-id', virtualLabel, 'virtual')] });
+        await expect(openBlackHoleMedia({ device: name })).rejects.toThrow('capture-returned-input-mismatch');
+        expect(route.stop).toHaveBeenCalledOnce();
     });
 
     it.each([
@@ -496,6 +519,16 @@ describe('BlackHole renderer capture admission', () => {
             'an alias now bound to another group',
             {
                 after: [input('default', 'Standard – BlackHole 2ch', 'physical'), input('virtual-id', name, 'virtual')],
+            },
+        ],
+        [
+            'more than one revealed concrete input',
+            {
+                after: [
+                    input('default', 'Standard – BlackHole 2ch', 'virtual'),
+                    input('virtual-id', name, 'virtual'),
+                    input('other-id', virtualLabel, 'other'),
+                ],
             },
         ],
         ['a missing concrete input', { after: [input('default', 'Standard – BlackHole 2ch', 'virtual')] }],

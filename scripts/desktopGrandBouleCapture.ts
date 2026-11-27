@@ -123,8 +123,10 @@ export async function openBlackHoleMedia({
             throw new Error('capture-device-enumeration-failed', { cause: error });
         }
     };
+    // Chromium appends this suffix to Core Audio devices with virtual transport.
+    const matchesDeviceLabel = (label: string) => label === device || label === `${device} (Virtual)`;
     const findNamed = (inputs: MediaDeviceInfo[]) =>
-        inputs.filter((entry) => entry.label === device && entry.deviceId && entry.deviceId !== 'default');
+        inputs.filter((entry) => matchesDeviceLabel(entry.label) && entry.deviceId && entry.deviceId !== 'default');
     function selectDeviceId(inputs: MediaDeviceInfo[]): string {
         const named = findNamed(inputs);
         if (named.length > 1 || (named.length === 0 && (!allowHiddenDefault || inputs.some((entry) => entry.label)))) {
@@ -165,8 +167,10 @@ export async function openBlackHoleMedia({
         if (!track || extra.length > 0 || settings?.deviceId !== deviceId) {
             throw new Error('capture-returned-input-mismatch');
         }
-        const verifiedInput =
-            deviceId === 'default' ? await verifyDefaultAlias(track.label, settings.groupId) : track.label === device;
+        let verifiedInput = matchesDeviceLabel(track.label);
+        if (deviceId === 'default') {
+            verifiedInput = await verifyDefaultAlias(track.label, settings.groupId);
+        }
         if (!verifiedInput) {
             throw new Error('capture-returned-input-mismatch');
         }
