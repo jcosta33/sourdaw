@@ -445,17 +445,16 @@ impl ResponseDirectory {
             crate::host::runtime_scope::RuntimeScope::path("native/data/private/scan-responses")?
                 .unwrap_or_else(std::env::temp_dir);
         let path = parent.join(format!("sourdaw-plugin-scan-{}", uuid::Uuid::new_v4()));
-        let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
-        {
+        let created = {
             use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        builder
-            .create(&path)
-            .map_err(|error| ScanFailure::ResponseDirectoryUncreatable {
-                cause: error.to_string(),
-            })?;
+            fs::DirBuilder::new().mode(0o700).create(&path)
+        };
+        #[cfg(not(unix))]
+        let created = fs::create_dir(&path);
+        created.map_err(|error| ScanFailure::ResponseDirectoryUncreatable {
+            cause: error.to_string(),
+        })?;
         // Owned before the pin is opened, so a refused pin still removes the
         // directory on the way out.
         let mut directory = Self { path, pin: None };

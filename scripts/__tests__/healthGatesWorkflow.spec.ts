@@ -466,6 +466,7 @@ const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml
 const { parsed: nightlyEvidenceReporter } = loadWorkflow('nightly-evidence-report.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
+const { parsed: desktopPackageSmoke } = loadWorkflow('desktop-package-smoke.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
 
@@ -1690,6 +1691,11 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         'cargo clippy --package daw-engine --package daw-plugin-host --package sourdaw-harness-fx --all-targets --all-features'
     );
     expect(recordAt(windowsLint, 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
+    const windowsScanner = stepNamed(windowsConsumer, 'Test scanning canonical Windows paths');
+    expect(windowsScanner.run).toBe(
+        'cargo test --locked --package daw-plugin-host --lib scanner::tests::scan_directory_accepts_a_canonicalized_windows_root -- --exact'
+    );
+    expect(recordAt(windowsScanner, 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
     const windowsNames = arrayAt(windowsConsumer, 'steps').map((step) => asRecord(step, 'step').name);
     expect(windowsNames.indexOf('Lint the Windows audio crates')).toBeLessThan(
         windowsNames.indexOf('Test the audio crates')
@@ -1705,6 +1711,7 @@ type WorkflowSet = {
     nightlyEvidenceReporter: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
+    desktopPackageSmoke: UnknownRecord;
 };
 
 function workflowSet(): WorkflowSet {
@@ -1717,6 +1724,7 @@ function workflowSet(): WorkflowSet {
         nightlyEvidenceReporter,
         hostedQuantumMeasurement,
         hostedWasm,
+        desktopPackageSmoke,
     };
 }
 
@@ -1731,6 +1739,7 @@ function cloneWorkflows(label: string): WorkflowSet {
         nightlyEvidenceReporter: asRecord(clone.nightlyEvidenceReporter, `${label} nightly evidence reporter`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
+        desktopPackageSmoke: asRecord(clone.desktopPackageSmoke, `${label} desktop package smoke`),
     };
 }
 
@@ -1761,6 +1770,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['nightly-evidence-report.yml', set.nightlyEvidenceReporter],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
+        ['desktop-package-smoke.yml', set.desktopPackageSmoke],
     ];
 }
 
@@ -4765,7 +4775,7 @@ describe('health gates workflow contract', () => {
             const candidate = loadWorkflow(file).parsed;
             callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
         }
-        expect(callers).toBe(29);
+        expect(callers).toBe(30);
 
         const oldBootstrap = structuredClone(validationWorkflow);
         stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =

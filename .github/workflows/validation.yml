@@ -975,7 +975,8 @@ jobs:
           restore-keys: |
             cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
-      # sourdaw-native is not linted here: it has no Windows build anywhere (see the `win:` comment in electron-builder.yml).
+      # This job checks the Windows audio crates. The desktop package smoke independently
+      # builds sourdaw-native for the configured installer and exercises the installed app.
       - name: Lint the Windows audio crates
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
@@ -985,6 +986,11 @@ jobs:
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
+
+      - name: Test scanning canonical Windows paths
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
+        run: cargo test --locked --package daw-plugin-host --lib scanner::tests::scan_directory_accepts_a_canonicalized_windows_root -- --exact
 
   native-parity:
     name: Native parity (macOS)

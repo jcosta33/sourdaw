@@ -215,6 +215,9 @@ const hostedQuantumMeasurement = parse(
     readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
+const desktopPackageSmoke = parse(
+    readFileSync(`${process.env.REPO_ROOT}/.github/workflows/desktop-package-smoke.yml`, 'utf8')
+);
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
@@ -487,6 +490,7 @@ try {
         'nightly.yml': nightly,
         'quantum-measurements.yml': hostedQuantumMeasurement,
         'wasm-artifacts.yml': hostedWasm,
+        'desktop-package-smoke.yml': desktopPackageSmoke,
     });
 } catch (error) {
     gateBoundaryError = error;
@@ -532,6 +536,7 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
+    ['desktop-package-smoke.yml', desktopPackageSmoke],
 ]) {
     for (const violation of gateNameViolations(file, parsed.jobs ?? {})) {
         expect(false, violation);
@@ -1186,6 +1191,7 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
+    ['desktop-package-smoke.yml', desktopPackageSmoke],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         expect(
@@ -1243,6 +1249,7 @@ const workflowsByFile = {
     'nightly.yml': nightly,
     'quantum-measurements.yml': hostedQuantumMeasurement,
     'wasm-artifacts.yml': hostedWasm,
+    'desktop-package-smoke.yml': desktopPackageSmoke,
 };
 // A shrunk shard list still reports green: every shard that ran passed, and
 // the dropped shards never ran at all.
@@ -1740,6 +1747,7 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
+    ['desktop-package-smoke.yml', desktopPackageSmoke],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         for (const step of job?.steps ?? []) {

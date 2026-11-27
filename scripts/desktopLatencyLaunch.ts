@@ -10,7 +10,7 @@
  * this file is not unit-testable without Playwright.
  */
 
-import { type Page } from 'playwright';
+import { type Locator, type Page } from 'playwright';
 
 import { describeElementAtCentre } from './desktopLatencyDiagnostics.ts';
 import { type AppStartedAt } from './desktopLatencyRecord.ts';
@@ -101,6 +101,15 @@ export async function waitForWorkspaceOrLaunchScreen(page: Page, timeoutMs: numb
         return 'workspace';
     }
     throw new Error('neither the workspace status bar nor the launch screen appeared');
+}
+
+/** A fresh package profile must show its launch action before the smoke can proceed. */
+export async function waitForVisibleLaunchScreen(
+    page: { locator(selector: string): Pick<Locator, 'waitFor'> },
+    timeoutMs: number
+): Promise<'launch-screen'> {
+    await page.locator(LAUNCH_NEW_PROJECT_SELECTOR).waitFor({ state: 'visible', timeout: timeoutMs });
+    return 'launch-screen';
 }
 
 /** Clicks "New Project" and waits out the overlay's own exit animation before returning. */
