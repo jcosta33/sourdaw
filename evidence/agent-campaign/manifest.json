@@ -842,7 +842,7 @@
                 },
                 {
                     "path": "electron/__tests__/webviewSecurity.spec.ts",
-                    "digest": "8553df970b36739eebe198519c1adbee9e3e52c7ed4e2332819f5ffb354fac5b"
+                    "digest": "2eeafd5cf4c1562aad2b90073b095ead7e3a79687dc3f105c85dbcacca8dea81"
                 }
             ]
         },

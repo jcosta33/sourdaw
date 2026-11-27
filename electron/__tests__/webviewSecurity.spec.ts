@@ -16,6 +16,7 @@
  * from Rust.
  */
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -72,24 +73,43 @@ const findThemeScript = (html: string): HTMLScriptElement | null =>
         (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
     ) ?? null;
 
-/** Every production TypeScript source under a directory, concatenated. */
-const readProductionTypescript = (directory: string): string =>
-    readdirSync(directory, { withFileTypes: true })
-        .filter((entry) => entry.name !== '__tests__')
-        .flatMap((entry) => {
-            const path = join(directory, entry.name);
-            if (entry.isDirectory()) {
-                return [readProductionTypescript(path)];
+function* productionTypescriptPaths(directory: string): Generator<string> {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.name === '__tests__') {
+            continue;
+        }
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) {
+            yield* productionTypescriptPaths(path);
+        } else if (
+            (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+            !entry.name.includes('.spec.') &&
+            !entry.name.includes('.stories.') &&
+            !entry.name.includes('.e2e.')
+        ) {
+            yield path;
+        }
+    }
+}
+
+async function findUnbundledWorkerPaths(directory: string): Promise<string[]> {
+    const paths = productionTypescriptPaths(directory);
+    // Share a lazy path iterator across bounded readers so the scan neither
+    // serializes all file reads nor holds the whole source tree in memory.
+    const violations = await Promise.all(
+        Array.from({ length: 8 }, async () => {
+            const matches: string[] = [];
+            for (const path of paths) {
+                const source = await readFile(path, 'utf8');
+                if (/new\s+Worker\s*\(\s*URL\.createObjectURL/gu.test(source)) {
+                    matches.push(path);
+                }
             }
-            if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) {
-                return [];
-            }
-            if (entry.name.includes('.spec.') || entry.name.includes('.stories.') || entry.name.includes('.e2e.')) {
-                return [];
-            }
-            return [readFileSync(path, 'utf8')];
+            return matches;
         })
-        .join('\n');
+    );
+    return violations.flat().sort();
+}
 
 describe('the production Content-Security-Policy', () => {
     const directives = parseCsp(PRODUCTION_CSP);
@@ -140,7 +160,7 @@ describe('the production Content-Security-Policy', () => {
         expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
-    it('admits only bundled workers and the enumerated provider and model hosts', () => {
+    it('admits only bundled workers and the enumerated provider and model hosts', async () => {
         expect(directives.get('worker-src')).toEqual(["'self'"]);
         // This shell's renderer egress, and nothing wider. Each source is a
         // host renderer code in this build actually fetches: loopback HTTP for
@@ -178,7 +198,7 @@ describe('the production Content-Security-Policy', () => {
         // `worker-src 'self'` refuses a blob: worker at runtime, on a machine
         // in front of a musician. This scan fails the same mistake at test
         // time instead.
-        expect(readProductionTypescript('src')).not.toMatch(/new\s+Worker\s*\(\s*URL\.createObjectURL/gu);
+        expect(await findUnbundledWorkerPaths('src')).toEqual([]);
     });
 
     it('keeps the exact Magenta DDSP egress source aligned with release admission', () => {
