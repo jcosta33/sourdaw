@@ -128,9 +128,37 @@ export function nativePauseClassification(
     evidence: NativePauseEvidence | undefined,
     clickTimeMs: number
 ): 'prompt' | 'late' | 'inconclusive' {
-    if (!evidence || evidence.failure || !Number.isFinite(clickTimeMs)) return 'inconclusive';
+    if (!evidence || evidence.failure || !Number.isFinite(clickTimeMs)) {
+        return 'inconclusive';
+    }
     const { before, lastPlaying, parked, sampleRate, outputBufferFrames } = evidence;
-    if (!before || !lastPlaying || !parked || !sampleRate || !outputBufferFrames) return 'inconclusive';
+    if (!before || !lastPlaying || !parked || !sampleRate || !outputBufferFrames) {
+        return 'inconclusive';
+    }
+    if (
+        !validNativePolls(before, lastPlaying, parked) ||
+        !validNativeOrder(before, lastPlaying, parked, clickTimeMs) ||
+        !Number.isFinite(sampleRate) ||
+        sampleRate <= 0 ||
+        !Number.isFinite(outputBufferFrames) ||
+        !Number.isInteger(outputBufferFrames) ||
+        outputBufferFrames <= 0
+    ) {
+        return 'inconclusive';
+    }
+    const lowerMs = lastPlaying.issuedAtMs - (outputBufferFrames / sampleRate) * 1000 - clickTimeMs;
+    const upperMs = parked.answeredAtMs - clickTimeMs;
+    if (upperMs <= 125) {
+        return 'prompt';
+    }
+    return lowerMs > 125 ? 'late' : 'inconclusive';
+}
+
+function validNativePolls(
+    before: NativeTransportPoll,
+    lastPlaying: NativeTransportPoll,
+    parked: NativeTransportPoll
+): boolean {
     const validPoll = (poll: NativeTransportPoll): boolean =>
         Number.isFinite(poll.issuedAtMs) &&
         Number.isFinite(poll.answeredAtMs) &&
@@ -140,32 +168,34 @@ export function nativePauseClassification(
         /^[1-9][0-9]*$/u.test(poll.engineId) &&
         Number.isSafeInteger(poll.batchesApplied) &&
         poll.batchesApplied >= 0;
-    if (
-        ![before, lastPlaying, parked].every(validPoll) ||
-        before.playing !== true ||
-        lastPlaying.playing !== true ||
-        parked.playing !== false ||
-        before.engineId !== lastPlaying.engineId ||
-        before.engineId !== parked.engineId ||
-        before.answeredAtMs >= clickTimeMs ||
-        (lastPlaying.issuedAtMs !== before.issuedAtMs && lastPlaying.issuedAtMs < before.answeredAtMs) ||
-        (lastPlaying.issuedAtMs === before.issuedAtMs && lastPlaying.answeredAtMs !== before.answeredAtMs) ||
-        parked.issuedAtMs < lastPlaying.answeredAtMs ||
-        parked.issuedAtMs < clickTimeMs ||
-        parked.answeredAtMs <= clickTimeMs ||
-        parked.batchesApplied <= before.batchesApplied ||
-        parked.batchesApplied <= lastPlaying.batchesApplied ||
-        !Number.isFinite(sampleRate) ||
-        sampleRate <= 0 ||
-        !Number.isFinite(outputBufferFrames) ||
-        !Number.isInteger(outputBufferFrames) ||
-        outputBufferFrames <= 0
-    )
-        return 'inconclusive';
-    const lowerMs = lastPlaying.issuedAtMs - (outputBufferFrames / sampleRate) * 1000 - clickTimeMs;
-    const upperMs = parked.answeredAtMs - clickTimeMs;
-    if (upperMs <= 125) return 'prompt';
-    return lowerMs > 125 ? 'late' : 'inconclusive';
+    return (
+        [before, lastPlaying, parked].every(validPoll) &&
+        before.playing === true &&
+        lastPlaying.playing === true &&
+        parked.playing === false &&
+        before.engineId === lastPlaying.engineId &&
+        before.engineId === parked.engineId &&
+        parked.batchesApplied > before.batchesApplied &&
+        parked.batchesApplied > lastPlaying.batchesApplied
+    );
+}
+
+function validNativeOrder(
+    before: NativeTransportPoll,
+    lastPlaying: NativeTransportPoll,
+    parked: NativeTransportPoll,
+    clickTimeMs: number
+): boolean {
+    const serial =
+        (lastPlaying.issuedAtMs === before.issuedAtMs && lastPlaying.answeredAtMs === before.answeredAtMs) ||
+        lastPlaying.issuedAtMs >= before.answeredAtMs;
+    return (
+        before.answeredAtMs < clickTimeMs &&
+        serial &&
+        parked.issuedAtMs >= lastPlaying.answeredAtMs &&
+        parked.issuedAtMs >= clickTimeMs &&
+        parked.answeredAtMs > clickTimeMs
+    );
 }
 
 function validTimelineSamples(samples: Record<string, number>): boolean {
