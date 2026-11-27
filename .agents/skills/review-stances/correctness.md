@@ -73,7 +73,13 @@ shared Git publication in `trusted-script-delivery.md`.
    another. List every route that returns actions or reads the state (direct, coordinated, atomic,
    compiled, refined; constructors' defaults, releases, removal arms, re-deriving commands; dispatcher
    single and batch entrypoints, #1949/#2988) and drive each with the same request; a route that never
-   reads the verdict is the finding (clip-protection completeness, #4929). When a diff retires or stubs a
+   reads the verdict is the finding (clip-protection completeness, #4929). A route assertion gated on a
+   row predicate leaves every other row unchecked on that route (`if (prompt.includes('"Bass DI"'))`,
+   #5673): drive each route unconditionally with the same prompt and payload, with no matching object
+   and beside real and missing protections. For a same-name track and clip, read the resolver's status,
+   evidence and candidate id and require the admitted batch to keep both protection facts, while a
+   qualified whole-track or fader clause keeps only its own; a rejected reference can still carry an
+   exact candidate, so it never proves the object absent. When a diff retires or stubs a
    renderer, list every routing rule that can still deliver the thing to it and run the smallest project
    (one track, that device) plus the product's standing consumers (#3593/#3846). A new stored row kind
    must pass every reader's admission gate on a take made of only that kind: restore each reader's skip,

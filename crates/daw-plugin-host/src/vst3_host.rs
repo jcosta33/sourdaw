@@ -284,6 +284,23 @@ impl ParameterGestureQueue {
             return;
         }
     }
+
+    /// Drop every value waiting, without delivering it. Lock-free and
+    /// allocation-free.
+    ///
+    /// A slot a concurrent [`record`](Self::record) is still writing is left
+    /// alone: that edit lands after the discard, so it is newer than whatever
+    /// the discard was answering and is owed to the processor.
+    fn discard_waiting(&self) {
+        for slot in &self.slots {
+            let _ = slot.state.compare_exchange(
+                SLOT_READY,
+                SLOT_EMPTY,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            );
+        }
+    }
 }
 
 // ── Deferred connection-point messages ──────────────────────────────────
@@ -502,6 +519,14 @@ impl Vst3HostState {
     /// project dirty and re-publishing a value the host is the one that set.
     pub fn queue_host_parameter_write(&self, param_id: ParamID, value: ParamValue) {
         self.gestures.record(param_id, value);
+    }
+
+    /// Drop every write waiting for the processor, host writes and editor
+    /// gestures alike. **Control path**, once the plugin has accepted a
+    /// restored state: a write made before the load would otherwise reach the
+    /// next block and revert its parameter to the pre-load value.
+    pub fn discard_parameter_edits(&self) {
+        self.gestures.discard_waiting();
     }
 
     /// Record that the plugin opened an edit on one parameter.
@@ -1276,6 +1301,22 @@ mod tests {
         queue.settle(7, 0.25);
 
         assert_eq!(waiting(&queue), [(7, 0.8)], "the newer edit is not lost");
+    }
+
+    #[test]
+    fn a_discard_drops_every_waiting_value_and_keeps_a_later_record() {
+        let queue = ParameterGestureQueue::new();
+        queue.record(7, 0.25);
+        queue.record(3, 0.5);
+        let mut out = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
+
+        queue.discard_waiting();
+
+        assert_eq!(queue.drain(&mut out), 0, "a discarded value was delivered");
+
+        queue.record(7, 0.8);
+        assert_eq!(queue.drain(&mut out), 1);
+        assert_eq!((out[0].param_id, out[0].value), (7, 0.8));
     }
 
     #[test]

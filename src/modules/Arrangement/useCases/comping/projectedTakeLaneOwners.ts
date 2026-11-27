@@ -444,7 +444,6 @@ const projectTakeLaneOwnersByActionType: {
     variationMidi: keepOwners,
     generateBassline: keepOwners,
     replayGeneratedMidi: keepOwners,
-    stemSeparate: keepOwners,
     autoOrganizeProject: keepOwners,
     addChordEvent: keepOwners,
     moveChordEvent: keepOwners,

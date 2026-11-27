@@ -784,7 +784,7 @@ code: no (all dormant).
   `src/modules/AiRuntime/useCases/validateActionPayload.ts:121,477-478`.
 - **"Handler already validates trackId" is an unverified justification** for
   ~70% "unchecked" actions (removeAllTracks, exportDawProject, loadPreset,
-  generate*, stemSeparate) — no test or compile-time linkage. Needs an
+  generate*) — no test or compile-time linkage. Needs an
   investigation pass. Blocks code: no. Source:
   `src/modules/AiRuntime/useCases/validateActionPayload.ts:477` (PAYLOAD_VALIDATORS, ~194 'unchecked' entries).
 - **Wire or retire `musicMentor.getMentorTip`.** The singular `getMentorTip`
@@ -904,17 +904,16 @@ clip.startBeat`, by design missing renamed or hand-edited AI clips. Options:
 
 ## AiGeneration
 
-- **Stem-separation dual path**: preview (action) vs command-bus diverge in
-  cache keys and track creation; which is canonical? Blocks code: yes, for
-  stem-separation changes. Source:
-  `src/modules/AiGeneration/useCases/actions/handleStemSeparationPreview.ts:25-31`,
-  `handlers/aiMidi/handleStemSeparate.ts:33-53`.
+- **Stem separation has no surface.** The `stemSeparate` action is retired. A
+  future surface separates with `separateStems` first, outside any
+  transaction, then commits the replacement as one `executeAppActionBatch` of
+  `removeTrack`, `addTrack` and `addClip`, so undo, redo, modulation cleanup
+  and hosted-plugin release come from those handlers.
 - **Does undo cover AI-created tracks?** `undoable:true` handlers register no
   explicit pushUndoEntry — rollback depends on whether Command's diff
   middleware diffs trackStore or only midiStore. Needs verification then a
   contract decision. Blocks code: no. Source:
-  `src/modules/AiGeneration/handlers/aiMidi/handleStemSeparate.ts:95` (and
-  sibling handlers).
+  `src/modules/AiGeneration/handlers/aiMidi/`.
 - **Scale-theory interval tables triplicated within AiGeneration.** Three
   independent interval-table definitions coexist: `models/MidiPatternType.ts`
   (`SCALE_INTERVALS`, consumed by `services/scaleTheory.ts`),

@@ -4,30 +4,32 @@ import { projectStripTrack } from './projectStripTrack';
 import { readPlayedFrozenBufferId } from './readPlayedFrozenBufferId';
 
 /**
- * Drops the track fields no subgraph render reads: naming, layout and lane display, recording and
- * monitoring setup, edit grouping, the stored inactive alternatives, and solo (a freeze or bounce
- * prints every strip it builds whatever is soloed: it passes `resolvePrintReachability` no solo gate).
- * The returned type is whatever the destructuring leaves, so the dropped list is written once.
+ * Reads the track fields a subgraph render consumes: strip topology and mixing (`kind`, `gain`,
+ * `pan`, `sends`, `parentId`, `disabled`, `outputId`, VCA membership), what it plays (`clips`,
+ * `devices`), how it reads automation and the chord track (`automationMode`, `followChordTrack`),
+ * and freeze state. Every other field (naming, layout, recording setup, solo, MIDI FX, the MIDI
+ * output route and the stored alternatives) has no reader in the offline render. Reading by an
+ * allowlist keeps a field a later change adds to `Track` out of the print until a reader needs it.
  */
-function omitUnreadFields(track: Track) {
-    const {
-        name: _name,
-        color: _color,
-        height: _height,
-        collapsed: _collapsed,
-        hidden: _hidden,
-        notes: _notes,
-        showVariationLanes: _showVariationLanes,
-        armed: _armed,
-        inputMonitoring: _inputMonitoring,
-        inputId: _inputId,
-        groupId: _groupId,
-        alternatives: _alternatives,
-        soloed: _soloed,
-        soloSafe: _soloSafe,
-        ...read
-    } = track;
-    return read;
+function pickRenderedFields(track: Track) {
+    return {
+        id: track.id,
+        kind: track.kind,
+        muted: track.muted,
+        gain: track.gain,
+        pan: track.pan,
+        clips: track.clips,
+        devices: track.devices,
+        sends: track.sends,
+        parentId: track.parentId,
+        disabled: track.disabled,
+        automationMode: track.automationMode,
+        followChordTrack: track.followChordTrack,
+        outputId: track.outputId,
+        vcaGroupId: track.vcaGroupId,
+        frozen: track.frozen,
+        frozenBufferId: track.frozenBufferId,
+    };
 }
 
 type ReadPrintedTrackInput = {
@@ -51,15 +53,7 @@ export function readPrintedTrack({ track, isTarget, honoursMute }: ReadPrintedTr
         includeAutomation: true,
         targetMixer: 'keepLive',
     });
-    const {
-        muted,
-        vcaGroupId,
-        freezeState: _freezeState,
-        frozen,
-        frozenBufferId,
-        outputId,
-        ...read
-    } = omitUnreadFields(strip);
+    const { muted, vcaGroupId, frozen, frozenBufferId, outputId, ...read } = pickRenderedFields(strip);
     const printed = { ...read, muted: honoursMute ? muted : null };
     if (isTarget) {
         return printed;

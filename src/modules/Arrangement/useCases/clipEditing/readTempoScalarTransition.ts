@@ -320,7 +320,6 @@ const tempoScalarTransitionByActionType: {
     variationMidi: notATempoAction,
     generateBassline: notATempoAction,
     replayGeneratedMidi: notATempoAction,
-    stemSeparate: notATempoAction,
     autoOrganizeProject: notATempoAction,
     addChordEvent: notATempoAction,
     moveChordEvent: notATempoAction,
