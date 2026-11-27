@@ -554,6 +554,7 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
                 playing: true,
                 engineId: '1',
                 batchesApplied: 3,
+                playheadFrame: 100,
             },
             lastPlaying: {
                 issuedAtMs: 1001,
@@ -562,6 +563,7 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
                 playing: true,
                 engineId: '1',
                 batchesApplied: 3,
+                playheadFrame: 200,
             },
             parked: {
                 issuedAtMs: 1010,
@@ -570,9 +572,10 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
                 playing: false,
                 engineId: '1',
                 batchesApplied: 5,
+                playheadFrame: 200,
             },
-            sampleRate: 48000,
-            outputBufferFrames: 512,
+            advanceFrom: null,
+            advanceTo: null,
             failure: null,
         },
         trackBefore: 'track-1',
@@ -607,9 +610,19 @@ describe('packaged editor workspace proof', () => {
         expect(nativePauseClassification(native, 1000)).toBe('inconclusive');
         native.lastPlaying!.issuedAtMs = 1250;
         native.lastPlaying!.answeredAtMs = 1251;
-        native.parked!.issuedAtMs = 1260;
-        native.parked!.answeredAtMs = 1261;
+        native.parked!.issuedAtMs = 1280;
+        native.parked!.answeredAtMs = 1281;
+        expect(nativePauseClassification(native, 1000)).toBe('inconclusive');
+        native.advanceFrom = { ...native.lastPlaying!, playheadFrame: 100 };
+        native.advanceTo = { ...native.lastPlaying!, issuedAtMs: 1260, answeredAtMs: 1261, playheadFrame: 100 };
+        native.lastPlaying = structuredClone(native.advanceTo);
+        expect(nativePauseClassification(native, 1000)).toBe('inconclusive');
+        native.advanceTo.playheadFrame = 200;
+        native.lastPlaying.playheadFrame = 200;
         expect(nativePauseClassification(native, 1000)).toBe('late');
+        native.advanceFrom.issuedAtMs = 1125;
+        native.advanceFrom.answeredAtMs = 1126;
+        expect(nativePauseClassification(native, 1000)).toBe('inconclusive');
     });
     it('rejects passed stage flags when timeline evidence is missing', async () => {
         const { options, env } = fixture();
@@ -671,9 +684,9 @@ describe('packaged editor workspace proof', () => {
             },
         ],
         [
-            'missing callback size',
+            'invalid native frame',
             (timeline) => {
-                timeline.nativePause!.outputBufferFrames = 0;
+                timeline.nativePause!.before!.playheadFrame = NaN;
             },
         ],
         [

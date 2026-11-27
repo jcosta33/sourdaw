@@ -52,10 +52,11 @@ type PauseWitness = {
 };
 
 function installRenderedPause(button: HTMLElement) {
-    const readout = document.querySelector('[data-testid="transport-playhead"]');
-    if (!readout) {
+    const candidate = document.querySelector('[data-testid="transport-playhead"]');
+    if (!candidate) {
         throw new Error('missing rendered playhead');
     }
+    const readout = candidate;
     const witness: PauseWitness = {
         readout: null,
         trusted: false,
@@ -128,7 +129,12 @@ function installNativeReader() {
         if (typeof batchesApplied !== 'number') {
             throw new TypeError('invalid native batch');
         }
+        const playheadFrame: unknown = Reflect.get(payload, 'playheadFrame');
+        if (typeof playheadFrame !== 'number' || !Number.isSafeInteger(playheadFrame) || playheadFrame < 0) {
+            throw new TypeError('invalid native playhead frame');
+        }
         return {
+            playheadFrame,
             issuedAtMs,
             answeredAtMs,
             running: Reflect.get(payload, 'running') === true,
@@ -137,19 +143,7 @@ function installNativeReader() {
             batchesApplied,
         };
     }
-    async function diagnostics(): Promise<{ sampleRate: number; outputBufferFrames: number }> {
-        const payload = await invoke('engine_rt_diagnostics');
-        if (typeof payload !== 'object' || payload === null) {
-            throw new TypeError('invalid diagnostics');
-        }
-        const sampleRate: unknown = Reflect.get(payload, 'sampleRate');
-        const outputBufferFrames: unknown = Reflect.get(payload, 'outputBufferFrames');
-        if (typeof sampleRate !== 'number' || typeof outputBufferFrames !== 'number') {
-            throw new TypeError('invalid native callback diagnostics');
-        }
-        return { sampleRate, outputBufferFrames };
-    }
-    return { poll, diagnostics };
+    return { poll };
 }
 
 function installNativePause({
@@ -163,8 +157,8 @@ function installNativePause({
         before: null,
         lastPlaying: null,
         parked: null,
-        sampleRate: null,
-        outputBufferFrames: null,
+        advanceFrom: null,
+        advanceTo: null,
         failure: null,
     };
     function record(poll: NativeTransportPoll): boolean {
@@ -181,6 +175,11 @@ function installNativePause({
             throw new Error('native engine unavailable or changed');
         }
         if (poll.playing) {
+            const previous = evidence.lastPlaying;
+            if (previous && poll.playheadFrame > previous.playheadFrame) {
+                evidence.advanceFrom = previous;
+                evidence.advanceTo = poll;
+            }
             evidence.lastPlaying = poll;
             if (witness.clickTimeMs === null) {
                 evidence.before = poll;
@@ -195,6 +194,8 @@ function installNativePause({
             witness.ready = false;
             evidence.before = null;
             evidence.lastPlaying = null;
+            evidence.advanceFrom = null;
+            evidence.advanceTo = null;
         }
         return false;
     }
@@ -212,9 +213,6 @@ function installNativePause({
             }
             if (!witness.stopped && !evidence.parked) {
                 evidence.failure = 'native park not observed before deadline';
-            }
-            if (!witness.stopped && evidence.parked) {
-                Object.assign(evidence, await reader.diagnostics());
             }
         } catch (error) {
             evidence.failure = error instanceof Error ? error.message : String(error);
@@ -265,8 +263,8 @@ export async function pauseAtClick(
             before: null,
             lastPlaying: null,
             parked: null,
-            sampleRate: null,
-            outputBufferFrames: null,
+            advanceFrom: null,
+            advanceTo: null,
             failure: error instanceof Error ? error.message : String(error),
         };
         throw error;

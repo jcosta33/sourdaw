@@ -31,13 +31,14 @@ export type NativeTransportPoll = {
     playing: boolean;
     engineId: string;
     batchesApplied: number;
+    playheadFrame: number;
 };
 export type NativePauseEvidence = {
     before: NativeTransportPoll | null;
     lastPlaying: NativeTransportPoll | null;
     parked: NativeTransportPoll | null;
-    sampleRate: number | null;
-    outputBufferFrames: number | null;
+    advanceFrom: NativeTransportPoll | null;
+    advanceTo: NativeTransportPoll | null;
     failure: string | null;
 };
 export type WorkspaceObservation = {
@@ -131,27 +132,26 @@ export function nativePauseClassification(
     if (!evidence || evidence.failure || !Number.isFinite(clickTimeMs)) {
         return 'inconclusive';
     }
-    const { before, lastPlaying, parked, sampleRate, outputBufferFrames } = evidence;
-    if (!before || !lastPlaying || !parked || !sampleRate || !outputBufferFrames) {
+    const { before, lastPlaying, parked, advanceFrom, advanceTo } = evidence;
+    if (!before || !lastPlaying || !parked) {
         return 'inconclusive';
     }
-    if (
-        !validNativePolls(before, lastPlaying, parked) ||
-        !validNativeOrder(before, lastPlaying, parked, clickTimeMs) ||
-        !Number.isFinite(sampleRate) ||
-        sampleRate <= 0 ||
-        !Number.isFinite(outputBufferFrames) ||
-        !Number.isInteger(outputBufferFrames) ||
-        outputBufferFrames <= 0
-    ) {
+    if (!validNativePolls(before, lastPlaying, parked) || !validNativeOrder(before, lastPlaying, parked, clickTimeMs)) {
         return 'inconclusive';
     }
-    const lowerMs = lastPlaying.issuedAtMs - (outputBufferFrames / sampleRate) * 1000 - clickTimeMs;
     const upperMs = parked.answeredAtMs - clickTimeMs;
     if (upperMs <= 125) {
         return 'prompt';
     }
-    return lowerMs > 125 ? 'late' : 'inconclusive';
+    if (
+        advanceFrom &&
+        advanceTo &&
+        validNativeAdvance(before, lastPlaying, parked, advanceFrom, advanceTo) &&
+        advanceFrom.issuedAtMs - clickTimeMs > 125
+    ) {
+        return 'late';
+    }
+    return 'inconclusive';
 }
 
 function validNativePolls(
@@ -167,7 +167,9 @@ function validNativePolls(
         poll.running === true &&
         /^[1-9][0-9]*$/u.test(poll.engineId) &&
         Number.isSafeInteger(poll.batchesApplied) &&
-        poll.batchesApplied >= 0;
+        poll.batchesApplied >= 0 &&
+        Number.isSafeInteger(poll.playheadFrame) &&
+        poll.playheadFrame >= 0;
     return (
         [before, lastPlaying, parked].every(validPoll) &&
         before.playing === true &&
@@ -177,6 +179,25 @@ function validNativePolls(
         before.engineId === parked.engineId &&
         parked.batchesApplied > before.batchesApplied &&
         parked.batchesApplied > lastPlaying.batchesApplied
+    );
+}
+
+function validNativeAdvance(
+    before: NativeTransportPoll,
+    lastPlaying: NativeTransportPoll,
+    parked: NativeTransportPoll,
+    from: NativeTransportPoll,
+    to: NativeTransportPoll
+): boolean {
+    return (
+        validNativePolls(before, from, parked) &&
+        validNativePolls(before, to, parked) &&
+        from.engineId === to.engineId &&
+        from.answeredAtMs <= to.issuedAtMs &&
+        from.issuedAtMs >= before.issuedAtMs &&
+        to.answeredAtMs <= lastPlaying.answeredAtMs &&
+        to.playheadFrame > from.playheadFrame &&
+        to.batchesApplied >= from.batchesApplied
     );
 }
 
