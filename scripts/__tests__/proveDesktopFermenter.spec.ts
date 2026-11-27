@@ -60,10 +60,26 @@ describe('bound Crumbs sampler record', () => {
                 hostSupported: true,
                 async drive(_binary, observations) {
                     observations.unavailable = 'capture-clock-or-input-unavailable';
+                    observations.quits.push({ code: 0, signal: null, forced: false });
                 },
             }
         );
         expect(record).toMatchObject({ verdict: 'not-run', failureCode: 'capture-unavailable' });
+    });
+    it('fails an observed crash even when capture was unavailable', async () => {
+        const { options, env } = fixture();
+        const record = await runCrumbsSamplerProof(
+            options,
+            { ...env, GITHUB_EVENT_NAME: 'schedule', GITHUB_REF: 'refs/heads/main' },
+            {
+                hostSupported: true,
+                async drive(_binary, observations) {
+                    observations.unavailable = 'capture-clock-or-input-unavailable';
+                    observations.quits.push({ code: null, signal: 'SIGSEGV', forced: false });
+                },
+            }
+        );
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'crumbs-observations-incomplete' });
     });
     it('fails when teardown throws even if capture was already unavailable', async () => {
         const { options, env } = fixture();

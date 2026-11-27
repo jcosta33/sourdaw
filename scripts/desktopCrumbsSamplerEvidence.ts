@@ -153,6 +153,9 @@ function validTrials(trials: CrumbsTrial[]): boolean {
 export function crumbsSamplerFailure(
     observation: CrumbsSamplerObservations
 ): 'capture-unavailable' | 'crumbs-observations-incomplete' | 'crumbs-control-invalid' | 'crumbs-audio-invalid' | null {
+    if (observation.quits.some((quit) => !validQuit(quit))) {
+        return 'crumbs-observations-incomplete';
+    }
     if (observation.unavailable) {
         return 'capture-unavailable';
     }
