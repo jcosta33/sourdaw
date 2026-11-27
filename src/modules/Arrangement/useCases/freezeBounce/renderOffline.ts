@@ -121,7 +121,7 @@ export async function renderTrackOffline(
     targetTrack: Track,
     startBeat: number,
     endBeat: number,
-    options?: RenderOfflineOptions
+    options: RenderOfflineOptions = {}
 ): Promise<AudioBuffer | null> {
     const eligibility = getTrackEligibility(targetTrack.kind);
     if (!eligibility.acceptsClipAdd) {
@@ -142,17 +142,17 @@ export async function renderTrackOffline(
         printTrackIds,
         startBeat,
         endBeat,
-        tailSeconds: options?.autoTail ? AUTO_TAIL_SECONDS : (options?.tailSeconds ?? 0),
-        targetMixer: options?.targetMixer ?? 'bake',
-        cropPrintedLatency: options?.cropPrintedLatency,
-        includeInserts: options?.includeInserts ?? true,
-        includeAutomation: options?.includeAutomation ?? true,
-        includeSends: options?.includeSends ?? true,
-        onProgress: options?.onProgress,
-        onScheduled: options?.onScheduled,
-        onWarning: options?.onWarning ?? reportDroppedDeviceToUser,
-        abortSignal: options?.abortSignal,
-        source: options?.captured?.source,
+        tailSeconds: options.autoTail ? AUTO_TAIL_SECONDS : (options.tailSeconds ?? 0),
+        targetMixer: options.targetMixer ?? 'bake',
+        cropPrintedLatency: options.cropPrintedLatency,
+        includeInserts: options.includeInserts ?? true,
+        includeAutomation: options.includeAutomation ?? true,
+        includeSends: options.includeSends ?? true,
+        onProgress: options.onProgress,
+        onScheduled: options.onScheduled,
+        onWarning: options.onWarning ?? reportDroppedDeviceToUser,
+        abortSignal: options.abortSignal,
+        source: options.captured?.source,
     });
 
     if (!buffer) {
@@ -160,11 +160,11 @@ export async function renderTrackOffline(
     }
 
     let finalBuffer = buffer;
-    if (options?.autoTail) {
+    if (options.autoTail) {
         finalBuffer = trimSilence(finalBuffer, -80);
     }
 
-    if (options?.normalization && options.normalization !== 'off') {
+    if (options.normalization && options.normalization !== 'off') {
         finalBuffer = normalizeBuffer(finalBuffer, options.normalization);
     }
 

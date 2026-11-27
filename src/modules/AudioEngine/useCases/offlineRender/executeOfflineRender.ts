@@ -14,7 +14,7 @@ import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
 import { endExportCancellationScope } from './endExportCancellationScope';
 import { resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { scheduleOfflineMix } from './scheduleOfflineMix';
-import { tryNativeOfflineRender } from './tryNativeOfflineRender';
+import { type NativeOfflineRender, tryNativeOfflineRender } from './tryNativeOfflineRender';
 import { type OfflineRenderOptions } from './types';
 
 function withPreemption(preemption: AbortSignal, callerSignal: AbortSignal | undefined): AbortSignal {
@@ -30,6 +30,17 @@ function combineSignals(...signals: readonly (AbortSignal | undefined)[]): Abort
         return undefined;
     }
     return AbortSignal.any(present);
+}
+
+/** A declined native render leaves no buffer, and the Web Audio render that replaces it prints the plan's head. */
+function readNativeRender(
+    native: NativeOfflineRender | null,
+    plan: ReturnType<typeof resolveOfflineMixPlan>
+): { buffer: AudioBuffer | undefined; compensationHeadFrameCount: number } {
+    if (native === null) {
+        return { buffer: undefined, compensationHeadFrameCount: plan.compensationHeadFrameCount };
+    }
+    return native;
 }
 
 /**
@@ -70,17 +81,14 @@ export async function executeOfflineRender(
         const cancellationSignal = combineSignals(scopeSignal, abortSignal);
         const input = capture();
         const { sampleRate, historyFrameCount, outputFrameCount } = input;
-        // A musician's export is the file they hear, so it prints the latency
-        // compensation every strip is held by from the head and keeps its
-        // length (#7312). An agent render keeps the base span it measures.
+        // A musician's export is the file they hear, so it prints the compensation every strip is held
+        // by from the head and keeps its length (#7312). An agent render keeps the base span it measures.
         const plan = resolveOfflineMixPlan(input, callbacks.onWarning, {
             printsCompensationHead: holder === 'musician-export',
         });
-        // The native render stops mid-flight on the same signal instrument
-        // setup does, so an export's Cancel reaches a render already running.
+        // An export's Cancel reaches a native render mid-flight through the signal instrument setup reads.
         const native = await tryNativeOfflineRender(input, plan, { ...callbacks, abortSignal: cancellationSignal });
-        let buffer = native?.buffer;
-        const compensationHeadFrameCount = native?.compensationHeadFrameCount ?? plan.compensationHeadFrameCount;
+        let { buffer, compensationHeadFrameCount } = readNativeRender(native, plan);
         if (!buffer) {
             const offlineCtx = new OfflineAudioContext(2, plan.frameCount, sampleRate);
             // Device construction and every track share this context’s frame scheduler.

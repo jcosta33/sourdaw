@@ -195,6 +195,30 @@ function writeCommands(
 }
 
 /**
+ * The native render's output as the export's buffer. The master level is the web path's
+ * `masterGain` node, applied here in the one place the native render's output crosses back.
+ */
+function printedStereoBuffer(
+    { left, right }: PlanarStereo,
+    {
+        frameCount,
+        sampleRate,
+        masterGainValue,
+    }: Readonly<{ frameCount: number; sampleRate: number; masterGainValue: number }>
+): AudioBuffer {
+    if (masterGainValue !== 1) {
+        for (let frame = 0; frame < left.length; frame++) {
+            left[frame] = left[frame]! * masterGainValue;
+            right[frame] = right[frame]! * masterGainValue;
+        }
+    }
+    const buffer = new AudioBuffer({ length: frameCount, numberOfChannels: STEREO_CHANNEL_COUNT, sampleRate });
+    buffer.copyToChannel(left, 0);
+    buffer.copyToChannel(right, 1);
+    return buffer;
+}
+
+/**
  * The sends the native graph has a path for, from a track or a bus alike — the
  * same admission as live `sendCommands` in `projectLiveGraphTopology`: no send
  * naming a bus this render did not build, which the Web Audio render does not
@@ -569,24 +593,13 @@ export async function renderOfflineWithNativeEngine(
         try {
             rendered = await backend.render(frameCount, {
                 abortSignal,
-                printsCompensationHead: input.printsCompensationHead ?? false,
+                printsCompensationHead: input.printsCompensationHead === true,
             });
         } catch (error: unknown) {
             return answerNativeRenderFailure(error, abortSignal);
         }
-        const { left, right } = rendered;
         checkCancel(abortSignal);
-        // The master level is the web path's `masterGain` node, applied here
-        // in the one place the native render's output crosses back.
-        if (masterGainValue !== 1) {
-            for (let frame = 0; frame < left.length; frame++) {
-                left[frame] = left[frame]! * masterGainValue;
-                right[frame] = right[frame]! * masterGainValue;
-            }
-        }
-        const buffer = new AudioBuffer({ length: frameCount, numberOfChannels: STEREO_CHANNEL_COUNT, sampleRate });
-        buffer.copyToChannel(left, 0);
-        buffer.copyToChannel(right, 1);
+        const buffer = printedStereoBuffer(rendered, { frameCount, sampleRate, masterGainValue });
         for (const message of bufferedWarnings) {
             onWarning?.(message);
         }

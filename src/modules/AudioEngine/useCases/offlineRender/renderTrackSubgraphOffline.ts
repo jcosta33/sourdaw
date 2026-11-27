@@ -22,7 +22,7 @@ import { createOfflineTrackStrip } from './createOfflineTrackStrip';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './destroyOfflineDeviceStrategies';
 import { resolveTrackAdjustmentComposition } from './offlineAdjustmentLayers';
-import { planPrintedLatencyFrames } from './planPrintedLatencyFrames';
+import { planSubgraphPrintedLatency } from './planSubgraphPrintedLatency';
 import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { readOfflineAdjustmentLayerSnapshot } from './readOfflineAdjustmentLayerSnapshot';
@@ -35,7 +35,6 @@ import { scheduleOfflineAdjustmentCurves } from './scheduleOfflineAdjustmentCurv
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
 import { type OfflineScheduleTally, type OfflineTrackStrip, type PendingWorkletEvent } from './types';
-import { unprintedDeviceTypes } from './unprintedDeviceTypes';
 import { wireAdjustmentBusChain } from './wireAdjustmentBusChain';
 import { yieldToMain } from './yieldToMain';
 
@@ -162,7 +161,7 @@ export async function renderTrackSubgraphOffline({
     includeSends = true,
     targetMixer = 'bake',
     includeTargetVca = false,
-    cropPrintedLatency = false,
+    cropPrintedLatency,
     onProgress,
     onWarning,
     onScheduled,
@@ -212,18 +211,16 @@ export async function renderTrackSubgraphOffline({
     if (baseFrameCount <= 0) {
         return null;
     }
-    let shiftFrames = 0;
-    if (cropPrintedLatency) {
-        const targetDevices = renderTracks.find((track) => track.id === targetTrackId)?.devices ?? [];
-        shiftFrames = planPrintedLatencyFrames({
-            trackId: targetTrackId,
-            latency: captured?.scheduling.latency,
-            unprintedDeviceTypes: unprintedDeviceTypes(targetDevices, includeInserts),
-            sampleRate,
-            baseFrameCount,
-            onWarning,
-        });
-    }
+    const shiftFrames = planSubgraphPrintedLatency({
+        cropPrintedLatency,
+        targetTrackId,
+        renderTracks,
+        includeInserts,
+        captured,
+        sampleRate,
+        baseFrameCount,
+        onWarning,
+    });
     const durationSeconds = baseDurationSeconds + shiftFrames / sampleRate;
     const offlineCtx = new OfflineAudioContext(2, baseFrameCount + shiftFrames, sampleRate);
     // The frame scheduler for this context. One instance per

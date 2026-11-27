@@ -15,7 +15,7 @@ import { type OfflineRenderOptions } from './types';
  * compensation sit ahead of the requested window. The engine has already
  * dropped the depth it holds the master to.
  */
-type NativeOfflineRender = { buffer: AudioBuffer; compensationHeadFrameCount: number };
+export type NativeOfflineRender = { buffer: AudioBuffer; compensationHeadFrameCount: number };
 
 /**
  * The native render's own printed head. Its programme delays the master by less than
