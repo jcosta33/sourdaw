@@ -2680,6 +2680,46 @@ fn both_state_chunks_round_trip_through_the_seams_single_blob() {
     );
 }
 
+/// A write queued before a load is older than the state that replaced it.
+/// Delivering it in the next block would revert its parameter to the value the
+/// load just overwrote.
+#[test]
+fn a_host_write_queued_before_a_state_load_does_not_reach_the_next_block() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, SPLIT_COMPONENT_CID);
+    render(&mut wrapper, 1.0, 8);
+    wrapper.set_parameter(GAIN_PARAM, 0.25);
+
+    wrapper
+        .set_state(&encode_state(b"processor-state", b""))
+        .expect("the processor takes the chunk");
+    render(&mut wrapper, 1.0, 8);
+
+    assert_eq!(
+        state.processor_gain(),
+        1.0,
+        "a write made before the load reached the processor after it"
+    );
+}
+
+/// A refused load left the processor on its previous state, so the write made
+/// for that state is still owed to it.
+#[test]
+fn a_host_write_queued_before_a_refused_state_load_still_reaches_the_next_block() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, SPLIT_COMPONENT_CID);
+    render(&mut wrapper, 1.0, 8);
+    wrapper.set_parameter(GAIN_PARAM, 0.25);
+    state.refuses_set_state.store(true, Ordering::Release);
+
+    wrapper
+        .set_state(&encode_state(b"processor-state", b""))
+        .expect_err("the processor refused the chunk");
+    render(&mut wrapper, 1.0, 8);
+
+    assert_eq!(state.processor_gain(), 0.25);
+}
+
 /// A combined class is one object, so its two `getState` entry points return the
 /// same chunk. Storing it twice would double the blob and re-apply it twice on
 /// load.
