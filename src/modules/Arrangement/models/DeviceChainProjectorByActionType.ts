@@ -333,7 +333,6 @@ export const deviceChainProjectorByActionType: {
     variationMidi: null,
     generateBassline: null,
     replayGeneratedMidi: null,
-    stemSeparate: null,
     autoOrganizeProject: null,
     addChordEvent: null,
     moveChordEvent: null,

@@ -309,7 +309,6 @@ export const indirectMutationByActionType: {
     variationMidi: indirectMutationRules.none,
     generateBassline: indirectMutationRules.none,
     replayGeneratedMidi: indirectMutationRules.none,
-    stemSeparate: indirectMutationRules.none,
     autoOrganizeProject: indirectMutationRules.none,
     addChordEvent: indirectMutationRules.none,
     moveChordEvent: indirectMutationRules.none,

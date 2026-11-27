@@ -305,7 +305,6 @@ export const clipLifecycleKindByActionType: { readonly [Type in AppActionType]: 
     variationMidi: 'none',
     generateBassline: 'none',
     replayGeneratedMidi: 'none',
-    stemSeparate: 'none',
     autoOrganizeProject: 'none',
     addChordEvent: 'none',
     moveChordEvent: 'none',

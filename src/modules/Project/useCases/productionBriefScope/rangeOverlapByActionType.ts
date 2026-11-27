@@ -313,7 +313,6 @@ export const rangeOverlapByActionType: {
     variationMidi: rangeOverlapRules.none,
     generateBassline: rangeOverlapRules.none,
     replayGeneratedMidi: rangeOverlapRules.none,
-    stemSeparate: rangeOverlapRules.none,
     autoOrganizeProject: rangeOverlapRules.none,
     addChordEvent: rangeOverlapRules.addedChordEvent,
     moveChordEvent: rangeOverlapRules.movedChordEvent,

@@ -320,7 +320,6 @@ const SERIALIZED_ARGUMENTS_CHECKS: { readonly [Type in AppActionType]: Serialize
     variationMidi: anyArguments,
     generateBassline: anyArguments,
     replayGeneratedMidi: anyArguments,
-    stemSeparate: anyArguments,
     autoOrganizeProject: anyArguments,
     addChordEvent: anyArguments,
     moveChordEvent: anyArguments,

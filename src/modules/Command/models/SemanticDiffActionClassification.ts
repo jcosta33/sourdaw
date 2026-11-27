@@ -323,7 +323,6 @@ export const semanticDiffClassificationByActionType: {
     variationMidi: NONE,
     generateBassline: NONE,
     replayGeneratedMidi: NONE,
-    stemSeparate: { externalEffect: true },
     autoOrganizeProject: NONE,
     addChordEvent: NONE,
     moveChordEvent: { moved: true },

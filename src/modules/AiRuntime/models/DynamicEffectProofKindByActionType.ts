@@ -304,7 +304,6 @@ export const dynamicEffectProofKindByActionType: { readonly [Type in AppActionTy
     variationMidi: 'none',
     generateBassline: 'none',
     replayGeneratedMidi: 'none',
-    stemSeparate: 'none',
     autoOrganizeProject: 'none',
     addChordEvent: 'none',
     moveChordEvent: 'none',

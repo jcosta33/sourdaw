@@ -319,7 +319,6 @@ export const plannedOwnerProjectorByActionType: {
     variationMidi: projectEveryOwner,
     generateBassline: projectEveryOwner,
     replayGeneratedMidi: projectEveryOwner,
-    stemSeparate: projectEveryOwner,
     autoOrganizeProject: projectEveryOwner,
     addChordEvent: projectEveryOwner,
     moveChordEvent: projectEveryOwner,

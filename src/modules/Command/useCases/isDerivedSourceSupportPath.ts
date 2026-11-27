@@ -318,7 +318,6 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     variationMidi: noSupportPath,
     generateBassline: noSupportPath,
     replayGeneratedMidi: noSupportPath,
-    stemSeparate: noSupportPath,
     autoOrganizeProject: noSupportPath,
     addChordEvent: noSupportPath,
     moveChordEvent: noSupportPath,

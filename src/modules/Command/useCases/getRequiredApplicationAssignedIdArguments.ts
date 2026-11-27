@@ -342,7 +342,6 @@ const REQUIRED_ID_ARGUMENTS: { readonly [Type in AppActionType]: RequiredIdArgum
     variationMidi: ruleDrivenArguments,
     generateBassline: ruleDrivenArguments,
     replayGeneratedMidi: ruleDrivenArguments,
-    stemSeparate: ruleDrivenArguments,
     autoOrganizeProject: ruleDrivenArguments,
     addChordEvent: ruleDrivenArguments,
     moveChordEvent: ruleDrivenArguments,

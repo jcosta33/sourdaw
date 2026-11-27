@@ -455,7 +455,6 @@ const projectTakeLaneActionByActionType: {
     variationMidi: keepLanes,
     generateBassline: keepLanes,
     replayGeneratedMidi: keepLanes,
-    stemSeparate: keepLanes,
     autoOrganizeProject: keepLanes,
     addChordEvent: keepLanes,
     moveChordEvent: keepLanes,

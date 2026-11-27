@@ -83,7 +83,6 @@ const expectedByFlag = {
         'exportDawProject',
         'exportMidi',
         'exportProject',
-        'stemSeparate',
         'audioToMidi',
     ],
     structuralAudio: [

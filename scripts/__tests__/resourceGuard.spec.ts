@@ -117,7 +117,8 @@ function startMarkerServer(
     });
 }
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+// The bound is only a fail-safe against a hung condition; each caller waits on an event.
+async function waitUntil(predicate: () => boolean, timeoutMs = 60_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (!predicate()) {
         if (Date.now() >= deadline) {
@@ -3890,6 +3891,12 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             }
         });
 
+        // The guard's observer polls serially, so the second request the proof answers
+        // proves the first already verified the server under this run's token. The proof
+        // ends on that request count, never on a wall-clock delay a loaded host can
+        // outrun before the first poll lands.
+        const requestsBeforeEnd = 2;
+
         // The generated proof child imports the real marker middleware; under
         // Vitest import.meta.url is an HTTP module URL, so anchor at the
         // checkout root the test run executes from instead.
@@ -3919,10 +3926,14 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     '// a Playwright-run e2e server mounts, fed the run token the guard',
                     '// handed this proof through the environment.',
                     `const marker = createSourdawRootHeaderMiddleware(process.cwd(), ${tokenExpression});`,
+                    'let served = 0;',
                     'const server = createServer((request, response) => {',
                     "    appendFileSync('requests.log', 'x');",
                     '    marker(request, response, () => {',
-                    "        response.end('ok');",
+                    "        response.end('ok', () => {",
+                    '            served += 1;',
+                    `            if (served === ${requestsBeforeEnd}) ${endStatement};`,
+                    '        });',
                     '    });',
                     '});',
                     "server.listen(Number(process.env.SOURDAW_E2E_PORT), '127.0.0.1', () => {",
@@ -3931,7 +3942,6 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     '        args: process.argv.slice(2),',
                     '        port: process.env.SOURDAW_E2E_PORT,',
                     '    }));',
-                    `    setTimeout(() => ${endStatement}, 800);`,
                     '});',
                 ].join('\n')
             );
@@ -4159,8 +4169,9 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                             // Polls are serialized, so a second request means the first
                             // response already verified the server under this run's token.
                             await waitUntil(
-                                () => existsSync(requestLog) && readFileSync(requestLog, 'utf8').length >= 2,
-                                10_000
+                                () =>
+                                    existsSync(requestLog) &&
+                                    readFileSync(requestLog, 'utf8').length >= requestsBeforeEnd
                             );
                             process.emit(interrupt);
                             return running;

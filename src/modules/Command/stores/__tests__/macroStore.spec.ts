@@ -114,6 +114,38 @@ describe('macroStore', () => {
         });
     });
 
+    it('should drop persisted macros containing the retired stem separation action', async () => {
+        const state = await loadHydratedMacroState(
+            JSON.stringify([
+                {
+                    id: 'valid',
+                    name: 'Valid',
+                    createdAt: 42,
+                    actions: [{ type: 'togglePlayback' }],
+                },
+                {
+                    id: 'stem-separate',
+                    name: 'Stem separate',
+                    createdAt: 43,
+                    actions: [{ type: 'togglePlayback' }, { type: 'stemSeparate', payload: { clipId: 'clip-1' } }],
+                },
+            ])
+        );
+
+        expect(state).toEqual({
+            macros: [
+                {
+                    id: 'valid',
+                    name: 'Valid',
+                    createdAt: 42,
+                    actions: [{ type: 'togglePlayback' }],
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+    });
+
     it('should hydrate malformed raw storage text to empty runtime state', async () => {
         const state = await loadHydratedMacroState('{not json');
 

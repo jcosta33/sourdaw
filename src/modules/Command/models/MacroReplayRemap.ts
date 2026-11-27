@@ -441,7 +441,6 @@ export const macroReplayRemapByActionType: {
     variationMidi: leaveReferencesUnmapped,
     generateBassline: leaveReferencesUnmapped,
     replayGeneratedMidi: leaveReferencesUnmapped,
-    stemSeparate: leaveReferencesUnmapped,
     autoOrganizeProject: leaveReferencesUnmapped,
     addChordEvent: leaveReferencesUnmapped,
     moveChordEvent: remapChordEvent,

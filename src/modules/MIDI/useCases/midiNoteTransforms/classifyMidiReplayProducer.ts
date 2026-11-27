@@ -322,7 +322,6 @@ const midiReplayProducerByActionType: {
     variationMidi: producesNothing,
     generateBassline: producesNothing,
     replayGeneratedMidi: producesNothing,
-    stemSeparate: producesNothing,
     autoOrganizeProject: producesNothing,
     addChordEvent: producesNothing,
     moveChordEvent: producesNothing,
