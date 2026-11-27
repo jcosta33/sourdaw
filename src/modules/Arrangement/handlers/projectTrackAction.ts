@@ -473,7 +473,6 @@ export const trackProjectionByActionType: {
     variationMidi: keepTrack,
     generateBassline: keepTrack,
     replayGeneratedMidi: keepTrack,
-    stemSeparate: keepTrack,
     autoOrganizeProject: keepTrack,
     addChordEvent: keepTrack,
     moveChordEvent: keepTrack,

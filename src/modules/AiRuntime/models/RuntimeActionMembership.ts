@@ -362,7 +362,6 @@ const runtimeActionMembershipByActionType = {
     restoreLegacyVcaState: false,
     restoreMidiOutput: false,
     replayGeneratedMidi: false,
-    stemSeparate: false,
     moveChordEvent: false,
     updateChordEvent: false,
     restoreChordTrackState: false,

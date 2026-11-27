@@ -340,7 +340,6 @@ const stampByActionType: Stamp = {
     variationMidi: leaveUnstamped,
     generateBassline: leaveUnstamped,
     replayGeneratedMidi: leaveUnstamped,
-    stemSeparate: leaveUnstamped,
     autoOrganizeProject: leaveUnstamped,
     addChordEvent: leaveUnstamped,
     moveChordEvent: leaveUnstamped,

@@ -369,7 +369,6 @@ const HANDLER_MINTED_ID_READERS: { readonly [Type in AppActionType]: HandlerMint
     variationMidi: noHandlerMintedIds,
     generateBassline: noHandlerMintedIds,
     replayGeneratedMidi: noHandlerMintedIds,
-    stemSeparate: noHandlerMintedIds,
     autoOrganizeProject: noHandlerMintedIds,
     addChordEvent: noHandlerMintedIds,
     moveChordEvent: noHandlerMintedIds,
