@@ -558,6 +558,7 @@ const addActionSourceOwnersByActionType: {
     loadRaveModel: addNoOwners,
     setRaveBlend: addNoOwners,
     enableWarping: addNoOwners,
+    setClipWarpState: addNoOwners,
     setWarpAlgorithm: addNoOwners,
     setWarpPitchShift: addNoOwners,
     setYeastProcessorParam: addNoOwners,

@@ -442,6 +442,7 @@ const hasUnprojectedAudioSourceWriteByActionType: {
     loadRaveModel: noUnprojectedWrite,
     setRaveBlend: noUnprojectedWrite,
     enableWarping: noUnprojectedWrite,
+    setClipWarpState: noUnprojectedWrite,
     setWarpAlgorithm: noUnprojectedWrite,
     setWarpPitchShift: noUnprojectedWrite,
     setYeastProcessorParam: noUnprojectedWrite,

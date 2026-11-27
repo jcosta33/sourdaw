@@ -454,6 +454,7 @@ const midiSnapshotByActionType: {
     loadRaveModel: unchangedSnapshot,
     setRaveBlend: unchangedSnapshot,
     enableWarping: unchangedSnapshot,
+    setClipWarpState: unchangedSnapshot,
     setWarpAlgorithm: unchangedSnapshot,
     setWarpPitchShift: unchangedSnapshot,
     setYeastProcessorParam: unchangedSnapshot,

@@ -397,6 +397,7 @@ const renderReceiptGateByActionType: GateLookup = {
     loadRaveModel: notRenderReceiptGated,
     setRaveBlend: notRenderReceiptGated,
     enableWarping: notRenderReceiptGated,
+    setClipWarpState: notRenderReceiptGated,
     setWarpAlgorithm: notRenderReceiptGated,
     setWarpPitchShift: notRenderReceiptGated,
     setYeastProcessorParam: notRenderReceiptGated,

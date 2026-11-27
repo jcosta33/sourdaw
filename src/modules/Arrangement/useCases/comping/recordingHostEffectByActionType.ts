@@ -399,6 +399,7 @@ export const recordingHostEffectByActionType: {
     loadRaveModel: leaveHosts,
     setRaveBlend: leaveHosts,
     enableWarping: leaveHosts,
+    setClipWarpState: leaveHosts,
     setWarpAlgorithm: leaveHosts,
     setWarpPitchShift: leaveHosts,
     setYeastProcessorParam: leaveHosts,

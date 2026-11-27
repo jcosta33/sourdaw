@@ -1,127 +1,91 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    pushUndoEntry: vi.fn(),
-}));
+import { redo, undo } from '#/modules/Command/useCases';
 
-vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
-    pushUndoEntry: mocks.pushUndoEntry,
-}));
-
-import { warpStates } from '../../../stores/warpStates';
+import {
+    closeWarpActionProject,
+    openWarpActionProject,
+    WARP_AUDIO_CLIP_ID,
+} from '../../../__tests__/warpActionProject';
+import { type WarpState } from '../../../models/WarpMarker';
+import { getStoredWarpState, warpStates } from '../../../stores/warpStates';
 import { commitWarpMarkerBeatDrag } from '../commitWarpMarkerBeatDrag';
+
+const clipId = WARP_AUDIO_CLIP_ID;
+const BEFORE_DRAG: WarpState = {
+    enabled: true,
+    markers: [
+        { id: 'm1', originalBeat: 1, warpedBeat: 2, origin: 'user' },
+        { id: 'm2', originalBeat: 4, warpedBeat: 4, origin: 'user' },
+    ],
+    stretchMode: 'phase-vocoder',
+    originalTempo: null,
+};
 
 describe('commitWarpMarkerBeatDrag', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
-        warpStates.clear();
+        openWarpActionProject();
+        warpStates.set(clipId, BEFORE_DRAG);
     });
 
-    it('should create one undo entry from the start beats to the current beats', () => {
-        warpStates.set('c1', {
-            enabled: true,
-            markers: [
-                { id: 'm1', originalBeat: 1.25, warpedBeat: 2.5, origin: 'user' },
-                { id: 'm2', originalBeat: 4, warpedBeat: 4, origin: 'user' },
-            ],
-            stretchMode: 'phase-vocoder',
-            originalTempo: null,
-        });
+    afterEach(closeWarpActionProject);
 
-        commitWarpMarkerBeatDrag({
-            clipId: 'c1',
-            markerId: 'm1',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 2,
-        });
+    it('commits the drag as one action whose single undo restores the pre-drag markers', async () => {
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', originalBeat: 1.25, warpedBeat: 2.5 });
 
-        const [label, undo, redo] = mocks.pushUndoEntry.mock.calls[0] as [string, () => void, () => void];
-        expect(label).toBe('Move elastic marker');
-
-        undo();
-        expect(warpStates.get('c1')?.markers).toEqual([
-            { id: 'm1', originalBeat: 1, warpedBeat: 2, origin: 'user' },
-            { id: 'm2', originalBeat: 4, warpedBeat: 4, origin: 'user' },
-        ]);
-
-        redo();
-        expect(warpStates.get('c1')?.markers).toEqual([
+        expect(getStoredWarpState(clipId)?.markers).toEqual([
             { id: 'm1', originalBeat: 1.25, warpedBeat: 2.5, origin: 'user' },
             { id: 'm2', originalBeat: 4, warpedBeat: 4, origin: 'user' },
         ]);
+
+        await undo();
+        expect(getStoredWarpState(clipId)).toEqual(BEFORE_DRAG);
+
+        await redo();
+        expect(getStoredWarpState(clipId)?.markers[0]).toEqual({
+            id: 'm1',
+            originalBeat: 1.25,
+            warpedBeat: 2.5,
+            origin: 'user',
+        });
     });
 
-    it('should not create an undo entry when the marker did not move', () => {
-        warpStates.set('c1', {
-            enabled: true,
-            markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 2, origin: 'user' }],
-            stretchMode: 'phase-vocoder',
-            originalTempo: null,
+    it('keeps a change to the field the drag did not move that landed while the drag was in flight', async () => {
+        // A peer write or an Undo changes originalBeat after the drag started and before it is released.
+        warpStates.set(clipId, {
+            ...BEFORE_DRAG,
+            markers: [{ id: 'm1', originalBeat: 1.5, warpedBeat: 2, origin: 'user' }, BEFORE_DRAG.markers[1]!],
         });
 
-        commitWarpMarkerBeatDrag({
-            clipId: 'c1',
-            markerId: 'm1',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 2,
-        });
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', warpedBeat: 2.5 });
 
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(getStoredWarpState(clipId)?.markers[0]).toEqual({
+            id: 'm1',
+            originalBeat: 1.5,
+            warpedBeat: 2.5,
+            origin: 'user',
+        });
     });
 
-    it('should not create warp state for a missing clip', () => {
-        commitWarpMarkerBeatDrag({
-            clipId: 'missing',
-            markerId: 'm1',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 2,
-        });
+    it('records no history entry when the marker ends where it started', async () => {
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', originalBeat: 1.25, warpedBeat: 2.5 });
+
+        // A drag that ends where the marker already is must not add an entry on top of the real one.
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'm1', originalBeat: 1.25, warpedBeat: 2.5 });
+        await undo();
+
+        expect(getStoredWarpState(clipId)).toEqual(BEFORE_DRAG);
+    });
+
+    it('does not create warp state for a missing clip', async () => {
+        await commitWarpMarkerBeatDrag({ clipId: 'missing', markerId: 'm1', originalBeat: 1, warpedBeat: 2 });
 
         expect(warpStates.has('missing')).toBe(false);
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('does not create an undo entry when the marker id is absent from the warp state', () => {
-        warpStates.set('c1', {
-            enabled: true,
-            markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 2, origin: 'user' }],
-            stretchMode: 'phase-vocoder',
-            originalTempo: null,
-        });
+    it('leaves the state alone when the marker id is absent', async () => {
+        await commitWarpMarkerBeatDrag({ clipId, markerId: 'absent', originalBeat: 1, warpedBeat: 9 });
 
-        commitWarpMarkerBeatDrag({
-            clipId: 'c1',
-            markerId: 'absent',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 2,
-        });
-
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
-    });
-
-    it('undo and redo are no-ops when the clip warp state has been cleared in the meantime', () => {
-        warpStates.set('c1', {
-            enabled: true,
-            markers: [{ id: 'm1', originalBeat: 1.25, warpedBeat: 2.5, origin: 'user' }],
-            stretchMode: 'phase-vocoder',
-            originalTempo: null,
-        });
-
-        commitWarpMarkerBeatDrag({
-            clipId: 'c1',
-            markerId: 'm1',
-            beforeOriginalBeat: 1,
-            beforeWarpedBeat: 2,
-        });
-
-        const [, undo, redo] = mocks.pushUndoEntry.mock.calls[0] as [string, () => void, () => void];
-
-        // The warp state is removed before undo/redo replay: setMarkerBeatValues
-        // must short-circuit instead of recreating state.
-        warpStates.delete('c1');
-        expect(() => undo()).not.toThrow();
-        expect(() => redo()).not.toThrow();
-        expect(warpStates.has('c1')).toBe(false);
+        expect(getStoredWarpState(clipId)).toEqual(BEFORE_DRAG);
     });
 });

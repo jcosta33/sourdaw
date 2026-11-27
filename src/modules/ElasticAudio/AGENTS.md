@@ -14,7 +14,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/ind
 
 - **`stores/elasticAudio.ts`**: Open clip, detection lifecycle state, marker selection, and active editor tool. Last-used detection sensitivity belongs to the client-local Preferences store, not this session store.
 - **`stores/audioWarp.ts`**: Per-clip warp settings (algorithm, pitch shift semitones/cents, warp enabled, transient sensitivity).
-- **`presentations/views/`**: `ElasticEditorPanel.tsx` interactive transient visualizer and marker manipulation surface.
+- **`presentations/views/`**: `ElasticEditorPanel.tsx` interactive transient visualizer and marker manipulation surface. Its marker edits (add, remove, lock, drag commit, stretch mode) go through Arrangement's warp use cases, which dispatch the undoable `setClipWarpState` action; a marker drag previews in view state and writes the document once on release, and a cancelled drag writes nothing.
 - **`useCases/`**: Transient detection (`detectTransients.ts`, `detectTransientsForClip.ts`), marker manipulation (`addManualMarker.ts`, `removeMarker.ts`, `toggleMarkerLock.ts`), the transient quantize dispatcher (`quantizeTransients.ts`), and warp configuration (`enableWarping.ts`, `setWarpAlgorithm.ts`, `setPitchShift.ts`).
 
 ## Invariants & Traps

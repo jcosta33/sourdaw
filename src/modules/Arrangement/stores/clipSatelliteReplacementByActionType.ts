@@ -391,6 +391,7 @@ export const clipSatelliteReplacementByActionType: {
     loadRaveModel: noReplacements,
     setRaveBlend: noReplacements,
     enableWarping: noReplacements,
+    setClipWarpState: noReplacements,
     setWarpAlgorithm: noReplacements,
     setWarpPitchShift: noReplacements,
     setYeastProcessorParam: noReplacements,

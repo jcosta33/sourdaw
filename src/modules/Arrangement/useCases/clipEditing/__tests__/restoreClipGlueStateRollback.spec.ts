@@ -5,11 +5,11 @@ import { midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { seedStretchMode } from '../../../__tests__/warpStateSeed';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { warpStates } from '../../../stores/warpStates';
-import { setStretchMode } from '../../warp/setStretchMode';
 import { prepareClipGlue } from '../prepareClipGlue';
 import { restoreClipGlueState } from '../restoreClipGlueState';
 
@@ -69,7 +69,7 @@ describe('restoreClipGlueState satellite rollback', () => {
         // satellite at all, so a fixture written with the default mode plans
         // no migration and there would be nothing for the rejection below to
         // revert.
-        setStretchMode('clip-a', 'phase-vocoder');
+        seedStretchMode('clip-a', 'phase-vocoder');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;
@@ -101,7 +101,7 @@ describe('restoreClipGlueState satellite rollback', () => {
     });
 
     it('reverts the satellites on the undo direction too, where the migration runs the other way', () => {
-        setStretchMode('clip-a', 'phase-vocoder');
+        seedStretchMode('clip-a', 'phase-vocoder');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         const { previous, next, targetClipId: gluedId } = plan!;
         expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);

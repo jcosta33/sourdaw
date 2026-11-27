@@ -555,6 +555,7 @@ export const trackProjectionByActionType: {
     loadRaveModel: keepTrack,
     setRaveBlend: keepTrack,
     enableWarping: keepTrack,
+    setClipWarpState: keepTrack,
     setWarpAlgorithm: keepTrack,
     setWarpPitchShift: keepTrack,
     setYeastProcessorParam: keepTrack,

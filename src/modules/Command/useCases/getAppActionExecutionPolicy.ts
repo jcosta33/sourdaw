@@ -449,6 +449,7 @@ const executionPolicyByActionType: { readonly [Type in AppActionType]: AppAction
     loadRaveModel: defaultPolicy,
     setRaveBlend: defaultPolicy,
     enableWarping: defaultPolicy,
+    setClipWarpState: defaultPolicy,
     setWarpAlgorithm: defaultPolicy,
     setWarpPitchShift: defaultPolicy,
     setYeastProcessorParam: defaultPolicy,

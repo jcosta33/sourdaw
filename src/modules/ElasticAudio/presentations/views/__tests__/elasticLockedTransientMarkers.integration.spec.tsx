@@ -30,7 +30,7 @@ import {
     trackStore,
     warpStateStore,
 } from '#/modules/Arrangement/stores';
-import { createTrack, getArrangementHandlers, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
+import { commitWarpMarkerBeatDrag, createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
@@ -1562,13 +1562,12 @@ describe('locked transient markers through the real Elastic editor', () => {
             if (!first) {
                 throw new Error('The deterministic burst must produce its real automatic marker');
             }
-            updateWarpMarkerBeat({
+            await commitWarpMarkerBeatDrag({
                 clipId: CLIP_ID,
                 markerId: first.id,
-                field: 'originalBeat',
-                beat: first.originalBeat + offset,
+                originalBeat: first.originalBeat + offset,
+                warpedBeat: 1.1,
             });
-            updateWarpMarkerBeat({ clipId: CLIP_ID, markerId: first.id, field: 'warpedBeat', beat: 1.1 });
             toggleMarkerLock(CLIP_ID, first.id);
             const retained = structuredClone(getWarpState(CLIP_ID).markers[0]);
             expect(retained).toEqual({
@@ -1618,7 +1617,14 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(undoHistoryStore.value?.past).toHaveLength(0);
         addManualMarker(CLIP_ID, 1.5);
         toggleMarkerLock(CLIP_ID, lockedMarker.id);
-        updateWarpMarkerBeat({ clipId: CLIP_ID, markerId: lockedMarker.id, field: 'warpedBeat', beat: 1.3 });
+        // A direct write on purpose: an action would queue behind the Detect that is holding its frame.
+        const lockedState = getWarpState(CLIP_ID);
+        setWarpState(CLIP_ID, {
+            ...lockedState,
+            markers: lockedState.markers.map((marker) =>
+                marker.id === lockedMarker.id ? { ...marker, warpedBeat: 1.3 } : marker
+            ),
+        });
         toggleMarkerLock(CLIP_ID, lockedMarker.id);
         flushAutomergeStorageWrites();
         const before = structuredClone(rawWarpState());

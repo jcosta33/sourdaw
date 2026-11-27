@@ -487,6 +487,7 @@ export const plannedDeviceWriteStepByActionType: {
     loadRaveModel: commandStep,
     setRaveBlend: commandStep,
     enableWarping: commandStep,
+    setClipWarpState: commandStep,
     setWarpAlgorithm: commandStep,
     setWarpPitchShift: commandStep,
     setYeastProcessorParam: commandStep,

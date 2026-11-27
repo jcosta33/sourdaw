@@ -456,6 +456,7 @@ export const commandBatchEffectByActionType: { readonly [Type in AppActionType]:
     loadRaveModel: NONE,
     setRaveBlend: NONE,
     enableWarping: NONE,
+    setClipWarpState: NONE,
     setWarpAlgorithm: NONE,
     setWarpPitchShift: NONE,
     setYeastProcessorParam: NONE,

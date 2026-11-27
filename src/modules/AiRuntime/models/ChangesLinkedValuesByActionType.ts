@@ -387,6 +387,7 @@ export const changesLinkedValuesByActionType: { readonly [Type in AppActionType]
     loadRaveModel: true,
     setRaveBlend: true,
     enableWarping: true,
+    setClipWarpState: true,
     setWarpAlgorithm: true,
     setWarpPitchShift: true,
     setYeastProcessorParam: true,

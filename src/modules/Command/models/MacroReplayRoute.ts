@@ -405,6 +405,7 @@ export const macroReplayRouteByActionType: { readonly [Type in AppActionType]: M
     loadRaveModel: replayRoute,
     setRaveBlend: replayRoute,
     enableWarping: replayRoute,
+    setClipWarpState: replayRoute,
     setWarpAlgorithm: replayRoute,
     setWarpPitchShift: replayRoute,
     setYeastProcessorParam: replayRoute,

@@ -390,6 +390,7 @@ export const canonicalControlByActionType: { readonly [Type in AppActionType]: C
     loadRaveModel: ownControl,
     setRaveBlend: ownControl,
     enableWarping: ownControl,
+    setClipWarpState: ownControl,
     setWarpAlgorithm: ownControl,
     setWarpPitchShift: ownControl,
     setYeastProcessorParam: ownControl,

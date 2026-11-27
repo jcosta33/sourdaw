@@ -396,6 +396,7 @@ export const automationRecordingPolicyByActionType: {
     loadRaveModel: noPolicy,
     setRaveBlend: noPolicy,
     enableWarping: noPolicy,
+    setClipWarpState: noPolicy,
     setWarpAlgorithm: noPolicy,
     setWarpPitchShift: noPolicy,
     setYeastProcessorParam: noPolicy,

@@ -44,8 +44,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getStretchModeInfo: () => ({ name: 'Repitch', available: true, description: '' }),
     STRETCH_MODES: ['repitch'],
     removeWarpMarker: vi.fn(),
-    moveWarpMarker: vi.fn(),
-    commitWarpMarkerBeatDrag: vi.fn(),
+    commitWarpMarkerBeatDrag: vi.fn(() => Promise.resolve()),
     addManualWarpMarker: vi.fn(),
 }));
 

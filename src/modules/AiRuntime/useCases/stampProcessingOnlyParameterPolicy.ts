@@ -422,6 +422,7 @@ const stampByActionType: Stamp = {
     loadRaveModel: leaveUnstamped,
     setRaveBlend: leaveUnstamped,
     enableWarping: leaveUnstamped,
+    setClipWarpState: leaveUnstamped,
     setWarpAlgorithm: leaveUnstamped,
     setWarpPitchShift: leaveUnstamped,
     setYeastProcessorParam: leaveUnstamped,

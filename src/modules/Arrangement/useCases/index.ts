@@ -320,8 +320,8 @@ export { setStretchMode } from './warp/setStretchMode';
 export { getStretchModeInfo, STRETCH_MODES } from './warp/getStretchModeInfo';
 export { addManualWarpMarker } from './warp/addManualWarpMarker';
 export { removeWarpMarker } from './warp/removeWarpMarker';
-export { moveWarpMarker } from './warp/moveWarpMarker';
-export { updateWarpMarkerBeat } from './warp/updateWarpMarkerBeat';
+export { removeWarpMarkers } from './warp/removeWarpMarkers';
+export { toggleWarpMarkerLock } from './warp/toggleWarpMarkerLock';
 export { commitWarpMarkerBeatDrag } from './warp/commitWarpMarkerBeatDrag';
 
 export { interpolateAutomationValue } from './automationQueries/interpolateAutomationValue';

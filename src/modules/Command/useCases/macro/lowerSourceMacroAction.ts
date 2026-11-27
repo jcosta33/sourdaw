@@ -443,6 +443,7 @@ const lowerByActionType: {
     loadRaveModel: cloneForReplay,
     setRaveBlend: cloneForReplay,
     enableWarping: cloneForReplay,
+    setClipWarpState: cloneForReplay,
     setWarpAlgorithm: cloneForReplay,
     setWarpPitchShift: cloneForReplay,
     setYeastProcessorParam: cloneForReplay,

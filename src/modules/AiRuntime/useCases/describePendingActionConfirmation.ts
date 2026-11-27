@@ -459,6 +459,7 @@ const exactDescriberByActionType: { readonly [Type in AppActionType]: ExactActio
     loadRaveModel: describeAsPlanned,
     setRaveBlend: describeAsPlanned,
     enableWarping: describeAsPlanned,
+    setClipWarpState: describeAsPlanned,
     setWarpAlgorithm: describeAsPlanned,
     setWarpPitchShift: describeAsPlanned,
     setYeastProcessorParam: describeAsPlanned,

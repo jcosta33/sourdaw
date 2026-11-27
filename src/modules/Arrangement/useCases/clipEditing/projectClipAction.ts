@@ -435,6 +435,7 @@ const projectClipActionByActionType: {
     loadRaveModel: keepState,
     setRaveBlend: keepState,
     enableWarping: keepState,
+    setClipWarpState: keepState,
     setWarpAlgorithm: keepState,
     setWarpPitchShift: keepState,
     setYeastProcessorParam: keepState,

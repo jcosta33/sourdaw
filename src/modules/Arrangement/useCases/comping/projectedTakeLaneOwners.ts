@@ -526,6 +526,7 @@ const projectTakeLaneOwnersByActionType: {
     loadRaveModel: keepOwners,
     setRaveBlend: keepOwners,
     enableWarping: keepOwners,
+    setClipWarpState: keepOwners,
     setWarpAlgorithm: keepOwners,
     setWarpPitchShift: keepOwners,
     setYeastProcessorParam: keepOwners,

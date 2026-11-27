@@ -385,6 +385,7 @@ export const changesCompSourceByActionType: { readonly [Type in AppActionType]: 
     loadRaveModel: false,
     setRaveBlend: false,
     enableWarping: false,
+    setClipWarpState: false,
     setWarpAlgorithm: false,
     setWarpPitchShift: false,
     setYeastProcessorParam: false,

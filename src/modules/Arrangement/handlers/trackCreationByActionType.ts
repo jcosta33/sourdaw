@@ -390,6 +390,7 @@ export const trackCreationByActionType: { readonly [Type in AppActionType]: Trac
     loadRaveModel: 'none',
     setRaveBlend: 'none',
     enableWarping: 'none',
+    setClipWarpState: 'none',
     setWarpAlgorithm: 'none',
     setWarpPitchShift: 'none',
     setYeastProcessorParam: 'none',

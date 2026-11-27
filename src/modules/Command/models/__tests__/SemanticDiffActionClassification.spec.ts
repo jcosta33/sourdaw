@@ -73,7 +73,7 @@ const expectedByFlag = {
         'setExternalPluginState',
         'setProductionBrief',
     ],
-    sourceMutation: ['commitPitchEdit', 'normalizeClip', 'reverseClip', 'enableWarping'],
+    sourceMutation: ['commitPitchEdit', 'normalizeClip', 'reverseClip', 'enableWarping', 'setClipWarpState'],
     externalEffect: [
         'renderProjectSections',
         'importStemSet',

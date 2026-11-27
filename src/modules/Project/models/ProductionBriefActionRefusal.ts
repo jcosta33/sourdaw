@@ -387,6 +387,7 @@ export const productionBriefRefusalByActionType: { readonly [Type in AppActionTy
     loadRaveModel: 'none',
     setRaveBlend: 'none',
     enableWarping: 'none',
+    setClipWarpState: 'none',
     setWarpAlgorithm: 'none',
     setWarpPitchShift: 'none',
     setYeastProcessorParam: 'none',

@@ -389,6 +389,7 @@ export const preservesTrimCoordinatesByActionType: {
     loadRaveModel: false,
     setRaveBlend: false,
     enableWarping: false,
+    setClipWarpState: false,
     setWarpAlgorithm: false,
     setWarpPitchShift: false,
     setYeastProcessorParam: false,

@@ -404,6 +404,7 @@ const midiReplayProducerByActionType: {
     loadRaveModel: producesNothing,
     setRaveBlend: producesNothing,
     enableWarping: producesNothing,
+    setClipWarpState: producesNothing,
     setWarpAlgorithm: producesNothing,
     setWarpPitchShift: producesNothing,
     setYeastProcessorParam: producesNothing,

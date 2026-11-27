@@ -414,6 +414,7 @@ export const masterGainProjectionByActionType: {
     loadRaveModel: keepMasterPercent,
     setRaveBlend: keepMasterPercent,
     enableWarping: keepMasterPercent,
+    setClipWarpState: keepMasterPercent,
     setWarpAlgorithm: keepMasterPercent,
     setWarpPitchShift: keepMasterPercent,
     setYeastProcessorParam: keepMasterPercent,

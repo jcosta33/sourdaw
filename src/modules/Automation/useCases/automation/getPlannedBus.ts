@@ -467,6 +467,7 @@ const plannedBusByActionType: {
     loadRaveModel: unchangedBus,
     setRaveBlend: unchangedBus,
     enableWarping: unchangedBus,
+    setClipWarpState: unchangedBus,
     setWarpAlgorithm: unchangedBus,
     setWarpPitchShift: unchangedBus,
     setYeastProcessorParam: unchangedBus,

@@ -400,6 +400,7 @@ const DERIVED_SOURCE_SUPPORT_PATHS: { readonly [Type in AppActionType]: SupportP
     loadRaveModel: noSupportPath,
     setRaveBlend: noSupportPath,
     enableWarping: noSupportPath,
+    setClipWarpState: noSupportPath,
     setWarpAlgorithm: noSupportPath,
     setWarpPitchShift: noSupportPath,
     setYeastProcessorParam: noSupportPath,

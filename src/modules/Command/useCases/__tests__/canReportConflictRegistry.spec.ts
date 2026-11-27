@@ -1217,6 +1217,44 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         divergedAction: { type: 'enableWarping', payload: { clipId: 'clip-midi' } },
         reason: 'Audio warping requires an existing audio clip.',
     },
+    {
+        title: 'setClipWarpState refuses a missing audio target',
+        actionType: 'setClipWarpState',
+        divergedAction: {
+            type: 'setClipWarpState',
+            payload: {
+                clipId: 'clip-missing',
+                warpState: { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null },
+            },
+        },
+        reason: 'Warp state requires an existing audio clip.',
+    },
+    {
+        title: 'setClipWarpState refuses an existing MIDI target',
+        actionType: 'setClipWarpState',
+        divergedAction: {
+            type: 'setClipWarpState',
+            payload: {
+                clipId: 'clip-midi',
+                warpState: { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null },
+            },
+        },
+        reason: 'Warp state requires an existing audio clip.',
+    },
+    {
+        // The live clip carries no warp state; the guard expects an enabled one.
+        title: 'setClipWarpState refuses to write when the expected warp state diverges',
+        actionType: 'setClipWarpState',
+        divergedAction: {
+            type: 'setClipWarpState',
+            payload: {
+                clipId: 'clip-live',
+                warpState: { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null },
+                expectedWarpState: { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null },
+            },
+        },
+        reason: 'The clip warp state changed since this edit was captured.',
+    },
     ...(['trimClipStart', 'restoreAudioClipStartTrim', 'restoreAudioClipSlip'] as const).map((actionType) => ({
         title: `${actionType} refuses a captured edit after its media owner diverges`,
         actionType,

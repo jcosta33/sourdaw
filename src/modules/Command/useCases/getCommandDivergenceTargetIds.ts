@@ -433,6 +433,7 @@ const extraTargetsByActionType: {
     loadRaveModel: noExtraTargets,
     setRaveBlend: noExtraTargets,
     enableWarping: noExtraTargets,
+    setClipWarpState: noExtraTargets,
     setWarpAlgorithm: noExtraTargets,
     setWarpPitchShift: noExtraTargets,
     setYeastProcessorParam: noExtraTargets,

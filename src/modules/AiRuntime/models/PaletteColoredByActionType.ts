@@ -382,6 +382,7 @@ export const paletteColoredByActionType: { readonly [Type in AppActionType]: boo
     loadRaveModel: false,
     setRaveBlend: false,
     enableWarping: false,
+    setClipWarpState: false,
     setWarpAlgorithm: false,
     setWarpPitchShift: false,
     setYeastProcessorParam: false,

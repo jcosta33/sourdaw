@@ -402,6 +402,7 @@ const tempoScalarTransitionByActionType: {
     loadRaveModel: notATempoAction,
     setRaveBlend: notATempoAction,
     enableWarping: notATempoAction,
+    setClipWarpState: notATempoAction,
     setWarpAlgorithm: notATempoAction,
     setWarpPitchShift: notATempoAction,
     setYeastProcessorParam: notATempoAction,

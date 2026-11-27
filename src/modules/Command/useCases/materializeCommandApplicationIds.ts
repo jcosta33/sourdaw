@@ -540,6 +540,7 @@ const applicationIdMaterializerByActionType: {
     loadRaveModel: materializeByIdRule,
     setRaveBlend: materializeByIdRule,
     enableWarping: materializeByIdRule,
+    setClipWarpState: materializeByIdRule,
     setWarpAlgorithm: materializeByIdRule,
     setWarpPitchShift: materializeByIdRule,
     setYeastProcessorParam: materializeByIdRule,

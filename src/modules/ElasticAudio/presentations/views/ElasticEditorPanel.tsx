@@ -17,11 +17,13 @@ import {
     warpStateStore,
 } from '#/modules/Arrangement/stores';
 import {
-    commitWarpMarkerBeatDrag,
+    addManualWarpMarker,
     getStretchModeInfo,
+    removeWarpMarker,
+    removeWarpMarkers,
     setStretchMode,
     STRETCH_MODES,
-    updateWarpMarkerBeat,
+    toggleWarpMarkerLock,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
@@ -32,16 +34,14 @@ import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../store
 import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } from '../../stores/elasticAudio';
 import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
 import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
-import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
 import { cancelTransientDetection } from '../../useCases/elasticAudio/cancelTransientDetection';
 import { detectElasticEditorTransients } from '../../useCases/elasticAudio/detectElasticEditorTransients';
-import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
 import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
 import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
-import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 import { quantizeTransients } from '../../useCases/quantizeTransients';
+import { useMarkerDragPreview } from '../hooks/useMarkerDragPreview';
 
 type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
@@ -116,7 +116,10 @@ export const ElasticEditorPanel = (): ReactElement => {
     const transientSensitivity = preferences.elasticTransientSensitivity;
     const isAudioClip = clip !== null && clip.type === 'audio';
 
-    const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
+    const storedWarpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
+    // A marker drag previews here and writes the document once, on release.
+    const markerDrag = useMarkerDragPreview(clipId);
+    const warpState = markerDrag.overlay(storedWarpState);
     const [detectionStatus, setDetectionStatus] = useState('');
     const detectRequest = useRef(0);
     useEffect(() => {
@@ -155,10 +158,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 void quantizeTransients(clipId, snapValue, transientSensitivity);
                 event.preventDefault();
             } else if (event.key === 'Delete' || event.key === 'Backspace') {
-                const selected = elasticState.selectedMarkerIds;
-                for (const markerId of selected) {
-                    removeMarker(clipId, markerId);
-                }
+                void removeWarpMarkers(clipId, elasticState.selectedMarkerIds);
                 event.preventDefault();
             }
         };
@@ -257,7 +257,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     };
 
     const handleStretchMode = (mode: StretchMode): void => {
-        setStretchMode(clipId, mode);
+        void setStretchMode(clipId, mode);
     };
 
     const handleAlgorithm = (algorithm: WarpAlgorithm): void => {
@@ -290,24 +290,25 @@ export const ElasticEditorPanel = (): ReactElement => {
 
         if (tool === 'add-marker') {
             if (!hit) {
-                addManualMarker(clipId, x / beatWidth);
+                void addManualWarpMarker({ clipId, beat: x / beatWidth });
             }
             return;
         }
         if (tool === 'remove-marker') {
             if (hit) {
-                removeMarker(clipId, hit.id);
+                void removeWarpMarker(clipId, hit.id);
             }
             return;
         }
         if (tool === 'lock-marker') {
             if (hit) {
-                toggleMarkerLock(clipId, hit.id);
+                void toggleWarpMarkerLock(clipId, hit.id);
             }
             return;
         }
 
         if (hit) {
+            markerDrag.begin(hit.id);
             dragRef.current = {
                 markerId: hit.id,
                 pointerId: event.pointerId,
@@ -331,12 +332,8 @@ export const ElasticEditorPanel = (): ReactElement => {
         const x = getCanvasX(event);
         const beatRaw = Math.max(0, x / beatWidth);
         const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, timelineEditing.snapValue ?? 1) : beatRaw;
-        updateWarpMarkerBeat({
-            clipId,
-            markerId: drag.markerId,
-            field: drag.altKey || event.altKey ? 'originalBeat' : 'warpedBeat',
-            beat,
-        });
+        const movesOriginal = drag.altKey || event.altKey;
+        markerDrag.move(drag.markerId, movesOriginal ? { originalBeat: beat } : { warpedBeat: beat });
     };
 
     const finishMarkerDrag = (): void => {
@@ -344,13 +341,14 @@ export const ElasticEditorPanel = (): ReactElement => {
         if (!drag) {
             return;
         }
-        commitWarpMarkerBeatDrag({
-            clipId,
-            markerId: drag.markerId,
-            beforeOriginalBeat: drag.startOriginalBeat,
-            beforeWarpedBeat: drag.startWarpedBeat,
-        });
         dragRef.current = null;
+        markerDrag.release(drag.markerId);
+    };
+
+    // A cancelled gesture leaves the document untouched.
+    const cancelMarkerDrag = (): void => {
+        dragRef.current = null;
+        markerDrag.cancel();
     };
 
     const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {
@@ -499,7 +497,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
-                    onPointerCancel={finishMarkerDrag}
+                    onPointerCancel={cancelMarkerDrag}
                     onLostPointerCapture={finishMarkerDrag}
                     onContextMenu={onContextMenu}
                 />

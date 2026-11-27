@@ -398,6 +398,7 @@ const restoredMidiOwnerIdsByActionType: {
     loadRaveModel: noOwnerIds,
     setRaveBlend: noOwnerIds,
     enableWarping: noOwnerIds,
+    setClipWarpState: noOwnerIds,
     setWarpAlgorithm: noOwnerIds,
     setWarpPitchShift: noOwnerIds,
     setYeastProcessorParam: noOwnerIds,

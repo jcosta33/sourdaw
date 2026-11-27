@@ -545,6 +545,7 @@ const plannedSendByActionType: {
     loadRaveModel: unchangedSend,
     setRaveBlend: unchangedSend,
     enableWarping: unchangedSend,
+    setClipWarpState: unchangedSend,
     setWarpAlgorithm: unchangedSend,
     setWarpPitchShift: unchangedSend,
     setYeastProcessorParam: unchangedSend,

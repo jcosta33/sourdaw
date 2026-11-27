@@ -17,6 +17,7 @@ import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBea
 import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
+import { handleSetClipWarpState } from '../handlers/clipStretch/handleSetClipWarpState';
 import { handleRemoveCompRegion } from '../handlers/comping/handleRemoveCompRegion';
 import { handleRestoreCompRegionInterval } from '../handlers/comping/handleRestoreCompRegionInterval';
 import { handleSetCompRegion } from '../handlers/comping/handleSetCompRegion';
@@ -235,6 +236,7 @@ export function getArrangementHandlers() {
         setVcaGain: handleSetVcaGain,
         restoreLegacyVcaState: handleRestoreLegacyVcaState,
         enableWarping: handleEnableWarping,
+        setClipWarpState: handleSetClipWarpState,
         setClipStretchMode: handleSetClipStretchMode,
         setClipStretchRatio: handleSetClipStretchRatio,
         restoreClipStretchState: handleRestoreClipStretchState,

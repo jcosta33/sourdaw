@@ -437,6 +437,7 @@ export const macroGeneratedIdByActionType: {
     loadRaveModel: noGeneratedId,
     setRaveBlend: noGeneratedId,
     enableWarping: noGeneratedId,
+    setClipWarpState: noGeneratedId,
     setWarpAlgorithm: noGeneratedId,
     setWarpPitchShift: noGeneratedId,
     setYeastProcessorParam: noGeneratedId,
