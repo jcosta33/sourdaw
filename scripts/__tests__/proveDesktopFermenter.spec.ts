@@ -39,6 +39,7 @@ import {
     runEditorFamilyProof,
     runProof,
     runGrandBouleAuditionProof,
+    runCrumbsSamplerProof,
 } from '../proveDesktopFermenter.ts';
 
 const tempDirs: string[] = [];
@@ -47,6 +48,89 @@ afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
         rmSync(dir, { recursive: true, force: true });
     }
+});
+
+describe('bound Crumbs sampler record', () => {
+    it('retains capture unavailability after a normal teardown', async () => {
+        const { options, env } = fixture();
+        const record = await runCrumbsSamplerProof(
+            options,
+            { ...env, GITHUB_EVENT_NAME: 'schedule', GITHUB_REF: 'refs/heads/main' },
+            {
+                hostSupported: true,
+                async drive(_binary, observations) {
+                    observations.unavailable = 'capture-clock-or-input-unavailable';
+                    observations.quits.push({ code: 0, signal: null, forced: false });
+                },
+            }
+        );
+        expect(record).toMatchObject({ verdict: 'not-run', failureCode: 'capture-unavailable' });
+    });
+    it('fails an observed crash even when capture was unavailable', async () => {
+        const { options, env } = fixture();
+        const record = await runCrumbsSamplerProof(
+            options,
+            { ...env, GITHUB_EVENT_NAME: 'schedule', GITHUB_REF: 'refs/heads/main' },
+            {
+                hostSupported: true,
+                async drive(_binary, observations) {
+                    observations.unavailable = 'capture-clock-or-input-unavailable';
+                    observations.quits.push({ code: null, signal: 'SIGSEGV', forced: false });
+                },
+            }
+        );
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'crumbs-observations-incomplete' });
+    });
+    it('fails when teardown throws even if capture was already unavailable', async () => {
+        const { options, env } = fixture();
+        const record = await runCrumbsSamplerProof(
+            options,
+            { ...env, GITHUB_EVENT_NAME: 'schedule', GITHUB_REF: 'refs/heads/main' },
+            {
+                hostSupported: true,
+                async drive(_binary, observations) {
+                    observations.unavailable = 'capture-clock-or-input-unavailable';
+                    throw new Error('packaged process exit timed out');
+                },
+            }
+        );
+        expect(record).toMatchObject({ verdict: 'failed', failureCode: 'driver-failed' });
+    });
+    it('rejects partial observations after admitting the matching package', async () => {
+        const { options, env } = fixture();
+        const record = await runCrumbsSamplerProof(
+            options,
+            { ...env, GITHUB_EVENT_NAME: 'schedule', GITHUB_REF: 'refs/heads/main' },
+            { hostSupported: true, drive: async () => {} }
+        );
+        expect(record).toMatchObject({
+            verdict: 'failed',
+            failureCode: 'crumbs-observations-incomplete',
+            scope: 'packaged-crumbs-sampler',
+        });
+    });
+    it('rejects a foreign run before driving the package', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn();
+        const record = await runCrumbsSamplerProof(
+            options,
+            { ...env, GITHUB_RUN_ATTEMPT: '3' },
+            { hostSupported: true, drive }
+        );
+        expect(record.failureCode).toBe('build-receipt-run-mismatch');
+        expect(drive).not.toHaveBeenCalled();
+    });
+    it('does not drive on a non-scheduled branch', async () => {
+        const { options, env } = fixture();
+        const drive = vi.fn();
+        const record = await runCrumbsSamplerProof(
+            options,
+            { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main' },
+            { hostSupported: true, drive }
+        );
+        expect(record).toMatchObject({ verdict: 'not-run', failureCode: 'crumbs-not-scheduled-main' });
+        expect(drive).not.toHaveBeenCalled();
+    });
 });
 
 const completeDrive: FermenterDrive = async (_binary, report) => {
