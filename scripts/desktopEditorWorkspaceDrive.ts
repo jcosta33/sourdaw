@@ -342,7 +342,7 @@ async function transport(
     const advanced = await until(read, (value) => value > advancing + 0.25);
     samples.advancing = advancing;
     samples.advanced = advanced;
-    const paused = await pauseAtClick(page, playback, advanced, samples);
+    const paused = await pauseAtClick(page, playback, advanced, timeline);
     samples.pauseHold = await heldPlayhead(page, paused);
     await exactButton(playback, 'Stop').click();
     samples.stopped = await until(read, (value) => value === 0);

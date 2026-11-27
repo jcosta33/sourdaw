@@ -24,6 +24,23 @@ export type ScaleStep =
     | 'preferences-dismiss'
     | 'restore-viewport'
     | 'restore-geometry';
+export type NativeTransportPoll = {
+    issuedAtMs: number;
+    answeredAtMs: number;
+    running: boolean;
+    playing: boolean;
+    engineId: string;
+    batchesApplied: number;
+    playheadFrame: number;
+};
+export type NativePauseEvidence = {
+    before: NativeTransportPoll | null;
+    lastPlaying: NativeTransportPoll | null;
+    parked: NativeTransportPoll | null;
+    advanceFrom: NativeTransportPoll | null;
+    advanceTo: NativeTransportPoll | null;
+    failure: string | null;
+};
 export type WorkspaceObservation = {
     stage: WorkspaceStage;
     outcome: 'not-reached' | 'failed' | 'passed';
@@ -32,6 +49,8 @@ export type WorkspaceObservation = {
     instanceIds: string[];
     timeline?: {
         samples: Record<string, number>;
+        nativePause?: NativePauseEvidence;
+        pauseCapture?: { trusted: boolean; ageMs: number | null; clickTimeMs: number | null };
         trackBefore?: string;
         trackAfter?: string;
         deviceBefore?: string;
@@ -86,14 +105,117 @@ export function workspaceFailure(
 }
 
 function validTimeline(timeline: NonNullable<WorkspaceObservation['timeline']>): boolean {
-    const { samples, trackBefore, trackAfter, deviceBefore, deviceAfter } = timeline;
+    const { samples, pauseCapture, nativePause, trackBefore, trackAfter, deviceBefore, deviceAfter } = timeline;
     const validId = (value: string | undefined): boolean => value !== undefined && /^[a-zA-Z0-9_-]{1,80}$/u.test(value);
     return (
+        pauseCapture?.trusted === true &&
+        typeof pauseCapture.clickTimeMs === 'number' &&
+        Number.isFinite(pauseCapture.clickTimeMs) &&
+        pauseCapture.clickTimeMs >= 0 &&
+        typeof pauseCapture.ageMs === 'number' &&
+        Number.isFinite(pauseCapture.ageMs) &&
+        pauseCapture.ageMs >= 0 &&
+        pauseCapture.ageMs <= 125 &&
+        nativePauseClassification(nativePause, pauseCapture.clickTimeMs) === 'prompt' &&
         validId(trackBefore) &&
         trackBefore === trackAfter &&
         validId(deviceBefore) &&
         deviceBefore === deviceAfter &&
         validTimelineSamples(samples)
+    );
+}
+
+export function nativePauseClassification(
+    evidence: NativePauseEvidence | undefined,
+    clickTimeMs: number
+): 'prompt' | 'late' | 'inconclusive' {
+    if (!evidence || evidence.failure || !Number.isFinite(clickTimeMs)) {
+        return 'inconclusive';
+    }
+    const { before, lastPlaying, parked, advanceFrom, advanceTo } = evidence;
+    if (!before || !lastPlaying || !parked) {
+        return 'inconclusive';
+    }
+    if (!validNativePolls(before, lastPlaying, parked) || !validNativeOrder(before, lastPlaying, parked, clickTimeMs)) {
+        return 'inconclusive';
+    }
+    const upperMs = parked.answeredAtMs - clickTimeMs;
+    if (upperMs <= 125) {
+        return 'prompt';
+    }
+    if (
+        advanceFrom &&
+        advanceTo &&
+        validNativeAdvance(before, lastPlaying, parked, advanceFrom, advanceTo) &&
+        advanceFrom.issuedAtMs - clickTimeMs > 125
+    ) {
+        return 'late';
+    }
+    return 'inconclusive';
+}
+
+function validNativePolls(
+    before: NativeTransportPoll,
+    lastPlaying: NativeTransportPoll,
+    parked: NativeTransportPoll
+): boolean {
+    const validPoll = (poll: NativeTransportPoll): boolean =>
+        Number.isFinite(poll.issuedAtMs) &&
+        Number.isFinite(poll.answeredAtMs) &&
+        poll.issuedAtMs >= 0 &&
+        poll.issuedAtMs < poll.answeredAtMs &&
+        poll.running === true &&
+        /^[1-9][0-9]*$/u.test(poll.engineId) &&
+        Number.isSafeInteger(poll.batchesApplied) &&
+        poll.batchesApplied >= 0 &&
+        Number.isSafeInteger(poll.playheadFrame) &&
+        poll.playheadFrame >= 0;
+    return (
+        [before, lastPlaying, parked].every(validPoll) &&
+        before.playing === true &&
+        lastPlaying.playing === true &&
+        parked.playing === false &&
+        before.engineId === lastPlaying.engineId &&
+        before.engineId === parked.engineId &&
+        parked.batchesApplied > before.batchesApplied &&
+        parked.batchesApplied > lastPlaying.batchesApplied
+    );
+}
+
+function validNativeAdvance(
+    before: NativeTransportPoll,
+    lastPlaying: NativeTransportPoll,
+    parked: NativeTransportPoll,
+    from: NativeTransportPoll,
+    to: NativeTransportPoll
+): boolean {
+    return (
+        validNativePolls(before, from, parked) &&
+        validNativePolls(before, to, parked) &&
+        from.engineId === to.engineId &&
+        from.answeredAtMs <= to.issuedAtMs &&
+        from.issuedAtMs >= before.issuedAtMs &&
+        to.answeredAtMs <= lastPlaying.answeredAtMs &&
+        to.playheadFrame > from.playheadFrame &&
+        to.batchesApplied >= from.batchesApplied
+    );
+}
+
+function validNativeOrder(
+    before: NativeTransportPoll,
+    lastPlaying: NativeTransportPoll,
+    parked: NativeTransportPoll,
+    clickTimeMs: number
+): boolean {
+    const serial =
+        (lastPlaying.issuedAtMs === before.issuedAtMs && lastPlaying.answeredAtMs === before.answeredAtMs) ||
+        lastPlaying.issuedAtMs >= before.answeredAtMs;
+    return (
+        before.answeredAtMs < clickTimeMs &&
+        serial &&
+        parked.issuedAtMs >= lastPlaying.answeredAtMs &&
+        parked.issuedAtMs >= clickTimeMs &&
+        parked.answeredAtMs > clickTimeMs
     );
 }
 
