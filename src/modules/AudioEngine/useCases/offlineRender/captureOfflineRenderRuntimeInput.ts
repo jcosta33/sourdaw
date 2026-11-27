@@ -21,7 +21,6 @@ type CaptureOfflineRenderRuntimeOptions = {
 /** Capture runtime facts for the supplied document; PCM is copied when constructing the render input. */
 export function captureOfflineRenderRuntimeInput(
     tracks: readonly Track[],
-    sampleRate: number,
     { projectOnly = false }: CaptureOfflineRenderRuntimeOptions = {}
 ): OfflineRenderRuntimeSource {
     const sink = getAudioDeviceRuntimeSink();
@@ -29,7 +28,7 @@ export function captureOfflineRenderRuntimeInput(
     const calibrationByDevice = new Map<string, Readonly<Record<string, number>> | null>();
     for (const track of tracks) {
         for (const device of track.devices) {
-            deviceLatencyMs.set(device.id, getDeviceLatencyMs(device.id, device.type, sampleRate));
+            deviceLatencyMs.set(device.id, getDeviceLatencyMs(device.id, device.type));
             if (capturesNativeCalibration(device.type)) {
                 calibrationByDevice.set(
                     device.id,

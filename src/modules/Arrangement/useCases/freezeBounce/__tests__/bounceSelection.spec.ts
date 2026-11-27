@@ -462,7 +462,8 @@ describe('bounceSelection', () => {
             6,
             // The selection bounce now watches what the render scheduled, so it
             // can refuse to delete the MIDI in exchange for a silent clip.
-            { onScheduled: expect.any(Function) }
+            // The bounced clip is placed at the selection start, so the print is put back on the timeline.
+            { onScheduled: expect.any(Function), cropPrintedLatency: true }
         );
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
 

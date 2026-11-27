@@ -1,5 +1,3 @@
-export const WORKLET_BLOCK_SIZE = 128;
-
 /**
  * RT-6 — `DynamicsCompressorNode` applies an internal lookahead pre-delay that
  * no Web Audio API surface exposes: there is no `latency` property and the node
@@ -24,5 +22,4 @@ export const deviceLatencyMap: Record<string, number> = {
     'builtin-reverb': 0,
     'builtin-delay': 0,
     'builtin-gain': 0,
-    'builtin-sidechain-compressor': (WORKLET_BLOCK_SIZE / 48000) * 1000,
 };

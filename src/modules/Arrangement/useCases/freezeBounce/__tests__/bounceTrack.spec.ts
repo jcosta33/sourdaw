@@ -211,6 +211,8 @@ describe('bounceTrack', () => {
             includeAutomation: true,
             normalization: 'protection',
             autoTail: false,
+            // The clip is placed at the region start, so the print is put back on the timeline.
+            cropPrintedLatency: true,
         });
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
 

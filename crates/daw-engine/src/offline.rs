@@ -216,6 +216,23 @@ impl OfflineRenderer {
         self.scheduler.graph_progress()
     }
 
+    /// Apply every queued command now, before any block renders, so the
+    /// compensation pass has aimed the whole batch and
+    /// [`Self::master_summing_depth`] answers for it. The first block's own
+    /// drain then finds the ring empty, so the render is the one an unsettled
+    /// renderer would produce.
+    pub fn settle_graph(&mut self) {
+        self.scheduler.update_graph();
+        while self.retired_rx.pop().is_ok() {}
+    }
+
+    /// How many frames late the master prints timeline frame zero, as the
+    /// latest compensation pass aimed it. Read after [`Self::settle_graph`]
+    /// for the depth of everything pushed so far.
+    pub fn master_summing_depth(&self) -> usize {
+        self.scheduler.timeline().master_summing_depth()
+    }
+
     /// Where the transport stands, read directly for the same reason
     /// [`Self::graph_progress`] is: this thread is the render thread.
     pub fn transport_position(&self) -> TransportPositionSnapshot {

@@ -106,6 +106,13 @@ export type RenderGraphOfflineInput = Readonly<{
      * without one cannot be cancelled.
      */
     renderId?: string;
+    /**
+     * Render the master's compensation depth ahead of `frames` and drop it, so
+     * the PCM starts on the master's timeline frame zero. The depth is the
+     * engine's own, hosted plugin latency included. Absent or `false` answers
+     * from the engine's own frame zero.
+     */
+    printsCompensationHead?: boolean;
 }>;
 
 export type ApplyGraphCommandsInput = Readonly<{
@@ -214,12 +221,18 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
         async releaseLevainBank({ bankKey }) {
             return desktopInvoke('release_levain_bank', { bankKey });
         },
-        async renderGraphOffline({ batch, frames, sampleRate, renderId }) {
+        async renderGraphOffline({ batch, frames, sampleRate, renderId, printsCompensationHead }) {
             // Explicit `null` for "no id", for the positional reason
             // `mapGraphBatch` gives below.
             return invokeForBinaryResponse({
                 command: 'render_graph_offline',
-                args: { batch, frames, sampleRate, renderId: renderId ?? null },
+                args: {
+                    batch,
+                    frames,
+                    sampleRate,
+                    renderId: renderId ?? null,
+                    printsCompensationHead: printsCompensationHead ?? false,
+                },
             });
         },
         cancelGraphOfflineRender: cancelNativeGraphOfflineRender,

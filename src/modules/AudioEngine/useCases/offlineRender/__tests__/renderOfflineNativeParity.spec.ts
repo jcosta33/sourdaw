@@ -215,7 +215,13 @@ type NativeHostAddon = {
         channels: number,
         pcm: Uint8Array
     ) => Promise<unknown>;
-    renderGraphOffline: (batch: unknown, frames: number, sampleRate: number) => Promise<Uint8Array>;
+    renderGraphOffline: (
+        batch: unknown,
+        frames: number,
+        sampleRate: number,
+        renderId?: string | null,
+        printsCompensationHead?: boolean
+    ) => Promise<Uint8Array>;
     mapGraphBatch: (prior: unknown, batch: unknown, sampleRate: number, session: unknown) => Promise<unknown>;
 };
 
@@ -288,7 +294,13 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
         },
         async renderGraphOffline(input) {
             capturedRenders.push({ batch: input.batch, frames: input.frames, sampleRate: input.sampleRate });
-            return host.renderGraphOffline(input.batch, input.frames, input.sampleRate);
+            return host.renderGraphOffline(
+                input.batch,
+                input.frames,
+                input.sampleRate,
+                null,
+                input.printsCompensationHead ?? false
+            );
         },
         async mapGraphBatch(input) {
             return host.mapGraphBatch(input.prior, input.batch, input.sampleRate, input.session ?? null);

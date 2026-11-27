@@ -8,8 +8,7 @@ vi.mock('#/modules/Routing/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/stores')>()),
     sidechainStore: { value: null as { routes: unknown[] } | null },
 }));
-// Pin the rate so the sidechain compressor's one-block latency is exactly
-// 128/48000 s and no context-rate drift leaks into the expected totals.
+// Pin the rate so no context-rate drift leaks into the expected totals.
 vi.mock('../../../engineAccess/getAudioContext', () => ({
     getAudioContext: () => ({ sampleRate: 48000 }),
 }));
@@ -21,7 +20,7 @@ import { externalLatencyRegistry } from '../externalLatencyRegistry';
 import { getCompensationDelay } from '../getCompensationDelay';
 import { getSidechainKeyDelay } from '../getSidechainKeyDelay';
 import { getTrackLatency } from '../getTrackLatency';
-import { DYNAMICS_COMPRESSOR_LOOKAHEAD_MS, WORKLET_BLOCK_SIZE } from '../helpers';
+import { DYNAMICS_COMPRESSOR_LOOKAHEAD_MS } from '../helpers';
 
 type MutableStore<T> = { value: T | null };
 const mockTrackStore = trackStore as unknown as MutableStore<{ tracks: unknown[] }>;
@@ -52,8 +51,6 @@ function makeTrack(overrides: { id: string; devices?: DeviceInput[]; outputId?: 
         sends: [],
     };
 }
-
-const SC_BLOCK_MS = (WORKLET_BLOCK_SIZE / 48_000) * 1000;
 
 describe('RT-6 — the built-in DynamicsCompressor lookahead reaches the compensation surface', () => {
     beforeEach(() => {
@@ -170,12 +167,17 @@ describe('FX-5 — the sidechain key is time-aligned to the program it ducks', (
     });
 
     it('clamps to zero rather than asking for a negative key delay', () => {
-        // Engine/store divergence: the live route is wired but the store has not
-        // hydrated it, so `kick`'s total misses the detector's own block cost and
-        // the arithmetic goes negative. A negative delay is unrepresentable and
-        // would widen the error, so alignment clamps at zero.
-        setUpSidechain({});
+        // The key arrives later than the program: `kick` runs a 10 ms device and
+        // `bass` runs a 20 ms device after the detector, which no upstream shift
+        // offsets, so PDC lifts `kick` by 10 ms and the key lands at 20 ms against a
+        // program at 0. A negative delay is unrepresentable and would widen the
+        // error, so alignment clamps at zero.
+        setUpSidechain({ kickDevices: [{ id: 'dev-kick-fx' }] });
+        const tracks = mockTrackStore.value!.tracks as { id: string; devices: unknown[] }[];
+        tracks.find((track) => track.id === 'bass')!.devices.push(makeDevice({ id: 'dev-post' }));
         mockSidechainStore.value = { routes: [] };
+        externalLatencyRegistry.set('dev-kick-fx', 10);
+        externalLatencyRegistry.set('dev-post', 20);
 
         expect(getSidechainKeyDelay(route)).toBe(0);
     });
@@ -187,9 +189,9 @@ describe('FX-5 — the sidechain key is time-aligned to the program it ducks', (
         expect(getSidechainKeyDelay(route)).toBe(0);
     });
 
-    it('excludes the detector own block cost and every device after it', () => {
+    it('excludes every device after the detector', () => {
         // Only what sits *upstream* of `dev-sc` shifts the program the detector
-        // sees; the compressor's own one-block cost and downstream devices do not.
+        // sees; downstream devices do not.
         setUpSidechain({});
         const tracks = mockTrackStore.value!.tracks as { id: string; devices: unknown[] }[];
         tracks.find((track) => track.id === 'bass')!.devices.push(makeDevice({ id: 'dev-post' }));
@@ -198,7 +200,7 @@ describe('FX-5 — the sidechain key is time-aligned to the program it ducks', (
         expect(getSidechainKeyDelay(route)).toBe(0);
         // ...while that trailing device is still on the track total, proving the
         // exclusion is positional and not a blanket zero.
-        expect(getTrackLatency('bass').deviceLatencyMs).toBeCloseTo(SC_BLOCK_MS + 25, 10);
+        expect(getTrackLatency('bass').deviceLatencyMs).toBeCloseTo(25, 10);
     });
 
     it('follows a mid-session latency push rather than serving a cached alignment', () => {

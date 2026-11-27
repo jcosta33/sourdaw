@@ -686,7 +686,7 @@ describe('selection render admission through typed commands', () => {
                     {
                         id: 'latency',
                         name: 'Detector',
-                        type: 'builtin-sidechain-compressor',
+                        type: 'builtin-compressor',
                         bypassed: false,
                         parameterValues: {},
                     },

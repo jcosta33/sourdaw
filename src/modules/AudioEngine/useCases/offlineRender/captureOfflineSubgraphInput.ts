@@ -20,7 +20,6 @@ export type OfflineSubgraphSource = {
 type CaptureOfflineSubgraphInput = {
     source: OfflineSubgraphSource;
     renderTracks: readonly Track[];
-    sampleRate: number;
 };
 
 /**
@@ -35,11 +34,10 @@ type CaptureOfflineSubgraphInput = {
  * rack are the session source's when one is supplied, else the live ones as
  * this render starts.
  */
-export function captureOfflineSubgraphInput({ source, renderTracks, sampleRate }: CaptureOfflineSubgraphInput) {
+export function captureOfflineSubgraphInput({ source, renderTracks }: CaptureOfflineSubgraphInput) {
     const projectTracks = source.project.tracks?.tracks ?? [];
-    const runtime =
-        source.runtime ?? captureOfflineRenderRuntimeInput(projectTracks, sampleRate, { projectOnly: true });
-    const scheduling = captureOfflineSchedulingInput(renderTracks, sampleRate, source.project, runtime);
+    const runtime = source.runtime ?? captureOfflineRenderRuntimeInput(projectTracks, { projectOnly: true });
+    const scheduling = captureOfflineSchedulingInput(renderTracks, source.project, runtime);
     const session = source.session ?? captureOfflineRenderSessionSource();
     const sink = getAudioDeviceRuntimeSink();
     const instruments = new Map<string, CapturedOfflineInstrument>();

@@ -139,9 +139,25 @@ describe('createDesktopNativeGraphTransport', () => {
 
         expect(invokeForBinaryResponse).toHaveBeenCalledWith({
             command: 'render_graph_offline',
-            args: { batch: BATCH, frames: 1, sampleRate: 48_000, renderId: null },
+            args: { batch: BATCH, frames: 1, sampleRate: 48_000, renderId: null, printsCompensationHead: false },
         });
         expect(result).toBe(bytes);
+    });
+
+    it('asks render_graph_offline to trim the compensation head when the render prints it', async () => {
+        vi.mocked(invokeForBinaryResponse).mockResolvedValue(new Uint8Array(8));
+
+        await createDesktopNativeGraphTransport().renderGraphOffline({
+            batch: BATCH,
+            frames: 1,
+            sampleRate: 48_000,
+            printsCompensationHead: true,
+        });
+
+        expect(invokeForBinaryResponse).toHaveBeenCalledWith({
+            command: 'render_graph_offline',
+            args: { batch: BATCH, frames: 1, sampleRate: 48_000, renderId: null, printsCompensationHead: true },
+        });
     });
 
     it('names a cancellable render by its id on render_graph_offline', async () => {
@@ -156,7 +172,13 @@ describe('createDesktopNativeGraphTransport', () => {
 
         expect(invokeForBinaryResponse).toHaveBeenCalledWith({
             command: 'render_graph_offline',
-            args: { batch: BATCH, frames: 1, sampleRate: 48_000, renderId: 'bounce-7' },
+            args: {
+                batch: BATCH,
+                frames: 1,
+                sampleRate: 48_000,
+                renderId: 'bounce-7',
+                printsCompensationHead: false,
+            },
         });
     });
 

@@ -201,6 +201,7 @@ export { updateNativeLiveGraphSessionTransportMaps } from './livePlayback/update
 
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
+export { getPrintedLatencyShift } from './latencyCompensation/compensation/getPrintedLatencyShift';
 export { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 export { reportLatency } from './latencyCompensation/compensation/reportLatency';

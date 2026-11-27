@@ -130,6 +130,12 @@ export type NativeOfflineRenderOptions = Readonly<{
      * builds anything. Nothing is sent for an abort after the render settles.
      */
     abortSignal?: AbortSignal;
+    /**
+     * Have the engine render its master compensation depth ahead of `frames`
+     * and drop it, so the returned PCM starts on the master's timeline frame
+     * zero (`RenderGraphOfflineInput.printsCompensationHead`).
+     */
+    printsCompensationHead?: boolean;
 }>;
 
 export type NativeOfflineGraphBackend = AudioGraphBackend &
@@ -431,6 +437,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                         frames,
                         sampleRate,
                         renderId,
+                        printsCompensationHead: options.printsCompensationHead ?? false,
                     });
                     material.assertOpen();
                     return deinterleaveStereoPcm({ bytes, frames });

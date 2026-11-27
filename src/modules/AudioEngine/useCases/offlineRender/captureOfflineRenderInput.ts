@@ -38,8 +38,7 @@ export function captureOfflineRenderInput(
         }),
     };
     const tracks = renderContext.tracks?.tracks ?? [];
-    const runtime =
-        source?.runtime ?? captureOfflineRenderRuntimeInput(tracks, sampleRate, { projectOnly: project !== undefined });
+    const runtime = source?.runtime ?? captureOfflineRenderRuntimeInput(tracks, { projectOnly: project !== undefined });
     const sink = getAudioDeviceRuntimeSink();
     const instruments = new Map<string, CapturedOfflineInstrument>();
     const nativeDevices = new Map<string, ReturnType<typeof projectDeviceForNativeBody>>();
@@ -69,7 +68,7 @@ export function captureOfflineRenderInput(
         ...resolved,
         renderContext,
         sampleRate,
-        scheduling: captureOfflineSchedulingInput(tracks, sampleRate, project, runtime),
+        scheduling: captureOfflineSchedulingInput(tracks, project, runtime),
         vcaGroups: structuredClone(project ? project.vcaGroups : getVcaGroupsState()),
         soloMode: runtime.soloMode,
         instruments,

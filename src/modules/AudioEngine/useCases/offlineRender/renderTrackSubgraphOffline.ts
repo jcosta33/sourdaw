@@ -22,6 +22,7 @@ import { createOfflineTrackStrip } from './createOfflineTrackStrip';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './destroyOfflineDeviceStrategies';
 import { resolveTrackAdjustmentComposition } from './offlineAdjustmentLayers';
+import { planSubgraphPrintedLatency } from './planSubgraphPrintedLatency';
 import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { readOfflineAdjustmentLayerSnapshot } from './readOfflineAdjustmentLayerSnapshot';
@@ -110,6 +111,11 @@ type RenderTrackSubgraphOfflineInput = {
      * reports. See `resolveContributorVcaMultiplier` for the full rule.
      */
     includeTargetVca?: boolean;
+    /**
+     * Renders the delay the print carries (compensation plus the devices it prints) as extra frames and
+     * crops it from the head, so the buffer keeps its length. Off keeps it at the head, as freeze replays it.
+     */
+    cropPrintedLatency?: boolean;
     onProgress?: (fraction: number) => void;
     onWarning?: (message: string) => void;
     /**
@@ -155,6 +161,7 @@ export async function renderTrackSubgraphOffline({
     includeSends = true,
     targetMixer = 'bake',
     includeTargetVca = false,
+    cropPrintedLatency,
     onProgress,
     onWarning,
     onScheduled,
@@ -171,8 +178,15 @@ export async function renderTrackSubgraphOffline({
         { durationBeats, startBeat, tailSeconds, sampleRate },
         source?.project
     );
-    const captured = source === undefined ? null : captureOfflineSubgraphInput({ source, renderTracks, sampleRate });
-    const { midi, defaultTempo, changes, durationSeconds, startBeat: renderStartBeat, ...projections } = renderContext;
+    const captured = source === undefined ? null : captureOfflineSubgraphInput({ source, renderTracks });
+    const {
+        midi,
+        defaultTempo,
+        changes,
+        durationSeconds: baseDurationSeconds,
+        startBeat: renderStartBeat,
+        ...projections
+    } = renderContext;
     const {
         projectMidiEvents,
         projectPpqEndpoints,
@@ -192,14 +206,23 @@ export async function renderTrackSubgraphOffline({
     }
 
     // Shared with the mixdown and the stem path so an over-long freeze is
-    // *reported* rather than silently producing a short buffer that looks like a
-    // success. This used to re-inline the `Math.min`, which is the same clamp
-    // with no warning channel — and `onWarning` was already in scope.
-    const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
-    if (frameCount <= 0) {
+    // *reported* rather than silently producing a short buffer.
+    const baseFrameCount = clampRenderFrameCount({ durationSeconds: baseDurationSeconds, sampleRate, onWarning });
+    if (baseFrameCount <= 0) {
         return null;
     }
-    const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+    const shiftFrames = planSubgraphPrintedLatency({
+        cropPrintedLatency,
+        targetTrackId,
+        renderTracks,
+        includeInserts,
+        captured,
+        sampleRate,
+        baseFrameCount,
+        onWarning,
+    });
+    const durationSeconds = baseDurationSeconds + shiftFrames / sampleRate;
+    const offlineCtx = new OfflineAudioContext(2, baseFrameCount + shiftFrames, sampleRate);
     // The frame scheduler for this context. One instance per
     // `OfflineAudioContext` comes back from the factory, so this path's Faust
     // devices share it rather than racing a second suspend for the same frame.
@@ -563,7 +586,11 @@ export async function renderTrackSubgraphOffline({
         });
 
         onProgress?.(1);
-        return cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount });
+        return cropHistoryFromRenderedBuffer({
+            buffer,
+            historyFrameCount: historyFrameCount + shiftFrames,
+            outputFrameCount,
+        });
     } finally {
         destroyOfflineDeviceStrategies(deviceEntriesByTrack);
     }

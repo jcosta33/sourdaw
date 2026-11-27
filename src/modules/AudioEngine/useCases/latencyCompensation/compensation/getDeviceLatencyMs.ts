@@ -1,18 +1,7 @@
-import { getAudioContext } from '../../engineAccess/getAudioContext';
-
 import { externalLatencyRegistry } from './externalLatencyRegistry';
-import { deviceLatencyMap, WORKLET_BLOCK_SIZE } from './helpers';
+import { deviceLatencyMap } from './helpers';
 
 const EXTERNAL_PLUGIN_DEVICE_TYPE = 'external-plugin';
-
-type AudioContextLatencyShape = {
-    sampleRate?: number;
-};
-
-function engineSampleRate(): number {
-    const context: AudioContextLatencyShape = getAudioContext();
-    return context.sampleRate ?? 48000;
-}
 
 /**
  * What one device costs the Web Audio graph, in milliseconds.
@@ -30,7 +19,7 @@ function engineSampleRate(): number {
  * of the device's own clock. Reporting it here as well would compensate it
  * twice.
  */
-export function getDeviceLatencyMs(deviceId: string, deviceType: string, sampleRate?: number): number {
+export function getDeviceLatencyMs(deviceId: string, deviceType: string): number {
     if (deviceType === EXTERNAL_PLUGIN_DEVICE_TYPE) {
         return 0;
     }
@@ -38,10 +27,6 @@ export function getDeviceLatencyMs(deviceId: string, deviceType: string, sampleR
     const reported = externalLatencyRegistry.get(deviceId);
     if (reported !== undefined) {
         return reported;
-    }
-
-    if (deviceType === 'builtin-sidechain-compressor') {
-        return (WORKLET_BLOCK_SIZE / (sampleRate ?? engineSampleRate())) * 1000;
     }
 
     return deviceLatencyMap[deviceType] ?? 0;

@@ -251,6 +251,13 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// twice over.
 pub(super) const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
+/// The text a trimmed render starts with when its requested frames fit the
+/// ceiling but the master's compensation head rendered ahead of them does not.
+/// The caller cannot see that head, so it answers this one by rendering
+/// elsewhere (`isNativeOfflineRenderHeadPastCeiling.ts`). A seam contract —
+/// never reword one side alone.
+pub(super) const OFFLINE_RENDER_HEAD_PAST_CEILING: &str = "offline-render-head-past-ceiling";
+
 /// The sample rates an offline render accepts, in Hz. A plugin is activated at
 /// the export rate, so a rate no plugin supports is refused before any state is
 /// read or any instance is built, rather than handed to the plugin.
@@ -6641,6 +6648,31 @@ fn size_offline_note_stores(ops: &mut [GraphCommand]) -> Result<(), GraphRefusal
     Ok(())
 }
 
+/// Which engine frame an offline render's first returned frame is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OfflineRenderHead {
+    /// The engine's own frame zero. The master prints timeline frame zero as
+    /// late as the graph compensates its routes, so a caller measuring the
+    /// graph as it runs reads it here.
+    EngineFrameZero,
+    /// The master's compensation depth is rendered ahead of the requested
+    /// frames and dropped, so the first returned frame is the master's timeline
+    /// frame zero and the last compensation window is printed rather than cut.
+    /// The depth is the engine's own, hosted plugin latency included, which the
+    /// caller cannot derive.
+    MasterCompensationTrimmed,
+}
+
+impl OfflineRenderHead {
+    fn from_request(prints_compensation_head: Option<bool>) -> Self {
+        if prints_compensation_head == Some(true) {
+            Self::MasterCompensationTrimmed
+        } else {
+            Self::EngineFrameZero
+        }
+    }
+}
+
 /// Drive one mapped batch through the offline scheduler, refusing a render
 /// the engine did not take whole, one a hosted instance missed a block of, or
 /// one cancelled before its last block.
@@ -6649,9 +6681,15 @@ fn size_offline_note_stores(ops: &mut [GraphCommand]) -> Result<(), GraphRefusal
 /// scheduler's clone of every hosted slot — is gone before the caller's
 /// `plugins` releases the instances, on every path out, an unwinding panic
 /// included.
+///
+/// A trimmed head settles the graph before the first block, reads the master's
+/// compensation depth from it, renders that many frames more and drops them
+/// from the front, so the answer is always `frames` long. This runs on the
+/// calling worker, never on an audio callback.
 fn render_offline_ops(
     ops: Vec<GraphCommand>,
     frames: usize,
+    head: OfflineRenderHead,
     sample_rate: f32,
     plugins: Option<&OfflinePluginInstances<'_>>,
     render: &InFlightRender<'_>,
@@ -6677,16 +6715,33 @@ fn render_offline_ops(
     for op in ops {
         renderer.push(op).map_err(GraphRefusal::OfflineCommand)?;
     }
+    let head_frames = match head {
+        OfflineRenderHead::EngineFrameZero => 0,
+        OfflineRenderHead::MasterCompensationTrimmed => {
+            renderer.settle_graph();
+            renderer.master_summing_depth()
+        }
+    };
+    let rendered_frames = frames + head_frames;
+    if rendered_frames > MAX_OFFLINE_RENDER_FRAMES {
+        return Err(GraphRefusal::OfflineHeadPastCeiling {
+            frames,
+            head_frames,
+        });
+    }
 
     // This thread processes every block, so it is every instance's audio
     // thread, and the one that leaves their processing state — taken before
     // the first block so no way out of the loop can skip it.
     let leaving_processing = leaves_processing_on_drop(plugins);
-    let rendered = renderer.render_controlled(frames, render.control());
+    let rendered = renderer.render_controlled(rendered_frames, render.control());
     drop(leaving_processing);
-    let Ok(rendered) = rendered else {
+    let Ok((mut left, mut right)) = rendered else {
         return Err(GraphRefusal::OfflineRender(render.cancelled()));
     };
+    left.drain(..head_frames);
+    right.drain(..head_frames);
+    let rendered = (left, right);
     if let Some(plugins) = plugins {
         plugins
             .ensure_every_block_processed()
@@ -6749,6 +6804,7 @@ fn render_offline_batch(
     let (left, right) = render_offline_ops(
         ops,
         frames,
+        OfflineRenderHead::EngineFrameZero,
         sample_rate,
         None,
         &InFlightRender::uncancellable(),
@@ -6781,18 +6837,27 @@ fn render_offline_batch(
 /// `offline-render-limit-reached` before anything is mapped or built for it.
 /// It runs on the calling worker, never on `ui`, which is only ever asked to
 /// build and tear down instances.
+///
+/// `prints_compensation_head` set renders the master's compensation depth
+/// ahead of `frames` and drops it, so the answer's first frame is the
+/// master's timeline frame zero ([`OfflineRenderHead::MasterCompensationTrimmed`]);
+/// absent or false answers from the engine's own frame zero.
 pub async fn render_graph_offline(
     batch: Value,
     frames: u32,
     sample_rate: f64,
     render_id: Option<String>,
+    prints_compensation_head: Option<bool>,
     ui: &dyn UiThread,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
     render_graph_offline_with(
         batch,
-        frames,
-        sample_rate,
+        OfflineRenderRequest {
+            frames,
+            sample_rate,
+            head: OfflineRenderHead::from_request(prints_compensation_head),
+        },
         render_id,
         ui,
         state,
@@ -6802,16 +6867,29 @@ pub async fn render_graph_offline(
     .map_err(|refusal| refusal.to_string())
 }
 
+/// What one offline render prints: how many frames, at which rate, and from
+/// which engine frame the answer starts.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OfflineRenderRequest {
+    pub(crate) frames: u32,
+    pub(crate) sample_rate: f64,
+    pub(crate) head: OfflineRenderHead,
+}
+
 /// [`render_graph_offline`] over chosen plugin seams.
 pub(crate) async fn render_graph_offline_with(
     batch: Value,
-    frames: u32,
-    sample_rate: f64,
+    request: OfflineRenderRequest,
     render_id: Option<String>,
     ui: &dyn UiThread,
     state: &AppState,
     seams: &OfflinePluginSeams,
 ) -> Result<Vec<u8>, GraphRefusal> {
+    let OfflineRenderRequest {
+        frames,
+        sample_rate,
+        head,
+    } = request;
     let batch = parse_batch(batch)?;
     if !OFFLINE_RENDER_SAMPLE_RATES.contains(&sample_rate) {
         return Err(GraphRefusal::OfflineSampleRateOutOfRange { sample_rate });
@@ -6867,8 +6945,14 @@ pub(crate) async fn render_graph_offline_with(
     let plugins = build_offline_instances(&hosted.bound(), sample_rate, state, ui, seams, &render)
         .await
         .map_err(GraphRefusal::OfflineRender)?;
-    let (left, right) =
-        render_offline_ops(ops, frames, sample_rate as f32, Some(&plugins), &render)?;
+    let (left, right) = render_offline_ops(
+        ops,
+        frames,
+        head,
+        sample_rate as f32,
+        Some(&plugins),
+        &render,
+    )?;
     drop(plugins);
 
     // Interleave straight into the byte payload; the render's planar pair is
@@ -10311,6 +10395,7 @@ mod tests {
             json!({"schemaVersion":2,"commands":commands}),
             64,
             48_000.0,
+            None,
             None,
             &NoWindowHost,
             &state
@@ -19686,9 +19771,17 @@ mod tests {
         }
         let wire = json!({"schemaVersion": 1, "timelineLease": lease, "commands": commands});
         // Exercise the public production render body before holding a real mapped reader.
-        let output = render_graph_offline(wire.clone(), 200, 48000.0, None, &NoWindowHost, &state)
-            .await
-            .unwrap();
+        let output = render_graph_offline(
+            wire.clone(),
+            200,
+            48000.0,
+            None,
+            None,
+            &NoWindowHost,
+            &state,
+        )
+        .await
+        .unwrap();
         let decoded: Vec<_> = output
             .as_chunks::<4>()
             .0
@@ -19728,6 +19821,7 @@ mod tests {
             1,
             48000.0,
             None,
+            None,
             &NoWindowHost,
             &state
         )
@@ -19743,8 +19837,15 @@ mod tests {
             .unwrap_err()
             .contains("budget"));
         // These are the actual mapped clips, consumed by the existing scheduler.
-        let (left, right) =
-            render_offline_ops(ops, 200, 48000.0, None, &InFlightRender::uncancellable()).unwrap();
+        let (left, right) = render_offline_ops(
+            ops,
+            200,
+            OfflineRenderHead::EngineFrameZero,
+            48000.0,
+            None,
+            &InFlightRender::uncancellable(),
+        )
+        .unwrap();
         assert!(left.iter().chain(&right).all(|value| value.is_finite()));
         let complete =
             timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
@@ -19817,7 +19918,7 @@ mod tests {
             {"kind": "schedule-clip", "playback": {"trackId": "t1", "source": {"sourceId": "take", "materialVersion": "v2"},
                 "startTime": 4.0 / 48000.0, "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0, "playbackRate": 1, "gain": 1, "fade": {"microFadeSeconds": 0}}}
         ]});
-        let output = render_graph_offline(wire, 8, 48000.0, None, &NoWindowHost, &state)
+        let output = render_graph_offline(wire, 8, 48000.0, None, None, &NoWindowHost, &state)
             .await
             .unwrap();
         let first = f32::from_le_bytes(output[0..4].try_into().unwrap());

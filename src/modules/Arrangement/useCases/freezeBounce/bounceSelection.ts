@@ -134,6 +134,7 @@ export async function bounceSelection(
             onScheduled: (tally) => {
                 scheduleTally = tally;
             },
+            cropPrintedLatency: true,
         });
     } catch (error) {
         notifyUser(error instanceof Error ? error.message : String(error), 'error');

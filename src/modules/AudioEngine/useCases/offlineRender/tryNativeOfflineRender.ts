@@ -2,20 +2,57 @@ import { adjustmentLayerStore } from '#/modules/Arrangement/stores';
 import { modulationStore } from '#/modules/Automation/stores';
 
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
+import { nativeEngineHostedStripIds } from './nativeEngineHostedStripIds';
+import { nativeProgrammeHeadFrames } from './nativeProgrammeHeadFrames';
 import { readNativeOfflineHostedRuntime } from './readNativeOfflineHostedRuntime';
 import { renderOfflineWithNativeEngine } from './renderOfflineWithNativeEngine';
 import { type resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { selectOfflineRenderEngine } from './selectOfflineRenderEngine';
 import { type OfflineRenderOptions } from './types';
 
+/**
+ * What the native engine printed, and how many frames of its programme's own
+ * compensation sit ahead of the requested window. The engine has already
+ * dropped the depth it holds the master to.
+ */
+export type NativeOfflineRender = { buffer: AudioBuffer; compensationHeadFrameCount: number };
+
+/**
+ * The native render's own printed head. Its programme delays the master by less than
+ * the Web Audio render does, because the engine holds part of the session
+ * depth itself and trims that part on its side, so a printed head here is
+ * the programme's share alone.
+ */
+function resolveNativeHeadFrames(
+    input: ReturnType<typeof captureOfflineRenderInput>,
+    plan: ReturnType<typeof resolveOfflineMixPlan>
+) {
+    if (!plan.printsCompensationHead) {
+        return 0;
+    }
+    const hostedStripIds = nativeEngineHostedStripIds(plan.allRenderableTracks);
+    return nativeProgrammeHeadFrames(input.scheduling.latency, hostedStripIds, input.sampleRate);
+}
+
+function resolveNativeSpan(
+    input: ReturnType<typeof captureOfflineRenderInput>,
+    plan: ReturnType<typeof resolveOfflineMixPlan>
+) {
+    const { sampleRate } = input;
+    const compensationHeadFrameCount = resolveNativeHeadFrames(input, plan);
+    const frameCount = plan.frameCount - plan.compensationHeadFrameCount + compensationHeadFrameCount;
+    const durationSeconds =
+        frameCount === plan.frameCount ? plan.renderContext.durationSeconds : frameCount / sampleRate;
+    return { frameCount, durationSeconds, compensationHeadFrameCount };
+}
+
 export async function tryNativeOfflineRender(
     input: ReturnType<typeof captureOfflineRenderInput>,
     plan: ReturnType<typeof resolveOfflineMixPlan>,
     { onWarning, onProgress, abortSignal }: Pick<OfflineRenderOptions, 'onWarning' | 'onProgress' | 'abortSignal'>
-): Promise<AudioBuffer | null> {
+): Promise<NativeOfflineRender | null> {
     const { sampleRate } = input;
     const {
-        frameCount,
         masterGainValue,
         allRenderableTracks,
         scheduledTracks,
@@ -24,7 +61,8 @@ export async function tryNativeOfflineRender(
         vcaMultiplierByTrackId,
         renderContext,
     } = plan;
-    const { durationSeconds, defaultTempo, changes, projectPpqEndpoints, resolveTempoAtBeat, tracks } = renderContext;
+    const { defaultTempo, changes, projectPpqEndpoints, resolveTempoAtBeat, tracks } = renderContext;
+    const { frameCount, durationSeconds, compensationHeadFrameCount } = resolveNativeSpan(input, plan);
     // The D3.c.2 cutover (#2225): a desktop export the native engine can
     // hold renders through it; every other outcome carries its reason, and
     // a *degraded* one — a native engine that exists here and was passed
@@ -77,9 +115,10 @@ export async function tryNativeOfflineRender(
             onProgress,
             abortSignal,
             hostedPluginRuntime,
+            printsCompensationHead: plan.printsCompensationHead,
         });
         if (native.outcome === 'rendered') {
-            return native.buffer;
+            return { buffer: native.buffer, compensationHeadFrameCount };
         }
         onWarning?.(`The native engine declined this export (${native.reason}); rendering through Web Audio.`);
     } else if (selection.degraded) {

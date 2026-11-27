@@ -976,6 +976,8 @@ impl SourdawNative {
     /// PCM; a refused batch is an error carrying the batch's refusal reasons.
     /// `render_id`, when given, is what `cancel_graph_offline` names to stop
     /// it; a cancelled render's error starts `offline-render-cancelled`.
+    /// `prints_compensation_head` set trims the master's compensation depth
+    /// from the head, so the PCM starts on the master's timeline frame zero.
     #[napi]
     pub async fn render_graph_offline(
         &self,
@@ -983,6 +985,7 @@ impl SourdawNative {
         frames: u32,
         sample_rate: f64,
         render_id: Option<String>,
+        prints_compensation_head: Option<bool>,
     ) -> Result<Buffer> {
         let windows = self.window_host();
         Ok(Buffer::from(reason(
@@ -991,6 +994,7 @@ impl SourdawNative {
                 frames,
                 sample_rate,
                 render_id,
+                prints_compensation_head,
                 windows.as_ref(),
                 &self.singletons.app_state,
             )

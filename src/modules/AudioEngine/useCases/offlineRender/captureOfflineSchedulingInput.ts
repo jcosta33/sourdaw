@@ -14,9 +14,8 @@ import { type OfflineRenderProjectSource, type OfflineRenderRuntimeSource } from
 /** PCM belongs to the request: cache eviction and in-place edits cannot alter a pending render. */
 export function captureOfflineSchedulingInput(
     tracks: readonly Track[],
-    sampleRate: number,
     project?: OfflineRenderProjectSource,
-    runtime: OfflineRenderRuntimeSource = captureOfflineRenderRuntimeInput(tracks, sampleRate)
+    runtime: OfflineRenderRuntimeSource = captureOfflineRenderRuntimeInput(tracks)
 ) {
     const buffers = captureOfflineAudioBuffers(tracks, runtime.buffers);
     const routes = structuredClone(project ? project.sidechainRoutes : (sidechainStore.value?.routes ?? []));

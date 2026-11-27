@@ -5,7 +5,7 @@
 //! `Display` carries the exact text the caller receives, and callers convert with
 //! `to_string()` at the existing edge. Some of that text is matched by TypeScript
 //! (`pumpNativeLiveAutomationWriter.ts`, `engineNotRenderingRefusal.ts`,
-//! `createNativeOfflineGraphBackend.ts`); rewording any message needs the matching
+//! `createNativeOfflineGraphBackend.ts`, `isNativeOfflineRenderHeadPastCeiling.ts`); rewording any message needs the matching
 //! TypeScript change (ADR 0059). All of these are built on control threads, never
 //! the audio callback.
 
@@ -28,7 +28,8 @@ use super::graph::{
     BACTERIA_MOD_SOURCE_COUNT, BACTERIA_MOD_TARGET_COUNT, GRAND_BOULE_PREVIEW_LIVE_ONLY,
     MAX_BACTERIA_MOD_ASSIGNMENTS, MAX_BATCH_COMMANDS, MAX_IMMEDIATE_DEVICE_PARAMETERS,
     MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH, MAX_MIDI_CONTROLLER, MAX_MIDI_CONTROLLER_VALUE,
-    MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES, OFFLINE_RENDER_SAMPLE_RATES,
+    MAX_MIDI_VELOCITY, MAX_OFFLINE_RENDER_FRAMES, OFFLINE_RENDER_HEAD_PAST_CEILING,
+    OFFLINE_RENDER_SAMPLE_RATES,
 };
 use super::offline_plugins::OfflineRenderError;
 
@@ -464,6 +465,12 @@ pub(crate) enum GraphRefusal {
     OfflineFrameCountZero,
     OfflineFrameCountTooLarge {
         frames: usize,
+    },
+    /// The requested frames fit the ceiling, the compensation head rendered
+    /// ahead of them does not.
+    OfflineHeadPastCeiling {
+        frames: usize,
+        head_frames: usize,
     },
 }
 
@@ -945,6 +952,15 @@ impl fmt::Display for GraphRefusal {
                 "Frame count {frames} exceeds the offline render ceiling of \
                  {MAX_OFFLINE_RENDER_FRAMES}"
             ),
+            Self::OfflineHeadPastCeiling {
+                frames,
+                head_frames,
+            } => write!(
+                f,
+                "{OFFLINE_RENDER_HEAD_PAST_CEILING}: frame count {frames} plus the \
+                 {head_frames}-frame compensation head exceeds the offline render ceiling \
+                 of {MAX_OFFLINE_RENDER_FRAMES}"
+            ),
         }
     }
 }
@@ -981,6 +997,15 @@ mod tests {
         assert_eq!(
             GraphRefusal::OfflineFrameCountTooLarge { frames: 28_800_001 }.to_string(),
             "Frame count 28800001 exceeds the offline render ceiling of 28800000"
+        );
+        assert_eq!(
+            GraphRefusal::OfflineHeadPastCeiling {
+                frames: 28_800_000,
+                head_frames: 512,
+            }
+            .to_string(),
+            "offline-render-head-past-ceiling: frame count 28800000 plus the 512-frame \
+             compensation head exceeds the offline render ceiling of 28800000"
         );
     }
 

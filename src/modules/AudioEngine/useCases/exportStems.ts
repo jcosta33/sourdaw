@@ -31,6 +31,7 @@ import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRe
 import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
 import { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
 import { isCancelRequested } from './offlineRender/isCancelRequested';
+import { planPrintedLatencyFrames } from './offlineRender/planPrintedLatencyFrames';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
 import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
@@ -264,7 +265,19 @@ export const exportStems: ExportStemsFn = async function exportStems(
         const renderStem = async (track: (typeof eligible)[number], index: number) => {
             checkCancel(cancellationSignal);
 
-            const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+            // The stem is tapped at its own strip output, so it carries the delay compensation holds
+            // that strip back by plus its own devices' latency. The render runs that long past the
+            // stem's end so the delayed content is printed, and the head is cropped by the same
+            // frames below so the stem lands on the timeline at the length the region asked for.
+            const shiftFrames = planPrintedLatencyFrames({
+                trackId: track.id,
+                sampleRate,
+                baseFrameCount: frameCount,
+                onWarning,
+            });
+            const stemDurationSeconds = durationSeconds + shiftFrames / sampleRate;
+            const stemHistoryFrameCount = historyFrameCount + shiftFrames;
+            const offlineCtx = new OfflineAudioContext(2, frameCount + shiftFrames, sampleRate);
             // The frame scheduler for this stem's context. One instance per
             // `OfflineAudioContext` comes back from the factory, so this stem's
             // Faust devices share it rather than colliding on shared frames.
@@ -383,7 +396,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         trackGainNode: groupedStrip.faderNode,
                         trackPanNode: groupedStrip.panNode,
                         destination: offlineCtx.destination,
-                        durationSeconds,
+                        durationSeconds: stemDurationSeconds,
                         defaultTempo,
                         changes,
                         projections: {
@@ -424,7 +437,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         trackGainNode: keyStrip.faderNode,
                         trackPanNode: keyStrip.panNode,
                         destination: offlineCtx.destination,
-                        durationSeconds,
+                        durationSeconds: stemDurationSeconds,
                         defaultTempo,
                         changes,
                         projections: {
@@ -454,7 +467,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     });
                 }
 
-                schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
+                schedulePendingSuspends(offlineCtx, pendingWorkletEvents, stemDurationSeconds);
 
                 // Emit scheduling-done progress (40% of this stem's slot) before the render blocks.
                 const fractAfterSchedule = (done + 0.4) / eligible.length;
@@ -469,11 +482,11 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 const stemSpan = 1 / eligible.length;
                 const stemTimeoutMs = Math.max(
                     MIN_RENDER_TIMEOUT_MS,
-                    durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000
+                    stemDurationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000
                 );
                 const buffer = await renderInSegments({
                     offlineCtx,
-                    durationSeconds,
+                    durationSeconds: stemDurationSeconds,
                     timeoutMs: stemTimeoutMs,
                     cancelSource: stemCancelSource,
                     ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
@@ -489,7 +502,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             track.id,
                             cropHistoryFromRenderedBuffer({
                                 buffer,
-                                historyFrameCount,
+                                historyFrameCount: stemHistoryFrameCount,
                                 outputFrameCount,
                                 borrowed: true,
                             }),
@@ -502,7 +515,14 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     }
                     checkCancel(cancellationSignal);
                 } else {
-                    stems.set(track.id, cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount }));
+                    stems.set(
+                        track.id,
+                        cropHistoryFromRenderedBuffer({
+                            buffer,
+                            historyFrameCount: stemHistoryFrameCount,
+                            outputFrameCount,
+                        })
+                    );
                 }
                 successful++;
                 done++;
