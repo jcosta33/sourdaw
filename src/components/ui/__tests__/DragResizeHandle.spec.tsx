@@ -106,7 +106,7 @@ describe('DragResizeHandle', () => {
     });
 
     describe('keyboard navigation', () => {
-        it('supports ArrowRight and ArrowLeft for vertical handles', () => {
+        it('supports only horizontal arrow keys for vertical handles', () => {
             const onResize = vi.fn();
             const onResizeEnd = vi.fn();
             render(
@@ -119,6 +119,11 @@ describe('DragResizeHandle', () => {
             );
             const separator = screen.getByRole('separator');
 
+            fireEvent.keyDown(separator, { key: 'ArrowDown' });
+            fireEvent.keyDown(separator, { key: 'ArrowUp' });
+            expect(onResize).not.toHaveBeenCalled();
+            expect(onResizeEnd).not.toHaveBeenCalled();
+
             fireEvent.keyDown(separator, { key: 'ArrowRight' });
             expect(onResize).toHaveBeenLastCalledWith(10);
             expect(onResizeEnd).toHaveBeenCalledTimes(1);
@@ -128,7 +133,7 @@ describe('DragResizeHandle', () => {
             expect(onResizeEnd).toHaveBeenCalledTimes(2);
         });
 
-        it('supports ArrowDown and ArrowUp for horizontal handles', () => {
+        it('supports only vertical arrow keys for horizontal handles', () => {
             const onResize = vi.fn();
             const onResizeEnd = vi.fn();
             render(
@@ -140,6 +145,11 @@ describe('DragResizeHandle', () => {
                 />
             );
             const separator = screen.getByRole('separator');
+
+            fireEvent.keyDown(separator, { key: 'ArrowRight' });
+            fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+            expect(onResize).not.toHaveBeenCalled();
+            expect(onResizeEnd).not.toHaveBeenCalled();
 
             fireEvent.keyDown(separator, { key: 'ArrowDown' });
             expect(onResize).toHaveBeenLastCalledWith(10);

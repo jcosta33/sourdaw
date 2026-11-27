@@ -894,12 +894,10 @@ export class TrackNode {
             for (const pending of pendingLoad.parameterWrites) {
                 if (pending.kind === 'scheduled') {
                     finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
-                } else {
-                    if (finalDn.controller) {
-                        const complete = pending.receipt.begin();
-                        finalDn.controller.setParam(pending.name, pending.value);
-                        complete();
-                    }
+                } else if (finalDn.controller) {
+                    const complete = pending.receipt.begin();
+                    finalDn.controller.setParam(pending.name, pending.value);
+                    complete();
                 }
             }
             // Descriptors with their own placeholder controller replay before onLoaded.

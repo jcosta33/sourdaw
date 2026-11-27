@@ -126,12 +126,10 @@ export function ingestDspAnalysis(
                 time: frame.time,
             });
             gapCounter = 0;
-        } else {
-            if (currentPitchPoints.length > 0) {
-                gapCounter++;
-                if (gapCounter > MAX_GAP_FRAMES) {
-                    finalizeBlob();
-                }
+        } else if (currentPitchPoints.length > 0) {
+            gapCounter++;
+            if (gapCounter > MAX_GAP_FRAMES) {
+                finalizeBlob();
             }
         }
     }

@@ -846,20 +846,14 @@ export function demo5_NebulaDrift(): void {
         const pat = (() => {
             if (b < S.build1) {
                 return seqIntro;
+            } else if (b < S.peak) {
+                return seqBuild;
+            } else if (b < S.breakdown) {
+                return seqPeak;
+            } else if (b < S.final) {
+                return seqBreak;
             } else {
-                if (b < S.peak) {
-                    return seqBuild;
-                } else {
-                    if (b < S.breakdown) {
-                        return seqPeak;
-                    } else {
-                        if (b < S.final) {
-                            return seqBreak;
-                        } else {
-                            return seqFinal;
-                        }
-                    }
-                }
+                return seqFinal;
             }
         })();
 
@@ -905,20 +899,14 @@ export function demo5_NebulaDrift(): void {
         const phrase = (() => {
             if (bm < S.build1) {
                 return phraseA;
+            } else if (bm < S.peak) {
+                return phraseB;
+            } else if (bm < S.breakdown) {
+                return phraseC;
+            } else if (bm < S.final) {
+                return phraseD;
             } else {
-                if (bm < S.peak) {
-                    return phraseB;
-                } else {
-                    if (bm < S.breakdown) {
-                        return phraseC;
-                    } else {
-                        if (bm < S.final) {
-                            return phraseD;
-                        } else {
-                            return phraseA;
-                        }
-                    }
-                }
+                return phraseA;
             }
         })();
         const inBreak = bm >= S.breakdown && bm < S.final - 16;
