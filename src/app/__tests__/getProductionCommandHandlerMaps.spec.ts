@@ -83,7 +83,7 @@ describe('getProductionCommandHandlerMaps', () => {
         );
 
         // Pattern instance actions share the Arrangement map rather than a separate map.
-        expect(handlerMaps).toHaveLength(44);
+        expect(handlerMaps).toHaveLength(43);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         const arrangementHandlers = getArrangementHandlers();
         for (const actionType of [
@@ -124,7 +124,7 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(120);
+        expect(registrations).toHaveLength(125);
         expect(registrations.map(({ actionType }) => actionType)).toContain('stripSilence');
         expect(registrations.map(({ actionType }) => actionType)).toContain('extractGroove');
         expect(registrations.map(({ actionType }) => actionType)).toContain('applyGroove');

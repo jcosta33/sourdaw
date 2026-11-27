@@ -20,6 +20,8 @@ export const postTargetScopeActionNames = [
     'quantizeNoteLengths',
     'scaleAllVelocities',
     'setAllVelocities',
+    'scaleVelocities',
+    'humanizeNotes',
 ] as const;
 
 export type PostTargetScopeActionName = (typeof postTargetScopeActionNames)[number];

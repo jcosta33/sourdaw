@@ -1,39 +1,34 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
-import { clampVelocity } from '#/utils/midiData';
-import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
-import { type MidiNote } from '../../models/MidiNote';
+import { humanizeMidiNotes } from '../../transformers/humanizeMidiNotes';
 import { humanizeNotes } from '../../useCases/midiNoteTransforms/humanizeNotes';
 import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
+import { isMidiNoteTransformSessionEntry } from './isMidiNoteTransformSessionEntry';
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
 type HumanizeNotesAction = Extract<AppAction, { type: 'humanizeNotes' }>;
 
-/**
- * The exact map the `humanizeNotes` use case applies, evaluated read-only so
- * `describe` can preview the transformed notes for the undo guard. It must
- * draw the same rng values in the same order as the use case's updater, or the
- * captured `expectedNotes` would not match what the write produced and undo
- * would refuse. The two live apart because the use case owns the write path
- * and this handler owns the dispatch contract (#4615).
- */
-function previewHumanizedNotes(
-    notes: readonly MidiNote[],
-    amount: number,
-    velocityAmount: number,
-    seed: number
-): MidiNote[] {
-    const rng = createSeededRandom(seed);
-    return notes.map((note) => ({
-        ...note,
-        startBeat: note.startBeat + (rng() - 0.5) * amount * 0.25,
-        velocity: clampVelocity(note.velocity + Math.round((rng() - 0.5) * velocityAmount * 10)),
-    }));
+function isUnitAmount(value: number): boolean {
+    return Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
-function prepareHumanizeNotes(action: HumanizeNotesAction) {
+function findHumanizeRefusal(action: HumanizeNotesAction, context?: HandlerValidationContext): string | null {
+    const { amount, velocityAmount } = action.payload;
+    if (!isUnitAmount(amount)) {
+        return `amount must be from 0 through 1, got ${String(amount)}`;
+    }
+    if (velocityAmount !== undefined && !isUnitAmount(velocityAmount)) {
+        return `velocityAmount must be from 0 through 1, got ${String(velocityAmount)}`;
+    }
+    return getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) === null
+        ? `Clip "${action.payload.clipId}" is not a writable MIDI clip`
+        : null;
+}
+
+function prepareHumanizeNotes(action: HumanizeNotesAction, context?: HandlerValidationContext) {
     // describe runs before execute, so the seed is minted here when absent and
     // captured into the payload — execute then draws with the same seed and
     // the previewed transform matches the write exactly.
@@ -42,11 +37,12 @@ function prepareHumanizeNotes(action: HumanizeNotesAction) {
     }
     const seed = action.payload.seed;
     return prepareMidiNoteTransformUndo({
+        context,
         clipId: action.payload.clipId,
         label: 'Humanize notes',
         transform: (notes) => {
             const velocityAmount = action.payload.velocityAmount ?? action.payload.amount;
-            return previewHumanizedNotes(notes, action.payload.amount, velocityAmount, seed);
+            return humanizeMidiNotes(notes, action.payload.amount, velocityAmount, seed);
         },
     });
 }
@@ -72,7 +68,21 @@ export const handleHumanizeNotes = createHandler<'humanizeNotes'>({
         action.payload.seed = usedSeed;
         return { status: 'written' };
     },
-    describe: (action) => prepareHumanizeNotes(action).description,
+    validate: (action, context) => findHumanizeRefusal(action, context) === null,
+    validationRefusalReason: findHumanizeRefusal,
+    describe: (action, context) => prepareHumanizeNotes(action, context).description,
     isNoop: (action) => prepareHumanizeNotes(action).isNoop,
+    validateSessionEntry: (entry) => {
+        const { action } = entry;
+        if (action.type !== 'humanizeNotes' || action.payload.seed === undefined) {
+            return false;
+        }
+        const { clipId, amount, velocityAmount = amount, seed } = action.payload;
+        return isMidiNoteTransformSessionEntry({
+            entry,
+            clipId,
+            transform: (notes) => humanizeMidiNotes(notes, amount, velocityAmount, seed),
+        });
+    },
     undoable: true,
 });

@@ -8,8 +8,12 @@ vi.mock('../../getWritableMidiClipReplayGuard', () => ({
     })),
 }));
 
+import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
+import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
+
 import { midiStore } from '../../../stores/midiStore';
 import { handleHumanizeNotes } from '../handleHumanizeNotes';
+import { handleRestoreMidiClipNotes } from '../handleRestoreMidiClipNotes';
 
 type HumanizeNotesAction = Parameters<typeof handleHumanizeNotes.execute>[0];
 
@@ -98,5 +102,70 @@ describe('handleHumanizeNotes — deterministic undo/redo (item #2)', () => {
 
         expect(actionA.payload.seed).not.toBe(actionB.payload.seed);
         expect(resultB).not.toEqual(resultA);
+    });
+});
+
+describe('handleHumanizeNotes — notes at the clip start', () => {
+    function findSeedDrawingNegativeTimingOffset(): number {
+        for (let seed = 1; seed < 1000; seed += 1) {
+            const rng = createSeededRandom(seed);
+            const timingDraw = rng();
+            const velocityStep = Math.round((rng() - 0.5) * 10);
+            if (timingDraw < 0.5 && velocityStep !== 0) {
+                return seed;
+            }
+        }
+        throw new Error('No seed draws a negative timing offset');
+    }
+
+    it('keeps a note at beat 0 at beat 0 and restores it exactly on undo', () => {
+        midiStore.set({
+            notesByClipId: { clip1: [{ ...note('a'), startBeat: 0 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const action: HumanizeNotesAction = {
+            type: 'humanizeNotes',
+            payload: { clipId: 'clip1', amount: 1, seed: findSeedDrawingNegativeTimingOffset() },
+        };
+        const inverse = handleHumanizeNotes.describe(action).inverseAction;
+
+        void handleHumanizeNotes.execute(action);
+
+        expect(midiStore.value?.notesByClipId.clip1?.[0]?.startBeat).toBe(0);
+        if (inverse?.type !== 'restoreMidiClipNotes') {
+            throw new Error('Expected a restoreMidiClipNotes inverse');
+        }
+        // The undo guard names exactly the notes the write left, and its restore target is the original note.
+        expect(inverse.payload.expectedNotes).toEqual(midiStore.value?.notesByClipId.clip1);
+        expect(inverse.payload.notes).toEqual([{ ...note('a'), startBeat: 0 }]);
+        expect(handleRestoreMidiClipNotes.validateSessionActionArguments?.(inverse.payload)).toBe(true);
+    });
+});
+
+describe('handleHumanizeNotes — saved session entries', () => {
+    beforeEach(seedStore);
+
+    function describedEntry(): HandlerSessionActionEntry {
+        const action: HumanizeNotesAction = {
+            type: 'humanizeNotes',
+            payload: { clipId: 'clip1', amount: 1, seed: 7 },
+        };
+        const described = handleHumanizeNotes.describe(action);
+        if (!described.inverseAction || !described.redoAction) {
+            throw new Error('Expected an inverse and a redo');
+        }
+        return { action, inverseAction: described.inverseAction, redoAction: described.redoAction };
+    }
+
+    it('admits the entry of a seeded humanize and drops one without a seed or for another action', () => {
+        const seeded = describedEntry();
+        expect(handleHumanizeNotes.validateSessionEntry?.(seeded)).toBe(true);
+
+        const unseededAction: AppAction = { type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 1 } };
+        expect(handleHumanizeNotes.validateSessionEntry?.({ ...seeded, action: unseededAction })).toBe(false);
+
+        const foreign: AppAction = { type: 'invertNotes', payload: { clipId: 'clip1' } };
+        expect(handleHumanizeNotes.validateSessionEntry?.({ ...seeded, action: foreign })).toBe(false);
     });
 });

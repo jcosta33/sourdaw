@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
 import { createPatternInstanceFromSelection } from '../../patternInstance/createPatternInstanceFromSelection';
@@ -95,7 +96,6 @@ describe('miscCommands', () => {
 
     it('dispatches the declarative action for each non-callable misc command', () => {
         const staticEntries = [
-            { id: 'toggle-chord-track', action: { type: 'toggleChordTrack' } },
             {
                 id: 'add-chord-cmaj',
                 action: { type: 'addChordEvent', payload: { beat: 0, root: 0, quality: 'major', duration: 4 } },
@@ -172,6 +172,23 @@ describe('miscCommands', () => {
         for (const { id, action } of staticEntries) {
             const command = miscCommands.find((entry) => entry.id === id);
             expect(command?.action).toEqual(action);
+        }
+    });
+
+    it('toggle-chord-track dispatches the explicit opposite of the current enabled flag', () => {
+        const live = chordTrackStore.value;
+        chordTrackStore.set({ enabled: false, events: [] });
+        runAction('toggle-chord-track');
+        expect(executeUserAppAction).toHaveBeenLastCalledWith({ type: 'toggleChordTrack', payload: { enabled: true } });
+
+        chordTrackStore.set({ enabled: true, events: [] });
+        runAction('toggle-chord-track');
+        expect(executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'toggleChordTrack',
+            payload: { enabled: false },
+        });
+        if (live) {
+            chordTrackStore.set(live);
         }
     });
 

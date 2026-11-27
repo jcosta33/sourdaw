@@ -1,6 +1,6 @@
-import { clampVelocity } from '#/utils/midiData';
-import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
+import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
+import { humanizeMidiNotes } from '../../transformers/humanizeMidiNotes';
 import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 /**
@@ -11,15 +11,8 @@ import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 export function humanizeNotes(clipId: string, timingAmount: number, velocityAmount?: number, seed?: number): number {
     const vAmount = velocityAmount ?? timingAmount;
     const usedSeed = seed ?? generateSeed();
-    const rng = createSeededRandom(usedSeed);
 
-    updateNotesForClip(clipId, (notes) =>
-        notes.map((node) => ({
-            ...node,
-            startBeat: node.startBeat + (rng() - 0.5) * timingAmount * 0.25,
-            velocity: clampVelocity(node.velocity + Math.round((rng() - 0.5) * vAmount * 10)),
-        }))
-    );
+    updateNotesForClip(clipId, (notes) => humanizeMidiNotes(notes, timingAmount, vAmount, usedSeed));
 
     return usedSeed;
 }

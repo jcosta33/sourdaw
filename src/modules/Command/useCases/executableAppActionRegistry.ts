@@ -13,7 +13,10 @@ import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
+import { chordTrackDescriptors } from './executableDescriptors/chordTrackDescriptors';
+import { midiNoteTransformDescriptors } from './executableDescriptors/midiNoteTransformDescriptors';
 import {
+    editableMidiClipTargetRules,
     type ExecutableAppActionDescriptor,
     type ExecutableAppActionMutationIdentityRule,
     type ExecutableAppActionParentTrackTargetCapability,
@@ -54,10 +57,6 @@ const editableClipTargetRules = [
 
 const editableAudioClipTargetRules = [
     { argument: 'clipId', capability: 'editable-audio-clip' },
-] as const satisfies readonly ExecutableAppActionTargetRule[];
-
-const editableMidiClipTargetRules = [
-    { argument: 'clipId', capability: 'editable-midi-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const writableMidiClipTargetRules = [
@@ -1338,6 +1337,8 @@ export const executableAppActionDescriptors = [
             required: ['clipId', 'velocity'],
         },
     },
+    ...midiNoteTransformDescriptors,
+    ...chordTrackDescriptors,
     {
         actionType: 'renameTrack',
         risk: 'bounded-reversible',
@@ -3275,6 +3276,11 @@ export const executableAppActionMutationIdentityRulesByType = {
     quantizeNoteLengths: CLIP_MUTATION_IDENTITY,
     scaleAllVelocities: CLIP_MUTATION_IDENTITY,
     setAllVelocities: CLIP_MUTATION_IDENTITY,
+    scaleVelocities: CLIP_MUTATION_IDENTITY,
+    humanizeNotes: CLIP_MUTATION_IDENTITY,
+    addChordEvent: SINGLETON_MUTATION_IDENTITY,
+    clearChordTrack: SINGLETON_MUTATION_IDENTITY,
+    toggleChordTrack: SINGLETON_MUTATION_IDENTITY,
     renameTrack: TRACK_MUTATION_IDENTITY,
     muteTrack: TRACK_MUTATION_IDENTITY,
     soloTrack: TRACK_MUTATION_IDENTITY,
@@ -3398,6 +3404,11 @@ export const executableAppActionMutationIdempotenceByType = {
     quantizeNoteLengths: false,
     scaleAllVelocities: false,
     setAllVelocities: true,
+    scaleVelocities: false,
+    humanizeNotes: false,
+    addChordEvent: false,
+    clearChordTrack: false,
+    toggleChordTrack: true,
     renameTrack: false,
     muteTrack: true,
     soloTrack: true,

@@ -340,7 +340,6 @@ const routingProjectionByActionType: RoutingProjectionLookup = {
     previousSetlistItem: unchangedContext,
     quantizeTransients: unchangedContext,
     redo: unchangedContext,
-    removeChordEvent: unchangedContext,
     removeFromVca: unchangedContext,
     removeYeastProcessor: unchangedContext,
     reorderYeastProcessor: unchangedContext,

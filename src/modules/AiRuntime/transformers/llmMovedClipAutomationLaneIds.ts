@@ -199,7 +199,6 @@ export const movedClipAutomationLaneIdsByActionType: MovedAutomationLaneLookup =
     previousSetlistItem: noMovedAutomationLanes,
     quantizeTransients: noMovedAutomationLanes,
     redo: noMovedAutomationLanes,
-    removeChordEvent: noMovedAutomationLanes,
     removeFromVca: noMovedAutomationLanes,
     removeYeastProcessor: noMovedAutomationLanes,
     reorderYeastProcessor: noMovedAutomationLanes,

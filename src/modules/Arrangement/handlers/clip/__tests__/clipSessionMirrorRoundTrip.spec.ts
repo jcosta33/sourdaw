@@ -60,7 +60,7 @@ import {
     setupProjectionBridge,
     subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
-import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
+import { chordTrackStore, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import {
     assignGrooveTemplate,
     createGrooveTemplate,
@@ -2232,6 +2232,191 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(grooveTemplateStore.value?.assignments.some((entry) => entry.templateId === 'project-groove')).toBe(
                 false
             );
+        });
+    });
+
+    describe('velocity, humanize and chord-track replay', () => {
+        const SEEDED_NOTES = [
+            { id: 'n-soft', pitch: 60, startBeat: 1, duration: 1, velocity: 20 },
+            { id: 'n-loud', pitch: 64, startBeat: 2, duration: 1, velocity: 100 },
+        ];
+        const SEEDED_CHORDS = {
+            enabled: true,
+            events: [
+                { id: 'chord-a', beat: 0, root: 0, quality: 'major' as const, duration: 4 },
+                { id: 'chord-b', beat: 4, root: 7, quality: '7' as const, duration: 2.5 },
+            ],
+        };
+
+        function seedClipNotes(): void {
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: { 'clip-a': structuredClone(SEEDED_NOTES) },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            flushAutomergeStorageWrites();
+        }
+
+        function clipNotes() {
+            return structuredClone(midiStore.value?.notesByClipId['clip-a'] ?? []);
+        }
+
+        /** What an agent batch runs: materialised arguments, then one compensated batch. */
+        function runAsAgent(actions: ExecutableCommandAction[]) {
+            for (const action of actions) {
+                getExecutableCommandRegistrations()
+                    .find((candidate) => candidate.actionType === action.type)
+                    ?.materializeCommandArguments?.(action);
+            }
+            return executeAppActionBatch(actions, { groupId: 'agent-velocity', requireCompensation: true });
+        }
+
+        it('scales velocities by a curve, then undoes to the exact prior notes and redoes across reloads', async () => {
+            seedClipNotes();
+            const result = await runAsAgent([
+                {
+                    type: 'scaleVelocities',
+                    payload: { clipId: 'clip-a', curve: 'compress', minVelocity: 10, maxVelocity: 110 },
+                },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            const scaled = clipNotes();
+            expect(scaled.map((note) => note.velocity)).toEqual([40, 80]);
+
+            await vi.waitFor(() =>
+                expect(
+                    parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past,
+                    String(sessionStorage.getItem(UNDO_SESSION_KEY)).slice(0, 600)
+                ).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipNotes()).toEqual(SEEDED_NOTES);
+
+            reloadSavedProject();
+            await redo();
+            expect(clipNotes()).toEqual(scaled);
+        });
+
+        it('refuses to undo a velocity curve over notes edited since, keeping the later edit', async () => {
+            seedClipNotes();
+            expect(
+                await runAsAgent([{ type: 'scaleVelocities', payload: { clipId: 'clip-a', curve: 'expand' } }])
+            ).toMatchObject({ status: 'committed' });
+            const edited = clipNotes().map((note) => ({ ...note, velocity: 77 }));
+            setNotesForClip('clip-a', edited);
+            flushAutomergeStorageWrites();
+
+            expect((await undo()).headConsumed).toBe(false);
+            expect(clipNotes()).toEqual(edited);
+        });
+
+        it('humanizes with the seed fixed at compilation, so redo lands every note where it first landed', async () => {
+            seedClipNotes();
+            const action: ExecutableCommandAction = {
+                type: 'humanizeNotes',
+                payload: { clipId: 'clip-a', amount: 0.5 },
+            };
+
+            expect(await runAsAgent([action])).toMatchObject({ status: 'committed' });
+            const humanized = clipNotes();
+            expect(humanized).not.toEqual(SEEDED_NOTES);
+            expect(typeof action.payload.seed).toBe('number');
+
+            await vi.waitFor(() =>
+                expect(
+                    parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past,
+                    String(sessionStorage.getItem(UNDO_SESSION_KEY)).slice(0, 600)
+                ).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipNotes()).toEqual(SEEDED_NOTES);
+
+            reloadSavedProject();
+            await redo();
+            expect(clipNotes()).toEqual(humanized);
+        });
+
+        it('refuses a velocity curve on a locked clip, writing nothing', async () => {
+            seedClipNotes();
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) => (clip.id === 'clip-a' ? { ...clip, locked: true } : clip)),
+                })),
+            });
+            flushAutomergeStorageWrites();
+
+            const result = await runAsAgent([
+                { type: 'scaleVelocities', payload: { clipId: 'clip-a', curve: 'compress' } },
+            ]);
+
+            expect(result.status).not.toBe('committed');
+            expect(clipNotes()).toEqual(SEEDED_NOTES);
+            expect(undoStore.value?.past ?? []).toEqual([]);
+        });
+
+        it('clears the chord track, then undoes to every removed chord exactly and redoes across reloads', async () => {
+            chordTrackStore.set(structuredClone(SEEDED_CHORDS));
+            flushAutomergeStorageWrites();
+
+            const cleared = await runAsAgent([{ type: 'clearChordTrack' }]);
+            expect(cleared.status, JSON.stringify(cleared)).toBe('committed');
+            expect(chordTrackStore.value?.events).toEqual([]);
+
+            await vi.waitFor(() =>
+                expect(
+                    parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past,
+                    String(sessionStorage.getItem(UNDO_SESSION_KEY)).slice(0, 600)
+                ).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(chordTrackStore.value).toEqual(SEEDED_CHORDS);
+
+            reloadSavedProject();
+            await redo();
+            expect(chordTrackStore.value).toEqual({ enabled: true, events: [] });
+        });
+
+        it('adds a chord under the application-minted id, and a toggle after it undoes as one batch', async () => {
+            chordTrackStore.set(structuredClone(SEEDED_CHORDS));
+            flushAutomergeStorageWrites();
+            const add: ExecutableCommandAction = {
+                type: 'addChordEvent',
+                payload: { beat: 8, root: 5, quality: 'minor' },
+            };
+
+            expect(await runAsAgent([add, { type: 'toggleChordTrack', payload: { enabled: false } }])).toMatchObject({
+                status: 'committed',
+            });
+            const eventId = chordTrackStore.value?.events.find((event) => event.beat === 8)?.id;
+            expect(eventId).toMatch(/^chord-command-/);
+            expect(chordTrackStore.value?.enabled).toBe(false);
+            expect(chordTrackStore.value?.events.map((event) => event.id)).toEqual(['chord-a', 'chord-b', eventId]);
+
+            await vi.waitFor(() =>
+                expect(
+                    parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past,
+                    String(sessionStorage.getItem(UNDO_SESSION_KEY)).slice(0, 600)
+                ).toHaveLength(2)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(chordTrackStore.value).toEqual(SEEDED_CHORDS);
+
+            reloadSavedProject();
+            await redo();
+            expect(chordTrackStore.value?.events.map((event) => event.id)).toEqual(['chord-a', 'chord-b', eventId]);
+            expect(chordTrackStore.value?.enabled).toBe(false);
         });
     });
 

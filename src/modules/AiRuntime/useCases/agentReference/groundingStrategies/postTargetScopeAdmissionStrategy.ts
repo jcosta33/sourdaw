@@ -342,6 +342,8 @@ export const postTargetScopeAdmissionStrategyDefinitions = [
     { name: 'quantizeNoteLengths', transform: midiWholeClipStrategy },
     { name: 'scaleAllVelocities', transform: midiWholeClipStrategy },
     { name: 'setAllVelocities', transform: midiWholeClipStrategy },
+    { name: 'scaleVelocities', transform: midiWholeClipStrategy },
+    { name: 'humanizeNotes', transform: midiWholeClipStrategy },
 ] satisfies readonly PostTargetScopeAdmissionStrategyDefinition<PostTargetScopeActionName>[];
 
 const postTargetScopeAdmissionStrategyRegistry =

@@ -764,7 +764,6 @@ vi.mock('#/modules/Levain/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiTransformProtocolContract: noop,
-    getChordTrackHandlers: sentinelHandlers('ChordTrack'),
     getMidiGrooveHandlers: sentinelHandlers('MidiGroove'),
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
     prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
@@ -1086,7 +1085,6 @@ describe('bootstrap', () => {
         'PluginHost',
         'AiMidi',
         'AiOrganization',
-        'ChordTrack',
         'MidiNoteTransform',
         'DrumPreviewBranch',
         'MidiGroove',

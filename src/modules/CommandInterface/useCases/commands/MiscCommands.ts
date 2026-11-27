@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
 import { executeCommandAction } from '../executeCommandAction';
@@ -31,7 +32,12 @@ export const miscCommands: CallableCommandEntry[] = [
         label: 'Toggle Chord Track',
         description: 'Enable or disable the global chord track',
         category: 'Chords',
-        action: { type: 'toggleChordTrack' },
+        action: (onCommitted?: () => void) => {
+            void executeCommandAction(onCommitted, {
+                type: 'toggleChordTrack',
+                payload: { enabled: !(chordTrackStore.value?.enabled ?? false) },
+            });
+        },
     },
     {
         id: 'add-chord-cmaj',

@@ -1,12 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { chordTrackStore, type ChordTrackState } from '../../../stores/chordTrackStore';
 import { getChordTrackHandlers } from '../../../useCases/getChordTrackHandlers';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 const beforeState: ChordTrackState = {
     enabled: true,
@@ -24,6 +37,7 @@ const mutationCases = [
 
 describe('chord-track action authority', () => {
     beforeEach(() => {
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         registerHandlerMap(getChordTrackHandlers());
@@ -47,8 +61,23 @@ describe('chord-track action authority', () => {
         expect(chordTrackStore.value).toEqual(expected);
     });
 
+    it('refuses to redo a clear over a chord a collaborator added after the undo', async () => {
+        await executeAppAction({ type: 'clearChordTrack' });
+        await undo();
+        const collaboratorChord = { id: 'chord-collab', beat: 8, root: 7, quality: 'major' as const, duration: 4 };
+        chordTrackStore.set({
+            enabled: true,
+            events: [...structuredClone(beforeState.events), collaboratorChord],
+        });
+        const edited = structuredClone(chordTrackStore.value);
+
+        await redo();
+
+        expect(chordTrackStore.value).toEqual(edited);
+    });
+
     it('labels the effective disabling toggle and skips explicit same-state toggles', async () => {
-        await executeAppAction({ type: 'toggleChordTrack' });
+        await executeAppAction({ type: 'toggleChordTrack', payload: { enabled: false } });
         expect(undoStore.value?.past.at(-1)?.label).toBe('Disable chord track');
 
         const undoCount = undoStore.value?.past.length;

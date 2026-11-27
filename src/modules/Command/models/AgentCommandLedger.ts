@@ -237,6 +237,11 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['quantizeNoteLengths', 'midi', 'MIDI'],
     ['scaleAllVelocities', 'midi', 'MIDI'],
     ['setAllVelocities', 'midi', 'MIDI'],
+    ['scaleVelocities', 'midi', 'MIDI'],
+    ['humanizeNotes', 'midi', 'MIDI'],
+    ['addChordEvent', 'midi', 'MIDI'],
+    ['clearChordTrack', 'midi', 'MIDI'],
+    ['toggleChordTrack', 'midi', 'MIDI'],
     ['extractGroove', 'midi', 'MIDI', 'getMidiGrooveHandlers'],
     ['applyGroove', 'midi', 'MIDI', 'getMidiGrooveHandlers'],
 
@@ -403,20 +408,6 @@ export const AGENT_RUNTIME_ACTION_ACCOUNTING: readonly AgentRuntimeActionAccount
         packet: RUNTIME_ACTION_PACKET,
         reason: 'Audio clip edits with no executable descriptor or typed provider payload yet; their handlers accept unchecked runtime payloads.',
         actionTypes: ['reverseClip'],
-    },
-    {
-        kind: 'interim-unsupported',
-        category: 'midi',
-        packet: RUNTIME_ACTION_PACKET,
-        reason: 'MIDI edits with no executable descriptor yet.',
-        actionTypes: [
-            'humanizeNotes',
-            'scaleVelocities',
-            'addChordEvent',
-            'removeChordEvent',
-            'clearChordTrack',
-            'toggleChordTrack',
-        ],
     },
     {
         kind: 'interim-unsupported',

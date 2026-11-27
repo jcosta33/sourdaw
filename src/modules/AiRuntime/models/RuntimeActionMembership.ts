@@ -231,7 +231,7 @@ const runtimeActionMembershipByActionType = {
     previousSetlistItem: true,
     quantizeTransients: true,
     redo: true,
-    removeChordEvent: true,
+    removeChordEvent: false,
     removeFromVca: true,
     removeYeastProcessor: true,
     reorderYeastProcessor: true,

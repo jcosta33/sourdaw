@@ -353,7 +353,6 @@ const mutationKeysByActionType: MutationKeyLookup = {
     previousSetlistItem: noKeys,
     quantizeTransients: noKeys,
     redo: noKeys,
-    removeChordEvent: noKeys,
     removeFromVca: removeFromVcaKeys,
     removeYeastProcessor: noKeys,
     reorderYeastProcessor: noKeys,

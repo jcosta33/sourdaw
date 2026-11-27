@@ -235,7 +235,6 @@ const sidechainInvalidationByActionType: SidechainInvalidationLookup = {
     previousSetlistItem: neverInvalidates,
     quantizeTransients: neverInvalidates,
     redo: neverInvalidates,
-    removeChordEvent: neverInvalidates,
     removeFromVca: neverInvalidates,
     removeYeastProcessor: neverInvalidates,
     reorderYeastProcessor: neverInvalidates,

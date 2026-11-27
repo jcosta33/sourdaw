@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createChordEvent, formatChordName } from '../ChordEvent';
+import { compareChordEvents, createChordEvent, formatChordName } from '../ChordEvent';
 
 describe('formatChordName', () => {
     it('uses root name and omits suffix for major', () => {
@@ -48,5 +48,17 @@ describe('createChordEvent', () => {
         expect(ev.quality).toBe('dim');
         expect(ev.duration).toBe(2);
         expect(ev.id).toMatch(/^chord-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    });
+});
+
+describe('compareChordEvents', () => {
+    const at = (id: string, beat: number) => ({ id, beat, root: 0, quality: 'major' as const, duration: 4 });
+
+    it('orders by beat, then by id, and ties only an identical beat and id', () => {
+        expect(compareChordEvents(at('b', 1), at('a', 2))).toBeLessThan(0);
+        expect(compareChordEvents(at('a', 2), at('b', 1))).toBeGreaterThan(0);
+        expect(compareChordEvents(at('a', 1), at('b', 1))).toBe(-1);
+        expect(compareChordEvents(at('b', 1), at('a', 1))).toBe(1);
+        expect(compareChordEvents(at('a', 1), at('a', 1))).toBe(0);
     });
 });

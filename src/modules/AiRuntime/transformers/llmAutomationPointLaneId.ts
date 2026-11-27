@@ -195,7 +195,6 @@ export const automationPointLaneIdByActionType: AutomationPointLaneLookup = {
     previousSetlistItem: noAutomationPointLane,
     quantizeTransients: noAutomationPointLane,
     redo: noAutomationPointLane,
-    removeChordEvent: noAutomationPointLane,
     removeFromVca: noAutomationPointLane,
     removeYeastProcessor: noAutomationPointLane,
     reorderYeastProcessor: noAutomationPointLane,

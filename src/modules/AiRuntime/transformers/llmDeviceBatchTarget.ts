@@ -217,7 +217,6 @@ const deviceBatchTargetByActionType: DeviceBatchTargetLookup = {
     previousSetlistItem: noDeviceBatchTarget,
     quantizeTransients: noDeviceBatchTarget,
     redo: noDeviceBatchTarget,
-    removeChordEvent: noDeviceBatchTarget,
     removeFromVca: noDeviceBatchTarget,
     removeYeastProcessor: noDeviceBatchTarget,
     reorderYeastProcessor: noDeviceBatchTarget,

@@ -209,6 +209,134 @@ describe('midiStrategy', () => {
         ).toEqual({ type: 'setAllVelocities', payload: { clipId: 'clip-midi-a', velocity: 100 } });
     });
 
+    describe('scaleVelocities range', () => {
+        function bridgeScale(extra: Record<string, unknown>) {
+            return bridgeMidiToolCall({
+                call: { name: 'scaleVelocities', arguments: { clipId: 'clip-midi-a', curve: 'linear', ...extra } },
+                context: projectContext,
+                index: 11,
+            });
+        }
+
+        it('refuses a minimum above the maximum and names both values', () => {
+            expect(bridgeScale({ minVelocity: 100, maxVelocity: 50 })).toMatchObject({
+                name: 'scaleVelocities',
+                reason: expect.stringContaining('minVelocity 100 must not exceed maxVelocity 50'),
+            });
+        });
+
+        it('still refuses a minimum of 128', () => {
+            const result = bridgeScale({ minVelocity: 128 });
+
+            expect(result).toMatchObject({ name: 'scaleVelocities' });
+            expect(result).not.toHaveProperty('type');
+        });
+
+        it('admits equal bounds and a lone bound against the other default', () => {
+            expect(bridgeScale({ minVelocity: 64, maxVelocity: 64 })).toEqual({
+                type: 'scaleVelocities',
+                payload: { clipId: 'clip-midi-a', curve: 'linear', minVelocity: 64, maxVelocity: 64 },
+            });
+            expect(bridgeScale({ minVelocity: 100 })).toMatchObject({ type: 'scaleVelocities' });
+        });
+    });
+
+    describe('velocity curve and humanize arguments', () => {
+        function bridge(name: string, args: Record<string, unknown>) {
+            return bridgeMidiToolCall({ call: { name, arguments: args }, context: projectContext, index: 12 });
+        }
+
+        it('refuses an unknown curve, a stray key and an out-of-range maximum for scaleVelocities', () => {
+            const scaleReason = expect.stringContaining('known velocity curve');
+            expect(bridge('scaleVelocities', { clipId: 'clip-midi-a', curve: 'zigzag' })).toMatchObject({
+                name: 'scaleVelocities',
+                reason: scaleReason,
+            });
+            expect(bridge('scaleVelocities', { clipId: 'clip-midi-a', curve: 'linear', factor: 2 })).toMatchObject({
+                name: 'scaleVelocities',
+                reason: scaleReason,
+            });
+            expect(
+                bridge('scaleVelocities', { clipId: 'clip-midi-a', curve: 'linear', maxVelocity: 128 })
+            ).toMatchObject({ name: 'scaleVelocities', reason: scaleReason });
+            expect(bridge('scaleVelocities', { clipId: 'clip-midi-a', curve: 'linear', maxVelocity: 0 })).toMatchObject(
+                { name: 'scaleVelocities', reason: scaleReason }
+            );
+        });
+
+        it('admits humanizeNotes with and without velocityAmount and refuses out-of-range values', () => {
+            expect(bridge('humanizeNotes', { clipId: 'clip-midi-a', amount: 0.5 })).toEqual({
+                type: 'humanizeNotes',
+                payload: { clipId: 'clip-midi-a', amount: 0.5 },
+            });
+            expect(bridge('humanizeNotes', { clipId: 'clip-midi-a', amount: 1, velocityAmount: 0 })).toEqual({
+                type: 'humanizeNotes',
+                payload: { clipId: 'clip-midi-a', amount: 1, velocityAmount: 0 },
+            });
+            const humanizeReason = expect.stringContaining('amount and velocityAmount from 0 through 1');
+            for (const args of [
+                { clipId: 'clip-midi-a', amount: 1.5 },
+                { clipId: 'clip-midi-a', amount: 0.5, velocityAmount: -0.1 },
+                { clipId: 'clip-midi-a', amount: 0.5, extra: true },
+                { clipId: 'no-such-clip', amount: 0.5 },
+            ]) {
+                expect(bridge('humanizeNotes', args)).toMatchObject({
+                    name: 'humanizeNotes',
+                    reason: humanizeReason,
+                });
+            }
+        });
+    });
+
+    describe('chord track arguments', () => {
+        function bridge(name: string, args: Record<string, unknown>) {
+            return bridgeMidiToolCall({ call: { name, arguments: args }, context: projectContext, index: 13 });
+        }
+
+        it('admits addChordEvent with and without a duration', () => {
+            expect(bridge('addChordEvent', { beat: 4, root: 7, quality: 'min7' })).toEqual({
+                type: 'addChordEvent',
+                payload: { beat: 4, root: 7, quality: 'min7' },
+            });
+            expect(bridge('addChordEvent', { beat: 0, root: 0, quality: 'major', duration: 0.25 })).toEqual({
+                type: 'addChordEvent',
+                payload: { beat: 0, root: 0, quality: 'major', duration: 0.25 },
+            });
+        });
+
+        it('refuses addChordEvent arguments outside the contract with the chord reason', () => {
+            const reason = expect.stringContaining('a known chord quality');
+            for (const args of [
+                { beat: -1, root: 0, quality: 'major' },
+                { beat: 0, root: 12, quality: 'major' },
+                { beat: 0, root: 0, quality: 'power' },
+                { beat: 0, root: 0, quality: 'major', duration: 0.2 },
+                { beat: 0, root: 0, quality: 'major', extra: 1 },
+            ]) {
+                expect(bridge('addChordEvent', args)).toMatchObject({ name: 'addChordEvent', reason });
+            }
+        });
+
+        it('admits clearChordTrack without arguments and refuses any argument', () => {
+            expect(bridge('clearChordTrack', {})).toEqual({ type: 'clearChordTrack' });
+            expect(bridge('clearChordTrack', { all: true })).toMatchObject({
+                name: 'clearChordTrack',
+                reason: expect.stringContaining('Expected no arguments'),
+            });
+        });
+
+        it('admits toggleChordTrack with a boolean and refuses anything else', () => {
+            expect(bridge('toggleChordTrack', { enabled: false })).toEqual({
+                type: 'toggleChordTrack',
+                payload: { enabled: false },
+            });
+            expect(bridge('toggleChordTrack', { enabled: 'yes' })).toMatchObject({
+                name: 'toggleChordTrack',
+                reason: expect.stringContaining('Expected a boolean enabled'),
+            });
+        });
+    });
+
     it('addNotes validates against the anchored loop window of a trimmed looped clip', () => {
         // A clip looped at 0 (region media [0, 4)) and start-trimmed to 3:
         // the trim advanced the offset to 3, so the scheduler's window in

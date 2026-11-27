@@ -418,7 +418,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
         void dispatchAction(
             {
                 type: 'addChordEvent',
-                payload: { beat: Math.floor(beat), root, quality, duration: 4 },
+                payload: { beat: Math.max(0, Math.floor(beat)), root, quality, duration: 4 },
             },
             { onApplied: () => closeContextMenu(false) }
         );

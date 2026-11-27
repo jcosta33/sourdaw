@@ -14228,14 +14228,6 @@
             "count": 1
         }
     },
-    "src/modules/MIDI/handlers/chordTrack/handleRestoreChordTrackState.ts": {
-        "sourdaw-craft/no-conditional-empty-spread": {
-            "count": 3
-        },
-        "sourdaw-craft/no-useless-clone-spread": {
-            "count": 1
-        }
-    },
     "src/modules/MIDI/handlers/getWritableMidiClipReplayGuard.ts": {
         "eslint/complexity": {
             "count": 1

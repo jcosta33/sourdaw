@@ -465,6 +465,15 @@ describe('MIDI note transforms through AppAction execution', () => {
             expectedNotes: [atomicNote('a', 60, 0.125, { velocity: 40 }), atomicNote('b', 67, 1.25, { velocity: 51 })],
         },
         {
+            name: 'scale velocities by curve',
+            label: 'Scale velocities (compress)',
+            action: {
+                type: 'scaleVelocities',
+                payload: { clipId: CLIP_ID, curve: 'compress', minVelocity: 10, maxVelocity: 110 },
+            } as const,
+            expectedNotes: [atomicNote('a', 60, 0.125, { velocity: 40 }), atomicNote('b', 67, 1.25, { velocity: 80 })],
+        },
+        {
             name: 'set velocities',
             label: 'Set all velocities to 96',
             action: { type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } } as const,
@@ -513,6 +522,45 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toEqual([]);
     });
+
+    it.each([
+        {
+            name: 'a scale followed by a humanize',
+            actions: [
+                { type: 'scaleVelocities', payload: { clipId: CLIP_ID, curve: 'compress' } },
+                { type: 'humanizeNotes', payload: { clipId: CLIP_ID, amount: 1, seed: 17 } },
+            ],
+        },
+        {
+            name: 'two scales',
+            actions: [
+                { type: 'scaleVelocities', payload: { clipId: CLIP_ID, curve: 'compress' } },
+                { type: 'scaleVelocities', payload: { clipId: CLIP_ID, curve: 'expand' } },
+            ],
+        },
+    ] satisfies Array<{ name: string; actions: AppAction[] }>)(
+        'undoes $name on one clip in one step to the notes before the batch',
+        async ({ actions }) => {
+            const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+            seedNotes(before);
+
+            const result = await executeAppActionBatch(structuredClone(actions), {
+                groupId: 'chained-velocity-edits',
+                groupLabel: 'Chained velocity edits',
+            });
+
+            expect(result).toMatchObject({ status: 'committed' });
+            const after = currentNotes();
+            expect(after).not.toEqual(before);
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(currentNotes()).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+
+            await redo();
+            expect(currentNotes()).toEqual(after);
+        }
+    );
 
     it.each(invalidMidiTargets)(
         'refuses an atomic transform against a %s target before notes or undo change',

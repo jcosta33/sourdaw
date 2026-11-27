@@ -229,7 +229,6 @@ const clipTargetIdsByActionType: ClipTargetLookup = {
     previousSetlistItem: noClipTargets,
     quantizeTransients: noClipTargets,
     redo: noClipTargets,
-    removeChordEvent: noClipTargets,
     removeFromVca: noClipTargets,
     removeYeastProcessor: noClipTargets,
     reorderYeastProcessor: noClipTargets,

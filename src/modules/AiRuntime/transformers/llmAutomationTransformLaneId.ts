@@ -206,7 +206,6 @@ const automationTransformLaneIdByActionType: AutomationLaneLookup = {
     previousSetlistItem: noAutomationLane,
     quantizeTransients: noAutomationLane,
     redo: noAutomationLane,
-    removeChordEvent: noAutomationLane,
     removeFromVca: noAutomationLane,
     removeYeastProcessor: noAutomationLane,
     reorderYeastProcessor: noAutomationLane,

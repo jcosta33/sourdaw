@@ -39,7 +39,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { fermenterStore } from '#/modules/Fermenter/stores';
 import { hydrateFermenterFromProject, setFermenterDependencies } from '#/modules/Fermenter/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
@@ -1216,6 +1216,23 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         actionType: 'enableWarping',
         divergedAction: { type: 'enableWarping', payload: { clipId: 'clip-midi' } },
         reason: 'Audio warping requires an existing audio clip.',
+    },
+    {
+        title: 'restoreChordTrackState refuses an undo over a chord track edited since the command it undoes',
+        actionType: 'restoreChordTrackState',
+        createDivergedAction: () => {
+            chordTrackStore.set({ enabled: true, events: [] });
+            return {
+                type: 'restoreChordTrackState',
+                payload: { expected: { enabled: false, events: [] }, replacement: { enabled: true, events: [] } },
+            };
+        },
+        verifyRefusalNonEffects: () => {
+            expect(chordTrackStore.value).toEqual({ enabled: true, events: [] });
+        },
+        cleanup: () => {
+            chordTrackStore.set({ enabled: false, events: [] });
+        },
     },
     ...(['trimClipStart', 'restoreAudioClipStartTrim', 'restoreAudioClipSlip'] as const).map((actionType) => ({
         title: `${actionType} refuses a captured edit after its media owner diverges`,

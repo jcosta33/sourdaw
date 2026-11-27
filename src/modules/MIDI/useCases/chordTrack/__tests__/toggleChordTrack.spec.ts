@@ -25,15 +25,9 @@ describe('toggleChordTrack', () => {
     it('should not update the store when chord track state is null', () => {
         mocks.state = null;
 
-        toggleChordTrack();
+        toggleChordTrack(true);
 
         expect(mocks.set).not.toHaveBeenCalled();
-    });
-
-    it('should flip enabled when no explicit value is passed', () => {
-        toggleChordTrack();
-
-        expect(mocks.set).toHaveBeenCalledWith({ enabled: true, events: [] });
     });
 
     it('should set enabled to the provided boolean', () => {

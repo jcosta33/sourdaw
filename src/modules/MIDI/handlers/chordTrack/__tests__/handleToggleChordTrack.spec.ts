@@ -21,6 +21,8 @@ vi.mock('../handleRestoreChordTrackState', () => ({
             payload: { expected: { enabled: false, events: [] }, replacement: { enabled: false, events: [] } },
         },
     })),
+    findChordTrackRefusal: vi.fn(() => null),
+    isChordTrackSessionEntry: vi.fn(() => true),
 }));
 
 import { toggleChordTrack } from '../../../useCases/chordTrack/toggleChordTrack';
@@ -42,18 +44,6 @@ describe('handleToggleChordTrack — execute', () => {
         await handleToggleChordTrack.execute({ type: 'toggleChordTrack', payload: { enabled: true } });
         expect(mockedToggle).toHaveBeenCalledWith(true);
     });
-
-    it('toggles to opposite when no explicit payload', async () => {
-        mockValue = { enabled: false, events: [] };
-        await handleToggleChordTrack.execute({ type: 'toggleChordTrack' });
-        expect(mockedToggle).toHaveBeenCalledWith(true);
-    });
-
-    it('mutates action payload to carry resolved target', async () => {
-        const action = { type: 'toggleChordTrack' as const, payload: undefined };
-        await handleToggleChordTrack.execute(action);
-        expect(action.payload).toEqual({ enabled: true });
-    });
 });
 
 describe('handleToggleChordTrack — describe', () => {
@@ -61,13 +51,14 @@ describe('handleToggleChordTrack — describe', () => {
         handleToggleChordTrack.describe({ type: 'toggleChordTrack', payload: { enabled: true } });
         expect(mockedDescribe).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'toggleChordTrack', payload: { enabled: true } }),
-            'Enable chord track'
+            'Enable chord track',
+            undefined
         );
     });
 
     it('uses "Disable chord track" when target is false', () => {
         handleToggleChordTrack.describe({ type: 'toggleChordTrack', payload: { enabled: false } });
-        expect(mockedDescribe).toHaveBeenCalledWith(expect.anything(), 'Disable chord track');
+        expect(mockedDescribe).toHaveBeenCalledWith(expect.anything(), 'Disable chord track', undefined);
     });
 });
 

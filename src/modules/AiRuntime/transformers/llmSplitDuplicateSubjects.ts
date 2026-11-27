@@ -215,7 +215,6 @@ export const splitDuplicateSubjectsByActionType: SplitDuplicateLookup = {
     previousSetlistItem: noSplitDuplicateSubjects,
     quantizeTransients: noSplitDuplicateSubjects,
     redo: noSplitDuplicateSubjects,
-    removeChordEvent: noSplitDuplicateSubjects,
     removeFromVca: noSplitDuplicateSubjects,
     removeYeastProcessor: noSplitDuplicateSubjects,
     reorderYeastProcessor: noSplitDuplicateSubjects,

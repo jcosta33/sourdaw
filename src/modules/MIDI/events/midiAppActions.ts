@@ -265,7 +265,7 @@ export type MidiAppAction =
           };
       }
     | { type: 'removeChordEvent'; payload: { eventId: string } }
-    | { type: 'toggleChordTrack'; payload?: { enabled?: boolean } }
+    | { type: 'toggleChordTrack'; payload: { enabled: boolean } }
     | { type: 'clearChordTrack'; payload?: undefined }
     | {
           type: 'restoreChordTrackState';

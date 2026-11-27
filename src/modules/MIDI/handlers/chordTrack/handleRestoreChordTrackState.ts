@@ -1,79 +1,117 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerDescribeResult } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerDescribeResult,
+    type HandlerSessionActionEntry,
+    type HandlerValidationContext,
+} from '#/utils/handlerContract';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
-import { type ChordTrackActionSnapshot } from '../../events/midiAppActions';
-import { CHORD_TYPES, type ChordType } from '../../models/ChordTypes';
-import { chordTrackStore, type ChordTrackState } from '../../stores/chordTrackStore';
+import { chordTrackStore, isChordTrackState, type ChordTrackState } from '../../stores/chordTrackStore';
+import { cloneChordTrackState } from '../../transformers/cloneChordTrackState';
+import { findChordEventArgumentRefusal } from '../../transformers/findChordEventArgumentRefusal';
+import { type ChordMutationAction, isChordTrackEditAction } from '../../transformers/isChordTrackEditAction';
+import { projectChordTrackAction } from '../../transformers/projectChordTrackAction';
 import { moveChordEvent } from '../../useCases/chordTrack/moveChordEvent';
+import { projectChordTrackThroughActions } from '../../useCases/chordTrack/projectChordTrackState';
 import { updateChordEvent } from '../../useCases/chordTrack/updateChordEvent';
 
-type ChordMutationAction = Exclude<
-    Extract<AppAction, { type: `${string}Chord${string}` }>,
-    { type: 'generateChordProgression' | 'restoreChordTrackState' }
->;
-
-function cloneState(state: ChordTrackActionSnapshot): ChordTrackState {
-    return { enabled: state.enabled, events: state.events.map((event) => ({ ...event })) };
+function projectLiveState(state: ChordTrackState, context?: HandlerValidationContext): ChordTrackState {
+    return context ? projectChordTrackThroughActions(state, context.actions.slice(0, context.actionIndex)) : state;
 }
 
-function isChordType(quality: string): quality is ChordType {
-    return Object.hasOwn(CHORD_TYPES, quality);
-}
-
-function projectState(state: ChordTrackState, action: ChordMutationAction): ChordTrackState {
-    const projected = cloneState(state);
-    if (action.type === 'addChordEvent') {
-        const event = {
-            id: action.payload.eventId ?? '',
-            beat: Math.max(0, action.payload.beat),
-            root: Math.max(0, Math.min(11, Math.round(action.payload.root))),
-            quality: isChordType(action.payload.quality) ? action.payload.quality : 'major',
-            duration: action.payload.duration ?? 4,
-        };
-        projected.events.push(event);
-        projected.events.sort((alpha, beta) => alpha.beat - beta.beat);
-    } else if (action.type === 'moveChordEvent') {
-        const event = projected.events.find((candidate) => candidate.id === action.payload.eventId);
-        if (event) {
-            event.beat = Math.max(0, action.payload.beat);
-        }
-        projected.events.sort((alpha, beta) => alpha.beat - beta.beat);
-    } else if (action.type === 'updateChordEvent') {
-        projected.events = projected.events.map((event) => {
-            if (event.id !== action.payload.eventId) {
-                return event;
-            }
-            return {
-                ...event,
-                ...(action.payload.root === undefined ? {} : { root: ((action.payload.root % 12) + 12) % 12 }),
-                ...(action.payload.quality === undefined ? {} : { quality: action.payload.quality }),
-                ...(action.payload.duration === undefined ? {} : { duration: Math.max(0.25, action.payload.duration) }),
-            };
-        });
-    } else if (action.type === 'removeChordEvent') {
-        projected.events = projected.events.filter((event) => event.id !== action.payload.eventId);
-    } else if (action.type === 'toggleChordTrack') {
-        projected.enabled = action.payload?.enabled ?? !projected.enabled;
-    } else {
-        projected.events = [];
-    }
-    return projected;
-}
-
-export function describeChordTrackMutation(action: ChordMutationAction, label: string): HandlerDescribeResult {
-    const state = chordTrackStore.value;
-    if (!state) {
+export function describeChordTrackMutation(
+    action: ChordMutationAction,
+    label: string,
+    context?: HandlerValidationContext
+): HandlerDescribeResult {
+    const live = chordTrackStore.value;
+    if (!live) {
         return { label, inverseAction: null };
     }
-    const expected = projectState(state, action);
-    const replacement = cloneState(state);
-    return { label, inverseAction: { type: 'restoreChordTrackState', payload: { expected, replacement } } };
+    const before = projectLiveState(live, context);
+    const expected = projectChordTrackAction(before, action);
+    return {
+        label,
+        inverseAction: {
+            type: 'restoreChordTrackState',
+            payload: { expected, replacement: cloneChordTrackState(before) },
+        },
+        // Redo is the inverse pair swapped, so it refuses once the track changed since the undo.
+        redoAction: {
+            type: 'restoreChordTrackState',
+            payload: { expected: cloneChordTrackState(before), replacement: cloneChordTrackState(expected) },
+        },
+    };
 }
 
 export function isChordTrackMutationNoop(action: ChordMutationAction): boolean {
     const state = chordTrackStore.value;
-    return !state || jsonValuesEqual(state, projectState(state, action));
+    return !state || jsonValuesEqual(state, projectChordTrackAction(state, action));
+}
+
+/** Why a chord-track edit cannot be admitted into its batch, or null when it can. */
+export function findChordTrackRefusal(action: ChordMutationAction, context: HandlerValidationContext): string | null {
+    const live = chordTrackStore.value;
+    if (!live) {
+        return 'The project has no chord track';
+    }
+    if (action.type !== 'addChordEvent') {
+        return null;
+    }
+    const argumentRefusal = findChordEventArgumentRefusal(action.payload);
+    if (argumentRefusal !== null) {
+        return argumentRefusal;
+    }
+    const state = projectLiveState(live, context);
+    if (action.payload.eventId !== undefined && state.events.some((event) => event.id === action.payload.eventId)) {
+        return `Chord event "${action.payload.eventId}" already exists`;
+    }
+    return null;
+}
+
+function findRestoreConflict(
+    action: Extract<AppAction, { type: 'restoreChordTrackState' }>,
+    context?: HandlerValidationContext
+): string | null {
+    const live = chordTrackStore.value;
+    if (!live) {
+        return 'The project has no chord track';
+    }
+    if (!jsonValuesEqual(projectLiveState(live, context), action.payload.expected)) {
+        return 'The chord track changed after the edit this restores';
+    }
+    return null;
+}
+
+/**
+ * A saved chord-track edit is replayable only when its undo restores the track the edit read, guarded by
+ * exactly the track the edit wrote, and its redo is that same pair swapped: the stored result must be what
+ * the action yields for the stored source, so a stale or tampered entry is dropped, and an undo or redo over
+ * a chord edited since refuses at execution.
+ */
+export function isChordTrackSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    const { action, inverseAction, redoAction } = entry;
+    if (inverseAction?.type !== 'restoreChordTrackState' || redoAction?.type !== 'restoreChordTrackState') {
+        return false;
+    }
+    if (!isChordTrackEditAction(action)) {
+        return false;
+    }
+    if (!isChordTrackRestorePayload(inverseAction.payload) || !isChordTrackRestorePayload(redoAction.payload)) {
+        return false;
+    }
+    if (action.type === 'addChordEvent' && !action.payload.eventId) {
+        return false;
+    }
+    const inverse = inverseAction.payload;
+    const redo = redoAction.payload;
+    const isSwappedPair =
+        jsonValuesEqual(redo.expected, inverse.replacement) && jsonValuesEqual(redo.replacement, inverse.expected);
+    return (
+        isSwappedPair &&
+        jsonValuesEqual(projectChordTrackAction(cloneChordTrackState(inverse.replacement), action), inverse.expected)
+    );
 }
 
 export const handleMoveChordEvent = createHandler<'moveChordEvent'>({
@@ -90,16 +128,32 @@ export const handleUpdateChordEvent = createHandler<'updateChordEvent'>({
     undoable: true,
 });
 
+function isChordTrackRestorePayload(payload: unknown): boolean {
+    return (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'expected' in payload &&
+        'replacement' in payload &&
+        isChordTrackState(payload.expected) &&
+        isChordTrackState(payload.replacement)
+    );
+}
+
 export const handleRestoreChordTrackState = createHandler<'restoreChordTrackState'>({
     execute: (action) => {
-        const current = chordTrackStore.value;
-        const matchesExpected = current && jsonValuesEqual(current, action.payload.expected);
-        if (!matchesExpected) {
+        if (findRestoreConflict(action) !== null) {
             return { status: 'conflict' };
         }
-        chordTrackStore.set(cloneState(action.payload.replacement));
+        chordTrackStore.set(cloneChordTrackState(action.payload.replacement));
         return { status: 'written' };
     },
+    validate: (action, context) => findRestoreConflict(action, context) === null,
+    validationRefusalReason: findRestoreConflict,
+    // Every restore names the state it expects, so it may be replayed as compensation only while that state holds.
+    canReapplyAfterDivergence: (action, context) => findRestoreConflict(action, context) === null,
+    // An undo refuses rather than overwrite a chord edit made since: the restore names the state it expects.
+    canReportConflict: true,
+    validateSessionActionArguments: isChordTrackRestorePayload,
     describe: (action) => ({
         label: 'Restore chord track state',
         inverseAction: {

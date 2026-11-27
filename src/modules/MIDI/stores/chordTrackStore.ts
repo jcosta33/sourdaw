@@ -1,7 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
-import { type ChordEvent } from '../models/ChordEvent';
+import { compareChordEvents, MIN_CHORD_DURATION_BEATS, type ChordEvent } from '../models/ChordEvent';
 import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
 
 export type ChordTrackState = {
@@ -56,7 +56,7 @@ function isRootValue(value: unknown): value is number {
 }
 
 function isDurationValue(value: unknown): value is number {
-    return isFiniteNumber(value) && value >= 0.25;
+    return isFiniteNumber(value) && value >= MIN_CHORD_DURATION_BEATS;
 }
 
 function isChordType(value: unknown): value is ChordType {
@@ -126,7 +126,7 @@ function normalizeState(value: unknown): ChordTrackState {
     }
     return {
         enabled: value.enabled,
-        events: [...value.events].sort((left, right) => left.beat - right.beat || compareIds(left.id, right.id)),
+        events: [...value.events].sort(compareChordEvents),
     };
 }
 
