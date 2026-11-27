@@ -385,7 +385,8 @@ export type PackagedApp = {
 export async function launchPackagedApp(
     binary: string,
     profileDir: string,
-    diagnostics: Diagnostics
+    diagnostics: Diagnostics,
+    cwd?: string
 ): Promise<PackagedApp> {
     const port = await pickFreePort();
     const { env: spawnEnv, dropped } = stripPayloadOverrides(process.env);
@@ -397,6 +398,7 @@ export async function launchPackagedApp(
     const child = spawn(binary, [`--remote-debugging-port=${String(port)}`, `--user-data-dir=${profileDir}`], {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: spawnEnv,
+        cwd,
     });
     const collected: string[] = [];
     child.stdout?.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));

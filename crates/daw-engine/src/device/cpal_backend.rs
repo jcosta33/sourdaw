@@ -6,7 +6,7 @@
 use super::InputOpenRefusal;
 #[cfg(not(windows))]
 use super::{
-    accept_input, CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRequest, NegotiatedInput,
+    CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRequest, NegotiatedInput,
     NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, OutputDeviceError, OutputTiming,
     RenderFn, StreamErrorFn,
 };
@@ -305,7 +305,7 @@ fn expected_period_frames(
 impl InputBackend for CpalInputBackend {
     type Open = CpalOpenInput;
 
-    fn open_default_input(request: InputOpenRequest) -> Result<CpalOpenInput, InputOpenRefusal> {
+    fn open_default_input(_request: InputOpenRequest) -> Result<CpalOpenInput, InputOpenRefusal> {
         let host = cpal::default_host();
         let device = host
             .default_input_device()
@@ -332,19 +332,14 @@ impl InputBackend for CpalInputBackend {
         let mut stream_config: cpal::StreamConfig = config.into();
         stream_config.buffer_size = capture_buffer_size();
 
-        let negotiated = accept_input(
-            NegotiatedInput {
+        Ok(CpalOpenInput {
+            device,
+            stream_config,
+            negotiated: NegotiatedInput {
                 sample_rate: config.sample_rate() as f32,
                 channels: config.channels() as usize,
                 period_frames: expected_period_frames(config.buffer_size())?,
             },
-            request,
-        )?;
-
-        Ok(CpalOpenInput {
-            device,
-            stream_config,
-            negotiated,
         })
     }
 }

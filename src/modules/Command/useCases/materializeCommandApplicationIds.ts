@@ -458,7 +458,6 @@ const applicationIdMaterializerByActionType: {
     variationMidi: materializeByIdRule,
     generateBassline: materializeByIdRule,
     replayGeneratedMidi: materializeByIdRule,
-    stemSeparate: materializeByIdRule,
     autoOrganizeProject: materializeByIdRule,
     addChordEvent: materializeByIdRule,
     moveChordEvent: materializeByIdRule,

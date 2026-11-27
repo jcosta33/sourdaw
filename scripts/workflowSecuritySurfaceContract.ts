@@ -56,6 +56,7 @@ export const JOB_ENVIRONMENT_PINS: JobPins<string> = {
 // config, where every later step — including the head's own scripts — can read
 // it. Dropping the key restores the action's default, which persists it.
 export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
+    'desktop-package-smoke.yml': { packages: ['Checkout the package source revision'] },
     'nightly-evidence-report.yml': {
         validate: ['Checkout trusted default-branch reporter'],
         publish: ['Checkout trusted default-branch repository context'],
@@ -88,6 +89,7 @@ export const REQUIRED_CHECK_OWNER = { workflow: 'health-gates.yml', job: 'gate' 
 // names that may carry an expression, each pinned exactly; every one opens with
 // a literal prefix, so no matrix value or output can evaluate it to Gate.
 export const JOB_NAME_EXPRESSION_PINS: JobPins<string> = {
+    'desktop-package-smoke.yml': { packages: 'Desktop packages (${{ matrix.label }})' },
     'heavy-gates.yml': { e2e: 'Affected end-to-end ${{ matrix.id }}' },
     'nightly.yml': {
         unit: 'Unit suite ${{ matrix.shard }}/4',

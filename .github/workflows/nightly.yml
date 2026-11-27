@@ -441,7 +441,8 @@ jobs:
     name: Native audio backend (Windows)
     needs: decide
     # The Windows half of the same platform evidence, in debug profile for the
-    # reason `native-macos` records above.
+    # reason `native-macos` records above. The desktop package smoke separately
+    # builds the Windows addon and scan helper in release mode and launches the installer output.
     #
     # The WASAPI backend under crates/daw-engine/src/device/wasapi/ compiles
     # only for the Windows target: elsewhere `cfg(any(windows, test))` reaches

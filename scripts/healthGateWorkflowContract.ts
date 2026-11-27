@@ -40,6 +40,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
     'cargo-dependency-seed.yml',
+    'desktop-package-smoke.yml',
 ] as const;
 
 export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json';
@@ -125,6 +126,22 @@ const NIGHTLY_STATIC_SUITE_STEPS = STATIC_SUITE_STEPS;
 // deleted proof step leaves its job green while the proof never runs, and an
 // added one runs unpinned; both directions refuse the drift.
 export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, readonly string[] | null>>>> = {
+    'desktop-package-smoke.yml': {
+        packages: [
+            'Checkout the package source revision',
+            'Set up pnpm',
+            'Set up Node',
+            'Install the pinned Rust toolchain',
+            'Install Linux audio and display prerequisites',
+            'Install dependencies',
+            'Install the real CLAP fixture',
+            'Build the desktop packages',
+            'Launch the macOS DMG or installed Windows package and scan the fixture',
+            'Launch the extracted macOS ZIP and scan the fixture',
+            'Launch the AppImage payload under Xvfb and scan the fixture',
+            'Upload package smoke receipts',
+        ],
+    },
     'nightly-evidence-report.yml': {
         validate: [
             'Checkout trusted default-branch reporter',
@@ -221,6 +238,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Cache the cargo registry index',
             'Lint the Windows audio crates',
             'Test the audio crates',
+            'Test scanning canonical Windows paths',
         ],
         'native-parity': [
             'Checkout',
@@ -389,6 +407,28 @@ function pin(workflow: string, job: string, step: string, condition: string): Co
 }
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    ...[
+        'Install Linux audio and display prerequisites',
+        'Launch the AppImage payload under Xvfb and scan the fixture',
+    ].map((step) => pin('desktop-package-smoke.yml', 'packages', step, "runner.os == 'Linux'")),
+    pin(
+        'desktop-package-smoke.yml',
+        'packages',
+        'Launch the macOS DMG or installed Windows package and scan the fixture',
+        "runner.os != 'Linux'"
+    ),
+    pin(
+        'desktop-package-smoke.yml',
+        'packages',
+        'Launch the extracted macOS ZIP and scan the fixture',
+        "${{ !cancelled() && runner.os == 'macOS' && steps.build-packages.outcome == 'success' }}"
+    ),
+    pin(
+        'desktop-package-smoke.yml',
+        'packages',
+        'Upload package smoke receipts',
+        "${{ !cancelled() && steps.build-packages.outcome == 'success' }}"
+    ),
     pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),

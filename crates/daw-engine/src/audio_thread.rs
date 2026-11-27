@@ -8,8 +8,8 @@
 use crate::capture::{capture_ring, CaptureRingReader, CaptureShape};
 use crate::capture_clock::CaptureClock;
 use crate::device::{
-    CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRefusal, InputOpenRequest, OpenInput,
-    OpenOutput, OutputBackend, OutputDeviceError, OutputTiming, PlatformInputBackend,
+    accept_input, CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRefusal, InputOpenRequest,
+    OpenInput, OpenOutput, OutputBackend, OutputDeviceError, OutputTiming, PlatformInputBackend,
     PlatformInputStream, PlatformOutputBackend, PlatformStream, RenderFn, StreamErrorFn,
 };
 use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
@@ -1619,8 +1619,9 @@ fn attach_capture<B: InputBackend>(
     // refusal shape and silently drop the other. Every refusal instead
     // crosses through `capture_side`'s capture-refusal slot, which needs no
     // callback at all: see its doc.
-    let open = B::open_default_input(InputOpenRequest { engine_sample_rate })?;
-    let negotiated = open.negotiated();
+    let request = InputOpenRequest { engine_sample_rate };
+    let open = B::open_default_input(request)?;
+    let negotiated = accept_input(open.negotiated(), request)?;
     let (mut writer, reader) = capture_ring(
         CaptureShape {
             input_block_ceiling: negotiated.period_frames,
@@ -4221,6 +4222,39 @@ mod capture_seam_tests {
         ) -> Result<Self::Stream, InputOpenRefusal> {
             Err(InputOpenRefusal::Backend(StreamErrorKind::DeviceBusy))
         }
+    }
+
+    #[test]
+    fn a_mismatched_capture_rate_refuses_before_start() {
+        struct MismatchedRateInput;
+
+        impl InputBackend for MismatchedRateInput {
+            type Open = BusyStartOpen;
+
+            fn open_default_input(
+                request: InputOpenRequest,
+            ) -> Result<Self::Open, InputOpenRefusal> {
+                let mut opened = PresentInput::open_default_input(request)?;
+                opened.0.sample_rate = 44_100.0;
+                Ok(BusyStartOpen(opened))
+            }
+        }
+
+        let attempt = attach_capture::<MismatchedRateInput>(
+            ENGINE_RATE,
+            error_sink(),
+            new_input_latency_slot(),
+            crate::retrospective::RetrospectiveWriter::inert(),
+        );
+
+        assert_eq!(
+            attempt.err(),
+            Some(InputOpenRefusal::SampleRateMismatch {
+                device_hz: 44_100,
+                engine_hz: 48_000,
+            }),
+            "a mismatched device must refuse before its start can report DeviceBusy"
+        );
     }
 
     /// A start-route refusal is stored exactly like an open-route one:

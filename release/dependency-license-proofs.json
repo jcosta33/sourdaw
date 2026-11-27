@@ -6,7 +6,7 @@
             {
                 "path": ".cargo/config.toml",
                 "projection": "whole-file",
-                "sha256": "87a73e86e8a585112d5f4723573bafebd99681cda7d358c25d733c07239b1c3b"
+                "sha256": "d46931d20dc631c877bd403842f55c8bc07a5d3a19a83ed1330e56c52a96f893"
             },
             {
                 "path": "Cargo.toml",
@@ -76,12 +76,12 @@
             {
                 "path": "electron-builder.yml",
                 "projection": "whole-file",
-                "sha256": "6c0fc543587be211dc9e41bd04ccf05f36b9f74180d117eea83b6141df11e14b"
+                "sha256": "5c253634356b6d51a3e992da0780c1271da83584429f0c9101a95c67f4326702"
             },
             {
                 "path": "package.json",
                 "projection": "package-json-packaging",
-                "sha256": "8705f5690374b9cb9286454b534041be248e9934d7a46d00ec6f3bb4059388ca"
+                "sha256": "8b2b2515ac8ccd5680274c0d74cccdd9a48ca57dbe7350a48f5073df28a75a9f"
             },
             {
                 "path": "rust-toolchain.toml",

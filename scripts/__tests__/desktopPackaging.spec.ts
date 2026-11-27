@@ -1,9 +1,11 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { FuseState, FuseV1Options, FuseVersion, flipFuses, getCurrentFuseWire } from '@electron/fuses';
+import { parse } from 'smol-toml';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ELECTRON_RUNTIME_CONTRACT } from '../electronRuntimeContract';
@@ -129,5 +131,49 @@ describe('desktop afterPack native admission and hardening', () => {
             [FuseV1Options.RunAsNode]: FuseState.ENABLE,
         });
         await expect(hook(context)).rejects.toThrow(/Electron fuses were not applied.*RunAsNode/);
+    });
+});
+
+describe('portable desktop build inputs', () => {
+    it('should remove only the renderer sample copy using Node from the desktop build entry point', () => {
+        const manifest: unknown = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+        if (manifest === null || typeof manifest !== 'object' || !('scripts' in manifest)) {
+            throw new Error('package.json must define scripts');
+        }
+        const { scripts } = manifest;
+        if (
+            scripts === null ||
+            typeof scripts !== 'object' ||
+            !('desktop:build' in scripts) ||
+            typeof scripts['desktop:build'] !== 'string'
+        ) {
+            throw new Error('package.json must define a desktop:build command');
+        }
+        const commands = scripts['desktop:build'].split(' && ');
+        const cleanup = commands.find((command) => command.includes('dist/samples'));
+        const expression = /^node -e "([^"]+)"$/u.exec(cleanup ?? '')?.[1];
+        if (expression === undefined) {
+            throw new Error(`desktop:build must clean dist/samples with Node, got ${String(cleanup)}`);
+        }
+
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-desktop-build-'));
+        roots.push(root);
+        for (const directory of ['dist/samples', 'dist/assets', 'public/samples']) {
+            mkdirSync(join(root, directory), { recursive: true });
+            writeFileSync(join(root, directory, 'fixture'), directory);
+        }
+
+        execFileSync(process.execPath, ['-e', expression], { cwd: root });
+        expect(existsSync(join(root, 'dist/samples'))).toBe(false);
+        expect(readFileSync(join(root, 'dist/assets/fixture'), 'utf8')).toBe('dist/assets');
+        expect(readFileSync(join(root, 'public/samples/fixture'), 'utf8')).toBe('public/samples');
+        expect(() => execFileSync(process.execPath, ['-e', expression], { cwd: root })).not.toThrow();
+    });
+
+    it('should select the archiver from the toolchain without a machine-specific target override', () => {
+        const config = parse(readFileSync(join(process.cwd(), '.cargo', 'config.toml'), 'utf8'));
+        for (const target of Object.values(config.target ?? {})) {
+            expect(target).not.toHaveProperty('ar');
+        }
     });
 });
