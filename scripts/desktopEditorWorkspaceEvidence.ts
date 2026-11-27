@@ -24,6 +24,22 @@ export type ScaleStep =
     | 'preferences-dismiss'
     | 'restore-viewport'
     | 'restore-geometry';
+export type NativeTransportPoll = {
+    issuedAtMs: number;
+    answeredAtMs: number;
+    running: boolean;
+    playing: boolean;
+    engineId: string;
+    batchesApplied: number;
+};
+export type NativePauseEvidence = {
+    before: NativeTransportPoll | null;
+    lastPlaying: NativeTransportPoll | null;
+    parked: NativeTransportPoll | null;
+    sampleRate: number | null;
+    outputBufferFrames: number | null;
+    failure: string | null;
+};
 export type WorkspaceObservation = {
     stage: WorkspaceStage;
     outcome: 'not-reached' | 'failed' | 'passed';
@@ -32,6 +48,7 @@ export type WorkspaceObservation = {
     instanceIds: string[];
     timeline?: {
         samples: Record<string, number>;
+        nativePause?: NativePauseEvidence;
         pauseCapture?: { trusted: boolean; ageMs: number | null; clickTimeMs: number | null };
         trackBefore?: string;
         trackAfter?: string;
@@ -87,7 +104,7 @@ export function workspaceFailure(
 }
 
 function validTimeline(timeline: NonNullable<WorkspaceObservation['timeline']>): boolean {
-    const { samples, pauseCapture, trackBefore, trackAfter, deviceBefore, deviceAfter } = timeline;
+    const { samples, pauseCapture, nativePause, trackBefore, trackAfter, deviceBefore, deviceAfter } = timeline;
     const validId = (value: string | undefined): boolean => value !== undefined && /^[a-zA-Z0-9_-]{1,80}$/u.test(value);
     return (
         pauseCapture?.trusted === true &&
@@ -98,12 +115,57 @@ function validTimeline(timeline: NonNullable<WorkspaceObservation['timeline']>):
         Number.isFinite(pauseCapture.ageMs) &&
         pauseCapture.ageMs >= 0 &&
         pauseCapture.ageMs <= 125 &&
+        nativePauseClassification(nativePause, pauseCapture.clickTimeMs) === 'prompt' &&
         validId(trackBefore) &&
         trackBefore === trackAfter &&
         validId(deviceBefore) &&
         deviceBefore === deviceAfter &&
         validTimelineSamples(samples)
     );
+}
+
+export function nativePauseClassification(
+    evidence: NativePauseEvidence | undefined,
+    clickTimeMs: number
+): 'prompt' | 'late' | 'inconclusive' {
+    if (!evidence || evidence.failure || !Number.isFinite(clickTimeMs)) return 'inconclusive';
+    const { before, lastPlaying, parked, sampleRate, outputBufferFrames } = evidence;
+    if (!before || !lastPlaying || !parked || !sampleRate || !outputBufferFrames) return 'inconclusive';
+    const validPoll = (poll: NativeTransportPoll): boolean =>
+        Number.isFinite(poll.issuedAtMs) &&
+        Number.isFinite(poll.answeredAtMs) &&
+        poll.issuedAtMs >= 0 &&
+        poll.issuedAtMs < poll.answeredAtMs &&
+        poll.running === true &&
+        /^[1-9][0-9]*$/u.test(poll.engineId) &&
+        Number.isSafeInteger(poll.batchesApplied) &&
+        poll.batchesApplied >= 0;
+    if (
+        ![before, lastPlaying, parked].every(validPoll) ||
+        before.playing !== true ||
+        lastPlaying.playing !== true ||
+        parked.playing !== false ||
+        before.engineId !== lastPlaying.engineId ||
+        before.engineId !== parked.engineId ||
+        before.answeredAtMs >= clickTimeMs ||
+        (lastPlaying.issuedAtMs !== before.issuedAtMs && lastPlaying.issuedAtMs < before.answeredAtMs) ||
+        (lastPlaying.issuedAtMs === before.issuedAtMs && lastPlaying.answeredAtMs !== before.answeredAtMs) ||
+        parked.issuedAtMs < lastPlaying.answeredAtMs ||
+        parked.issuedAtMs < clickTimeMs ||
+        parked.answeredAtMs <= clickTimeMs ||
+        parked.batchesApplied <= before.batchesApplied ||
+        parked.batchesApplied <= lastPlaying.batchesApplied ||
+        !Number.isFinite(sampleRate) ||
+        sampleRate <= 0 ||
+        !Number.isFinite(outputBufferFrames) ||
+        !Number.isInteger(outputBufferFrames) ||
+        outputBufferFrames <= 0
+    )
+        return 'inconclusive';
+    const lowerMs = lastPlaying.issuedAtMs - (outputBufferFrames / sampleRate) * 1000 - clickTimeMs;
+    const upperMs = parked.answeredAtMs - clickTimeMs;
+    if (upperMs <= 125) return 'prompt';
+    return lowerMs > 125 ? 'late' : 'inconclusive';
 }
 
 function validTimelineSamples(samples: Record<string, number>): boolean {

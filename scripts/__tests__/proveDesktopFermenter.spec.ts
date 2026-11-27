@@ -22,6 +22,7 @@ import { type EditorFamilyDrive } from '../desktopEditorFamilyEvidence.ts';
 import { driveDesktopEditorWorkspace, runWorkspaceGroups } from '../desktopEditorWorkspaceDrive.ts';
 import {
     pausePreservesProgress,
+    nativePauseClassification,
     renderedPlayheadBeat,
     freshWorkspaceObservations,
     type EditorWorkspaceDrive,
@@ -545,6 +546,35 @@ const completeWorkspaceDrive: EditorWorkspaceDrive = async (_binary, observation
             stopHold: 2,
         },
         pauseCapture: { trusted: true, ageMs: 30, clickTimeMs: 1000 },
+        nativePause: {
+            before: {
+                issuedAtMs: 980,
+                answeredAtMs: 990,
+                running: true,
+                playing: true,
+                engineId: '1',
+                batchesApplied: 3,
+            },
+            lastPlaying: {
+                issuedAtMs: 1001,
+                answeredAtMs: 1002,
+                running: true,
+                playing: true,
+                engineId: '1',
+                batchesApplied: 3,
+            },
+            parked: {
+                issuedAtMs: 1010,
+                answeredAtMs: 1011,
+                running: true,
+                playing: false,
+                engineId: '1',
+                batchesApplied: 5,
+            },
+            sampleRate: 48000,
+            outputBufferFrames: 512,
+            failure: null,
+        },
         trackBefore: 'track-1',
         trackAfter: 'track-1',
         deviceBefore: 'device-1',
@@ -561,6 +591,25 @@ describe('packaged editor workspace proof', () => {
         [['Bars3.1.000'], false],
     ] as const)('requires the expected beat throughout the hold window: %s', (values, expected) => {
         expect(heldReadingsMatch([...values], 8)).toBe(expected);
+    });
+    it('classifies prompt, late and overlapping native brackets from their bounds', async () => {
+        const observations = freshWorkspaceObservations();
+        await completeWorkspaceDrive('', observations);
+        const timeline = observations.stages.find(({ stage }) => stage === 'timeline-transport')!.timeline!;
+        const native = timeline.nativePause!;
+        timeline.pauseCapture!.ageMs = 185;
+        expect(nativePauseClassification(native, 1000)).toBe('prompt');
+        native.parked!.answeredAtMs = 1125;
+        expect(nativePauseClassification(native, 1000)).toBe('prompt');
+        native.parked!.answeredAtMs = 1125.01;
+        expect(nativePauseClassification(native, 1000)).toBe('inconclusive');
+        native.parked!.answeredAtMs = 1130;
+        expect(nativePauseClassification(native, 1000)).toBe('inconclusive');
+        native.lastPlaying!.issuedAtMs = 1250;
+        native.lastPlaying!.answeredAtMs = 1251;
+        native.parked!.issuedAtMs = 1260;
+        native.parked!.answeredAtMs = 1261;
+        expect(nativePauseClassification(native, 1000)).toBe('late');
     });
     it('rejects passed stage flags when timeline evidence is missing', async () => {
         const { options, env } = fixture();
@@ -601,6 +650,69 @@ describe('packaged editor workspace proof', () => {
             'missing click age',
             (timeline) => {
                 timeline.pauseCapture = { trusted: true, ageMs: null, clickTimeMs: 1000 };
+            },
+        ],
+        [
+            'missing native bracket',
+            (timeline) => {
+                delete timeline.nativePause;
+            },
+        ],
+        [
+            'native zero engine',
+            (timeline) => {
+                timeline.nativePause!.before!.engineId = '0';
+            },
+        ],
+        [
+            'missing pre-click native roll',
+            (timeline) => {
+                timeline.nativePause!.before = null;
+            },
+        ],
+        [
+            'missing callback size',
+            (timeline) => {
+                timeline.nativePause!.outputBufferFrames = 0;
+            },
+        ],
+        [
+            'overlapping serial polls',
+            (timeline) => {
+                timeline.nativePause!.lastPlaying!.issuedAtMs = 985;
+            },
+        ],
+        [
+            'different native engine',
+            (timeline) => {
+                timeline.nativePause!.parked!.engineId = '2';
+            },
+        ],
+        [
+            'native engine stopped',
+            (timeline) => {
+                timeline.nativePause!.parked!.running = false;
+            },
+        ],
+        [
+            'native batch did not advance',
+            (timeline) => {
+                timeline.nativePause!.parked!.batchesApplied = 3;
+            },
+        ],
+        [
+            'late native park',
+            (timeline) => {
+                timeline.nativePause!.lastPlaying!.issuedAtMs = 1250;
+                timeline.nativePause!.lastPlaying!.answeredAtMs = 1251;
+                timeline.nativePause!.parked!.issuedAtMs = 1260;
+                timeline.nativePause!.parked!.answeredAtMs = 1261;
+            },
+        ],
+        [
+            'inconclusive native bracket',
+            (timeline) => {
+                timeline.nativePause!.parked!.answeredAtMs = 1130;
             },
         ],
         [
