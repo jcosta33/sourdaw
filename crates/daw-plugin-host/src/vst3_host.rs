@@ -155,6 +155,18 @@ impl ParameterGestureQueue {
         self.overwrite(param_id, value_bits);
     }
 
+    /// Replace the value waiting for `param_id`, if one is. Only ever that
+    /// parameter's: between the unclaimed match and the claim, a drain or a
+    /// discard can empty the slot and a `record` reclaim it for another id.
+    ///
+    /// So the id is read again once the slot is held. The `Acquire` claim
+    /// reads the `Release` that published `SLOT_READY` after `record` stored
+    /// the id, so that second read sees the id the slot holds now, and no one
+    /// relabels a slot while it is `SLOT_WRITING`. A foreign slot is published
+    /// back to `SLOT_READY` untouched and the search goes on, so `record` falls
+    /// through to a free slot. A slot reclaimed for this same id needs no
+    /// generation counter: the overwrite then lands after that racing edit, and
+    /// the processor is owed whichever of the two arrived last.
     fn overwrite(&self, param_id: ParamID, value_bits: u64) -> bool {
         for slot in &self.slots {
             if slot.state.load(Ordering::Acquire) != SLOT_READY
@@ -162,6 +174,8 @@ impl ParameterGestureQueue {
             {
                 continue;
             }
+            #[cfg(test)]
+            overwrite_seam::before_claim(self);
             if slot
                 .state
                 .compare_exchange(
@@ -172,6 +186,10 @@ impl ParameterGestureQueue {
                 )
                 .is_err()
             {
+                continue;
+            }
+            if slot.param_id.load(Ordering::Relaxed) != param_id {
+                slot.state.store(SLOT_READY, Ordering::Release);
                 continue;
             }
             slot.value_bits.store(value_bits, Ordering::Relaxed);
@@ -299,6 +317,30 @@ impl ParameterGestureQueue {
                 Ordering::AcqRel,
                 Ordering::Relaxed,
             );
+        }
+    }
+}
+
+/// A test-only pause between [`ParameterGestureQueue::overwrite`]'s match and
+/// its claim, where another thread can empty a slot and reclaim it. Armed per
+/// thread and fired once, so a hook that records into the queue does not
+/// re-enter itself.
+#[cfg(test)]
+mod overwrite_seam {
+    use super::ParameterGestureQueue;
+    use std::cell::Cell;
+
+    thread_local! {
+        static BEFORE_CLAIM: Cell<Option<fn(&ParameterGestureQueue)>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn arm(hook: fn(&ParameterGestureQueue)) {
+        BEFORE_CLAIM.with(|armed| armed.set(Some(hook)));
+    }
+
+    pub(super) fn before_claim(queue: &ParameterGestureQueue) {
+        if let Some(hook) = BEFORE_CLAIM.with(Cell::take) {
+            hook(queue);
         }
     }
 }
@@ -1317,6 +1359,50 @@ mod tests {
         queue.record(7, 0.8);
         assert_eq!(queue.drain(&mut out), 1);
         assert_eq!((out[0].param_id, out[0].value), (7, 0.8));
+    }
+
+    const EDITED: ParamID = 7;
+    const RECLAIMING: ParamID = 3;
+
+    fn drain_then_reclaim_for_another_parameter(queue: &ParameterGestureQueue) {
+        let mut out = [HostParameterUpdate::default(); MAX_PARAMETER_GESTURES];
+        assert_eq!(queue.drain(&mut out), 1);
+        queue.record(RECLAIMING, 0.5);
+    }
+
+    fn discard_then_reclaim_for_another_parameter(queue: &ParameterGestureQueue) {
+        queue.discard_waiting();
+        queue.record(RECLAIMING, 0.5);
+    }
+
+    #[test]
+    fn an_overwrite_leaves_a_slot_a_drain_handed_to_another_parameter() {
+        let queue = ParameterGestureQueue::new();
+        queue.record(EDITED, 0.25);
+
+        overwrite_seam::arm(drain_then_reclaim_for_another_parameter);
+        queue.record(EDITED, 0.75);
+
+        assert_eq!(
+            waiting(&queue),
+            [(RECLAIMING, 0.5), (EDITED, 0.75)],
+            "the reclaimed parameter keeps its value and the edit lands in its own slot"
+        );
+    }
+
+    #[test]
+    fn an_overwrite_leaves_a_slot_a_discard_handed_to_another_parameter() {
+        let queue = ParameterGestureQueue::new();
+        queue.record(EDITED, 0.25);
+
+        overwrite_seam::arm(discard_then_reclaim_for_another_parameter);
+        queue.record(EDITED, 0.75);
+
+        assert_eq!(
+            waiting(&queue),
+            [(RECLAIMING, 0.5), (EDITED, 0.75)],
+            "the reclaimed parameter keeps its value and the edit lands in its own slot"
+        );
     }
 
     #[test]
