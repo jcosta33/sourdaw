@@ -5230,9 +5230,6 @@
         "eslint/complexity": {
             "count": 3
         },
-        "eslint/max-lines-per-function": {
-            "count": 1
-        },
         "eslint/max-params": {
             "count": 3
         }

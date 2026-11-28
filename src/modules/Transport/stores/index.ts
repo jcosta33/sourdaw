@@ -10,12 +10,19 @@ export { captureGestureBeat, captureGestureClock } from './captureGestureBeat';
 export { setGestureClockSource, type GestureClockSource } from './gestureClockSource';
 
 export type { TempoMapStoreState } from './tempoMapStore';
-export { tempoMapStore } from './tempoMapStore';
+export { sanitize_tempo_map_state, tempoMapStore } from './tempoMapStore';
 
 export type { TimeSignatureMapStoreState } from './timeSignatureMapStore';
 export { timeSignatureMapStore } from './timeSignatureMapStore';
 
-export { transportStore, defaultTransportState, DEFAULT_TEMPO_BPM, MIN_TEMPO, MAX_TEMPO } from './transportStore';
+export {
+    transportStore,
+    sanitize_transport_snapshot,
+    defaultTransportState,
+    DEFAULT_TEMPO_BPM,
+    MIN_TEMPO,
+    MAX_TEMPO,
+} from './transportStore';
 export type { TransportState } from './transportStore';
 
 export { readRecordingEngaged } from './readRecordingEngaged';

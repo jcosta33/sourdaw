@@ -20,9 +20,13 @@ import {
 import { type detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
-import { setWarpState } from '../../../stores/warpStates';
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
+import { removeWarpState, setWarpState } from '../../../stores/warpStates';
 import { handleDetectTransients, transientStateMatches } from '../handleDetectTransients';
 
 const mocks = vi.hoisted(() => ({ detect: vi.fn(), notice: vi.fn() }));
@@ -123,7 +127,15 @@ function prepareWorkerReply({ seed, actor, message, mutation }: PreparationReque
     }
 }
 
-function startDetection() {
+type DetectedHit = { sampleOffset: number; confidence: number };
+const defaultHits: DetectedHit[] = [{ sampleOffset: 24000, confidence: 0.875 }];
+
+function startDetection(
+    detected: { tempo: number; hits: DetectedHit[] } = { tempo: 120, hits: defaultHits },
+    completeUnchanged = false,
+    beforeFirstFrame?: () => void
+) {
+    let framesWaited = 0;
     const controller = new AbortController();
     const isCurrent = (): boolean => !controller.signal.aborted;
     type Consume = Parameters<typeof detectTransientsForClip>[3];
@@ -143,21 +155,31 @@ function startDetection() {
                     frameCount: 96000,
                     channelCount: 1,
                 },
-                tempo: 120,
-                hits: [{ sampleOffset: 24000, confidence: 0.875 }],
+                tempo: detected.tempo,
+                hits: detected.hits,
                 isCurrent,
-                completeUnchanged: () => false,
+                completeUnchanged: () => completeUnchanged,
             },
-            { signal: controller.signal, isCurrent, waitForFrame: async () => isCurrent() }
+            {
+                signal: controller.signal,
+                isCurrent,
+                waitForFrame: async () => {
+                    framesWaited += 1;
+                    if (framesWaited === 1) {
+                        beforeFirstFrame?.();
+                    }
+                    return isCurrent();
+                },
+            }
         ),
     }));
     const action = { type: 'detectTransients' as const, payload: { clipId: 'clip-1' } };
-    handleDetectTransients.describe(action);
+    const description = handleDetectTransients.describe(action);
     const transaction = runWithAutomergeStorageTransaction(undefined, () => handleDetectTransients.execute(action));
     if (transaction.status !== 'returned') {
         throw transaction.error;
     }
-    return { transaction, cancel: () => controller.abort() };
+    return { description, transaction, cancel: () => controller.abort() };
 }
 
 function waitForFirstReply(
@@ -182,12 +204,18 @@ describe('Arrangement Detect admits private Worker preparations against current 
                 document.projectMeta = { projectId: 'project-1', name: 'Before Save' };
                 document.transport = { tempo: 120 };
                 document.tracks = {
-                    tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', type: 'audio', audioBufferId: 'audio-1' }] }],
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            clips: [{ id: 'clip-1', type: 'audio', audioBufferId: 'audio-1', startBeat: 0 }],
+                        },
+                    ],
                 };
             },
         });
         setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: 120, markers: [lockedMarker] });
         flushAutomergeStorageWrites();
+        hydrateTempoProjections();
     });
 
     afterEach(() => {
@@ -204,6 +232,387 @@ describe('Arrangement Detect admits private Worker preparations against current 
             },
         });
     }
+
+    function setTransportTempo(tempo: number): void {
+        mutateCrdtDoc<{ transport: { tempo: number } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.transport.tempo = tempo;
+            },
+        });
+        hydrateTempoProjections();
+    }
+
+    async function detectAndCommit(detected: { tempo: number; hits: DetectedHit[] }) {
+        installProspectiveWorker();
+        const { description, transaction } = startDetection(detected);
+        try {
+            const result = await transaction.value;
+            expect(result?.status).toBe('written');
+            const validation = result?.commitValidation;
+            if (!validation) {
+                throw new Error('Expected the Detect document validator');
+            }
+            transaction.validateDocument(validation.documentId, validation.validateDocument);
+            transaction.commit();
+            return description;
+        } finally {
+            transaction.abort();
+        }
+    }
+
+    // Playback reads the stores, which project the document slots: refresh them after a raw document edit.
+    function hydrateTempoProjections(): void {
+        tempoMapStore.hydrate();
+        transportStore.hydrate();
+    }
+
+    function restoreSnapshots(inverseAction: { type: string; payload?: unknown } | null | undefined) {
+        if (inverseAction?.type !== 'restoreTrackClipStates') {
+            throw new Error('Expected the Detect inverse to restore track clip states');
+        }
+        return inverseAction.payload as {
+            expected: { clipSatellites: { clipId: string; warpState: { originalTempo: number | null } | null }[] }[];
+            replacement: { clipSatellites: { clipId: string; warpState: { originalTempo: number | null } | null }[] }[];
+        };
+    }
+
+    function storedWarpState() {
+        return (getCrdtDoc('root') as { warpStates: { states: Record<string, unknown> } }).warpStates.states['clip-1'];
+    }
+
+    it('stamps the clip-start tempo as the reference tempo and encodes a hit at it', async () => {
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+        await detectAndCommit({ tempo: 120, hits: [{ sampleOffset: 24000, confidence: 0.875 }] });
+        expect(storedWarpState()).toMatchObject({
+            originalTempo: 120,
+            markers: [{ originalBeat: 1, warpedBeat: 1, origin: 'transient-auto', confidence: 0.875 }],
+        });
+    });
+
+    it('keeps encoding at the stored reference tempo after the transport tempo changes', async () => {
+        const userMarker = { id: 'user', originalBeat: 2, warpedBeat: 2, origin: 'user' as const, locked: false };
+        setWarpState('clip-1', {
+            enabled: true,
+            stretchMode: 'repitch',
+            originalTempo: 120,
+            markers: [userMarker],
+        });
+        setTransportTempo(90);
+        await detectAndCommit({
+            tempo: 90,
+            hits: [
+                { sampleOffset: 48000, confidence: 0.5 },
+                { sampleOffset: 24000, confidence: 0.75 },
+            ],
+        });
+        const state = storedWarpState() as { originalTempo: number; markers: { id: string; originalBeat: number }[] };
+        expect(state.originalTempo).toBe(120);
+        expect(state.markers.map(({ id, originalBeat }) => [id, originalBeat])).toEqual([
+            [expect.any(String), 1],
+            ['user', 2],
+        ]);
+    });
+
+    it('completes a clip with no stored warp state and no hits without writing one', async () => {
+        const { firstReply } = installProspectiveWorker();
+        removeWarpState('clip-1');
+        flushAutomergeStorageWrites();
+        const { transaction } = startDetection({ tempo: 120, hits: [] }, true);
+        try {
+            const result = await Promise.race([
+                transaction.value,
+                firstReply.then(() => {
+                    throw new Error('Detect planned a write for an unchanged warp state');
+                }),
+            ]);
+            expect(result?.status).toBe('no-write');
+            transaction.commit();
+        } finally {
+            transaction.abort();
+        }
+        expect(storedWarpState()).toBeUndefined();
+    });
+
+    it('completes a markerless clip that keeps a stored reference tempo and finds no hits without writing', async () => {
+        const { firstReply } = installProspectiveWorker();
+        const stored = { enabled: false, stretchMode: 'repitch' as const, originalTempo: 120, markers: [] };
+        setWarpState('clip-1', stored);
+        flushAutomergeStorageWrites();
+        const { description, transaction } = startDetection({ tempo: 120, hits: [] }, true);
+        try {
+            const result = await Promise.race([
+                transaction.value,
+                firstReply.then(() => {
+                    throw new Error('Detect planned a write for an unchanged warp state');
+                }),
+            ]);
+            expect(result?.status).toBe('no-write');
+            transaction.commit();
+        } finally {
+            transaction.abort();
+        }
+        expect(storedWarpState()).toEqual(stored);
+        const inverse = restoreSnapshots(description.inverseAction);
+        expect(inverse.expected).toEqual([]);
+        expect(inverse.replacement).toEqual([]);
+    });
+
+    it('stamps the tempo-map tempo at the clip start, not the project base tempo', async () => {
+        mutateCrdtDoc<{ tempoMap: { changes: unknown[] }; tracks: { tracks: { clips: { startBeat: number }[] }[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.tempoMap = {
+                    changes: [
+                        { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                        { id: 'slow', beat: 4, tempo: 90, curve: 'instant' },
+                    ],
+                };
+                const clip = document.tracks.tracks[0]?.clips[0];
+                if (clip) {
+                    clip.startBeat = 8;
+                }
+            },
+        });
+        hydrateTempoProjections();
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+        await detectAndCommit({ tempo: 120, hits: [{ sampleOffset: 24000, confidence: 0.875 }] });
+        expect(storedWarpState()).toMatchObject({
+            originalTempo: 90,
+            markers: [{ originalBeat: 0.75, warpedBeat: 0.75, origin: 'transient-auto', confidence: 0.875 }],
+        });
+    });
+
+    it('refuses the commit when the clip-start tempo changes after planning', async () => {
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+        installProspectiveWorker();
+        const { transaction } = startDetection();
+        try {
+            const result = await transaction.value;
+            expect(result?.status).toBe('written');
+            const validation = result?.commitValidation;
+            if (!validation) {
+                throw new Error('Expected the Detect document validator');
+            }
+            mutateCrdtDoc<{ tempoMap: { changes: unknown[] } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tempoMap = { changes: [{ id: 'slow', beat: 0, tempo: 90, curve: 'instant' }] };
+                },
+            });
+            hydrateTempoProjections();
+            transaction.validateDocument(validation.documentId, validation.validateDocument);
+            expect(() => transaction.commit()).toThrow('Transient detection authority changed inside commit');
+        } finally {
+            transaction.abort();
+        }
+        expect(storedWarpState()).toEqual({
+            enabled: true,
+            stretchMode: 'repitch',
+            originalTempo: null,
+            markers: [],
+        });
+    });
+
+    it('does not refuse the commit when the clip-start tempo changes after planning but a reference tempo is stored', async () => {
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: 120, markers: [] });
+        installProspectiveWorker();
+        const { transaction } = startDetection();
+        try {
+            const result = await transaction.value;
+            expect(result?.status).toBe('written');
+            const validation = result?.commitValidation;
+            if (!validation) {
+                throw new Error('Expected the Detect document validator');
+            }
+            mutateCrdtDoc<{ tempoMap: { changes: unknown[] } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tempoMap = { changes: [{ id: 'slow', beat: 0, tempo: 90, curve: 'instant' }] };
+                },
+            });
+            hydrateTempoProjections();
+            transaction.validateDocument(validation.documentId, validation.validateDocument);
+            transaction.commit();
+        } finally {
+            transaction.abort();
+        }
+        expect(storedWarpState()).toMatchObject({ originalTempo: 120 });
+    });
+
+    describe('reads the clip-start tempo through the sanitized projections playback uses', () => {
+        const expectedBeat = (referenceTempo: number): number => ((24000 / 48000) * referenceTempo) / 60;
+
+        function corruptDocument(corrupt: (document: Record<string, any>) => void): void {
+            mutateCrdtDoc<Record<string, any>>({ id: 'root', changeFn: corrupt });
+            hydrateTempoProjections();
+        }
+
+        it('ignores an out-of-range tempo-map row before the clip', async () => {
+            corruptDocument((document) => {
+                document.tempoMap = {
+                    changes: [
+                        { id: 'base', beat: 0, tempo: 90, curve: 'instant' },
+                        { id: 'wild', beat: 4, tempo: 5000, curve: 'instant' },
+                    ],
+                };
+                document.tracks.tracks[0].clips[0].startBeat = 8;
+            });
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            await detectAndCommit({ tempo: 120, hits: defaultHits });
+            expect(storedWarpState()).toMatchObject({
+                originalTempo: 90,
+                markers: [{ originalBeat: 0.75, warpedBeat: 0.75 }],
+            });
+        });
+
+        it('drops a malformed tempo-map row and keeps the transport tempo', async () => {
+            corruptDocument((document) => {
+                document.transport.tempo = 100;
+                document.tempoMap = { changes: [{ id: 'bad', beat: 'zero', tempo: 90, curve: 'instant' }] };
+            });
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            await detectAndCommit({ tempo: 120, hits: defaultHits });
+            expect(storedWarpState()).toMatchObject({
+                originalTempo: 100,
+                markers: [{ originalBeat: expectedBeat(100) }],
+            });
+        });
+
+        it.each([
+            [
+                'the transport tempo is not a number',
+                (document: Record<string, any>) => {
+                    document.transport.tempo = 'fast';
+                },
+            ],
+            [
+                'the transport is missing',
+                (document: Record<string, any>) => {
+                    delete document.transport;
+                },
+            ],
+        ])('stamps the default tempo when %s', async (_name, corrupt) => {
+            corruptDocument(corrupt);
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            await detectAndCommit({ tempo: 120, hits: defaultHits });
+            expect(storedWarpState()).toMatchObject({
+                originalTempo: DEFAULT_TEMPO_BPM,
+                markers: [{ originalBeat: expectedBeat(DEFAULT_TEMPO_BPM) }],
+            });
+        });
+    });
+
+    describe('refuses without writing when the clip cannot be found for the clip-start tempo', () => {
+        const refusal = {
+            status: 'conflict',
+            reason: 'Transient detection was cancelled or its source changed',
+        };
+        const unreadableDocuments: [string, (document: Record<string, any>) => void][] = [
+            [
+                'the clip is absent from the document',
+                (document) => {
+                    document.tracks.tracks[0].clips = [];
+                },
+            ],
+            [
+                'the clip has no start beat',
+                (document) => {
+                    delete document.tracks.tracks[0].clips[0].startBeat;
+                },
+            ],
+        ];
+
+        function corruptDocument(corrupt: (document: Record<string, any>) => void): void {
+            mutateCrdtDoc<Record<string, any>>({ id: 'root', changeFn: corrupt });
+        }
+
+        function refuseIfWorkerPosts(
+            firstReply: ReturnType<typeof installProspectiveWorker>['firstReply'],
+            completion: ReturnType<typeof startDetection>['transaction']['value']
+        ) {
+            return Promise.race([
+                completion,
+                firstReply.then(() => {
+                    throw new Error('Detect posted a Worker request instead of refusing');
+                }),
+            ]);
+        }
+
+        it.each(unreadableDocuments)('at planning time when %s', async (_name, corrupt) => {
+            const { firstReply, requests } = installProspectiveWorker();
+            setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+            flushAutomergeStorageWrites();
+            corruptDocument(corrupt);
+            const stored = storedWarpState();
+            const saved = getCrdtDoc('root');
+            const { transaction } = startDetection();
+            try {
+                expect(await refuseIfWorkerPosts(firstReply, transaction.value)).toEqual(refusal);
+                expect(requests).toHaveLength(0);
+                expect(getCrdtDoc('root')).toBe(saved);
+                expect(storedWarpState()).toEqual(stored);
+            } finally {
+                transaction.abort();
+            }
+        });
+
+        it.each(unreadableDocuments)(
+            'at commit time on the ordinary write route when %s after planning',
+            async (_name, corrupt) => {
+                const { firstReply, requests } = installProspectiveWorker();
+                const stored = { enabled: true, stretchMode: 'repitch' as const, originalTempo: null, markers: [] };
+                setWarpState('clip-1', stored);
+                flushAutomergeStorageWrites();
+                // Planning sees an identical markerless state, so it prepares nothing; the stored state then gains
+                // an auto marker, so the commit replan differs and takes the ordinary write route.
+                const withAutoMarker = {
+                    enabled: true,
+                    stretchMode: 'repitch' as const,
+                    originalTempo: null,
+                    markers: [
+                        {
+                            id: 'auto',
+                            originalBeat: 1,
+                            warpedBeat: 1,
+                            origin: 'transient-auto' as const,
+                            locked: false,
+                        },
+                    ],
+                };
+                const { transaction } = startDetection({ tempo: 120, hits: [] }, false, () => {
+                    setWarpState('clip-1', withAutoMarker);
+                    corruptDocument(corrupt);
+                });
+                try {
+                    expect(await refuseIfWorkerPosts(firstReply, transaction.value)).toEqual(refusal);
+                    expect(requests).toHaveLength(0);
+                } finally {
+                    transaction.abort();
+                }
+                expect(storedWarpState()).toEqual(stored);
+            }
+        );
+    });
+
+    it('carries the reference tempo in the undo snapshots: null before, the stamped tempo after', async () => {
+        trackStore.trySet({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [ClipDummy.create({ id: 'clip-1', trackId: 'track-1', audioBufferId: 'audio-1' })],
+                }),
+            ],
+            selectedTrackId: null,
+        });
+        setWarpState('clip-1', { enabled: true, stretchMode: 'repitch', originalTempo: null, markers: [] });
+        const description = await detectAndCommit({ tempo: 120, hits: defaultHits });
+        const inverse = restoreSnapshots(description.inverseAction);
+        const entries = inverse.replacement.flatMap((entry) => entry.clipSatellites);
+        const expectedEntries = inverse.expected.flatMap((entry) => entry.clipSatellites);
+        expect(entries.find((satellite) => satellite.clipId === 'clip-1')?.warpState?.originalTempo).toBeNull();
+        expect(expectedEntries.find((satellite) => satellite.clipId === 'clip-1')?.warpState?.originalTempo).toBe(120);
+    });
 
     it('replans after a sibling commit invalidates the pending reply and publishes only the fresh markers', async () => {
         const { firstReply, requests } = installProspectiveWorker();
