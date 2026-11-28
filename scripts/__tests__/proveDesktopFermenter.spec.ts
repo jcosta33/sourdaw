@@ -1103,6 +1103,30 @@ describe('packaged editor workspace proof', () => {
 });
 
 describe('bound Grand Boule audition record', () => {
+    it('retains a bounded trial failure on an admitted failed report', async () => {
+        const { options, env } = fixture();
+        const operationFailure = {
+            operation: 'check-scheduled-a3',
+            trial: 'held',
+            error: 'assertion',
+            signal: { measured: 0, threshold: 0.00001 },
+        } as const;
+        const record = await runGrandBouleAuditionProof(options, env, {
+            hostSupported: true,
+            async drive(_binary, observations) {
+                observations.operationFailure = operationFailure;
+                observations.appQuit = true;
+                throw new Error('private driver detail');
+            },
+        });
+        expect(record).toMatchObject({
+            verdict: 'failed',
+            failureCode: 'driver-failed',
+            scope: 'packaged-grand-boule-output-audition',
+            observations: { operationFailure, unavailable: null, appQuit: true },
+        });
+        expect(JSON.stringify(record)).not.toContain('private driver detail');
+    });
     it('retains an unavailable capture with the admitted build and source identity', async () => {
         const { options, env } = fixture();
         const record = await runGrandBouleAuditionProof(options, env, {
@@ -1116,6 +1140,7 @@ describe('bound Grand Boule audition record', () => {
             verdict: 'not-run',
             failureCode: 'capture-unavailable',
             scope: 'packaged-grand-boule-output-audition',
+            observations: { operationFailure: null },
             build: { sourceSha: env.GITHUB_SHA, runId: env.GITHUB_RUN_ID, runAttempt: env.GITHUB_RUN_ATTEMPT },
         });
     });

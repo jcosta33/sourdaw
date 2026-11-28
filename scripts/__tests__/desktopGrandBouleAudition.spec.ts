@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { runInNewContext } from 'node:vm';
 
-import { type Page } from 'playwright';
+import { errors, type Page } from 'playwright';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -267,6 +267,102 @@ describe('packaged audition capture admission', () => {
         vi.unstubAllEnvs();
         vi.unstubAllGlobals();
         vi.resetAllMocks();
+    });
+
+    it('retains a first-trial Stop timeout even when capture cleanup also fails', async () => {
+        execFileSync.mockReturnValue(`${device}\n`);
+        const timeout = new errors.TimeoutError('private Playwright locator detail');
+        const cleanup = new Error('private capture cleanup detail');
+        const close = vi.fn().mockRejectedValue(cleanup);
+        const capture = {
+            input: device,
+            close,
+            async sample(firstFrame: number, frames: number) {
+                return {
+                    firstFrame,
+                    endFrame: firstFrame + frames,
+                    sampleRate: 48000,
+                    values: Array<number>(frames).fill(0),
+                };
+            },
+        };
+        const runner = {
+            evaluate: async <T, Args extends unknown[]>(
+                read: (source: typeof capture, ...args: Args) => T,
+                ...args: Args
+            ) => await read(capture, ...args),
+            dispose: vi.fn(),
+        };
+        const stop = vi.fn().mockRejectedValue(timeout);
+        const noteCount = vi.fn().mockResolvedValueOnce('0 notes').mockResolvedValue('1 note');
+        const locator = {
+            getByRole: (_role: string, query: { name: unknown }) => {
+                if (query.name === 'Stop') {
+                    return { click: stop };
+                }
+                if (query.name === '1/4') {
+                    return { click: vi.fn(), getAttribute: () => 'true' };
+                }
+                return locator;
+            },
+            getByLabel: () => locator,
+            getByTestId: () => locator,
+            getByText: () => locator,
+            locator: () => locator,
+            filter: () => locator,
+            and: () => locator,
+            page: () => locator,
+            click: vi.fn(),
+            dblclick: vi.fn(),
+            waitFor: vi.fn(),
+            press: vi.fn(),
+            scrollIntoViewIfNeeded: vi.fn(),
+            evaluate: vi.fn().mockResolvedValue(true),
+            textContent: noteCount,
+            boundingBox: vi
+                .fn()
+                .mockResolvedValueOnce({ x: 0, y: 20, width: 100, height: 40 })
+                .mockResolvedValue({ x: 200, y: 0, width: 900, height: 400 }),
+            getAttribute: (name: string) => {
+                if (name === 'data-testid') {
+                    return 'device-card-audition';
+                }
+                if (name === 'data-track-id') {
+                    return 'audition-track';
+                }
+                if (name === 'aria-valuenow') {
+                    return locator.press.mock.calls.at(-1)?.[0] === 'End' ? '256' : '50';
+                }
+                return 'false';
+            },
+        };
+        const app = {
+            page: {
+                ...locator,
+                setDefaultTimeout: vi.fn(),
+                mouse: { click: vi.fn(), move: vi.fn(), down: vi.fn(), up: vi.fn() },
+                evaluateHandle: vi.fn().mockResolvedValue({
+                    evaluate: vi.fn(),
+                    evaluateHandle: vi.fn().mockResolvedValue(runner),
+                    dispose: vi.fn(),
+                }),
+            },
+        };
+        appBoundary.launchEditorSession.mockResolvedValue(app);
+        const observations = freshAuditionObservations();
+
+        await expect(driveDesktopGrandBouleAudition('packaged-binary', observations)).rejects.toBe(cleanup);
+
+        expect(stop).toHaveBeenCalledExactlyOnceWith();
+        expect(close).toHaveBeenCalledExactlyOnceWith();
+        expect(appBoundary.quitEditorSession).toHaveBeenCalledExactlyOnceWith(app);
+        expect(observations).toMatchObject({
+            unavailable: null,
+            appQuit: true,
+            trials: [],
+            operationFailure: { operation: 'stop', trial: 'held', error: 'playwright-timeout', signal: null },
+        });
+        expect(JSON.stringify(observations)).not.toContain('private');
     });
 
     it.each([

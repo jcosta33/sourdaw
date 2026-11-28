@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 
-import { type Locator, type Page } from 'playwright';
+import { errors, type Locator, type Page } from 'playwright';
 
 import { deviceEditor, devicesNamed } from './desktopEditorFamilyDrive.ts';
 import { renderedPlayheadBeat } from './desktopEditorWorkspaceEvidence.ts';
@@ -9,6 +9,7 @@ import { launchEditorSession, quitEditorSession, readyWorkspace } from './deskto
 import {
     measureSignalWindow,
     type AuditionObservations,
+    type AuditionOperationFailure,
     type AuditionTrial,
 } from './desktopGrandBouleAuditionEvidence.ts';
 import { captureAdmissionFailure, captureBlackHole } from './desktopGrandBouleCapture.ts';
@@ -149,6 +150,47 @@ async function fixture(page: Page, observations: AuditionObservations): Promise<
 
 type Capture = Awaited<ReturnType<typeof captureBlackHole>>;
 
+class CaptureReadError extends Error {}
+
+function auditionErrorClass(error: unknown): AuditionOperationFailure['error'] {
+    if (error instanceof CaptureReadError) {
+        return 'capture-read';
+    }
+    if (error instanceof errors.TimeoutError) {
+        return 'playwright-timeout';
+    }
+    if (error instanceof assert.AssertionError) {
+        return 'assertion';
+    }
+    return 'unexpected';
+}
+
+function createAuditionTrace(observations: AuditionObservations) {
+    let trial: AuditionOperationFailure['trial'] = null;
+    let current: Omit<AuditionOperationFailure, 'error'> | null = null;
+    return {
+        trial(kind: AuditionOperationFailure['trial']): void {
+            trial = kind;
+        },
+        mark(
+            operation: AuditionOperationFailure['operation'],
+            signal: AuditionOperationFailure['signal'] = null
+        ): void {
+            current = {
+                trial,
+                operation,
+                signal: signal && Number.isFinite(signal.measured) && Number.isFinite(signal.threshold) ? signal : null,
+            };
+        },
+        recordFirst(error: unknown): void {
+            if (current !== null) {
+                observations.operationFailure ??= { ...current, error: auditionErrorClass(error) };
+            }
+        },
+    };
+}
+type AuditionTrace = ReturnType<typeof createAuditionTrace>;
+
 async function sampleOutput(observer: Capture, observations: AuditionObservations, start = 0, count = 32768) {
     try {
         return measureSignalWindow(
@@ -156,7 +198,7 @@ async function sampleOutput(observer: Capture, observations: AuditionObservation
         );
     } catch {
         observations.unavailable = 'capture-clock-or-input-unavailable';
-        throw new Error(observations.unavailable);
+        throw new CaptureReadError(observations.unavailable);
     }
 }
 
@@ -165,15 +207,18 @@ async function heldTrial(
     observer: Capture,
     observations: AuditionObservations,
     kind: AuditionTrial['kind'],
-    sentinel: AuditionTrial['scheduled']
+    sentinel: AuditionTrial['scheduled'],
+    trace: AuditionTrace
 ): Promise<AuditionTrial> {
     const editor = deviceEditor(page, 'Grand Boule');
     const beat = async () => renderedPlayheadBeat((await page.getByTestId('transport-playhead').textContent()) ?? '');
     const piano = editor.getByLabel('Grand Boule interactive piano', { exact: true });
+    trace.mark('piano-hit-target');
     const box = await piano.boundingBox();
     assert(box);
     const p = { x: box.x + box.width * 0.461077, y: box.y + box.height * 0.81472 };
     assert(await piano.evaluate((el, point) => document.elementFromPoint(point.x, point.y) === el, p));
+    trace.mark('pointer-down');
     const press = await piano.evaluateHandle((element, receiver) => {
         const witness: { frame: number | null } = { frame: null };
         const listener = (): void => {
@@ -188,28 +233,46 @@ async function heldTrial(
     await page.mouse.move(p.x, p.y);
     await page.mouse.down();
     try {
+        trace.mark('read-press-frame');
         const pressFrame = await press.evaluate((w) => w.read());
         assert(pressFrame !== null);
+        trace.mark('preview-status');
         await editor
             .getByRole('status')
             .filter({ hasText: /Playing .*C4/u })
             .waitFor({ state: 'attached' });
+        trace.mark('read-carrier');
         const nativeBefore =
             (await page.locator('span[title^="Engine: "]').getAttribute('title'))?.startsWith(
                 'Engine: native running'
             ) === true;
+        trace.mark('read-positive');
         const positive = await sampleOutput(observer, observations, pressFrame + 4096);
+        trace.mark('read-playhead');
         const before = await beat();
         if (kind === 'release') {
+            trace.mark('release-preview');
             await page.mouse.up();
         }
         if (kind === 'close') {
+            trace.mark('close-editor');
             await editor.getByRole('button', { name: 'Close Grand Boule', exact: true }).press('Enter');
             await editor.waitFor({ state: 'detached' });
         }
+        trace.mark('read-action-frame');
         const actionFrame = await observer.evaluate((c) => c.frame());
+        trace.mark('read-late');
         const late = await sampleOutput(observer, observations, positive.endFrame, 98304);
+        trace.mark('read-playhead');
         const after = await beat();
+        let nativeCarrier = false;
+        if (nativeBefore) {
+            trace.mark('read-carrier');
+            nativeCarrier =
+                (await page.locator('span[title^="Engine: "]').getAttribute('title'))?.startsWith(
+                    'Engine: native running'
+                ) === true;
+        }
         const trial: AuditionTrial = {
             kind,
             pressFrame,
@@ -217,15 +280,15 @@ async function heldTrial(
             positive,
             late,
             actionFrame,
-            nativeCarrier:
-                nativeBefore &&
-                (await page.locator('span[title^="Engine: "]').getAttribute('title'))?.startsWith(
-                    'Engine: native running'
-                ) === true,
+            nativeCarrier,
             advancing: before !== null && after !== null && after > before,
         };
         return trial;
+    } catch (error) {
+        trace.recordFirst(error);
+        throw error;
     } finally {
+        trace.mark('pointer-cleanup');
         try {
             await page.mouse.up();
         } finally {
@@ -234,7 +297,12 @@ async function heldTrial(
         }
     }
 }
-async function observeTrials(page: Page, observer: Capture, observations: AuditionObservations): Promise<void> {
+async function observeTrials(
+    page: Page,
+    observer: Capture,
+    observations: AuditionObservations,
+    trace: AuditionTrace
+): Promise<void> {
     const playback = page.getByRole('group', { name: 'Playback controls', exact: true });
     const editor = deviceEditor(page, 'Grand Boule');
     const selected = page
@@ -242,28 +310,44 @@ async function observeTrials(page: Page, observer: Capture, observations: Auditi
         .locator('[data-track-id][aria-selected="true"]');
     const beat = async () => renderedPlayheadBeat((await page.getByTestId('transport-playhead').textContent()) ?? '');
     for (const kind of ['held', 'release', 'close'] as const) {
+        trace.trial(kind);
+        trace.mark('stop');
         await playback.getByRole('button', { name: 'Stop', exact: true }).click();
+        trace.mark('reset-playhead');
         await until(async () => (await beat()) === 0);
+        trace.mark('read-quiet');
         let quiet = await sampleOutput(observer, observations);
         for (let attempt = 0; quiet.rms > 0.0001 && attempt < 10; attempt++) {
             quiet = await sampleOutput(observer, observations);
         }
-        assert(quiet.rms <= 0.0001, 'output did not settle to measured quiet');
+        const quietLimit = 0.0001;
+        trace.mark('check-quiet', { measured: quiet.rms, threshold: quietLimit });
+        assert(quiet.rms <= quietLimit, 'output did not settle to measured quiet');
         if (!observations.quiet) {
             observations.quiet = quiet;
         }
         if (kind === 'close') {
             // Previous normal release keeps the panel open.
+            trace.mark('recheck-editor');
             await editor.waitFor({ state: 'visible' });
         }
+        trace.mark('track-identity');
         assert.equal(await selected.getAttribute('data-track-id'), observations.trackId);
+        trace.mark('play');
         await playback.getByRole('button', { name: 'Play', exact: true }).click();
+        trace.mark('advance-playhead');
         await until(async () => ((await beat()) ?? -1) > 0.25);
+        trace.mark('read-scheduled-a3');
         const sentinel = await sampleOutput(observer, observations);
-        assert(sentinel.sentinel > Math.max(0.00001, quiet.rms * 10), 'no positive scheduled A3 sentinel');
-        observations.trials.push(await heldTrial(page, observer, observations, kind, sentinel));
+        const sentinelThreshold = Math.max(0.00001, quiet.rms * 10);
+        trace.mark('check-scheduled-a3', { measured: sentinel.sentinel, threshold: sentinelThreshold });
+        assert(sentinel.sentinel > sentinelThreshold, 'no positive scheduled A3 sentinel');
+        observations.trials.push(await heldTrial(page, observer, observations, kind, sentinel, trace));
+        trace.mark('track-identity');
         assert.equal(await selected.getAttribute('data-track-id'), observations.trackId);
     }
+    trace.trial(null);
+    trace.mark('final-stop');
     await playback.getByRole('button', { name: 'Stop', exact: true }).click();
 }
 
@@ -283,6 +367,7 @@ export async function driveDesktopGrandBouleAudition(
     if (observations.unavailable) {
         return;
     }
+    const trace = createAuditionTrace(observations);
     let app: Awaited<ReturnType<typeof launchEditorSession>> | undefined;
     let capture: Awaited<ReturnType<typeof captureBlackHole>> | undefined;
     try {
@@ -324,8 +409,12 @@ export async function driveDesktopGrandBouleAudition(
             () => fixture(page, observations),
             8 * STEP_TIMEOUT_MS
         );
-        await observeTrials(page, observer, observations);
+        await observeTrials(page, observer, observations, trace);
+        trace.mark('final-card');
         await card.waitFor({ state: 'visible' });
+    } catch (error) {
+        trace.recordFirst(error);
+        throw error;
     } finally {
         try {
             if (capture) {
