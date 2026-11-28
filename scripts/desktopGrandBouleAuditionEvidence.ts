@@ -19,6 +19,36 @@ export type AuditionTrial = {
     nativeCarrier: boolean;
     advancing: boolean;
 };
+export type AuditionOperationFailure = {
+    trial: AuditionTrial['kind'] | null;
+    operation:
+        | 'stop'
+        | 'reset-playhead'
+        | 'read-quiet'
+        | 'check-quiet'
+        | 'recheck-editor'
+        | 'track-identity'
+        | 'play'
+        | 'advance-playhead'
+        | 'read-scheduled-a3'
+        | 'check-scheduled-a3'
+        | 'piano-hit-target'
+        | 'pointer-down'
+        | 'read-press-frame'
+        | 'preview-status'
+        | 'read-carrier'
+        | 'read-positive'
+        | 'read-playhead'
+        | 'release-preview'
+        | 'close-editor'
+        | 'read-action-frame'
+        | 'read-late'
+        | 'pointer-cleanup'
+        | 'final-stop'
+        | 'final-card';
+    error: 'playwright-timeout' | 'assertion' | 'capture-read' | 'unexpected';
+    signal: { measured: number; threshold: number } | null;
+};
 export type AuditionObservations = {
     input: string | null;
     output: string | null;
@@ -26,6 +56,7 @@ export type AuditionObservations = {
     deviceId: string | null;
     quiet: SignalWindow | null;
     trials: AuditionTrial[];
+    operationFailure: AuditionOperationFailure | null;
     unavailable: string | null;
     appQuit: boolean;
 };
@@ -37,6 +68,7 @@ export function freshAuditionObservations(): AuditionObservations {
         deviceId: null,
         quiet: null,
         trials: [],
+        operationFailure: null,
         unavailable: null,
         appQuit: false,
     };
