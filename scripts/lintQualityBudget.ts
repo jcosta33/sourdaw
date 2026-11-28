@@ -12,6 +12,7 @@ export const qualityRuleIds = [
     'eslint/no-else-return',
     'eslint/no-lonely-if',
     'eslint/no-new-wrappers',
+    'eslint/no-unreachable-loop',
     'sourdaw-craft/no-complex-ternary-branch',
     'sourdaw-craft/no-conditional-empty-spread',
     'sourdaw-craft/no-conditional-playwright-admission',

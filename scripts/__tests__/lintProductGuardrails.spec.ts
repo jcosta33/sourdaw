@@ -217,3 +217,96 @@ export function unavailable(): number | undefined {
         }
     }
 }, 45_000);
+
+it.each(['check', '--fix'])(
+    'reports single-iteration product loops without rewriting them in %s mode',
+    (mode) => {
+        const source = `export function findTrack(tracks: string[], id: string) {
+    for (let index = 0; index < tracks.length; index++) {
+        if (tracks[index] === id) {
+            return index;
+        }
+        return -1;
+    }
+    return -1;
+}
+
+export function retryOnce(attempt: () => void, pending: () => boolean) {
+    while (pending()) {
+        attempt();
+        break;
+    }
+}
+
+export function retry(attempt: () => boolean, pending: () => boolean) {
+    while (pending()) {
+        if (!attempt()) {
+            continue;
+        }
+        break;
+    }
+}
+
+export function firstTrack(tracks: Iterable<string>) {
+    for (const track of tracks) {
+        return track;
+    }
+    return undefined;
+}
+
+export function firstSetting(settings: Record<string, string>) {
+    for (const key in settings) {
+        return key;
+    }
+    return undefined;
+}
+
+export function finishGesture(record: () => boolean, commit: () => void) {
+    do {
+        if (!record()) {
+            break;
+        }
+        commit();
+        break;
+    } while (true);
+}
+`;
+        const productDirectory = mkdtempSync(join(root, 'src/lint-product-guardrails-'));
+        const scriptDirectory = mkdtempSync(join(root, 'scripts/lint-product-guardrails-'));
+        try {
+            const targets = [
+                ...writeFixtureProject(productDirectory, ['product.ts', 'product.tsx', 'product.spec.ts'], source),
+                ...writeFixtureProject(scriptDirectory, ['tooling.ts'], source),
+            ];
+            const argv = buildQualityLintArgv(targets).slice(2);
+            if (mode === '--fix') {
+                argv.push(mode);
+            }
+            const result = spawnSync(resolve(root, 'node_modules/.bin/oxlint'), argv, {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 30_000,
+            });
+            expect(result.error).toBeUndefined();
+            const report = parseQualityReport(result.stdout, root);
+            expect(report.fileCount).toBe(targets.length);
+            const rule = 'eslint/no-unreachable-loop';
+            expect(
+                report.diagnostics
+                    .toSorted((a, b) => a.file.localeCompare(b.file) || (a.line ?? 0) - (b.line ?? 0))
+                    .map(({ file, rule, line, column, severity }) => [file, rule, line, column, severity])
+            ).toEqual(targets.slice(0, 2).flatMap((file) => [2, 12].map((line) => [file, rule, line, 5, 'error'])));
+            expect(result.status, result.stdout + result.stderr).toBe(1);
+            const budget = readQualityBudget(root);
+            expect([...budget.values()].some((rules) => rules.has(rule))).toBe(false);
+            expect(reconcileQualityBudget(report, budget, targets, root).failed).toBe(true);
+            expect(targets.map((target) => readFileSync(resolve(root, target), 'utf8'))).toEqual(
+                targets.map(() => source)
+            );
+        } finally {
+            rmSync(productDirectory, { recursive: true, force: true });
+            rmSync(scriptDirectory, { recursive: true, force: true });
+        }
+    },
+    45_000
+);

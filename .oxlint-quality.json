@@ -71,6 +71,10 @@
                 ],
                 "max-params": ["error", { "max": 4 }],
                 "no-new-wrappers": "error",
+                "eslint/no-unreachable-loop": [
+                    "error",
+                    { "ignore": ["ForOfStatement", "ForInStatement", "DoWhileStatement"] }
+                ],
                 "sourdaw-craft/no-positional-boolean-flags": "error",
                 "typescript/no-non-null-assertion": "error",
                 "unicorn/no-invalid-remove-event-listener": "error"
