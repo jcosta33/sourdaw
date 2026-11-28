@@ -221,8 +221,8 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
             expect(readSlot(storage)).toMatchObject({ loopEnd: null, tempo: 150 });
         });
 
-        // Both sides changed the same nested field: the document wins, a limit filed as issue 5521.
-        it('takes a nested field from the document even when the write changed it', () => {
+        // Both sides changed the same id-less collection, one value: the write wins, as its flush writes it.
+        it('keeps a nested value the write changed over a document that changed the same value', () => {
             const { doc, port } = createTestPort({ slot: slot() });
             configureAutomergeStoragePort(port);
             const storage = createSlotStorage();
@@ -232,7 +232,9 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
             doc.slot = slot({ rows: ['a', 'remote'] });
             storage.hydrate?.();
 
-            expect(readSlot(storage)).toMatchObject({ metronome: true, rows: ['a', 'remote'] });
+            expect(readSlot(storage)).toMatchObject({ metronome: true, rows: ['a', 'local'] });
+            flushAutomergeStorageWrites();
+            expect(doc.slot).toMatchObject({ metronome: true, rows: ['a', 'local'] });
         });
 
         it('keeps a nested field the write changed when the document did not change it', () => {

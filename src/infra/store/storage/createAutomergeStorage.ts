@@ -6,6 +6,7 @@ import {
     applyCanonicalStorageSlotMutation,
     type CanonicalStorageSlotMutation,
 } from './applyCanonicalStorageSlotMutation';
+import { projectPendingFlush } from './projectPendingFlush';
 import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
 import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
@@ -2015,9 +2016,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
      * document owns them. Without a trusted base nothing is known about the
      * write's own edits and the document wins whole.
      *
-     * A hydrate and the rebase of the pending writes behind a refused write
-     * both follow this rule, and both re-anchor the write at the authority they
-     * absorbed.
+     * The rebase of the pending writes behind a refused write follows this
+     * rule, and so does a toCrdt slot's hydrate whose flush `projectPendingFlush`
+     * cannot replay or replays into a value the store guard rejects; both
+     * re-anchor the write at the authority they absorbed.
      *
      * The merge is per field, so two edits that are each valid alone can merge
      * into a combination a store's inbound sanitizer rejects (a loop whose start
@@ -2065,17 +2067,21 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         return inboundProjector({ value, purpose });
     };
 
+    /** The guarded merge, or null when the guard changed a durable field of it. */
+    const guardMergeUnchanged = (toDurable: FieldRebaseSides['toDurable'], merged: TData | null): TData | null => {
+        const guardedValue = guardInboundValue(merged, 'visible');
+        if (merged === null || guardedValue === null || !sameDurableValue(toDurable(guardedValue), toDurable(merged))) {
+            return null;
+        }
+        return guardedValue;
+    };
+
     const guardFieldRebase = (sides: FieldRebaseSides, rebasedValue: TData | null): TData | null => {
         const { toDurable, pendingValue, authorityValue } = sides;
-        const guardedValue = guardInboundValue(rebasedValue, 'visible');
-        if (
-            rebasedValue !== null &&
-            guardedValue !== null &&
-            sameDurableValue(toDurable(guardedValue), toDurable(rebasedValue))
-        ) {
-            return guardedValue;
-        }
-        return guardInboundValue({ ...pendingValue, ...authorityValue }, 'visible');
+        return (
+            guardMergeUnchanged(toDurable, rebasedValue) ??
+            guardInboundValue({ ...pendingValue, ...authorityValue }, 'visible')
+        );
     };
 
     const getSemanticMessage = (): string | undefined => {
@@ -3266,18 +3272,33 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                             metadata: visiblePending.metadata === null ? null : freezeMetadata(visiblePending.metadata),
                         });
                     } else if (
-                        toCrdt &&
                         visiblePending.value !== null &&
                         typeof visiblePending.value === 'object' &&
                         typeof crdtData === 'object' &&
                         crdtData !== null
                     ) {
                         fieldRebase = {
-                            toDurable: toCrdt,
+                            toDurable: toCrdt ?? ((value) => value),
                             pendingValue: visiblePending.value,
                             authorityValue: crdtData,
                         };
-                        rebasedValue = rebasePendingOverAuthority({ ...fieldRebase, trustedBaseValue });
+                        // A flush it cannot replay, or a replay the store guard rejects,
+                        // keeps the field rebase of a toCrdt slot or else the guarded write.
+                        const projectedValue = projectPendingFlush({
+                            ...fieldRebase,
+                            key,
+                            baseValue: trustedBaseValue,
+                            replayable: !mutateCrdt && !mutateCrdtWithMetadata && rawValues.length === 1,
+                            identityByField: crdtEntityIdentity,
+                            documentPresence: visiblePending.baseDocumentPresence,
+                        });
+                        if (guardMergeUnchanged(fieldRebase.toDurable, projectedValue) !== null) {
+                            rebasedValue = projectedValue;
+                        } else if (toCrdt) {
+                            rebasedValue = rebasePendingOverAuthority({ ...fieldRebase, trustedBaseValue });
+                        } else {
+                            fieldRebase = null;
+                        }
                     }
                     if (!isCurrentVisibleProjection()) {
                         return false;
