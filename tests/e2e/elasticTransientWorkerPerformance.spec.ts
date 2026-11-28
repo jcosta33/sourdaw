@@ -1293,7 +1293,27 @@ test('dense project Detect overlaps the named autosave and reopens with exact ma
     expect(detected.raw).toHaveLength(ATTACKS.length);
     expect(detected.projected).toEqual(detected.raw);
     expect(detected.pcm).toEqual(before.pcm);
-    await expect.poll(readNamedSnapshot, { timeout: 25_000 }).toEqual({
+    // Detect's marker edit makes the save's first preparation stale, so the save retries and pays another
+    // dense materialization (about 20 s under 4x CPU throttle). Wait for its outcome, not for a fixed latency.
+    const saveOutcome = await page.evaluate(async () => {
+        const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+        const outcome = Promise.withResolvers<'saved' | 'failed'>();
+        const timer = window.setInterval(() => {
+            const shown: unknown = Reflect.get(window, 'notificationToastTexts');
+            if (Array.isArray(shown) && shown.some((text) => String(text).includes('Save failed'))) {
+                outcome.resolve('failed');
+            } else if (projectStore.value?.dirty === false) {
+                outcome.resolve('saved');
+            }
+        }, 250);
+        try {
+            return await outcome.promise;
+        } finally {
+            window.clearInterval(timer);
+        }
+    });
+    expect(saveOutcome).toBe('saved');
+    expect(await readNamedSnapshot()).toEqual({
         markers: detected.raw,
         trackName: 'History edit 2047',
     });
