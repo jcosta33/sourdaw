@@ -29,19 +29,22 @@ export async function observeReopenedWorkspace(page: Page, observations: CrumbsS
                     getComputedStyle(element).visibility !== 'hidden'
             );
             const trackIds = rows.map((element) => element.getAttribute('data-track-id'));
+            let entryFailureDetail = '';
+            if (visible('#entry-startup-reload')) {
+                entryFailureDetail = document.querySelector('#entry-startup-description')?.textContent ?? '';
+            }
             return {
                 launch: visible('[role="dialog"][aria-label="Sourdaw — start a project"]'),
                 failure: visible('[role="alertdialog"][aria-labelledby="project-load-failure-title"]'),
                 startupShell: visible('#entry-startup'),
-                startupFailure: Array.from(document.querySelectorAll('button')).some(
-                    (button) =>
-                        button.textContent.trim() === 'Reload Sourdaw' &&
-                        !button.closest('#entry-startup') &&
-                        button.getBoundingClientRect().width > 0
-                ),
+                startupFailure: visible('#entry-startup-reload') || visible('#desktop-startup-error-title'),
                 grid: visible('[role="grid"][aria-label="Track list"]'),
                 trackIds: trackIds.filter((id): id is string => id !== null),
-                detail: (document.querySelector('#project-load-failure-message')?.textContent ?? '').slice(0, 500),
+                detail: (
+                    document.querySelector('#project-load-failure-message')?.textContent ??
+                    document.querySelector('[aria-labelledby="desktop-startup-error-title"] p')?.textContent ??
+                    entryFailureDetail
+                ).slice(0, 500),
             };
         });
         const { trackIds, detail } = current;
