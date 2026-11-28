@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { change, from, save, saveIncremental } from '@automerge/automerge';
+import { change, from, load, save, saveIncremental } from '@automerge/automerge';
 import { describe, expect, it } from 'vitest';
 
 import { readCrumbsSnapshot } from '../desktopCrumbsSamplerSnapshot.ts';
@@ -51,6 +51,31 @@ describe('readCrumbsSnapshot', () => {
             sampleId: 1,
         });
         expect(result.heads.length).toBeGreaterThan(0);
+    });
+    it('rejects matching snapshot data from unrelated binary history', async () => {
+        const saved = await readCrumbsSnapshot(pageFor(binary()), 'track', 'device');
+        const unrelated = await readCrumbsSnapshot(pageFor(binary()), 'track', 'device', saved.heads);
+        expect(unrelated.snapshot).toEqual(saved.snapshot);
+        expect(unrelated.savedHeadsPresent).toBe(false);
+        const same = await readCrumbsSnapshot(pageFor(binary()), 'track', 'device');
+        expect(same.snapshot).toEqual(saved.snapshot);
+    });
+    it('recognizes the saved binary ancestry', async () => {
+        const chunks = binary();
+        const saved = await readCrumbsSnapshot(pageFor(chunks), 'track', 'device');
+        const doc = change(
+            load(Uint8Array.from(chunks.find(([key]) => key === 'root')![1])),
+            (value: { unrelated?: string }) => {
+                value.unrelated = 'boot';
+            }
+        );
+        const advanced = [...chunks, ['root:incremental:2-0', Array.from(saveIncremental(doc))]] as [
+            string,
+            number[],
+        ][];
+        const reopened = await readCrumbsSnapshot(pageFor(advanced), 'track', 'device', saved.heads);
+        expect(reopened.savedHeadsPresent).toBe(true);
+        expect(reopened.heads).not.toEqual(saved.heads);
     });
     it('does not admit a matching device under another track', async () => {
         await expect(readCrumbsSnapshot(pageFor(binary()), 'other', 'device')).rejects.toThrow('original track');
