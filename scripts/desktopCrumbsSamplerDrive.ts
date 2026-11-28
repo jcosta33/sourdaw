@@ -5,9 +5,9 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { observeReopenedWorkspace } from './desktopCrumbsSamplerReopen.ts';
 import { measureCrumbsWindow } from './desktopCrumbsSamplerSignal.ts';
 import { readCrumbsSnapshot } from './desktopCrumbsSamplerSnapshot.ts';
-import { observeReopenedWorkspace } from './desktopCrumbsSamplerReopen.ts';
 import { deviceEditor, devicesNamed } from './desktopEditorFamilyDrive.ts';
 import { renderedPlayheadBeat } from './desktopEditorWorkspaceEvidence.ts';
 import { launchEditorSession, readyWorkspace } from './desktopFermenterDrive.ts';

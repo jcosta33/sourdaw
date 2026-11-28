@@ -20,6 +20,15 @@ export async function observeReopenedWorkspace(page: Page, observations: CrumbsS
                     getComputedStyle(element).visibility !== 'hidden'
                 );
             };
+            const rows = Array.from(
+                document.querySelectorAll('[role="grid"][aria-label="Track list"] [data-track-id]')
+            ).filter(
+                (element) =>
+                    element instanceof HTMLElement &&
+                    element.getBoundingClientRect().width > 0 &&
+                    getComputedStyle(element).visibility !== 'hidden'
+            );
+            const trackIds = rows.map((element) => element.getAttribute('data-track-id'));
             return {
                 launch: visible('[role="dialog"][aria-label="Sourdaw — start a project"]'),
                 failure: visible('[role="alertdialog"][aria-labelledby="project-load-failure-title"]'),
@@ -31,17 +40,7 @@ export async function observeReopenedWorkspace(page: Page, observations: CrumbsS
                         button.getBoundingClientRect().width > 0
                 ),
                 grid: visible('[role="grid"][aria-label="Track list"]'),
-                trackIds: Array.from(
-                    document.querySelectorAll('[role="grid"][aria-label="Track list"] [data-track-id]')
-                )
-                    .filter(
-                        (element) =>
-                            element instanceof HTMLElement &&
-                            element.getBoundingClientRect().width > 0 &&
-                            getComputedStyle(element).visibility !== 'hidden'
-                    )
-                    .map((element) => element.getAttribute('data-track-id'))
-                    .filter((id): id is string => id !== null),
+                trackIds: trackIds.filter((id): id is string => id !== null),
                 detail: (document.querySelector('#project-load-failure-message')?.textContent ?? '').slice(0, 500),
             };
         });
