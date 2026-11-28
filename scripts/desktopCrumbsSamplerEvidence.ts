@@ -50,6 +50,8 @@ export type CrumbsSamplerObservations = {
     reopenedSnapshot: CrumbsSnapshot | null;
     savedHeads: string[];
     reopenedHeads: string[];
+    savedHeadsPresent: boolean;
+    reopenStartup: { state: string; trackIds: string[]; detail: string; binary: string } | null;
     savedClean: boolean;
     reopenedTrackId: string | null;
     reopenedDeviceId: string | null;
@@ -72,6 +74,8 @@ export function freshCrumbsSamplerObservations(): CrumbsSamplerObservations {
         reopenedSnapshot: null,
         savedHeads: [],
         reopenedHeads: [],
+        savedHeadsPresent: false,
+        reopenStartup: null,
         savedClean: false,
         reopenedTrackId: null,
         reopenedDeviceId: null,
@@ -187,6 +191,10 @@ function validIdentity(observation: CrumbsSamplerObservations): boolean {
         observation.savedClean &&
         validHeads(observation.savedHeads) &&
         validHeads(observation.reopenedHeads) &&
+        observation.savedHeadsPresent &&
+        observation.reopenStartup?.state === 'original-track' &&
+        observation.reopenStartup.binary === 'matched' &&
+        observation.reopenStartup.trackIds.includes(observation.trackId) &&
         validSnapshot(observation.savedSnapshot, observation.trackId, observation.deviceId) &&
         JSON.stringify(observation.savedSnapshot) === JSON.stringify(observation.reopenedSnapshot) &&
         observation.reopenedTrackId === observation.trackId &&

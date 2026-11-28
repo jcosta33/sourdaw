@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { observeReopenedWorkspace } from './desktopCrumbsSamplerReopen.ts';
 import { measureCrumbsWindow } from './desktopCrumbsSamplerSignal.ts';
 import { readCrumbsSnapshot } from './desktopCrumbsSamplerSnapshot.ts';
 import { deviceEditor, devicesNamed } from './desktopEditorFamilyDrive.ts';
@@ -328,7 +329,11 @@ async function drivePhase(
         if (phase === 'fresh') {
             await readyWorkspace(page, browser, playback);
         } else {
-            await page.getByRole('grid', { name: 'Track list', exact: true }).waitFor({ timeout: 20000 });
+            await step(
+                'observe reopened workspace and binary',
+                () => observeReopenedWorkspace(page, observations),
+                27000
+            );
         }
         observer = await openCapture(page, observations);
         if (!observer) {
@@ -370,9 +375,6 @@ async function drivePhase(
             observations.reopenedDeviceId = cardDeviceId(
                 await inspector.getByTestId(`device-card-${observations.deviceId}`).getAttribute('data-testid')
             );
-            const reopened = await readCrumbsSnapshot(page, observations.trackId, observations.deviceId);
-            observations.reopenedSnapshot = reopened.snapshot;
-            observations.reopenedHeads = reopened.heads;
         }
         observations.seekBeats[phase] = await seekBeyondControl(page);
         assert(observations.deviceId);

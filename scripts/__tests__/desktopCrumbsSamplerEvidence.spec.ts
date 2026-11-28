@@ -85,6 +85,8 @@ function complete() {
         reopenedSnapshot: structuredClone(snapshot),
         savedHeads: ['d'.repeat(64)],
         reopenedHeads: ['e'.repeat(64)],
+        savedHeadsPresent: true,
+        reopenStartup: { state: 'original-track', trackIds: ['track'], detail: '', binary: 'matched' },
         reopenedTrackId: 'track',
         reopenedDeviceId: 'device',
         quits: [
@@ -128,6 +130,19 @@ describe('Crumbs sampler evidence admission', () => {
             observation[field] = heads;
             expect(crumbsSamplerFailure(observation)).toBe('crumbs-observations-incomplete');
         }
+    });
+    it('rejects a matching snapshot without saved binary ancestry', () => {
+        const observation = complete();
+        observation.savedHeadsPresent = false;
+        expect(crumbsSamplerFailure(observation)).toBe('crumbs-observations-incomplete');
+    });
+    it('rejects binary presence without the original track in the reopened UI', () => {
+        const observation = complete();
+        observation.reopenStartup!.state = 'launch-screen';
+        expect(crumbsSamplerFailure(observation)).toBe('crumbs-observations-incomplete');
+        observation.reopenStartup!.state = 'original-track';
+        observation.reopenStartup!.trackIds = ['other'];
+        expect(crumbsSamplerFailure(observation)).toBe('crumbs-observations-incomplete');
     });
     it('rejects lost sentinel and unreleased sample', () => {
         const lost = complete();
