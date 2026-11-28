@@ -88,6 +88,12 @@ The product pilot also reports direct calls to the global `Boolean`, `String`, a
 in direct fix mode, which changes truthiness or runtime type. Both `pnpm lint` and
 `pnpm lint:fix` run the quality pass in check mode.
 
+The product pilot uses stock `eslint/no-unreachable-loop` to report classic `for` and `while`
+loops whose bodies always exit before the next iteration. `for...of` and `for...in` can
+intentionally read the first entry, and `do...while` can express a guarded single pass.
+Those forms use the rule's built-in ignore option. Oxlint leaves the reported loops unchanged
+in direct fix mode so the author can check which path should reach the next iteration.
+
 To convert control-flow ternaries in one handwritten TypeScript file, run Oxlint from
 the repository root with the fixer configuration and no implicit `oxlint-suppressions.json`.
 
